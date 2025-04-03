@@ -7,9 +7,8 @@ nextjs-app/.env.development.local
 nextjs-app/.env.test.local
 nextjs-app/.env.production.local
 
-# Supabase
-supabase/.temp/
-supabase/.env
+# Supabase - exclude entirely
+supabase/
 
 # Dependencies
 node_modules/
