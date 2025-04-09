@@ -1,0 +1,15 @@
+# backend/requirements.txt
+fastapi
+uvicorn[standard] # Includes standard ASGI server features
+python-dotenv   # For loading .env file within Python if needed
+requests        # For calling external APIs (like Ollama)
+
+# Database & Graph
+psycopg2-binary # PostgreSQL driver
+neo4j           # Neo4j driver
+
+# Embeddings & NLP
+sentence-transformers
+torch             # CPU version usually sufficient unless you configure GPU
+# nltk            # Add later if needed for sentence chunking
+# spacy           # Add later if needed for advanced chunking/NLP

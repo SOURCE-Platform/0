@@ -7,8 +7,20 @@ nextjs-app/.env.development.local
 nextjs-app/.env.test.local
 nextjs-app/.env.production.local
 
-# Supabase - exclude entirely
-supabase/
+# Supabase - selective exclusion
+# Include configuration files but exclude sensitive data
+supabase/*
+!supabase/docker/
+supabase/docker/*
+!supabase/docker/docker-compose.yml
+!supabase/docker/docker-compose.s3.yml
+!supabase/docker/.env.example
+!supabase/docker/README.md
+!supabase/docker/reset.sh
+supabase/docker/.env
+supabase/docker/volumes/
+!supabase/migrations/
+!supabase/seed/
 
 # Dependencies
 node_modules/
@@ -30,3 +42,32 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Docker
+**/docker-compose.override.yml
+**/docker-compose.*.yml
+**/.dockerignore
+**/docker-data/
+**/docker-volumes/
+
+# Neo4j
+neo4j/logs/*
+neo4j/data/*
+
+# Local development files
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Build directories
+.next/
+.out/
+
+# Debug logs
+*.log
+*.logs
+
+# Temp files
+*.tmp
+*.temp
