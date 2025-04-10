@@ -234,7 +234,7 @@ services:
     image: supabase/storage-api:v1.19.3
     restart: unless-stopped
     volumes:
-      - ./supabase/docker/volumes/storage:/var/lib/storage:z
+      - supabase_storage_data:/var/lib/storage
     healthcheck:
       test:
         [
@@ -277,7 +277,7 @@ services:
     image: darthsim/imgproxy:v3.8.0
     restart: unless-stopped
     volumes:
-      - ./supabase/docker/volumes/storage:/var/lib/storage:z
+      - supabase_storage_data:/var/lib/storage
     healthcheck:
       test:
         [
@@ -538,13 +538,12 @@ services:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
     restart: unless-stopped
 
-
-  backend:
+  backend:  
     container_name: rag-backend-api
     build:
       context: ./backend
     env_file:
-      - .env
+      - .env # Keep this for other variables, but we override the port in command
     ports:
       - "8001:8001"
     volumes:
@@ -554,9 +553,25 @@ services:
         condition: service_healthy # Wait for db to pass its health check
       neo4j:
         condition: service_started # Wait only for the neo4j container to start
-    command: uvicorn main:app --host 0.0.0.0 --port ${FASTAPI_PORT:-8001} --reload
-    restart: unless-stopped
+    # USE LIST FORMAT AND HARDCODE THE PORT
+    command:
+      - uvicorn
+      - main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001" # Hardcoded port, no variable
+      - --reload
+    restart: unless-stopped 
 
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit # Or supabase-mailpit if you prefer
+    ports:
+      - "1025:1025" # SMTP port Mailpit listens on
+      - "8025:8025" # Mailpit Web UI port
+    restart: unless-stopped
 
   frontend:
     container_name: rag-frontend-dev
@@ -567,8 +582,15 @@ services:
     volumes:
       - ./nextjs-app:/app
       - /app/node_modules
-      - /app/.next
-    command: npm run dev
+    # Add this environment section
+    environment:
+      # Use the internal Docker network hostname for Kong
+      SUPABASE_INTERNAL_URL: http://kong:8000
+      # Pass the anon key (using the variable from the root .env)
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      # Optional: Ensure Node environment is set if needed by Next.js build/runtime
+      # NODE_ENV: development
+    command: npx next dev
     restart: unless-stopped
 
   ollama:
@@ -584,3 +606,4 @@ volumes:
   db-config:
   neo4j_data:
   ollama_data:
+  supabase_storage_data: {}
