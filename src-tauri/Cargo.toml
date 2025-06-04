@@ -1,8 +1,9 @@
 [workspace]
 members = [
-    "observer-core",
-    "rag-pipeline",
-    "data-manager"
+    ".",
+    # "observer-core",
+    # "rag-pipeline",
+    # "data-manager"
 ]
 resolver = "2"
 
@@ -18,10 +19,10 @@ edition = "2021"
 rust-version = "1.60"
 
 [build-dependencies]
-tauri-build = { version = "~1.5.0", features = [] }
+tauri-build = { version = "2.1.0", features = [] }
 
 [dependencies]
-tauri = { version = "~1.5.2", features = ["shell-open"] }
+tauri = { version = "2.1.0", features = [] }
 serde = { version = "1.0.197", features = ["derive"] } # Updated
 serde_json = "1.0" 
 tokio = { version = "1.37.0", features = ["full"] }    # Updated
@@ -30,17 +31,17 @@ anyhow = "1.0.82"                                  # Updated
 toml = "0.8.12"                                    # Updated
 
 # Pin problematic ICU components (attempted, likely still an issue)
-icu_locale_core = "1.0.0"
-icu_normalizer = "1.0.0"
-icu_provider = "1.0.0"
+icu_locale_core = "^2.0.0"
+icu_normalizer = "^2.0.0"
+icu_provider = "^2.0.0"
 
 # Logging crates
 tracing = "0.1.40"                                     # Updated
 tracing-subscriber = { version = "0.3.18", features = ["fmt"] } # Updated
 
-observer-core = { path = "./observer-core" }
-rag-pipeline = { path = "./rag-pipeline" }
-data-manager = { path = "./data-manager" }
+# observer-core = { path = "./observer-core" }
+# rag-pipeline = { path = "./rag-pipeline" }
+# data-manager = { path = "./data-manager" }
 
 [features]
-custom-protocol = [ "tauri/custom-protocol" ]
+# custom-protocol = [ "tauri/custom-protocol" ]

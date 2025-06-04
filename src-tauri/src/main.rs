@@ -5,7 +5,7 @@
 mod config;
 
 // Workspace crates
-use observer_core; // Added for workspace integration
+// use observer_core; // Added for workspace integration
 
 // Import necessary Tauri modules
 use tauri::{
@@ -70,14 +70,15 @@ async fn set_app_setting_theme(
     }
 }
 
-#[tauri::command]
-async fn get_observer_info() -> Result<String, ()> {
-    tracing::info!("Command 'get_observer_info' called, interacting with observer_core crate.");
-    // This directly calls a function from the observer_core workspace member.
-    // Error handling would be more robust in a real application if get_observer_status could fail.
-    // For this placeholder, direct Ok is fine as get_observer_status returns String directly.
-    Ok(observer_core::get_observer_status())
-}
+// #[tauri::command]
+// async fn get_observer_info() -> Result<String, ()> {
+//     tracing::info!("Command 'get_observer_info' called, interacting with observer_core crate.");
+//     // This directly calls a function from the observer_core workspace member.
+//     // Error handling would be more robust in a real application if get_observer_status could fail.
+//     // For this placeholder, direct Ok is fine as get_observer_status returns String directly.
+//     // Ok(observer_core::get_observer_status())
+//     Err(())
+// }
 
 // --- Main Application Setup ---
 fn main() {
@@ -187,7 +188,7 @@ fn main() {
             greet,
             get_app_settings,
             set_app_setting_theme,
-            get_observer_info // Added new command for workspace integration
+            // get_observer_info // Added new command for workspace integration
         ])
         .run(tauri::generate_context!()) // Generates context and runs the application.
         .expect("error while running tauri application");
