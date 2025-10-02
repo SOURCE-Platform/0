@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone)]
 pub struct Database {
-    pool: SqlitePool,
+    pub(crate) pool: SqlitePool,
 }
 
 impl Database {
