@@ -19,6 +19,14 @@ pub struct Config {
     pub ocr_enabled: bool,
     /// Default recording frames per second
     pub default_recording_fps: u32,
+    /// Video codec to use (e.g., "h264")
+    pub video_codec: String,
+    /// Video compression quality: "High", "Medium", or "Low"
+    pub video_quality: String,
+    /// Enable hardware acceleration for video encoding
+    pub hardware_acceleration: bool,
+    /// Target FPS for video encoding
+    pub target_fps: u32,
 }
 
 impl Default for Config {
@@ -45,6 +53,10 @@ impl Default for Config {
             motion_detection_threshold: 0.05,
             ocr_enabled: true,
             default_recording_fps: 15,
+            video_codec: "h264".to_string(),
+            video_quality: "Medium".to_string(),
+            hardware_acceleration: true,
+            target_fps: 15,
         }
     }
 }
@@ -97,6 +109,25 @@ impl Config {
             .into());
         }
 
+        // Validate video quality
+        if !valid_qualities.contains(&self.video_quality.as_str()) {
+            return Err(format!(
+                "Invalid video quality: {}. Must be one of: High, Medium, Low",
+                self.video_quality
+            )
+            .into());
+        }
+
+        // Validate video codec
+        let valid_codecs = ["h264", "H264"];
+        if !valid_codecs.contains(&self.video_codec.as_str()) {
+            return Err(format!(
+                "Invalid video codec: {}. Must be one of: h264",
+                self.video_codec
+            )
+            .into());
+        }
+
         // Validate motion detection threshold
         if !(0.0..=1.0).contains(&self.motion_detection_threshold) {
             return Err(format!(
@@ -111,6 +142,15 @@ impl Config {
             return Err(format!(
                 "Invalid FPS: {}. Must be between 1 and 60",
                 self.default_recording_fps
+            )
+            .into());
+        }
+
+        // Validate target FPS
+        if self.target_fps == 0 || self.target_fps > 60 {
+            return Err(format!(
+                "Invalid target FPS: {}. Must be between 1 and 60",
+                self.target_fps
             )
             .into());
         }
@@ -178,6 +218,10 @@ mod tests {
         assert_eq!(config.motion_detection_threshold, 0.05);
         assert_eq!(config.ocr_enabled, true);
         assert_eq!(config.default_recording_fps, 15);
+        assert_eq!(config.video_codec, "h264");
+        assert_eq!(config.video_quality, "Medium");
+        assert_eq!(config.hardware_acceleration, true);
+        assert_eq!(config.target_fps, 15);
         assert_eq!(config.retention_days.get("screen"), Some(&30));
         assert_eq!(config.retention_days.get("ocr"), Some(&90));
     }

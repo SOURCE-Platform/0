@@ -1,6 +1,7 @@
 // Frame storage system - saves captured frames to disk and tracks in database
 
 use crate::core::database::Database;
+use crate::core::video_encoder::VideoSegment;
 use crate::models::capture::{PixelFormat, RawFrame};
 use image::{ImageBuffer, Rgba};
 use sqlx::Row;
@@ -45,23 +46,25 @@ impl RecordingStorage {
     }
 
     /// Create a new recording session
-    pub async fn create_session(&self, display_id: u32) -> StorageResult<Uuid> {
+    pub async fn create_session(&self, _display_id: u32) -> StorageResult<Uuid> {
         let session_id = Uuid::new_v4();
         let start_timestamp = chrono::Utc::now().timestamp();
 
         // Create session directory
         let session_path = self.get_session_path(&session_id);
         std::fs::create_dir_all(session_path.join("frames"))?;
+        std::fs::create_dir_all(session_path.join("segments"))?;
 
         // Insert session into database
         sqlx::query(
-            "INSERT INTO sessions (id, device_id, start_timestamp, recording_path)
-             VALUES (?, ?, ?, ?)",
+            "INSERT INTO sessions (id, device_id, start_timestamp, recording_path, created_at)
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(session_id.to_string())
         .bind("local") // device_id - using "local" for now
         .bind(start_timestamp)
         .bind(session_path.to_string_lossy().to_string())
+        .bind(start_timestamp * 1000) // created_at in milliseconds
         .execute(self.db.pool())
         .await?;
 
@@ -260,6 +263,96 @@ impl RecordingStorage {
 
         img.save(path)?;
         Ok(())
+    }
+
+    /// Save a video segment to the database
+    pub async fn save_segment(
+        &self,
+        session_id: &Uuid,
+        segment: &VideoSegment,
+    ) -> StorageResult<()> {
+        let segment_id = Uuid::new_v4();
+
+        sqlx::query(
+            "INSERT INTO video_segments (id, session_id, start_timestamp, end_timestamp, file_path, frame_count, file_size_bytes, duration_ms)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(segment_id.to_string())
+        .bind(session_id.to_string())
+        .bind(segment.start_timestamp)
+        .bind(segment.end_timestamp)
+        .bind(segment.path.to_string_lossy().to_string())
+        .bind(segment.frame_count as i64)
+        .bind(segment.file_size_bytes as i64)
+        .bind(segment.duration_ms as i64)
+        .execute(self.db.pool())
+        .await?;
+
+        // Update session segment count
+        sqlx::query("UPDATE sessions SET segment_count = segment_count + 1 WHERE id = ?")
+            .bind(session_id.to_string())
+            .execute(self.db.pool())
+            .await?;
+
+        Ok(())
+    }
+
+    /// Save base layer for a session
+    pub async fn save_base_layer(
+        &self,
+        session_id: &Uuid,
+        frame: &RawFrame,
+    ) -> StorageResult<()> {
+        let base_layer_path = self.get_session_path(session_id).join("base_layer.png");
+
+        // Save the frame as PNG
+        self.save_frame_as_png(frame, &base_layer_path)?;
+
+        // Update session with base layer path
+        sqlx::query("UPDATE sessions SET base_layer_path = ? WHERE id = ?")
+            .bind(base_layer_path.to_string_lossy().to_string())
+            .bind(session_id.to_string())
+            .execute(self.db.pool())
+            .await?;
+
+        Ok(())
+    }
+
+    /// Get the path for a video segment
+    pub fn get_segment_path(&self, session_id: &Uuid, segment_num: usize) -> PathBuf {
+        self.get_session_path(session_id)
+            .join("segments")
+            .join(format!("segment_{:04}.mp4", segment_num))
+    }
+
+    /// Get all segments for a session
+    pub async fn get_session_segments(&self, session_id: Uuid) -> StorageResult<Vec<VideoSegment>> {
+        let rows = sqlx::query(
+            "SELECT file_path, start_timestamp, end_timestamp, frame_count, file_size_bytes, duration_ms
+             FROM video_segments
+             WHERE session_id = ?
+             ORDER BY start_timestamp",
+        )
+        .bind(session_id.to_string())
+        .fetch_all(self.db.pool())
+        .await?;
+
+        let segments = rows
+            .into_iter()
+            .map(|row| {
+                let path_str: String = row.get("file_path");
+                VideoSegment {
+                    path: PathBuf::from(path_str),
+                    start_timestamp: row.get("start_timestamp"),
+                    end_timestamp: row.get("end_timestamp"),
+                    frame_count: row.get::<i64, _>("frame_count") as u32,
+                    file_size_bytes: row.get::<i64, _>("file_size_bytes") as u64,
+                    duration_ms: row.get::<i64, _>("duration_ms") as u64,
+                }
+            })
+            .collect();
+
+        Ok(segments)
     }
 }
 
