@@ -7,6 +7,7 @@ use core::config::Config;
 use core::database::Database;
 use core::os_activity::{AppUsageStats, OsActivityRecorder};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
+use core::session_manager::{Session, SessionConfig, SessionManager, SessionMetrics};
 use core::storage::RecordingStorage;
 use models::activity::AppInfo;
 use models::capture::Display;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub config: Mutex<Config>,
     pub screen_recorder: Option<ScreenRecorder>,
     pub os_activity_recorder: Option<Arc<OsActivityRecorder>>,
+    pub session_manager: Option<Arc<SessionManager>>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -246,6 +248,96 @@ async fn get_current_application(state: State<'_, AppState>) -> Result<Option<Ap
         .map_err(|e| format!("Failed to get current app: {}", e))
 }
 
+// Session management commands
+#[tauri::command]
+async fn get_current_session(state: State<'_, AppState>) -> Result<Option<Session>, String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .get_current_session()
+        .await
+        .map_err(|e| format!("Failed to get current session: {}", e))
+}
+
+#[tauri::command]
+async fn get_session_history(
+    start: i64,
+    end: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<Session>, String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .get_sessions_in_range(start, end)
+        .await
+        .map_err(|e| format!("Failed to get session history: {}", e))
+}
+
+#[tauri::command]
+async fn get_session_metrics(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<SessionMetrics, String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .calculate_session_metrics(&session_id)
+        .await
+        .map_err(|e| format!("Failed to get session metrics: {}", e))
+}
+
+#[tauri::command]
+async fn classify_session(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    let session_type = manager
+        .classify_session_type(&session_id)
+        .await
+        .map_err(|e| format!("Failed to classify session: {}", e))?;
+
+    Ok(session_type.to_string().to_string())
+}
+
+#[tauri::command]
+async fn end_current_session(state: State<'_, AppState>) -> Result<(), String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .end_current_session()
+        .await
+        .map_err(|e| format!("Failed to end session: {}", e))
+}
+
+#[tauri::command]
+async fn start_session_monitoring(state: State<'_, AppState>) -> Result<(), String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .start_monitoring()
+        .await
+        .map_err(|e| format!("Failed to start session monitoring: {}", e))
+}
+
+#[tauri::command]
+async fn stop_session_monitoring(state: State<'_, AppState>) -> Result<(), String> {
+    let manager = state.session_manager.as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    manager
+        .stop_monitoring()
+        .await
+        .map_err(|e| format!("Failed to stop session monitoring: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -307,11 +399,25 @@ pub fn run() {
                     }
                 };
 
+                // Initialize session manager
+                let session_manager = match SessionManager::new(db.clone(), SessionConfig::default()).await {
+                    Ok(manager) => {
+                        println!("Session manager initialized successfully");
+                        Some(Arc::new(manager))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize session manager: {}", e);
+                        eprintln!("Session management features will be unavailable");
+                        None
+                    }
+                };
+
                 app.manage(AppState {
                     consent_manager,
                     config: Mutex::new(config),
                     screen_recorder,
                     os_activity_recorder,
+                    session_manager,
                 });
             });
 
@@ -334,7 +440,14 @@ pub fn run() {
             stop_os_monitoring,
             get_app_usage_stats,
             get_running_applications,
-            get_current_application
+            get_current_application,
+            get_current_session,
+            get_session_history,
+            get_session_metrics,
+            classify_session,
+            end_current_session,
+            start_session_monitoring,
+            stop_session_monitoring
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -105,10 +105,10 @@ impl Database {
     }
 
     /// Get a session by ID
-    pub async fn get_session(&self, id: &str) -> Result<Option<Session>, sqlx::Error> {
+    pub async fn get_session(&self, id: &str) -> Result<Session, sqlx::Error> {
         sqlx::query_as::<_, Session>("SELECT * FROM sessions WHERE id = ?")
             .bind(id)
-            .fetch_optional(&self.pool)
+            .fetch_one(&self.pool)
             .await
     }
 
@@ -138,6 +138,19 @@ impl Database {
         sqlx::query_as::<_, Session>("SELECT * FROM sessions ORDER BY start_timestamp DESC")
             .fetch_all(&self.pool)
             .await
+    }
+
+    /// Get sessions within a time range
+    pub async fn get_sessions_in_range(&self, start: i64, end: i64) -> Result<Vec<Session>, sqlx::Error> {
+        sqlx::query_as::<_, Session>(
+            "SELECT * FROM sessions
+             WHERE start_timestamp >= ? AND start_timestamp <= ?
+             ORDER BY start_timestamp DESC"
+        )
+        .bind(start)
+        .bind(end)
+        .fetch_all(&self.pool)
+        .await
     }
 }
 
