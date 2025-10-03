@@ -1,7 +1,8 @@
 // macOS application monitoring using NSWorkspace
 
 use crate::models::activity::{AppEvent, AppInfo};
-use crate::platform::os_monitor::OSMonitor;
+use crate::core::os_activity::OsMonitor;
+use async_trait::async_trait;
 use cocoa::base::{id, nil};
 use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::CStr;
@@ -11,20 +12,18 @@ use tokio::sync::mpsc;
 /// macOS application monitor using NSWorkspace
 pub struct MacOSMonitor {
     is_monitoring: Arc<Mutex<bool>>,
-    event_sender: Arc<Mutex<mpsc::UnboundedSender<AppEvent>>>,
+    event_sender: Arc<Mutex<Option<mpsc::Sender<AppEvent>>>>,
 }
 
 impl MacOSMonitor {
     /// Create a new macOS monitor
-    pub fn new() -> Result<(Box<dyn OSMonitor>, mpsc::UnboundedReceiver<AppEvent>), Box<dyn std::error::Error>> {
-        let (tx, rx) = mpsc::unbounded_channel();
-
+    pub fn new() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let monitor = MacOSMonitor {
             is_monitoring: Arc::new(Mutex::new(false)),
-            event_sender: Arc::new(Mutex::new(tx)),
+            event_sender: Arc::new(Mutex::new(None)),
         };
 
-        Ok((Box::new(monitor), rx))
+        Ok(monitor)
     }
 
     /// Check if accessibility permissions are granted
@@ -127,8 +126,9 @@ impl MacOSMonitor {
     }
 }
 
-impl OSMonitor for MacOSMonitor {
-    fn start_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+#[async_trait]
+impl OsMonitor for MacOSMonitor {
+    async fn start_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut is_monitoring = self.is_monitoring.lock().unwrap();
         if *is_monitoring {
             return Ok(());
@@ -153,7 +153,7 @@ impl OSMonitor for MacOSMonitor {
         Ok(())
     }
 
-    fn stop_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    async fn stop_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut is_monitoring = self.is_monitoring.lock().unwrap();
         if !*is_monitoring {
             return Ok(());
@@ -161,16 +161,26 @@ impl OSMonitor for MacOSMonitor {
 
         println!("Stopping macOS application monitoring");
         *is_monitoring = false;
+
+        // Clear event sender
+        *self.event_sender.lock().unwrap() = None;
+
         Ok(())
     }
 
-    fn get_running_apps(&self) -> Result<Vec<AppInfo>, Box<dyn std::error::Error>> {
+    fn subscribe_events(&self) -> mpsc::Receiver<AppEvent> {
+        let (tx, rx) = mpsc::channel(100);
+        *self.event_sender.lock().unwrap() = Some(tx);
+        rx
+    }
+
+    fn get_running_apps(&self) -> Result<Vec<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
         unsafe {
             Ok(Self::get_running_applications())
         }
     }
 
-    fn get_frontmost_app(&self) -> Result<Option<AppInfo>, Box<dyn std::error::Error>> {
+    fn get_frontmost_app(&self) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
         unsafe {
             let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
             let frontmost_app: id = msg_send![workspace, frontmostApplication];
@@ -182,45 +192,30 @@ impl OSMonitor for MacOSMonitor {
             Ok(Self::app_info_from_nsrunningapplication(frontmost_app))
         }
     }
-
-    fn is_monitoring(&self) -> bool {
-        *self.is_monitoring.lock().unwrap()
-    }
-}
-
-impl Drop for MacOSMonitor {
-    fn drop(&mut self) {
-        let _ = self.stop_monitoring();
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_create_monitor() {
+    #[tokio::test]
+    async fn test_create_monitor() {
         let result = MacOSMonitor::new();
         assert!(result.is_ok());
-
-        let (monitor, _rx) = result.unwrap();
-        assert!(!monitor.is_monitoring());
     }
 
-    #[test]
-    fn test_start_stop_monitoring() {
+    #[tokio::test]
+    async fn test_start_stop_monitoring() {
         let result = MacOSMonitor::new();
         assert!(result.is_ok());
 
-        let (mut monitor, _rx) = result.unwrap();
+        let mut monitor = result.unwrap();
 
         // Start monitoring
-        assert!(monitor.start_monitoring().is_ok());
-        assert!(monitor.is_monitoring());
+        assert!(monitor.start_monitoring().await.is_ok());
 
         // Stop monitoring
-        assert!(monitor.stop_monitoring().is_ok());
-        assert!(!monitor.is_monitoring());
+        assert!(monitor.stop_monitoring().await.is_ok());
     }
 
     #[test]
@@ -228,7 +223,7 @@ mod tests {
         let result = MacOSMonitor::new();
         assert!(result.is_ok());
 
-        let (monitor, _rx) = result.unwrap();
+        let monitor = result.unwrap();
 
         // Get running apps
         let apps = monitor.get_running_apps();
@@ -251,7 +246,7 @@ mod tests {
         let result = MacOSMonitor::new();
         assert!(result.is_ok());
 
-        let (monitor, _rx) = result.unwrap();
+        let monitor = result.unwrap();
 
         // Get frontmost app
         let frontmost = monitor.get_frontmost_app();

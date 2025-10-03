@@ -5,8 +5,10 @@ pub mod platform;
 use core::consent::{ConsentManager, Feature};
 use core::config::Config;
 use core::database::Database;
+use core::os_activity::{AppUsageStats, OsActivityRecorder};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
 use core::storage::RecordingStorage;
+use models::activity::AppInfo;
 use models::capture::Display;
 use platform::get_platform;
 use std::collections::HashMap;
@@ -18,6 +20,7 @@ pub struct AppState {
     pub consent_manager: Arc<ConsentManager>,
     pub config: Mutex<Config>,
     pub screen_recorder: Option<ScreenRecorder>,
+    pub os_activity_recorder: Option<Arc<OsActivityRecorder>>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -181,6 +184,68 @@ async fn get_recording_status(state: State<'_, AppState>) -> Result<RecordingSta
         .map_err(|e| format!("Failed to get status: {}", e))
 }
 
+// OS monitoring commands
+#[tauri::command]
+async fn start_os_monitoring(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let recorder = state.os_activity_recorder.as_ref()
+        .ok_or("OS activity recorder not initialized")?;
+
+    recorder
+        .start_recording(session_id)
+        .await
+        .map_err(|e| format!("Failed to start OS monitoring: {}", e))
+}
+
+#[tauri::command]
+async fn stop_os_monitoring(state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state.os_activity_recorder.as_ref()
+        .ok_or("OS activity recorder not initialized")?;
+
+    recorder
+        .stop_recording()
+        .await
+        .map_err(|e| format!("Failed to stop OS monitoring: {}", e))
+}
+
+#[tauri::command]
+async fn get_app_usage_stats(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<AppUsageStats>, String> {
+    let recorder = state.os_activity_recorder.as_ref()
+        .ok_or("OS activity recorder not initialized")?;
+
+    recorder
+        .get_app_usage_stats(session_id)
+        .await
+        .map_err(|e| format!("Failed to get app usage stats: {}", e))
+}
+
+#[tauri::command]
+async fn get_running_applications(state: State<'_, AppState>) -> Result<Vec<AppInfo>, String> {
+    let recorder = state.os_activity_recorder.as_ref()
+        .ok_or("OS activity recorder not initialized")?;
+
+    recorder
+        .get_running_apps()
+        .await
+        .map_err(|e| format!("Failed to get running apps: {}", e))
+}
+
+#[tauri::command]
+async fn get_current_application(state: State<'_, AppState>) -> Result<Option<AppInfo>, String> {
+    let recorder = state.os_activity_recorder.as_ref()
+        .ok_or("OS activity recorder not initialized")?;
+
+    recorder
+        .get_current_app()
+        .await
+        .map_err(|e| format!("Failed to get current app: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -229,10 +294,24 @@ pub fn run() {
                     }
                 };
 
+                // Try to initialize OS activity recorder
+                let os_activity_recorder = match OsActivityRecorder::new(consent_manager.clone(), db.clone()).await {
+                    Ok(recorder) => {
+                        println!("OS activity recorder initialized successfully");
+                        Some(Arc::new(recorder))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize OS activity recorder: {}", e);
+                        eprintln!("OS activity monitoring features will be unavailable");
+                        None
+                    }
+                };
+
                 app.manage(AppState {
                     consent_manager,
                     config: Mutex::new(config),
                     screen_recorder,
+                    os_activity_recorder,
                 });
             });
 
@@ -250,7 +329,12 @@ pub fn run() {
             get_available_displays,
             start_screen_recording,
             stop_screen_recording,
-            get_recording_status
+            get_recording_status,
+            start_os_monitoring,
+            stop_os_monitoring,
+            get_app_usage_stats,
+            get_running_applications,
+            get_current_application
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
