@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import "./ConsentManager.css";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Lock } from "lucide-react";
 
 interface ConsentState {
   screen_recording: boolean;
@@ -69,7 +72,6 @@ export default function ConsentManager() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  // Load all consents on mount
   useEffect(() => {
     loadConsents();
   }, []);
@@ -91,21 +93,17 @@ export default function ConsentManager() {
 
     try {
       if (currentValue) {
-        // Revoke consent
         await invoke("revoke_consent", { feature: featureKey });
       } else {
-        // Grant consent
         await invoke("request_consent", { feature: featureKey });
       }
 
-      // Update local state
       setConsents((prev) => ({
         ...prev,
         [featureKey]: !currentValue,
       }));
     } catch (error) {
       console.error(`Failed to toggle consent for ${featureKey}:`, error);
-      alert(`Failed to update consent: ${error}`);
     } finally {
       setUpdating(null);
     }
@@ -113,54 +111,88 @@ export default function ConsentManager() {
 
   if (loading) {
     return (
-      <div className="consent-manager loading">
-        <p>Loading consent settings...</p>
+      <div className="flex items-center justify-center min-h-[400px]">
+        <p className="text-muted-foreground">Loading consent settings...</p>
       </div>
     );
   }
 
   return (
-    <div className="consent-manager">
-      <div className="consent-header">
-        <h1>Privacy & Consent Settings</h1>
-        <p className="subtitle">
+    <div className="w-full max-w-5xl mx-auto p-6 space-y-6">
+      <div className="space-y-2">
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Privacy & Consent Settings</h1>
+        <p className="text-muted-foreground">
           Control what data Observer can collect. All features require explicit consent and default to OFF.
         </p>
       </div>
 
-      <div className="consent-features">
+      <div className="grid gap-4 md:grid-cols-2">
         {FEATURES.map((feature) => (
-          <div key={feature.key} className="feature-card">
-            <div className="feature-info">
-              <div className="feature-icon">{feature.icon}</div>
-              <div className="feature-content">
-                <h3>{feature.title}</h3>
-                <p>{feature.description}</p>
+          <Card key={feature.key}>
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-3xl">{feature.icon}</span>
+                  <div>
+                    <CardTitle className="text-lg">{feature.title}</CardTitle>
+                    <CardDescription className="mt-1.5">
+                      {feature.description}
+                    </CardDescription>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="feature-control">
-              <label className="toggle-switch">
-                <input
-                  type="checkbox"
-                  checked={consents[feature.key]}
-                  onChange={() => toggleConsent(feature.key)}
-                  disabled={updating === feature.key}
-                />
-                <span className="toggle-slider"></span>
-              </label>
-              <span className={`status ${consents[feature.key] ? "enabled" : "disabled"}`}>
-                {updating === feature.key ? "Updating..." : consents[feature.key] ? "Enabled" : "Disabled"}
-              </span>
-            </div>
-          </div>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Switch
+                    id={feature.key}
+                    checked={consents[feature.key]}
+                    onCheckedChange={() => toggleConsent(feature.key)}
+                    disabled={updating === feature.key}
+                  />
+                  <Label
+                    htmlFor={feature.key}
+                    className={`text-sm font-medium cursor-pointer ${
+                      updating === feature.key ? "opacity-50" : ""
+                    }`}
+                  >
+                    {updating === feature.key
+                      ? "Updating..."
+                      : consents[feature.key]
+                      ? "Enabled"
+                      : "Disabled"}
+                  </Label>
+                </div>
+                <div
+                  className={`px-3 py-1 rounded-full text-xs font-medium ${
+                    consents[feature.key]
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                      : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
+                  }`}
+                >
+                  {consents[feature.key] ? "Active" : "Inactive"}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      <div className="consent-footer">
-        <p className="privacy-note">
-          🔒 All data is stored locally on your device. You can revoke consent at any time.
-        </p>
-      </div>
+      <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+            <Lock className="h-5 w-5" />
+            Privacy First
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
+          <p>• All data is stored locally on your device</p>
+          <p>• No data is sent to external servers</p>
+          <p>• You have full control over your data</p>
+          <p>• You can revoke consent at any time</p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
