@@ -6,7 +6,9 @@ use core::consent::{ConsentManager, Feature};
 use core::config::Config;
 use core::database::Database;
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
+use core::storage::RecordingStorage;
 use models::capture::Display;
+use platform::get_platform;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
@@ -187,12 +189,14 @@ pub fn run() {
         .setup(|app| {
             // Initialize database, consent manager, config, and screen recorder
             tauri::async_runtime::block_on(async {
-                let db = Database::init()
-                    .await
-                    .expect("Failed to initialize database");
+                let db = Arc::new(
+                    Database::init()
+                        .await
+                        .expect("Failed to initialize database")
+                );
 
                 let consent_manager = Arc::new(
-                    ConsentManager::new(db)
+                    ConsentManager::new(db.clone())
                         .await
                         .expect("Failed to initialize consent manager")
                 );
@@ -200,8 +204,20 @@ pub fn run() {
                 let config = Config::load()
                     .expect("Failed to load configuration");
 
+                // Initialize recording storage
+                let platform = get_platform();
+                let data_dir = platform.get_data_directory()
+                    .expect("Failed to get data directory");
+                let recordings_path = data_dir.join("recordings");
+
+                let storage = Arc::new(
+                    RecordingStorage::new(recordings_path, db.clone())
+                        .await
+                        .expect("Failed to initialize recording storage")
+                );
+
                 // Try to initialize screen recorder (may fail on some platforms)
-                let screen_recorder = match ScreenRecorder::new(consent_manager.clone()).await {
+                let screen_recorder = match ScreenRecorder::new(consent_manager.clone(), storage.clone()).await {
                     Ok(recorder) => {
                         println!("Screen recorder initialized successfully");
                         Some(recorder)

@@ -2,6 +2,7 @@ use super::database::Database;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 /// Features that require user consent
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -63,12 +64,12 @@ impl fmt::Display for Feature {
 /// Manages user consent for various features
 #[derive(Clone)]
 pub struct ConsentManager {
-    db: Database,
+    db: Arc<Database>,
 }
 
 impl ConsentManager {
     /// Create a new ConsentManager
-    pub async fn new(db: Database) -> Result<Self, Box<dyn std::error::Error>> {
+    pub async fn new(db: Arc<Database>) -> Result<Self, Box<dyn std::error::Error>> {
         let manager = Self { db };
 
         // Initialize all features with default false consent if not already present
