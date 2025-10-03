@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+pub mod capture;
+
 #[cfg(target_os = "macos")]
 mod macos;
 

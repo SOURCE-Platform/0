@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import ConsentManager from "./components/ConsentManager";
 import Settings from "./components/Settings";
+import ScreenRecorder from "./components/ScreenRecorder";
 import { ThemeProvider } from "./components/theme-provider";
 import { ThemeToggle } from "./components/theme-toggle";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 
-type View = "consent" | "settings";
+type View = "consent" | "settings" | "recorder";
 
 function App() {
   const [currentView, setCurrentView] = useState<View>("consent");
@@ -27,6 +28,7 @@ function App() {
               <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as View)} className="flex-1">
                 <TabsList>
                   <TabsTrigger value="consent">Privacy & Consent</TabsTrigger>
+                  <TabsTrigger value="recorder">Screen Recorder</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
                 </TabsList>
               </Tabs>
@@ -47,6 +49,7 @@ function App() {
 
         <main className="container mx-auto py-6">
           {currentView === "consent" && <ConsentManager />}
+          {currentView === "recorder" && <ScreenRecorder />}
           {currentView === "settings" && <Settings />}
         </main>
       </div>

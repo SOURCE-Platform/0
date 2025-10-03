@@ -1,3 +1,6 @@
 pub mod database;
 pub mod consent;
 pub mod config;
+pub mod screen_recorder;
+pub mod storage;
+pub mod motion_detector;

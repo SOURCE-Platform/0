@@ -1,17 +1,21 @@
 pub mod core;
+pub mod models;
 pub mod platform;
 
 use core::consent::{ConsentManager, Feature};
 use core::config::Config;
 use core::database::Database;
+use core::screen_recorder::{RecordingStatus, ScreenRecorder};
+use models::capture::Display;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 
 // Application state
 pub struct AppState {
-    pub consent_manager: ConsentManager,
+    pub consent_manager: Arc<ConsentManager>,
     pub config: Mutex<Config>,
+    pub screen_recorder: Option<ScreenRecorder>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -127,28 +131,92 @@ fn reset_config(state: State<'_, AppState>) -> Result<Config, String> {
     Ok(default_config)
 }
 
+// Screen recording commands
+#[tauri::command]
+async fn get_available_displays(state: State<'_, AppState>) -> Result<Vec<Display>, String> {
+    let recorder = state.screen_recorder.as_ref()
+        .ok_or("Screen recorder not initialized")?;
+
+    recorder
+        .get_available_displays()
+        .await
+        .map_err(|e| format!("Failed to get displays: {}", e))
+}
+
+#[tauri::command]
+async fn start_screen_recording(
+    display_id: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let recorder = state.screen_recorder.as_ref()
+        .ok_or("Screen recorder not initialized")?;
+
+    recorder
+        .start_recording(display_id)
+        .await
+        .map_err(|e| format!("Failed to start recording: {}", e))
+}
+
+#[tauri::command]
+async fn stop_screen_recording(state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state.screen_recorder.as_ref()
+        .ok_or("Screen recorder not initialized")?;
+
+    recorder
+        .stop_recording()
+        .await
+        .map_err(|e| format!("Failed to stop recording: {}", e))
+}
+
+#[tauri::command]
+async fn get_recording_status(state: State<'_, AppState>) -> Result<RecordingStatus, String> {
+    let recorder = state.screen_recorder.as_ref()
+        .ok_or("Screen recorder not initialized")?;
+
+    recorder
+        .get_status()
+        .await
+        .map_err(|e| format!("Failed to get status: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            // Initialize database, consent manager, and config
+            // Initialize database, consent manager, config, and screen recorder
             tauri::async_runtime::block_on(async {
                 let db = Database::init()
                     .await
                     .expect("Failed to initialize database");
 
-                let consent_manager = ConsentManager::new(db)
-                    .await
-                    .expect("Failed to initialize consent manager");
+                let consent_manager = Arc::new(
+                    ConsentManager::new(db)
+                        .await
+                        .expect("Failed to initialize consent manager")
+                );
 
                 let config = Config::load()
                     .expect("Failed to load configuration");
 
+                // Try to initialize screen recorder (may fail on some platforms)
+                let screen_recorder = match ScreenRecorder::new(consent_manager.clone()).await {
+                    Ok(recorder) => {
+                        println!("Screen recorder initialized successfully");
+                        Some(recorder)
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize screen recorder: {}", e);
+                        eprintln!("Screen recording features will be unavailable");
+                        None
+                    }
+                };
+
                 app.manage(AppState {
                     consent_manager,
                     config: Mutex::new(config),
+                    screen_recorder,
                 });
             });
 
@@ -162,7 +230,11 @@ pub fn run() {
             get_all_consents,
             get_config,
             update_config,
-            reset_config
+            reset_config,
+            get_available_displays,
+            start_screen_recording,
+            stop_screen_recording,
+            get_recording_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
