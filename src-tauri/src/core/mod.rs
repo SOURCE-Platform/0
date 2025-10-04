@@ -12,3 +12,5 @@ pub mod input_storage;
 pub mod input_recorder;
 pub mod command_analyzer;
 pub mod ocr_engine;
+pub mod ocr_storage;
+pub mod ocr_processor;
