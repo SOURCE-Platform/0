@@ -1,3 +1,4 @@
+use crate::core::command_analyzer::CommandAnalyzer;
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::database::Database;
 use crate::core::input_storage::InputStorage;
@@ -6,6 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::sync::RwLock;
+use uuid::Uuid;
 
 // Platform-specific keyboard listener
 #[cfg(target_os = "macos")]
@@ -30,6 +32,7 @@ use crate::platform::input::LinuxMouseListener as PlatformMouseListener;
 pub struct InputRecorder {
     consent_manager: Arc<ConsentManager>,
     storage: Arc<InputStorage>,
+    db: Arc<Database>,
     keyboard_listener: Arc<RwLock<Option<PlatformKeyboardListener>>>,
     mouse_listener: Arc<RwLock<Option<PlatformMouseListener>>>,
     current_session_id: Arc<RwLock<Option<String>>>,
@@ -41,11 +44,12 @@ impl InputRecorder {
         consent_manager: Arc<ConsentManager>,
         db: Arc<Database>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let storage = Arc::new(InputStorage::new(db).await?);
+        let storage = Arc::new(InputStorage::new(db.clone()).await?);
 
         Ok(Self {
             consent_manager,
             storage,
+            db,
             keyboard_listener: Arc::new(RwLock::new(None)),
             mouse_listener: Arc::new(RwLock::new(None)),
             current_session_id: Arc::new(RwLock::new(None)),
@@ -96,6 +100,7 @@ impl InputRecorder {
 
             // Spawn task to process keyboard events
             let storage = self.storage.clone();
+            let db = self.db.clone();
             let session_id_clone = session_id.clone();
             let is_recording_clone = self.is_recording.clone();
 
@@ -103,6 +108,7 @@ impl InputRecorder {
                 Self::process_keyboard_events(
                     keyboard_rx,
                     storage,
+                    db,
                     session_id_clone,
                     is_recording_clone,
                 )
@@ -182,9 +188,13 @@ impl InputRecorder {
     async fn process_keyboard_events(
         mut rx: mpsc::UnboundedReceiver<KeyboardEvent>,
         storage: Arc<InputStorage>,
+        db: Arc<Database>,
         session_id: String,
         is_recording: Arc<RwLock<bool>>,
     ) {
+        let mut command_analyzer = CommandAnalyzer::new();
+        let mut keyboard_events_buffer: Vec<KeyboardEvent> = Vec::new();
+
         while let Some(event) = rx.recv().await {
             // Check if still recording
             if !*is_recording.read().await {
@@ -193,8 +203,32 @@ impl InputRecorder {
 
             // Store event (ignore errors to prevent blocking)
             let _ = storage
-                .store_keyboard_event(session_id.clone(), event)
+                .store_keyboard_event(session_id.clone(), event.clone())
                 .await;
+
+            // Add to command analysis buffer
+            keyboard_events_buffer.push(event);
+
+            // Analyze for commands every 50 events
+            if keyboard_events_buffer.len() >= 50 {
+                let events: Vec<KeyboardEvent> = keyboard_events_buffer.drain(..).collect();
+                let commands = command_analyzer.analyze_events(events);
+
+                // Store detected commands
+                let session_uuid = Uuid::parse_str(&session_id).unwrap();
+                for command in commands {
+                    let _ = CommandAnalyzer::store_command(&db, session_uuid, command).await;
+                }
+            }
+        }
+
+        // Flush remaining events for command analysis
+        if !keyboard_events_buffer.is_empty() {
+            let commands = command_analyzer.analyze_events(keyboard_events_buffer);
+            let session_uuid = Uuid::parse_str(&session_id).unwrap();
+            for command in commands {
+                let _ = CommandAnalyzer::store_command(&db, session_uuid, command).await;
+            }
         }
     }
 

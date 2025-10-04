@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import KeyboardMonitor from './KeyboardMonitor';
 import KeyboardStats from './KeyboardStats';
+import { CommandStats } from './CommandStats';
 
 interface SessionMetrics {
   total_duration_ms: number;
@@ -252,8 +253,16 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
       </div>
 
       {/* Keyboard Statistics */}
-      <div>
+      <div className="mb-6">
         <KeyboardStats sessionId={sessionId} />
+      </div>
+
+      {/* Command Statistics */}
+      <div>
+        <h2 className="text-xl font-semibold mb-4 text-white">
+          Keyboard Shortcuts & Commands
+        </h2>
+        <CommandStats sessionId={sessionId} />
       </div>
     </div>
   );

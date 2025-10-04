@@ -74,6 +74,13 @@ impl ModifierState {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyboardShortcut {
+    pub modifiers: ModifierState,
+    pub key: String,
+    pub display: String, // e.g., "⌘C", "Ctrl+C"
+}
+
 // ==============================================================================
 // Application Context
 // ==============================================================================
