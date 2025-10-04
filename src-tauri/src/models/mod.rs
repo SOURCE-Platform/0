@@ -3,3 +3,4 @@
 pub mod capture;
 pub mod activity;
 pub mod input;
+pub mod ocr;
