@@ -11,6 +11,7 @@ use core::input_storage::{InputTimeline, TimeRange};
 use core::keyboard_recorder::KeyboardRecorder;
 use core::os_activity::{AppUsageStats, OsActivityRecorder};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
+use core::search_engine::{SearchEngine, SearchFilters, SearchQuery, SearchResults};
 use core::session_manager::{Session, SessionConfig, SessionManager, SessionMetrics};
 use core::storage::RecordingStorage;
 use models::activity::AppInfo;
@@ -32,6 +33,7 @@ pub struct AppState {
     pub session_manager: Option<Arc<SessionManager>>,
     pub keyboard_recorder: Option<Arc<KeyboardRecorder>>,
     pub input_recorder: Option<Arc<InputRecorder>>,
+    pub search_engine: Arc<SearchEngine>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -483,6 +485,63 @@ async fn get_most_used_shortcuts(
         .collect())
 }
 
+// Search engine commands
+#[tauri::command]
+async fn search_text(
+    query: String,
+    filters: SearchFilters,
+    limit: u32,
+    offset: u32,
+    state: State<'_, AppState>,
+) -> Result<SearchResults, String> {
+    state
+        .search_engine
+        .search(SearchQuery {
+            query,
+            filters,
+            limit,
+            offset,
+        })
+        .await
+        .map_err(|e| format!("Search failed: {}", e))
+}
+
+#[tauri::command]
+async fn search_suggestions(
+    partial: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
+    state
+        .search_engine
+        .suggest_queries(&partial)
+        .await
+        .map_err(|e| format!("Failed to get suggestions: {}", e))
+}
+
+#[tauri::command]
+async fn search_in_session(
+    session_id: String,
+    query: String,
+    state: State<'_, AppState>,
+) -> Result<SearchResults, String> {
+    let session_uuid = Uuid::parse_str(&session_id)
+        .map_err(|e| format!("Invalid session ID: {}", e))?;
+
+    state
+        .search_engine
+        .search(SearchQuery {
+            query,
+            filters: SearchFilters {
+                session_ids: Some(vec![session_uuid]),
+                ..Default::default()
+            },
+            limit: 50,
+            offset: 0,
+        })
+        .await
+        .map_err(|e| format!("Search failed: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -583,6 +642,10 @@ pub fn run() {
                     }
                 };
 
+                // Initialize search engine
+                let search_engine = Arc::new(SearchEngine::new(db.clone()));
+                println!("Search engine initialized successfully");
+
                 app.manage(AppState {
                     db,
                     consent_manager,
@@ -592,6 +655,7 @@ pub fn run() {
                     session_manager,
                     keyboard_recorder,
                     input_recorder,
+                    search_engine,
                 });
             });
 
@@ -631,7 +695,10 @@ pub fn run() {
             is_input_recording,
             cleanup_old_input_events,
             get_command_stats,
-            get_most_used_shortcuts
+            get_most_used_shortcuts,
+            search_text,
+            search_suggestions,
+            search_in_session
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
