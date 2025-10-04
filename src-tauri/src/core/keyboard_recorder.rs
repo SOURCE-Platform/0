@@ -1,11 +1,18 @@
 use crate::core::consent::ConsentManager;
 use crate::core::database::Database;
 use crate::models::input::{KeyboardEvent, KeyEventType, KeyboardStats};
-use crate::platform::input::MacOSKeyboardListener;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
+
+// Platform-specific keyboard listener
+#[cfg(target_os = "macos")]
+use crate::platform::input::MacOSKeyboardListener as PlatformKeyboardListener;
+#[cfg(target_os = "windows")]
+use crate::platform::input::WindowsKeyboardListener as PlatformKeyboardListener;
+#[cfg(target_os = "linux")]
+use crate::platform::input::LinuxKeyboardListener as PlatformKeyboardListener;
 
 // ==============================================================================
 // Database Models
@@ -33,7 +40,7 @@ pub struct KeyboardEventRecord {
 pub struct KeyboardRecorder {
     db: Arc<Database>,
     consent_manager: Arc<ConsentManager>,
-    listener: Arc<RwLock<Option<MacOSKeyboardListener>>>,
+    listener: Arc<RwLock<Option<PlatformKeyboardListener>>>,
     current_session_id: Arc<RwLock<Option<String>>>,
     is_recording: Arc<RwLock<bool>>,
 }
@@ -105,7 +112,7 @@ impl KeyboardRecorder {
         *self.current_session_id.write().await = Some(session_id.clone());
 
         // Create and start listener
-        let (listener, mut event_rx) = MacOSKeyboardListener::new(self.consent_manager.clone())?;
+        let (listener, mut event_rx) = PlatformKeyboardListener::new(self.consent_manager.clone())?;
 
         listener.start_listening().await?;
 
