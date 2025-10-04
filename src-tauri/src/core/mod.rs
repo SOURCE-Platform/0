@@ -8,3 +8,5 @@ pub mod video_encoder;
 pub mod os_activity;
 pub mod session_manager;
 pub mod keyboard_recorder;
+pub mod input_storage;
+pub mod input_recorder;

@@ -5,6 +5,8 @@ pub mod platform;
 use core::consent::{ConsentManager, Feature};
 use core::config::Config;
 use core::database::Database;
+use core::input_recorder::InputRecorder;
+use core::input_storage::{InputTimeline, TimeRange};
 use core::keyboard_recorder::KeyboardRecorder;
 use core::os_activity::{AppUsageStats, OsActivityRecorder};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
@@ -12,7 +14,7 @@ use core::session_manager::{Session, SessionConfig, SessionManager, SessionMetri
 use core::storage::RecordingStorage;
 use models::activity::AppInfo;
 use models::capture::Display;
-use models::input::KeyboardStats;
+use models::input::{KeyboardEvent, KeyboardStats, MouseEvent};
 use platform::get_platform;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -26,6 +28,7 @@ pub struct AppState {
     pub os_activity_recorder: Option<Arc<OsActivityRecorder>>,
     pub session_manager: Option<Arc<SessionManager>>,
     pub keyboard_recorder: Option<Arc<KeyboardRecorder>>,
+    pub input_recorder: Option<Arc<InputRecorder>>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -389,6 +392,62 @@ async fn is_keyboard_recording(state: State<'_, AppState>) -> Result<bool, Strin
     Ok(recorder.is_recording().await)
 }
 
+// Input recording commands
+#[tauri::command]
+async fn start_input_recording(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let recorder = state
+        .input_recorder
+        .as_ref()
+        .ok_or("Input recorder not initialized")?;
+
+    recorder
+        .start_recording(session_id)
+        .await
+        .map_err(|e| format!("Failed to start input recording: {}", e))
+}
+
+#[tauri::command]
+async fn stop_input_recording(state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state
+        .input_recorder
+        .as_ref()
+        .ok_or("Input recorder not initialized")?;
+
+    recorder
+        .stop_recording()
+        .await
+        .map_err(|e| format!("Failed to stop input recording: {}", e))
+}
+
+#[tauri::command]
+async fn is_input_recording(state: State<'_, AppState>) -> Result<bool, String> {
+    let recorder = state
+        .input_recorder
+        .as_ref()
+        .ok_or("Input recorder not initialized")?;
+
+    Ok(recorder.is_recording().await)
+}
+
+#[tauri::command]
+async fn cleanup_old_input_events(
+    retention_days: u32,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let recorder = state
+        .input_recorder
+        .as_ref()
+        .ok_or("Input recorder not initialized")?;
+
+    recorder
+        .cleanup_old_events(retention_days)
+        .await
+        .map_err(|e| format!("Failed to cleanup old events: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -476,6 +535,19 @@ pub fn run() {
                     }
                 };
 
+                // Initialize input recorder
+                let input_recorder = match InputRecorder::new(consent_manager.clone(), db.clone()).await {
+                    Ok(recorder) => {
+                        println!("Input recorder initialized successfully");
+                        Some(Arc::new(recorder))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize input recorder: {}", e);
+                        eprintln!("Input recording features will be unavailable");
+                        None
+                    }
+                };
+
                 app.manage(AppState {
                     consent_manager,
                     config: Mutex::new(config),
@@ -483,6 +555,7 @@ pub fn run() {
                     os_activity_recorder,
                     session_manager,
                     keyboard_recorder,
+                    input_recorder,
                 });
             });
 
@@ -516,7 +589,11 @@ pub fn run() {
             start_keyboard_recording,
             stop_keyboard_recording,
             get_keyboard_stats,
-            is_keyboard_recording
+            is_keyboard_recording,
+            start_input_recording,
+            stop_input_recording,
+            is_input_recording,
+            cleanup_old_input_events
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
