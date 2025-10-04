@@ -158,6 +158,55 @@ impl UiElement {
 }
 
 // ==============================================================================
+// Mouse Events
+// ==============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MouseEvent {
+    pub timestamp: i64,
+    pub event_type: MouseEventType,
+    pub position: Point,
+    pub app_context: AppContext,
+    pub ui_element: Option<UiElement>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum MouseEventType {
+    Move { target: Point },
+    LeftClick,
+    RightClick,
+    MiddleClick,
+    DoubleClick,
+    DragStart { start_pos: Point },
+    DragMove { current_pos: Point },
+    DragEnd { end_pos: Point },
+    ScrollWheel { delta_x: i32, delta_y: i32 },
+}
+
+impl MouseEventType {
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            MouseEventType::Move { .. } => "move",
+            MouseEventType::LeftClick => "left_click",
+            MouseEventType::RightClick => "right_click",
+            MouseEventType::MiddleClick => "middle_click",
+            MouseEventType::DoubleClick => "double_click",
+            MouseEventType::DragStart { .. } => "drag_start",
+            MouseEventType::DragMove { .. } => "drag_move",
+            MouseEventType::DragEnd { .. } => "drag_end",
+            MouseEventType::ScrollWheel { .. } => "scroll_wheel",
+        }
+    }
+}
+
+// ==============================================================================
 // Keyboard Statistics
 // ==============================================================================
 
@@ -169,6 +218,23 @@ pub struct KeyboardStats {
     pub most_used_keys: Vec<(char, u32)>,
     pub shortcut_usage: Vec<(String, u32)>, // (shortcut like "Cmd+C", count)
     pub typing_speed_wpm: Option<f32>,      // Words per minute if detectable
+}
+
+// ==============================================================================
+// Mouse Statistics
+// ==============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MouseStats {
+    pub session_id: String,
+    pub total_clicks: u64,
+    pub total_distance_pixels: u64,
+    pub left_clicks: u32,
+    pub right_clicks: u32,
+    pub middle_clicks: u32,
+    pub double_clicks: u32,
+    pub scroll_events: u32,
+    pub drag_operations: u32,
 }
 
 #[cfg(test)]
