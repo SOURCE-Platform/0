@@ -24,6 +24,7 @@ use uuid::Uuid;
 
 // Application state
 pub struct AppState {
+    pub db: Arc<Database>,
     pub consent_manager: Arc<ConsentManager>,
     pub config: Mutex<Config>,
     pub screen_recorder: Option<ScreenRecorder>,
@@ -456,12 +457,7 @@ async fn get_command_stats(
     session_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<CommandStats, String> {
-    let session_manager = state
-        .session_manager
-        .as_ref()
-        .ok_or("Session manager not initialized")?;
-
-    let db = session_manager.get_database();
+    let db = &state.db;
 
     let session_uuid = if let Some(sid) = session_id {
         Some(Uuid::parse_str(&sid).map_err(|e| format!("Invalid session ID: {}", e))?)
@@ -469,7 +465,7 @@ async fn get_command_stats(
         None
     };
 
-    CommandAnalyzer::get_command_stats(&db, session_uuid)
+    CommandAnalyzer::get_command_stats(db, session_uuid)
         .await
         .map_err(|e| format!("Failed to get command stats: {}", e))
 }
@@ -588,6 +584,7 @@ pub fn run() {
                 };
 
                 app.manage(AppState {
+                    db,
                     consent_manager,
                     config: Mutex::new(config),
                     screen_recorder,

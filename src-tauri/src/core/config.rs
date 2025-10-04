@@ -17,6 +17,12 @@ pub struct Config {
     pub motion_detection_threshold: f32,
     /// Enable OCR processing
     pub ocr_enabled: bool,
+    /// OCR languages (e.g., ["eng", "spa"])
+    pub ocr_languages: Vec<String>,
+    /// OCR confidence threshold (0.0-1.0)
+    pub ocr_confidence_threshold: f32,
+    /// OCR processing interval in seconds
+    pub ocr_interval_seconds: u32,
     /// Default recording frames per second
     pub default_recording_fps: u32,
     /// Video codec to use (e.g., "h264")
@@ -52,6 +58,9 @@ impl Default for Config {
             auto_start: false,
             motion_detection_threshold: 0.05,
             ocr_enabled: true,
+            ocr_languages: vec!["eng".to_string()],
+            ocr_confidence_threshold: 0.7,
+            ocr_interval_seconds: 60, // Run OCR every 60 seconds
             default_recording_fps: 15,
             video_codec: "h264".to_string(),
             video_quality: "Medium".to_string(),
@@ -164,6 +173,29 @@ impl Config {
                 )
                 .into());
             }
+        }
+
+        // Validate OCR confidence threshold
+        if !(0.0..=1.0).contains(&self.ocr_confidence_threshold) {
+            return Err(format!(
+                "Invalid OCR confidence threshold: {}. Must be between 0.0 and 1.0",
+                self.ocr_confidence_threshold
+            )
+            .into());
+        }
+
+        // Validate OCR interval
+        if self.ocr_interval_seconds == 0 || self.ocr_interval_seconds > 3600 {
+            return Err(format!(
+                "Invalid OCR interval: {}. Must be between 1 and 3600 seconds",
+                self.ocr_interval_seconds
+            )
+            .into());
+        }
+
+        // Validate OCR languages
+        if self.ocr_languages.is_empty() {
+            return Err("OCR languages cannot be empty".into());
         }
 
         Ok(())

@@ -66,11 +66,11 @@ impl CommandDatabase {
 
         // Get current platform
         #[cfg(target_os = "macos")]
-        let platform = "macos";
+        let _platform = "macos";
         #[cfg(target_os = "windows")]
-        let platform = "windows";
+        let _platform = "windows";
         #[cfg(target_os = "linux")]
-        let platform = "linux";
+        let _platform = "linux";
 
         // macOS System Shortcuts
         #[cfg(target_os = "macos")]
@@ -633,7 +633,8 @@ impl CommandDatabase {
             parts.push("cmd");
         }
 
-        parts.push(&shortcut.key.to_lowercase());
+        let key_lower = shortcut.key.to_lowercase();
+        parts.push(&key_lower);
 
         parts.join("+")
     }

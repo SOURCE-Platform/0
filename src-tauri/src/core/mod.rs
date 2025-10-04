@@ -11,3 +11,4 @@ pub mod keyboard_recorder;
 pub mod input_storage;
 pub mod input_recorder;
 pub mod command_analyzer;
+pub mod ocr_engine;
