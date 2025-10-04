@@ -2,6 +2,7 @@ pub mod core;
 pub mod models;
 pub mod platform;
 
+use core::command_analyzer::{Command, CommandAnalyzer, CommandStats};
 use core::consent::{ConsentManager, Feature};
 use core::config::Config;
 use core::database::Database;
@@ -19,6 +20,7 @@ use platform::get_platform;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
+use uuid::Uuid;
 
 // Application state
 pub struct AppState {
@@ -448,6 +450,43 @@ async fn cleanup_old_input_events(
         .map_err(|e| format!("Failed to cleanup old events: {}", e))
 }
 
+// Command analyzer commands
+#[tauri::command]
+async fn get_command_stats(
+    session_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<CommandStats, String> {
+    let session_manager = state
+        .session_manager
+        .as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    let db = session_manager.get_database();
+
+    let session_uuid = if let Some(sid) = session_id {
+        Some(Uuid::parse_str(&sid).map_err(|e| format!("Invalid session ID: {}", e))?)
+    } else {
+        None
+    };
+
+    CommandAnalyzer::get_command_stats(&db, session_uuid)
+        .await
+        .map_err(|e| format!("Failed to get command stats: {}", e))
+}
+
+#[tauri::command]
+async fn get_most_used_shortcuts(
+    limit: u32,
+    state: State<'_, AppState>,
+) -> Result<Vec<(String, u32)>, String> {
+    let stats = get_command_stats(None, state).await?;
+    Ok(stats
+        .most_used_shortcuts
+        .into_iter()
+        .take(limit as usize)
+        .collect())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -593,7 +632,9 @@ pub fn run() {
             start_input_recording,
             stop_input_recording,
             is_input_recording,
-            cleanup_old_input_events
+            cleanup_old_input_events,
+            get_command_stats,
+            get_most_used_shortcuts
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

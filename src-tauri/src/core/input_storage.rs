@@ -154,6 +154,41 @@ impl InputStorage {
             .execute(pool)
             .await?;
 
+        // Create commands table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS commands (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                timestamp INTEGER NOT NULL,
+                shortcut TEXT NOT NULL,
+                command_type TEXT NOT NULL,
+                app_name TEXT NOT NULL,
+                description TEXT NOT NULL,
+                FOREIGN KEY (session_id) REFERENCES sessions(id)
+            )
+            "#,
+        )
+        .execute(pool)
+        .await?;
+
+        // Create indexes for commands
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_commands_session ON commands(session_id)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_commands_timestamp ON commands(timestamp)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_commands_shortcut ON commands(shortcut)")
+            .execute(pool)
+            .await?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_commands_app ON commands(app_name)")
+            .execute(pool)
+            .await?;
+
         Ok(())
     }
 
