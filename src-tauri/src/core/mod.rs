@@ -7,3 +7,4 @@ pub mod motion_detector;
 pub mod video_encoder;
 pub mod os_activity;
 pub mod session_manager;
+pub mod keyboard_recorder;

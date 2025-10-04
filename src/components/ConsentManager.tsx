@@ -79,7 +79,15 @@ export default function ConsentManager() {
   async function loadConsents() {
     try {
       const allConsents = await invoke<Record<string, boolean>>("get_all_consents");
-      setConsents(allConsents as ConsentState);
+      // Map backend consent keys to frontend state
+      setConsents({
+        screen_recording: allConsents.screen_recording || false,
+        os_activity: allConsents.os_activity || false,
+        keyboard_recording: allConsents.keyboard_recording || false,
+        mouse_recording: allConsents.mouse_recording || false,
+        camera_recording: allConsents.camera_recording || false,
+        microphone_recording: allConsents.microphone_recording || false,
+      });
     } catch (error) {
       console.error("Failed to load consents:", error);
     } finally {

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import KeyboardMonitor from './KeyboardMonitor';
+import KeyboardStats from './KeyboardStats';
 
 interface SessionMetrics {
   total_duration_ms: number;
@@ -9,14 +11,6 @@ interface SessionMetrics {
   unique_apps: number;
   most_used_app: string;
   productivity_score: number;
-}
-
-interface Session {
-  id: string;
-  start_timestamp: number;
-  end_timestamp: number | null;
-  session_type: string | null;
-  device_id: string;
 }
 
 interface AppUsageStats {
@@ -224,7 +218,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
 
       {/* Application Usage */}
       {appStats.length > 0 && (
-        <div>
+        <div className="mb-6">
           <h3 className="font-semibold mb-2">Application Usage</h3>
           <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded">
             <table className="w-full text-sm">
@@ -251,6 +245,16 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
           </div>
         </div>
       )}
+
+      {/* Keyboard Monitoring */}
+      <div className="mb-6">
+        <KeyboardMonitor sessionId={sessionId} />
+      </div>
+
+      {/* Keyboard Statistics */}
+      <div>
+        <KeyboardStats sessionId={sessionId} />
+      </div>
     </div>
   );
 }
