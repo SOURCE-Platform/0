@@ -3,6 +3,7 @@ use std::path::PathBuf;
 pub mod capture;
 pub mod power;
 pub mod os_monitor;
+pub mod input;
 
 #[cfg(target_os = "macos")]
 mod macos;
