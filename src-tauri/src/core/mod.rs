@@ -15,3 +15,4 @@ pub mod ocr_engine;
 pub mod ocr_storage;
 pub mod ocr_processor;
 pub mod search_engine;
+pub mod playback_engine;
