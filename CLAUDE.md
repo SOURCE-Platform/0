@@ -71,11 +71,40 @@ const result = await invoke('greet', { name: 'World' });
 - **serde/serde_json**: Serialization for IPC and data storage
 - **uuid**: Unique identifiers for recorded events
 - **chrono**: Timestamp management for activity tracking
+- **ffmpeg-sys-next 8.0**: Low-level FFmpeg bindings for video encoding
 
 ### Frontend (package.json)
 - **React 19**: UI framework
 - **Vite 7**: Build tool and dev server (fixed port 1420)
 - **@tauri-apps/api**: Frontend bindings for Rust commands
+
+## System Requirements
+
+### FFmpeg (Required for Video Encoding)
+
+The application requires FFmpeg 8.0+ to be installed on the system for video encoding functionality.
+
+**macOS (Homebrew):**
+```bash
+brew install ffmpeg
+```
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt install ffmpeg
+```
+
+**Windows (Chocolatey):**
+```bash
+choco install ffmpeg
+```
+
+**Verification:**
+```bash
+ffmpeg -version  # Should show version 8.0 or higher
+```
+
+The build system automatically detects FFmpeg installation on macOS. If FFmpeg is not found, video encoding will fail at runtime.
 
 ## Development Workflow
 
