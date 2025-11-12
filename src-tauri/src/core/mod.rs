@@ -4,6 +4,7 @@ pub mod config;
 pub mod screen_recorder;
 pub mod storage;
 pub mod motion_detector;
+pub mod ffmpeg_wrapper;
 pub mod video_encoder;
 pub mod os_activity;
 pub mod session_manager;

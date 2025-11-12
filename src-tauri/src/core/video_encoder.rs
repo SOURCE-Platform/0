@@ -180,7 +180,6 @@ impl VideoEncoder {
         self.encode_frames(frames, output_path, fps).await
     }
 
-    #[allow(unused_variables)]
     fn encode_frames_sync(
         frames: Vec<RawFrame>,
         output_path: &PathBuf,
@@ -190,19 +189,9 @@ impl VideoEncoder {
         hardware_acceleration: bool,
         platform: &str,
     ) -> Result<()> {
-        // This is a placeholder implementation since ffmpeg-next requires significant setup
-        // In a real implementation, this would:
-        // 1. Initialize FFmpeg context
-        // 2. Create encoder with specified codec
-        // 3. Configure encoder with CRF, preset, pixel format
-        // 4. Try hardware acceleration, fallback to software if needed
-        // 5. Feed frames to encoder
-        // 6. Write encoded packets to output file
+        use crate::core::ffmpeg_wrapper::FFmpegEncoder;
 
-        // For now, we'll use a simple approach with the image crate to save as individual frames
-        // This is temporary until full FFmpeg integration is implemented
-
-        println!("VideoEncoder: Would encode {} frames to {:?}", frames.len(), output_path);
+        println!("VideoEncoder: Encoding {} frames to {:?}", frames.len(), output_path);
         println!("  Codec: {:?}, Quality: {:?}, FPS: {}", codec, quality, fps);
         println!("  Hardware acceleration: {}, Platform: {}", hardware_acceleration, platform);
 
@@ -211,18 +200,55 @@ impl VideoEncoder {
             std::fs::create_dir_all(parent)?;
         }
 
-        // For testing purposes, create a simple marker file
-        // In production, this would be replaced with actual FFmpeg encoding
-        std::fs::write(
-            output_path,
-            format!(
-                "Video segment: {} frames at {}fps\nCodec: {:?}\nQuality: {:?}\n",
-                frames.len(),
-                fps,
-                codec,
-                quality
-            ),
-        )?;
+        // Get first frame to determine dimensions
+        let first_frame = frames.first().ok_or_else(|| {
+            VideoEncoderError::EncodingFailed("No frames to encode".to_string())
+        })?;
+
+        let width = first_frame.width;
+        let height = first_frame.height;
+        let crf = quality.to_crf();
+
+        // Try hardware acceleration first, fallback to software if it fails
+        let codec_name = if hardware_acceleration {
+            codec.to_ffmpeg_codec_name(true, platform)
+        } else {
+            codec.software_fallback_name().to_string()
+        };
+
+        println!("  Attempting codec: {}", codec_name);
+
+        let mut encoder = match FFmpegEncoder::new(output_path, width, height, fps, &codec_name, crf) {
+            Ok(enc) => {
+                println!("  ✓ Successfully initialized {} encoder", codec_name);
+                enc
+            }
+            Err(e) if hardware_acceleration => {
+                println!("  ✗ Hardware acceleration failed: {}", e);
+                println!("  → Falling back to software encoder");
+
+                let software_codec = codec.software_fallback_name();
+                FFmpegEncoder::new(output_path, width, height, fps, software_codec, crf)
+                    .map_err(|e| VideoEncoderError::FFmpeg(format!(
+                        "Software fallback also failed: {}", e
+                    )))?
+            }
+            Err(e) => {
+                return Err(VideoEncoderError::FFmpeg(format!("Failed to initialize encoder: {}", e)));
+            }
+        };
+
+        // Encode each frame
+        for (i, frame) in frames.iter().enumerate() {
+            encoder.encode_frame(frame)
+                .map_err(|e| VideoEncoderError::FFmpeg(format!("Frame {} encoding failed: {}", i, e)))?;
+        }
+
+        // Flush encoder and write trailer
+        encoder.finish()
+            .map_err(|e| VideoEncoderError::FFmpeg(format!("Failed to finalize video: {}", e)))?;
+
+        println!("  ✓ Successfully encoded {} frames to {:?}", frames.len(), output_path);
 
         Ok(())
     }
