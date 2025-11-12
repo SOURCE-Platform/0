@@ -10,6 +10,7 @@ use core::input_recorder::InputRecorder;
 use core::input_storage::{InputTimeline, TimeRange};
 use core::keyboard_recorder::KeyboardRecorder;
 use core::os_activity::{AppUsageStats, OsActivityRecorder};
+use core::playback_engine::{PlaybackEngine, PlaybackInfo, SeekInfo};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
 use core::search_engine::{SearchEngine, SearchFilters, SearchQuery, SearchResults};
 use core::session_manager::{Session, SessionConfig, SessionManager, SessionMetrics};
@@ -17,11 +18,50 @@ use core::storage::RecordingStorage;
 use models::activity::AppInfo;
 use models::capture::Display;
 use models::input::{KeyboardEvent, KeyboardStats, MouseEvent};
+use chrono;
 use platform::get_platform;
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 use tauri::{Manager, State};
 use uuid::Uuid;
+
+// Timeline data structures
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TimelineData {
+    pub sessions: Vec<TimelineSession>,
+    pub total_duration: u64,
+    pub date_range: DateRange,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DateRange {
+    pub start: i64,
+    pub end: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TimelineSession {
+    pub id: String,
+    pub start_timestamp: i64,
+    pub end_timestamp: Option<i64>,
+    pub session_type: Option<String>,
+    pub applications: Vec<AppUsageSegment>,
+    pub activity_intensity: f32,
+    pub has_screen_recording: bool,
+    pub has_input_recording: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AppUsageSegment {
+    pub app_name: String,
+    pub bundle_id: String,
+    pub start_timestamp: i64,
+    pub end_timestamp: i64,
+    pub focus_duration: i64,
+    pub color: String,
+}
 
 // Application state
 pub struct AppState {
@@ -34,6 +74,7 @@ pub struct AppState {
     pub keyboard_recorder: Option<Arc<KeyboardRecorder>>,
     pub input_recorder: Option<Arc<InputRecorder>>,
     pub search_engine: Arc<SearchEngine>,
+    pub playback_engine: Option<Arc<PlaybackEngine>>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -542,6 +583,352 @@ async fn search_in_session(
         .map_err(|e| format!("Search failed: {}", e))
 }
 
+// Timeline commands
+#[tauri::command]
+async fn get_timeline_data(
+    start_timestamp: i64,
+    end_timestamp: i64,
+    state: State<'_, AppState>,
+) -> Result<TimelineData, String> {
+    let manager = state
+        .session_manager
+        .as_ref()
+        .ok_or("Session manager not initialized")?;
+
+    // Get sessions in range
+    let sessions = manager
+        .get_sessions_in_range(start_timestamp, end_timestamp)
+        .await
+        .map_err(|e| format!("Failed to get sessions: {}", e))?;
+
+    let mut timeline_sessions = Vec::new();
+
+    for session in &sessions {
+        // Get app usage for this session
+        let apps = get_app_usage_for_session(&state.db, &session.id).await?;
+
+        // Convert to AppUsageSegments with colors
+        let app_segments: Vec<AppUsageSegment> = apps
+            .into_iter()
+            .map(|app| AppUsageSegment {
+                app_name: app.app_name.clone(),
+                bundle_id: app.bundle_id.clone(),
+                start_timestamp: app.start_timestamp,
+                end_timestamp: app.end_timestamp.unwrap_or(chrono::Utc::now().timestamp_millis()),
+                focus_duration: app.focus_duration_ms,
+                color: app_color(&app.app_name),
+            })
+            .collect();
+
+        // Calculate activity intensity
+        let activity_intensity = calculate_activity_intensity(&app_segments);
+
+        // Check for recordings
+        let has_screen_recording = check_has_screen_recording(&state.db, &session.id).await?;
+        let has_input_recording = check_has_input_recording(&state.db, &session.id).await?;
+
+        timeline_sessions.push(TimelineSession {
+            id: session.id.clone(),
+            start_timestamp: session.start_timestamp,
+            end_timestamp: session.end_timestamp,
+            session_type: session.session_type.clone(),
+            applications: app_segments,
+            activity_intensity,
+            has_screen_recording,
+            has_input_recording,
+        });
+    }
+
+    // Calculate total duration
+    let total_duration: u64 = timeline_sessions
+        .iter()
+        .map(|s| {
+            let end = s.end_timestamp.unwrap_or(chrono::Utc::now().timestamp_millis());
+            (end - s.start_timestamp) as u64
+        })
+        .sum();
+
+    Ok(TimelineData {
+        sessions: timeline_sessions,
+        total_duration,
+        date_range: DateRange {
+            start: start_timestamp,
+            end: end_timestamp,
+        },
+    })
+}
+
+// Helper functions for timeline
+async fn get_app_usage_for_session(
+    db: &Arc<Database>,
+    session_id: &str,
+) -> Result<Vec<core::os_activity::AppUsage>, String> {
+    sqlx::query_as::<_, core::os_activity::AppUsage>(
+        r#"
+        SELECT id, session_id, app_name, bundle_id, process_id,
+               start_timestamp, end_timestamp, focus_duration_ms, background_duration_ms
+        FROM app_usage
+        WHERE session_id = ?
+        ORDER BY start_timestamp ASC
+        "#
+    )
+    .bind(session_id)
+    .fetch_all(&db.pool)
+    .await
+    .map_err(|e| format!("Failed to get app usage: {}", e))
+}
+
+async fn check_has_screen_recording(db: &Arc<Database>, session_id: &str) -> Result<bool, String> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM screen_recordings WHERE session_id = ?
+        "#,
+    )
+    .bind(session_id)
+    .fetch_one(&db.pool)
+    .await
+    .map_err(|e| format!("Failed to check screen recording: {}", e))?;
+
+    Ok(count > 0)
+}
+
+async fn check_has_input_recording(db: &Arc<Database>, session_id: &str) -> Result<bool, String> {
+    let count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(*) FROM keyboard_events WHERE session_id = ? LIMIT 1
+        "#,
+    )
+    .bind(session_id)
+    .fetch_one(&db.pool)
+    .await
+    .map_err(|e| format!("Failed to check input recording: {}", e))?;
+
+    Ok(count > 0)
+}
+
+fn app_color(app_name: &str) -> String {
+    let mut hasher = DefaultHasher::new();
+    app_name.hash(&mut hasher);
+    let hash = hasher.finish();
+
+    let hue = (hash % 360) as f32;
+    let saturation = 70.0;
+    let lightness = 60.0;
+
+    format!("hsl({}, {}%, {}%)", hue, saturation, lightness)
+}
+
+fn calculate_activity_intensity(apps: &[AppUsageSegment]) -> f32 {
+    // Calculate based on number of app switches
+    let app_switches = apps.len() as f32;
+    let normalized = (app_switches / 20.0).min(1.0); // Cap at 20 switches
+    normalized
+}
+
+// Input event DTOs for overlay
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct KeyboardEventDto {
+    id: String,
+    timestamp: i64,
+    event_type: String,
+    key_char: Option<String>,
+    key_code: i64,
+    modifiers: ModifierDto,
+    app_name: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct ModifierDto {
+    ctrl: bool,
+    shift: bool,
+    alt: bool,
+    meta: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct MouseEventDto {
+    id: String,
+    timestamp: i64,
+    event_type: String,
+    position: PositionDto,
+    button: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct PositionDto {
+    x: i64,
+    y: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct KeyboardEventRow {
+    id: String,
+    timestamp: i64,
+    event_type: String,
+    key_char: Option<String>,
+    key_code: i64,
+    modifiers_ctrl: bool,
+    modifiers_shift: bool,
+    modifiers_alt: bool,
+    modifiers_meta: bool,
+    app_name: String,
+}
+
+#[derive(sqlx::FromRow)]
+struct MouseEventRow {
+    id: String,
+    timestamp: i64,
+    event_type: String,
+    position_x: i64,
+    position_y: i64,
+    button: Option<String>,
+}
+
+// Input event range queries for playback overlay
+#[tauri::command]
+async fn get_keyboard_events_in_range(
+    session_id: String,
+    start_time: i64,
+    end_time: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<KeyboardEventDto>, String> {
+    let rows = sqlx::query_as::<_, KeyboardEventRow>(
+        r#"
+        SELECT id, timestamp, event_type, key_char, key_code,
+               modifiers_ctrl, modifiers_shift, modifiers_alt, modifiers_meta,
+               app_name
+        FROM keyboard_events
+        WHERE session_id = ?
+          AND timestamp >= ?
+          AND timestamp <= ?
+        ORDER BY timestamp ASC
+        LIMIT 100
+        "#
+    )
+    .bind(&session_id)
+    .bind(start_time)
+    .bind(end_time)
+    .fetch_all(&state.db.pool)
+    .await
+    .map_err(|e| format!("Failed to get keyboard events: {}", e))?;
+
+    let events = rows.into_iter().map(|row| KeyboardEventDto {
+        id: row.id,
+        timestamp: row.timestamp,
+        event_type: row.event_type,
+        key_char: row.key_char,
+        key_code: row.key_code,
+        modifiers: ModifierDto {
+            ctrl: row.modifiers_ctrl,
+            shift: row.modifiers_shift,
+            alt: row.modifiers_alt,
+            meta: row.modifiers_meta,
+        },
+        app_name: row.app_name,
+    }).collect();
+
+    Ok(events)
+}
+
+#[tauri::command]
+async fn get_mouse_events_in_range(
+    session_id: String,
+    start_time: i64,
+    end_time: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<MouseEventDto>, String> {
+    let rows = sqlx::query_as::<_, MouseEventRow>(
+        r#"
+        SELECT id, timestamp, event_type, position_x, position_y, button
+        FROM mouse_events
+        WHERE session_id = ?
+          AND timestamp >= ?
+          AND timestamp <= ?
+        ORDER BY timestamp ASC
+        LIMIT 100
+        "#
+    )
+    .bind(&session_id)
+    .bind(start_time)
+    .bind(end_time)
+    .fetch_all(&state.db.pool)
+    .await
+    .map_err(|e| format!("Failed to get mouse events: {}", e))?;
+
+    let events = rows.into_iter().map(|row| MouseEventDto {
+        id: row.id,
+        timestamp: row.timestamp,
+        event_type: row.event_type,
+        position: PositionDto {
+            x: row.position_x,
+            y: row.position_y,
+        },
+        button: row.button,
+    }).collect();
+
+    Ok(events)
+}
+
+// Playback commands
+#[tauri::command]
+async fn get_playback_info(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<PlaybackInfo, String> {
+    let engine = state
+        .playback_engine
+        .as_ref()
+        .ok_or("Playback engine not initialized")?;
+
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|e| format!("Invalid session ID: {}", e))?;
+
+    engine
+        .get_playback_info(uuid)
+        .await
+        .map_err(|e| format!("Failed to get playback info: {}", e))
+}
+
+#[tauri::command]
+async fn seek_to_timestamp(
+    session_id: String,
+    timestamp: i64,
+    state: State<'_, AppState>,
+) -> Result<SeekInfo, String> {
+    let engine = state
+        .playback_engine
+        .as_ref()
+        .ok_or("Playback engine not initialized")?;
+
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|e| format!("Invalid session ID: {}", e))?;
+
+    engine
+        .seek_to_timestamp(uuid, timestamp)
+        .await
+        .map_err(|e| format!("Failed to seek: {}", e))
+}
+
+#[tauri::command]
+async fn get_frame_at_timestamp(
+    session_id: String,
+    timestamp: i64,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let engine = state
+        .playback_engine
+        .as_ref()
+        .ok_or("Playback engine not initialized")?;
+
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|e| format!("Invalid session ID: {}", e))?;
+
+    engine
+        .get_frame_at_timestamp(uuid, timestamp)
+        .await
+        .map_err(|e| format!("Failed to get frame: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -646,6 +1033,10 @@ pub fn run() {
                 let search_engine = Arc::new(SearchEngine::new(db.clone()));
                 println!("Search engine initialized successfully");
 
+                // Initialize playback engine
+                let playback_engine = Arc::new(PlaybackEngine::new(storage.clone(), db.clone()));
+                println!("Playback engine initialized successfully");
+
                 app.manage(AppState {
                     db,
                     consent_manager,
@@ -656,6 +1047,7 @@ pub fn run() {
                     keyboard_recorder,
                     input_recorder,
                     search_engine,
+                    playback_engine: Some(playback_engine),
                 });
             });
 
@@ -698,7 +1090,13 @@ pub fn run() {
             get_most_used_shortcuts,
             search_text,
             search_suggestions,
-            search_in_session
+            search_in_session,
+            get_timeline_data,
+            get_keyboard_events_in_range,
+            get_mouse_events_in_range,
+            get_playback_info,
+            seek_to_timestamp,
+            get_frame_at_timestamp
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
