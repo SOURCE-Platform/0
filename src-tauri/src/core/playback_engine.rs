@@ -74,11 +74,11 @@ impl PlaybackEngine {
         .fetch_one(&self.db.pool)
         .await?;
 
-        // Get video segments (frames captured)
+        // Get video segments (encoded MP4 files)
         let segments = sqlx::query_as::<_, VideoSegmentRow>(
             r#"
             SELECT id, session_id, file_path, start_timestamp, end_timestamp, duration_ms
-            FROM frames
+            FROM video_segments
             WHERE session_id = ?
             ORDER BY start_timestamp ASC
             "#

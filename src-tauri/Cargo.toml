@@ -34,8 +34,9 @@ hostname = "0.4"
 tesseract = "0.14"
 leptonica-sys = "0.4"
 # NOTE: ffmpeg-next 6.0 is incompatible with FFmpeg 8.0+ due to removed avfft.h
-# Waiting for ffmpeg-next 7.x or alternative solution
+# Using ffmpeg-sys-next (low-level bindings) until ffmpeg-next 7.x is available
 # ffmpeg-next = "6.0"
+ffmpeg-sys-next = "8.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = "0.2"
