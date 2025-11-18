@@ -15,9 +15,23 @@ use core::screen_recorder::{RecordingStatus, ScreenRecorder};
 use core::search_engine::{SearchEngine, SearchFilters, SearchQuery, SearchResults};
 use core::session_manager::{Session, SessionConfig, SessionManager, SessionMetrics};
 use core::storage::RecordingStorage;
+
+// Pose estimation and audio processing modules
+use core::audio_recorder::AudioRecorder;
+use core::emotion_detector::EmotionDetector;
+use core::pose_detector::PoseDetector;
+use core::speaker_diarizer::SpeakerDiarizer;
+use core::speech_transcriber::SpeechTranscriber;
+
 use models::activity::AppInfo;
+use models::audio::{
+    AudioConfig, AudioDevice, EmotionStatistics, SpeakerInfo, TranscriptSearchResult,
+    TranscriptSegmentDto, WhisperModelSize, AudioDeviceDto, EmotionResultDto, SpeakerSegmentDto,
+    AudioSourceDto,
+};
 use models::capture::Display;
 use models::input::{KeyboardEvent, KeyboardStats, MouseEvent};
+use models::pose::{FacialExpressionDto, PoseConfig, PoseFrameDto, PoseStatistics};
 use chrono;
 use platform::get_platform;
 use std::collections::hash_map::DefaultHasher;
@@ -75,6 +89,13 @@ pub struct AppState {
     pub input_recorder: Option<Arc<InputRecorder>>,
     pub search_engine: Arc<SearchEngine>,
     pub playback_engine: Option<Arc<PlaybackEngine>>,
+
+    // Pose estimation and audio processing modules
+    pub pose_detector: Option<Arc<PoseDetector>>,
+    pub audio_recorder: Option<Arc<AudioRecorder>>,
+    pub speech_transcriber: Option<Arc<SpeechTranscriber>>,
+    pub speaker_diarizer: Option<Arc<SpeakerDiarizer>>,
+    pub emotion_detector: Option<Arc<EmotionDetector>>,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -929,6 +950,295 @@ async fn get_frame_at_timestamp(
         .map_err(|e| format!("Failed to get frame: {}", e))
 }
 
+// ==============================================================================
+// Pose Tracking Commands
+// ==============================================================================
+
+#[tauri::command]
+async fn start_pose_tracking(
+    session_id: String,
+    config: PoseConfig,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let detector = state
+        .pose_detector
+        .as_ref()
+        .ok_or("Pose detector not initialized")?;
+
+    detector
+        .start_tracking(session_id, config)
+        .await
+        .map_err(|e| format!("Failed to start pose tracking: {}", e))
+}
+
+#[tauri::command]
+async fn stop_pose_tracking(state: State<'_, AppState>) -> Result<(), String> {
+    let detector = state
+        .pose_detector
+        .as_ref()
+        .ok_or("Pose detector not initialized")?;
+
+    detector
+        .stop_tracking()
+        .await
+        .map_err(|e| format!("Failed to stop pose tracking: {}", e))
+}
+
+#[tauri::command]
+async fn get_pose_frames(
+    session_id: String,
+    start: i64,
+    end: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<PoseFrameDto>, String> {
+    let detector = state
+        .pose_detector
+        .as_ref()
+        .ok_or("Pose detector not initialized")?;
+
+    detector
+        .get_pose_frames(&session_id, start, end)
+        .await
+        .map_err(|e| format!("Failed to get pose frames: {}", e))
+}
+
+#[tauri::command]
+async fn get_facial_expressions(
+    session_id: String,
+    expression_type: Option<String>,
+    start: i64,
+    end: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<FacialExpressionDto>, String> {
+    let detector = state
+        .pose_detector
+        .as_ref()
+        .ok_or("Pose detector not initialized")?;
+
+    detector
+        .get_facial_expressions(&session_id, expression_type, start, end)
+        .await
+        .map_err(|e| format!("Failed to get facial expressions: {}", e))
+}
+
+#[tauri::command]
+async fn get_pose_statistics(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<PoseStatistics, String> {
+    let detector = state
+        .pose_detector
+        .as_ref()
+        .ok_or("Pose detector not initialized")?;
+
+    detector
+        .get_pose_statistics(&session_id)
+        .await
+        .map_err(|e| format!("Failed to get pose statistics: {}", e))
+}
+
+// ==============================================================================
+// Audio Recording Commands
+// ==============================================================================
+
+#[tauri::command]
+async fn start_audio_recording(
+    session_id: String,
+    config: AudioConfig,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let recorder = state
+        .audio_recorder
+        .as_ref()
+        .ok_or("Audio recorder not initialized")?;
+
+    recorder
+        .start_recording(session_id, config)
+        .await
+        .map_err(|e| format!("Failed to start audio recording: {}", e))
+}
+
+#[tauri::command]
+async fn stop_audio_recording(state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state
+        .audio_recorder
+        .as_ref()
+        .ok_or("Audio recorder not initialized")?;
+
+    recorder
+        .stop_recording()
+        .await
+        .map_err(|e| format!("Failed to stop audio recording: {}", e))
+}
+
+#[tauri::command]
+async fn get_audio_devices() -> Result<Vec<AudioDeviceDto>, String> {
+    let devices = AudioRecorder::get_devices()
+        .await
+        .map_err(|e| format!("Failed to get audio devices: {}", e))?;
+
+    Ok(devices.into_iter().map(|d| AudioDeviceDto {
+        id: d.id,
+        name: d.name,
+        device_type: d.device_type.to_string().to_string(),
+        is_default: d.is_default,
+    }).collect())
+}
+
+// ==============================================================================
+// Speech Transcription Commands
+// ==============================================================================
+
+#[tauri::command]
+async fn get_transcripts(
+    session_id: String,
+    start: i64,
+    end: i64,
+    speaker_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<TranscriptSegmentDto>, String> {
+    let transcriber = state
+        .speech_transcriber
+        .as_ref()
+        .ok_or("Speech transcriber not initialized")?;
+
+    let segments = transcriber
+        .get_transcripts(&session_id, start, end, speaker_id)
+        .await
+        .map_err(|e| format!("Failed to get transcripts: {}", e))?;
+
+    Ok(segments.into_iter().map(|s| TranscriptSegmentDto {
+        timestamp: s.start_timestamp,
+        end_timestamp: s.end_timestamp,
+        text: s.text,
+        language: s.language,
+        speaker_id: s.speaker_id,
+        confidence: s.confidence,
+    }).collect())
+}
+
+#[tauri::command]
+async fn search_transcripts(
+    query: String,
+    session_id: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<Vec<TranscriptSegmentDto>, String> {
+    let transcriber = state
+        .speech_transcriber
+        .as_ref()
+        .ok_or("Speech transcriber not initialized")?;
+
+    let segments = transcriber
+        .search_transcripts(&query, session_id, limit.unwrap_or(50), offset.unwrap_or(0))
+        .await
+        .map_err(|e| format!("Failed to search transcripts: {}", e))?;
+
+    Ok(segments.into_iter().map(|s| TranscriptSegmentDto {
+        timestamp: s.start_timestamp,
+        end_timestamp: s.end_timestamp,
+        text: s.text,
+        language: s.language,
+        speaker_id: s.speaker_id,
+        confidence: s.confidence,
+    }).collect())
+}
+
+// ==============================================================================
+// Speaker Diarization Commands
+// ==============================================================================
+
+#[tauri::command]
+async fn get_speakers(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<SpeakerInfo>, String> {
+    let diarizer = state
+        .speaker_diarizer
+        .as_ref()
+        .ok_or("Speaker diarizer not initialized")?;
+
+    diarizer
+        .get_speakers(&session_id)
+        .await
+        .map_err(|e| format!("Failed to get speakers: {}", e))
+}
+
+#[tauri::command]
+async fn get_speaker_segments(
+    recording_id: String,
+    speaker_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<SpeakerSegmentDto>, String> {
+    let diarizer = state
+        .speaker_diarizer
+        .as_ref()
+        .ok_or("Speaker diarizer not initialized")?;
+
+    let segments = diarizer
+        .get_speaker_segments(&recording_id, speaker_id)
+        .await
+        .map_err(|e| format!("Failed to get speaker segments: {}", e))?;
+
+    Ok(segments.into_iter().map(|s| SpeakerSegmentDto {
+        speaker_id: s.speaker_id,
+        start_timestamp: s.start_timestamp,
+        end_timestamp: s.end_timestamp,
+        confidence: s.confidence,
+    }).collect())
+}
+
+// ==============================================================================
+// Emotion Detection Commands
+// ==============================================================================
+
+#[tauri::command]
+async fn get_emotions(
+    session_id: String,
+    start: i64,
+    end: i64,
+    speaker_id: Option<String>,
+    emotion_type: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<EmotionResultDto>, String> {
+    let detector = state
+        .emotion_detector
+        .as_ref()
+        .ok_or("Emotion detector not initialized")?;
+
+    let emotions = detector
+        .get_emotions(&session_id, start, end, speaker_id, emotion_type)
+        .await
+        .map_err(|e| format!("Failed to get emotions: {}", e))?;
+
+    Ok(emotions.into_iter().map(|e| EmotionResultDto {
+        timestamp: e.timestamp,
+        speaker_id: e.speaker_id,
+        emotion: e.emotion.to_string().to_string(),
+        confidence: e.confidence,
+        valence: e.valence,
+        arousal: e.arousal,
+    }).collect())
+}
+
+#[tauri::command]
+async fn get_emotion_statistics(
+    session_id: String,
+    speaker_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<EmotionStatistics, String> {
+    let detector = state
+        .emotion_detector
+        .as_ref()
+        .ok_or("Emotion detector not initialized")?;
+
+    detector
+        .get_emotion_statistics(&session_id, speaker_id)
+        .await
+        .map_err(|e| format!("Failed to get emotion statistics: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1037,6 +1347,72 @@ pub fn run() {
                 let playback_engine = Arc::new(PlaybackEngine::new(storage.clone(), db.clone()));
                 println!("Playback engine initialized successfully");
 
+                // Initialize pose detector
+                let pose_detector = match PoseDetector::new(consent_manager.clone(), db.clone()).await {
+                    Ok(detector) => {
+                        println!("Pose detector initialized successfully");
+                        Some(Arc::new(detector))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize pose detector: {}", e);
+                        eprintln!("Pose tracking features will be unavailable");
+                        None
+                    }
+                };
+
+                // Initialize audio recorder
+                let audio_path = data_dir.join("audio");
+                let audio_recorder = match AudioRecorder::new(consent_manager.clone(), db.clone(), audio_path).await {
+                    Ok(recorder) => {
+                        println!("Audio recorder initialized successfully");
+                        Some(Arc::new(recorder))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize audio recorder: {}", e);
+                        eprintln!("Audio recording features will be unavailable");
+                        None
+                    }
+                };
+
+                // Initialize speech transcriber
+                let speech_transcriber = match SpeechTranscriber::new(db.clone(), WhisperModelSize::Base).await {
+                    Ok(transcriber) => {
+                        println!("Speech transcriber initialized successfully");
+                        Some(Arc::new(transcriber))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize speech transcriber: {}", e);
+                        eprintln!("Speech transcription features will be unavailable");
+                        None
+                    }
+                };
+
+                // Initialize speaker diarizer
+                let speaker_diarizer = match SpeakerDiarizer::new(db.clone()).await {
+                    Ok(diarizer) => {
+                        println!("Speaker diarizer initialized successfully");
+                        Some(Arc::new(diarizer))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize speaker diarizer: {}", e);
+                        eprintln!("Speaker diarization features will be unavailable");
+                        None
+                    }
+                };
+
+                // Initialize emotion detector
+                let emotion_detector = match EmotionDetector::new(db.clone()).await {
+                    Ok(detector) => {
+                        println!("Emotion detector initialized successfully");
+                        Some(Arc::new(detector))
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: Failed to initialize emotion detector: {}", e);
+                        eprintln!("Emotion detection features will be unavailable");
+                        None
+                    }
+                };
+
                 app.manage(AppState {
                     db,
                     consent_manager,
@@ -1048,6 +1424,11 @@ pub fn run() {
                     input_recorder,
                     search_engine,
                     playback_engine: Some(playback_engine),
+                    pose_detector,
+                    audio_recorder,
+                    speech_transcriber,
+                    speaker_diarizer,
+                    emotion_detector,
                 });
             });
 
@@ -1096,7 +1477,26 @@ pub fn run() {
             get_mouse_events_in_range,
             get_playback_info,
             seek_to_timestamp,
-            get_frame_at_timestamp
+            get_frame_at_timestamp,
+            // Pose tracking commands
+            start_pose_tracking,
+            stop_pose_tracking,
+            get_pose_frames,
+            get_facial_expressions,
+            get_pose_statistics,
+            // Audio recording commands
+            start_audio_recording,
+            stop_audio_recording,
+            get_audio_devices,
+            // Speech transcription commands
+            get_transcripts,
+            search_transcripts,
+            // Speaker diarization commands
+            get_speakers,
+            get_speaker_segments,
+            // Emotion detection commands
+            get_emotions,
+            get_emotion_statistics
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
