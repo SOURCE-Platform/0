@@ -412,6 +412,12 @@ pub enum AudioError {
     #[error("Device not found: {0}")]
     DeviceNotFound(String),
 
+    #[error("Device enumeration failed: {0}")]
+    DeviceEnumerationError(String),
+
+    #[error("Device configuration error: {0}")]
+    DeviceConfigError(String),
+
     #[error("Invalid audio format: {0}")]
     InvalidFormat(String),
 

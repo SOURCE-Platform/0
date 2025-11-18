@@ -1,64 +1,122 @@
 // Platform-specific audio capture for Linux
-// Uses PulseAudio/ALSA for microphone and monitor sources for loopback
+// Uses cpal for microphone and PulseAudio monitor sources for loopback
 
 use crate::models::audio::{AudioDevice, AudioDeviceType, AudioError, AudioResult};
+use cpal::traits::{DeviceTrait, HostTrait};
 
 pub struct LinuxAudioCapture {
-    // TODO: Add PulseAudio/ALSA handles
+    device: Option<cpal::Device>,
+    stream: Option<cpal::Stream>,
 }
 
 impl LinuxAudioCapture {
     pub fn new() -> AudioResult<Self> {
-        // TODO: Initialize PulseAudio or ALSA
-        Ok(Self {})
+        Ok(Self {
+            device: None,
+            stream: None,
+        })
     }
 
     /// Enumerate all audio devices
     pub fn enumerate_devices() -> AudioResult<Vec<AudioDevice>> {
-        // TODO: Use PulseAudio to enumerate sources
-        // pa_context_get_source_info_list for all sources
-        // Monitor sources are for loopback (sink.monitor)
+        let mut devices = Vec::new();
 
-        // Placeholder implementation
-        Ok(vec![
-            AudioDevice {
-                id: "default_source".to_string(),
-                name: "Default Microphone".to_string(),
-                device_type: AudioDeviceType::Microphone,
-                is_default: true,
-                sample_rate: 48000,
-                channels: 2,
-            },
-            AudioDevice {
-                id: "sink_monitor".to_string(),
-                name: "System Audio (Monitor)".to_string(),
-                device_type: AudioDeviceType::SystemLoopback,
-                is_default: false,
-                sample_rate: 48000,
-                channels: 2,
-            },
-        ])
+        // Use cpal to enumerate input devices
+        let host = cpal::default_host();
+        let default_input = host.default_input_device();
+
+        // Enumerate all input devices
+        let input_devices = host.input_devices()
+            .map_err(|e| AudioError::DeviceEnumerationError(format!("Failed to enumerate input devices: {}", e)))?;
+
+        for device in input_devices {
+            let name = device.name()
+                .unwrap_or_else(|_| "Unknown Device".to_string());
+
+            // Skip monitor sources - we'll add them separately
+            let is_monitor = name.contains(".monitor") || name.contains("Monitor of");
+
+            // Get default config to extract sample rate and channels
+            let default_config = device.default_input_config()
+                .map_err(|e| AudioError::DeviceEnumerationError(format!("Failed to get device config: {}", e)))?;
+
+            let is_default = default_input.as_ref()
+                .and_then(|d| d.name().ok())
+                .map(|n| n == name)
+                .unwrap_or(false);
+
+            if is_monitor {
+                // This is a monitor source (loopback)
+                devices.push(AudioDevice {
+                    id: name.clone(),
+                    name: format!("{} (System Loopback)", name),
+                    device_type: AudioDeviceType::SystemLoopback,
+                    is_default: false,
+                    sample_rate: default_config.sample_rate().0,
+                    channels: default_config.channels() as u32,
+                });
+            } else {
+                // Regular input device (microphone)
+                devices.push(AudioDevice {
+                    id: name.clone(),
+                    name: name.clone(),
+                    device_type: AudioDeviceType::Microphone,
+                    is_default,
+                    sample_rate: default_config.sample_rate().0,
+                    channels: default_config.channels() as u32,
+                });
+            }
+        }
+
+        Ok(devices)
     }
 
     /// Start capturing from a device
     pub fn start_capture(&mut self, device_id: &str) -> AudioResult<()> {
-        // TODO: Start PulseAudio/ALSA capture
-        // For loopback: Use monitor source (e.g., "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor")
-        // For microphone: Use input source
+        let host = cpal::default_host();
 
-        println!("Starting Linux audio capture for device: {}", device_id);
+        // Find the device by name/id
+        let device = if device_id == "default" {
+            host.default_input_device()
+                .ok_or_else(|| AudioError::DeviceNotFound("No default input device".to_string()))?
+        } else {
+            // Search through input devices for matching name
+            let devices = host.input_devices()
+                .map_err(|e| AudioError::DeviceEnumerationError(format!("Failed to enumerate devices: {}", e)))?;
+
+            devices
+                .filter(|d| d.name().map(|n| n == device_id || n.contains(device_id)).unwrap_or(false))
+                .next()
+                .ok_or_else(|| AudioError::DeviceNotFound(format!("Device not found: {}", device_id)))?
+        };
+
+        let config = device.default_input_config()
+            .map_err(|e| AudioError::DeviceConfigError(format!("Failed to get config: {}", e)))?;
+
+        let is_monitor = device_id.contains(".monitor") || device_id.contains("Monitor of");
+
+        println!("Starting Linux audio capture for device: {} ({}Hz, {} channels, monitor: {})",
+            device_id, config.sample_rate().0, config.channels(), is_monitor);
+
+        self.device = Some(device);
+        // Note: PulseAudio monitor sources work like regular input sources
+        // No special handling needed compared to microphones
+
         Ok(())
     }
 
     /// Stop capturing
     pub fn stop_capture(&mut self) -> AudioResult<()> {
-        // TODO: Stop PulseAudio/ALSA capture
+        self.stream = None;
+        self.device = None;
+        println!("Stopped Linux audio capture");
         Ok(())
     }
 
     /// Get audio samples (non-blocking)
     pub fn read_samples(&mut self) -> AudioResult<Vec<f32>> {
-        // TODO: Read from PulseAudio/ALSA buffer
+        // TODO: Implement ring buffer for audio samples
+        // This will be populated by the cpal stream callback
         Ok(vec![])
     }
 }

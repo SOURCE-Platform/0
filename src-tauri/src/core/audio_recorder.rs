@@ -144,26 +144,29 @@ impl AudioRecorder {
 
     /// Get available audio devices
     pub async fn get_devices() -> AudioResult<Vec<AudioDevice>> {
-        // TODO: Implement platform-specific device enumeration using cpal
-        // For now, return placeholder devices
-        Ok(vec![
-            AudioDevice {
-                id: "default_mic".to_string(),
-                name: "Default Microphone".to_string(),
-                device_type: AudioDeviceType::Microphone,
-                is_default: true,
-                sample_rate: 48000,
-                channels: 2,
-            },
-            AudioDevice {
-                id: "system_loopback".to_string(),
-                name: "System Audio".to_string(),
-                device_type: AudioDeviceType::SystemLoopback,
-                is_default: false,
-                sample_rate: 48000,
-                channels: 2,
-            },
-        ])
+        // Use platform-specific audio capture to enumerate devices
+        #[cfg(target_os = "macos")]
+        {
+            use crate::platform::audio::MacOSAudioCapture;
+            MacOSAudioCapture::enumerate_devices()
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            use crate::platform::audio::WindowsAudioCapture;
+            WindowsAudioCapture::enumerate_devices()
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            use crate::platform::audio::LinuxAudioCapture;
+            LinuxAudioCapture::enumerate_devices()
+        }
+
+        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
+        {
+            Err(AudioError::NotSupported)
+        }
     }
 
     /// Store audio recording in database
