@@ -4,6 +4,8 @@ pub mod capture;
 pub mod power;
 pub mod os_monitor;
 pub mod input;
+pub mod audio;
+pub mod pose;
 
 #[cfg(target_os = "macos")]
 mod macos;

@@ -26,3 +26,6 @@ pub mod audio_recorder;
 pub mod speech_transcriber;
 pub mod speaker_diarizer;
 pub mod emotion_detector;
+
+// ML model utilities
+pub mod ml_models;
