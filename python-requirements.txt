@@ -1,0 +1,69 @@
+# Python dependencies for pose estimation and audio processing modules
+# These are required for MediaPipe, Whisper, pyannote.audio, and other ML models
+
+# Core dependencies
+numpy>=1.24.0
+scipy>=1.10.0
+
+# Pose estimation - MediaPipe
+mediapipe>=0.10.11
+
+# Computer vision
+opencv-python>=4.8.0
+
+# Audio processing
+librosa>=0.10.0              # Audio analysis
+soundfile>=0.12.0            # Audio I/O
+resampy>=0.4.2               # Audio resampling
+
+# Speech transcription - OpenAI Whisper
+openai-whisper>=20231117
+# Alternative: faster-whisper for optimized inference
+# faster-whisper>=0.10.0
+
+# Speaker diarization - pyannote.audio
+pyannote.audio>=3.1.1
+pyannote.core>=5.0.0
+
+# Audio source separation - Demucs
+demucs>=4.0.1
+
+# Speech emotion recognition - SpeechBrain
+speechbrain>=1.0.0
+
+# Deep learning frameworks
+torch>=2.2.0                 # PyTorch (CPU or CUDA)
+# For GPU support, install specific CUDA version:
+# torch>=2.2.0+cu118 --index-url https://download.pytorch.org/whl/cu118
+
+# ONNX Runtime (for optimized inference)
+onnxruntime>=1.17.0          # CPU version
+# For GPU: onnxruntime-gpu>=1.17.0
+
+# Transformers (for emotion detection models)
+transformers>=4.36.0
+
+# Utilities
+tqdm>=4.66.0                 # Progress bars
+PyYAML>=6.0.0                # Configuration files
+huggingface-hub>=0.20.0      # Model downloads
+
+# Optional: Audio preprocessing
+noisereduce>=3.0.0           # Noise reduction
+pydub>=0.25.0                # Audio manipulation
+
+# Installation instructions:
+# 1. CPU-only (recommended for development):
+#    pip install -r python-requirements.txt
+#
+# 2. GPU support (CUDA 11.8):
+#    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#    pip install -r python-requirements.txt
+#
+# 3. Apple Silicon (M1/M2/M3):
+#    Install PyTorch with Metal backend:
+#    pip install torch torchvision torchaudio
+#    pip install -r python-requirements.txt
+#
+# Note: Total download size ~5-10 GB depending on configuration
+# Models will be automatically downloaded on first use (additional ~5-20 GB)

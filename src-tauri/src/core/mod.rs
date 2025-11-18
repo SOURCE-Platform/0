@@ -17,3 +17,12 @@ pub mod ocr_storage;
 pub mod ocr_processor;
 pub mod search_engine;
 pub mod playback_engine;
+
+// Pose estimation and facial tracking
+pub mod pose_detector;
+
+// Audio processing modules
+pub mod audio_recorder;
+pub mod speech_transcriber;
+pub mod speaker_diarizer;
+pub mod emotion_detector;
