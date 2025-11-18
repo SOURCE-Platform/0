@@ -47,92 +47,248 @@ pub trait MediaPipeBridge: Send + Sync {
 // PyO3 Implementation (Python MediaPipe)
 // ==============================================================================
 
-#[cfg(feature = "pyo3")]
+#[cfg(feature = "ml-pyo3")]
 pub mod pyo3_backend {
     use super::*;
     use pyo3::prelude::*;
-    use pyo3::types::PyBytes;
+    use pyo3::types::{PyBytes, PyDict};
+    use serde_json::Value;
 
     pub struct PyO3MediaPipe {
-        // Python MediaPipe objects
-        pose_detector: Option<PyObject>,
-        face_mesh: Option<PyObject>,
-        hands_detector: Option<PyObject>,
+        // Python inference module
+        inference_module: PyObject,
         config: PoseConfig,
+        initialized: bool,
     }
 
     impl MediaPipeBridge for PyO3MediaPipe {
         fn new(config: &PoseConfig) -> PoseResult<Self> {
-            // TODO: Initialize Python MediaPipe
-            // Python::with_gil(|py| {
-            //     let mediapipe = py.import("mediapipe")?;
-            //     let solutions = mediapipe.getattr("solutions")?;
-            //
-            //     let pose_detector = if config.enable_body_tracking {
-            //         let pose = solutions.getattr("pose")?;
-            //         Some(pose.call_method1("Pose", (
-            //             config.min_detection_confidence,
-            //             config.min_tracking_confidence,
-            //         ))?.into())
-            //     } else {
-            //         None
-            //     };
-            //
-            //     // Similar for face_mesh and hands
-            //     Ok(Self {
-            //         pose_detector,
-            //         face_mesh: None,
-            //         hands_detector: None,
-            //         config: config.clone(),
-            //     })
-            // })
+            Python::with_gil(|py| {
+                // Add python directory to sys.path
+                let sys = py.import("sys")
+                    .map_err(|e| PoseError::ModelLoadFailed(format!("Failed to import sys: {}", e)))?;
 
-            println!("PyO3MediaPipe initialized (placeholder)");
-            Ok(Self {
-                pose_detector: None,
-                face_mesh: None,
-                hands_detector: None,
-                config: config.clone(),
+                let path_list = sys.getattr("path")
+                    .map_err(|e| PoseError::ModelLoadFailed(format!("Failed to get sys.path: {}", e)))?;
+
+                // Get the path to python directory (relative to Cargo.toml)
+                let python_dir = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join("src-tauri")
+                    .join("python");
+
+                path_list.call_method1("insert", (0, python_dir.to_str().unwrap()))
+                    .map_err(|e| PoseError::ModelLoadFailed(format!("Failed to add python dir to path: {}", e)))?;
+
+                // Import the MediaPipe inference module
+                let inference_module = py.import("mediapipe_inference")
+                    .map_err(|e| PoseError::ModelLoadFailed(format!(
+                        "Failed to import mediapipe_inference: {}. Make sure Python dependencies are installed (pip install -r requirements.txt)",
+                        e
+                    )))?;
+
+                println!("PyO3MediaPipe initialized with config: enable_body={}, enable_face={}, enable_hands={}",
+                    config.enable_body_tracking, config.enable_face_tracking, config.enable_hand_tracking);
+
+                Ok(Self {
+                    inference_module: inference_module.into(),
+                    config: config.clone(),
+                    initialized: true,
+                })
             })
         }
 
         fn process_frame(&self, frame_data: &[u8], width: u32, height: u32) -> PoseResult<MediaPipeResult> {
-            // TODO: Run MediaPipe inference via Python
-            // Python::with_gil(|py| {
-            //     // Convert frame_data to numpy array
-            //     let np = py.import("numpy")?;
-            //     let frame = PyBytes::new(py, frame_data);
-            //     let image = np.call_method1("frombuffer", (frame, "uint8"))?
-            //         .call_method1("reshape", ((height, width, 4)))?;
-            //
-            //     // Run pose detection
-            //     let results = self.pose_detector.call_method1(py, "process", (image,))?;
-            //
-            //     // Extract landmarks
-            //     // ... parse results and convert to BodyPose/FaceMesh/HandPose
-            //
-            //     Ok(MediaPipeResult {
-            //         body_pose: None,
-            //         face_mesh: None,
-            //         hands: vec![],
-            //         processing_time_ms: 0,
-            //     })
-            // })
+            let start_time = std::time::Instant::now();
 
-            Ok(MediaPipeResult {
-                body_pose: None,
-                face_mesh: None,
-                hands: vec![],
-                processing_time_ms: 0,
+            Python::with_gil(|py| {
+                // Get the inference module
+                let module = self.inference_module.as_ref(py);
+
+                // Call process_image_bytes function
+                let process_fn = module.getattr("process_image_bytes")
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to get process_image_bytes: {}", e)))?;
+
+                // Convert frame data to PyBytes
+                let image_bytes = PyBytes::new(py, frame_data);
+
+                // Call the function with arguments
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("image_bytes", image_bytes)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set image_bytes: {}", e)))?;
+                kwargs.set_item("width", width)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set width: {}", e)))?;
+                kwargs.set_item("height", height)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set height: {}", e)))?;
+                kwargs.set_item("enable_pose", self.config.enable_body_tracking)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set enable_pose: {}", e)))?;
+                kwargs.set_item("enable_face", self.config.enable_face_tracking)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set enable_face: {}", e)))?;
+                kwargs.set_item("enable_hands", self.config.enable_hand_tracking)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set enable_hands: {}", e)))?;
+                kwargs.set_item("model_complexity", 2) // Use heavy model
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to set model_complexity: {}", e)))?;
+
+                // Call the function
+                let result_json = process_fn.call((), Some(kwargs))
+                    .map_err(|e| PoseError::InferenceFailed(format!("MediaPipe inference failed: {}", e)))?;
+
+                // Convert to string
+                let json_str: String = result_json.extract()
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to extract JSON: {}", e)))?;
+
+                // Parse JSON
+                let result: Value = serde_json::from_str(&json_str)
+                    .map_err(|e| PoseError::InferenceFailed(format!("Failed to parse JSON: {}", e)))?;
+
+                // Convert to MediaPipeResult
+                let body_pose = if let Some(pose_data) = result.get("body_pose") {
+                    if !pose_data.is_null() {
+                        Some(Self::parse_body_pose(pose_data)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let face_mesh = if let Some(face_data) = result.get("face_mesh") {
+                    if !face_data.is_null() {
+                        Some(Self::parse_face_mesh(face_data)?)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let hands = if let Some(hands_data) = result.get("hands") {
+                    if let Some(hands_array) = hands_data.as_array() {
+                        hands_array.iter()
+                            .filter_map(|hand| Self::parse_hand(hand).ok())
+                            .collect()
+                    } else {
+                        vec![]
+                    }
+                } else {
+                    vec![]
+                };
+
+                let processing_time_ms = start_time.elapsed().as_millis() as u64;
+
+                Ok(MediaPipeResult {
+                    body_pose,
+                    face_mesh,
+                    hands,
+                    processing_time_ms,
+                })
             })
         }
 
         fn is_initialized(&self) -> bool {
-            self.pose_detector.is_some() || self.face_mesh.is_some() || self.hands_detector.is_some()
+            self.initialized
         }
 
         fn get_model_info(&self) -> String {
-            "PyO3 MediaPipe Bridge (Python backend)".to_string()
+            format!(
+                "PyO3 MediaPipe Bridge (Python backend) - Body: {}, Face: {}, Hands: {}",
+                self.config.enable_body_tracking,
+                self.config.enable_face_tracking,
+                self.config.enable_hand_tracking
+            )
+        }
+    }
+
+    impl PyO3MediaPipe {
+        fn parse_body_pose(data: &Value) -> PoseResult<BodyPose> {
+            let keypoints = data.get("keypoints")
+                .and_then(|k| k.as_array())
+                .ok_or_else(|| PoseError::InferenceFailed("Missing body keypoints".to_string()))?;
+
+            let landmarks: Vec<Keypoint3D> = keypoints.iter()
+                .map(|kp| Keypoint3D {
+                    x: kp.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    y: kp.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    z: kp.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    visibility: kp.get("visibility").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                })
+                .collect();
+
+            Ok(BodyPose {
+                landmarks,
+                confidence: 0.0, // Not provided by MediaPipe
+                classification: PoseClassification::Unknown,
+            })
+        }
+
+        fn parse_face_mesh(data: &Value) -> PoseResult<FaceMesh> {
+            let landmarks_data = data.get("landmarks")
+                .and_then(|l| l.as_array())
+                .ok_or_else(|| PoseError::InferenceFailed("Missing face landmarks".to_string()))?;
+
+            let landmarks: Vec<Keypoint3D> = landmarks_data.iter()
+                .map(|lm| Keypoint3D {
+                    x: lm.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    y: lm.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    z: lm.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    visibility: 1.0, // Face landmarks don't have visibility
+                })
+                .collect();
+
+            // Parse blendshapes
+            let blendshapes_data = data.get("blendshapes")
+                .and_then(|b| b.as_object())
+                .ok_or_else(|| PoseError::InferenceFailed("Missing blendshapes".to_string()))?;
+
+            let blendshapes = FaceBlendshapes {
+                eye_blink_left: blendshapes_data.get("eyeBlinkLeft").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                eye_blink_right: blendshapes_data.get("eyeBlinkRight").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                jaw_open: blendshapes_data.get("jawOpen").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                mouth_smile_left: blendshapes_data.get("mouthSmileLeft").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                mouth_smile_right: blendshapes_data.get("mouthSmileRight").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                ..Default::default()
+            };
+
+            Ok(FaceMesh {
+                landmarks,
+                blendshapes: Some(blendshapes),
+                confidence: 0.0,
+            })
+        }
+
+        fn parse_hand(data: &Value) -> PoseResult<HandPose> {
+            let keypoints = data.get("keypoints")
+                .and_then(|k| k.as_array())
+                .ok_or_else(|| PoseError::InferenceFailed("Missing hand keypoints".to_string()))?;
+
+            let landmarks: Vec<Keypoint3D> = keypoints.iter()
+                .map(|kp| Keypoint3D {
+                    x: kp.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    y: kp.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    z: kp.get("z").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    visibility: 1.0,
+                })
+                .collect();
+
+            let hand_type = data.get("hand_type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("Left");
+
+            let handedness = if hand_type == "Left" {
+                Handedness::Left
+            } else {
+                Handedness::Right
+            };
+
+            let confidence = data.get("confidence")
+                .and_then(|c| c.as_f64())
+                .unwrap_or(0.0) as f32;
+
+            Ok(HandPose {
+                landmarks,
+                handedness,
+                confidence,
+            })
         }
     }
 }
@@ -141,7 +297,7 @@ pub mod pyo3_backend {
 // ONNX Runtime Implementation (Pure Rust)
 // ==============================================================================
 
-#[cfg(feature = "onnx")]
+#[cfg(feature = "ml-onnx")]
 pub mod onnx_backend {
     use super::*;
     // use ort::{Session, Environment, SessionBuilder};
@@ -205,15 +361,16 @@ pub mod onnx_backend {
 // Dummy Implementation (for compilation without features)
 // ==============================================================================
 
-#[cfg(not(any(feature = "pyo3", feature = "onnx")))]
+#[cfg(not(any(feature = "ml-pyo3", feature = "ml-onnx")))]
 pub struct DummyMediaPipe {
     config: PoseConfig,
 }
 
-#[cfg(not(any(feature = "pyo3", feature = "onnx")))]
+#[cfg(not(any(feature = "ml-pyo3", feature = "ml-onnx")))]
 impl MediaPipeBridge for DummyMediaPipe {
     fn new(config: &PoseConfig) -> PoseResult<Self> {
         println!("Using dummy MediaPipe implementation (no inference)");
+        println!("Enable 'ml-pyo3' or 'ml-onnx' feature for actual ML inference");
         Ok(Self {
             config: config.clone(),
         })
@@ -233,7 +390,7 @@ impl MediaPipeBridge for DummyMediaPipe {
     }
 
     fn get_model_info(&self) -> String {
-        "Dummy MediaPipe (no ML inference - enable 'pyo3' or 'onnx' feature)".to_string()
+        "Dummy MediaPipe (no ML inference - enable 'ml-pyo3' or 'ml-onnx' feature)".to_string()
     }
 }
 
@@ -241,11 +398,11 @@ impl MediaPipeBridge for DummyMediaPipe {
 // Default Backend Selection
 // ==============================================================================
 
-#[cfg(feature = "pyo3")]
+#[cfg(feature = "ml-pyo3")]
 pub type DefaultMediaPipe = pyo3_backend::PyO3MediaPipe;
 
-#[cfg(all(feature = "onnx", not(feature = "pyo3")))]
+#[cfg(all(feature = "ml-onnx", not(feature = "ml-pyo3")))]
 pub type DefaultMediaPipe = onnx_backend::OnnxMediaPipe;
 
-#[cfg(not(any(feature = "pyo3", feature = "onnx")))]
+#[cfg(not(any(feature = "ml-pyo3", feature = "ml-onnx")))]
 pub type DefaultMediaPipe = DummyMediaPipe;

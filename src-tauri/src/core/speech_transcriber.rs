@@ -56,19 +56,154 @@ impl SpeechTranscriber {
         recording_id: &str,
         audio_file_path: &str,
     ) -> AudioResult<Vec<TranscriptSegment>> {
-        // TODO: Implement actual Whisper transcription
-        // This is a placeholder implementation
+        #[cfg(feature = "ml-pyo3")]
+        {
+            self.transcribe_with_pyo3(session_id, recording_id, audio_file_path).await
+        }
 
-        // In a real implementation:
-        // 1. Load Whisper model based on model_size
-        // 2. Process audio file in chunks
-        // 3. Run inference to get transcription with word timestamps
-        // 4. Return segments with speaker attribution (if diarization is available)
+        #[cfg(not(feature = "ml-pyo3"))]
+        {
+            println!("Whisper transcription not available (enable 'ml-pyo3' feature)");
+            println!("Audio file: {}", audio_file_path);
+            Ok(vec![])
+        }
+    }
 
-        println!("Transcribing audio file: {}", audio_file_path);
+    #[cfg(feature = "ml-pyo3")]
+    async fn transcribe_with_pyo3(
+        &self,
+        session_id: &str,
+        recording_id: &str,
+        audio_file_path: &str,
+    ) -> AudioResult<Vec<TranscriptSegment>> {
+        use pyo3::prelude::*;
+        use pyo3::types::PyDict;
 
-        // Placeholder: return empty segments
-        Ok(vec![])
+        let model_size = self.model_size.read().await.clone();
+        let language = self.language.read().await.clone();
+
+        // Run Python inference in blocking task (Whisper is CPU/GPU intensive)
+        let audio_path = audio_file_path.to_string();
+        let session_id = session_id.to_string();
+        let recording_id = recording_id.to_string();
+
+        let result = tokio::task::spawn_blocking(move || {
+            Python::with_gil(|py| {
+                // Add python directory to sys.path
+                let sys = py.import("sys")
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to import sys: {}", e)))?;
+
+                let path_list = sys.getattr("path")
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to get sys.path: {}", e)))?;
+
+                let python_dir = std::env::current_dir()
+                    .unwrap_or_default()
+                    .join("src-tauri")
+                    .join("python");
+
+                path_list.call_method1("insert", (0, python_dir.to_str().unwrap()))
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to add python dir: {}", e)))?;
+
+                // Import whisper_inference module
+                let whisper_module = py.import("whisper_inference")
+                    .map_err(|e| AudioError::TranscriptionFailed(format!(
+                        "Failed to import whisper_inference: {}. Install with: pip install -r python/requirements.txt",
+                        e
+                    )))?;
+
+                // Call transcribe_file function
+                let transcribe_fn = whisper_module.getattr("transcribe_file")
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to get transcribe_file: {}", e)))?;
+
+                // Prepare arguments
+                let kwargs = PyDict::new(py);
+                kwargs.set_item("audio_path", &audio_path)
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to set audio_path: {}", e)))?;
+                kwargs.set_item("model_size", model_size.to_string())
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to set model_size: {}", e)))?;
+
+                if let Some(lang) = language {
+                    kwargs.set_item("language", lang)
+                        .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to set language: {}", e)))?;
+                }
+
+                kwargs.set_item("word_timestamps", true)
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to set word_timestamps: {}", e)))?;
+
+                println!("Running Whisper transcription on: {}", audio_path);
+
+                // Call the function
+                let result_json = transcribe_fn.call((), Some(kwargs))
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Whisper inference failed: {}", e)))?;
+
+                // Extract JSON string
+                let json_str: String = result_json.extract()
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to extract JSON: {}", e)))?;
+
+                // Parse JSON result
+                let result: serde_json::Value = serde_json::from_str(&json_str)
+                    .map_err(|e| AudioError::TranscriptionFailed(format!("Failed to parse JSON: {}", e)))?;
+
+                // Extract segments
+                let segments_data = result.get("segments")
+                    .and_then(|s| s.as_array())
+                    .ok_or_else(|| AudioError::TranscriptionFailed("Missing segments in result".to_string()))?;
+
+                let language_detected = result.get("language")
+                    .and_then(|l| l.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+
+                let segments: Vec<TranscriptSegment> = segments_data.iter()
+                    .map(|seg| {
+                        let start = (seg.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0) * 1000.0) as i64;
+                        let end = (seg.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0) * 1000.0) as i64;
+                        let text = seg.get("text").and_then(|t| t.as_str()).unwrap_or("").to_string();
+                        let confidence = seg.get("confidence").and_then(|c| c.as_f64()).unwrap_or(0.0) as f32;
+
+                        // Extract word timestamps
+                        let words = if let Some(words_data) = seg.get("words").and_then(|w| w.as_array()) {
+                            words_data.iter()
+                                .map(|word| WordTimestamp {
+                                    word: word.get("word").and_then(|w| w.as_str()).unwrap_or("").to_string(),
+                                    start_timestamp: (word.get("start").and_then(|v| v.as_f64()).unwrap_or(0.0) * 1000.0) as i64,
+                                    end_timestamp: (word.get("end").and_then(|v| v.as_f64()).unwrap_or(0.0) * 1000.0) as i64,
+                                    probability: word.get("probability").and_then(|p| p.as_f64()).unwrap_or(1.0) as f32,
+                                })
+                                .collect()
+                        } else {
+                            vec![]
+                        };
+
+                        TranscriptSegment {
+                            id: Uuid::new_v4().to_string(),
+                            session_id: session_id.clone(),
+                            recording_id: recording_id.clone(),
+                            start_timestamp: start,
+                            end_timestamp: end,
+                            text,
+                            language: language_detected.clone(),
+                            confidence,
+                            speaker_id: None, // Will be populated by diarization
+                            words,
+                        }
+                    })
+                    .collect();
+
+                println!("Transcription complete: {} segments", segments.len());
+
+                Ok::<Vec<TranscriptSegment>, AudioError>(segments)
+            })
+        })
+        .await
+        .map_err(|e| AudioError::TranscriptionFailed(format!("Tokio join error: {}", e)))??;
+
+        // Store all segments in database
+        for segment in &result {
+            self.store_transcript(segment).await?;
+        }
+
+        Ok(result)
     }
 
     /// Store transcript segment in database
