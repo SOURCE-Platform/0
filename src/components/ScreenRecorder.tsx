@@ -162,96 +162,98 @@ export default function ScreenRecorder() {
         </Card>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Display Selection</CardTitle>
-          <CardDescription>Choose which display to record</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Display</label>
-            <Select
-              value={selectedDisplay?.toString() || ""}
-              onValueChange={(value) => setSelectedDisplay(parseInt(value, 10))}
-              disabled={isRecording}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select a display" />
-              </SelectTrigger>
-              <SelectContent>
-                {displays.map((display) => (
-                  <SelectItem key={display.id} value={display.id.toString()}>
-                    <div className="flex items-center gap-2">
-                      <Monitor className="h-4 w-4" />
-                      <span>
-                        {display.name} ({display.width}x{display.height})
-                        {display.is_primary && " - Primary"}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedDisplay !== null && (
-            <div className="p-4 bg-muted rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                Selected:{" "}
-                {displays.find((d) => d.id === selectedDisplay)?.name || "Unknown"}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                Resolution:{" "}
-                {displays.find((d) => d.id === selectedDisplay)?.width}x
-                {displays.find((d) => d.id === selectedDisplay)?.height}
-              </p>
+      <div className="grid grid-cols-3 gap-4 items-start">
+        <Card className="col-span-2">
+          <CardHeader>
+            <CardTitle>Display Selection</CardTitle>
+            <CardDescription>Choose which display to record</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Display</label>
+              <Select
+                value={selectedDisplay?.toString() || ""}
+                onValueChange={(value) => setSelectedDisplay(parseInt(value, 10))}
+                disabled={isRecording}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a display" />
+                </SelectTrigger>
+                <SelectContent>
+                  {displays.map((display) => (
+                    <SelectItem key={display.id} value={display.id.toString()}>
+                      <div className="flex items-center gap-2">
+                        <Monitor className="h-4 w-4" />
+                        <span>
+                          {display.name} ({display.width}x{display.height})
+                          {display.is_primary && " - Primary"}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recording Controls</CardTitle>
-          <CardDescription>
-            {isRecording
-              ? "Recording is active. Click stop to end the session."
-              : "Click start to begin recording your screen."}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex gap-3">
-            {!isRecording ? (
-              <Button
-                onClick={handleStartRecording}
-                disabled={selectedDisplay === null || !hasConsent}
-                size="lg"
-                className="gap-2"
-              >
-                <Circle className="h-4 w-4 fill-current" />
-                Start Recording
-              </Button>
-            ) : (
-              <Button
-                onClick={handleStopRecording}
-                variant="destructive"
-                size="lg"
-                className="gap-2"
-              >
-                <StopCircle className="h-4 w-4" />
-                Stop Recording
-              </Button>
+            {selectedDisplay !== null && (
+              <div className="p-4 bg-muted rounded-lg">
+                <p className="text-sm text-muted-foreground">
+                  Selected:{" "}
+                  {displays.find((d) => d.id === selectedDisplay)?.name || "Unknown"}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Resolution:{" "}
+                  {displays.find((d) => d.id === selectedDisplay)?.width}x
+                  {displays.find((d) => d.id === selectedDisplay)?.height}
+                </p>
+              </div>
             )}
-          </div>
+          </CardContent>
+        </Card>
 
-          {isRecording && status?.display_name && (
-            <div className="mt-4 p-4 bg-muted rounded-lg">
-              <p className="text-sm font-medium">Currently recording:</p>
-              <p className="text-sm text-muted-foreground">{status.display_name}</p>
+        <Card className="col-span-1">
+          <CardHeader>
+            <CardTitle>Recording Controls</CardTitle>
+            <CardDescription>
+              {isRecording
+                ? "Recording is active. Click stop to end the session."
+                : "Click start to begin recording your screen."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-3">
+              {!isRecording ? (
+                <Button
+                  onClick={handleStartRecording}
+                  disabled={selectedDisplay === null || !hasConsent}
+                  size="lg"
+                  className="gap-2 w-full"
+                >
+                  <Circle className="h-4 w-4 fill-current" />
+                  Start Recording
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleStopRecording}
+                  variant="destructive"
+                  size="lg"
+                  className="gap-2 w-full"
+                >
+                  <StopCircle className="h-4 w-4" />
+                  Stop Recording
+                </Button>
+              )}
             </div>
-          )}
-        </CardContent>
-      </Card>
+
+            {isRecording && status?.display_name && (
+              <div className="mt-4 p-4 bg-muted rounded-lg">
+                <p className="text-sm font-medium">Currently recording:</p>
+                <p className="text-sm text-muted-foreground">{status.display_name}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
         <CardHeader>

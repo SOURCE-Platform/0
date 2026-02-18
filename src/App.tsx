@@ -24,7 +24,7 @@ function App() {
         <div className="border-b">
           <div className="flex h-16 items-center px-6">
             <div className="flex items-center gap-6 flex-1">
-              <h2 className="text-xl font-semibold text-foreground">Observer</h2>
+              <svg width="28" height="28" viewBox="0 0 28 28" className="fill-black dark:fill-white"><circle cx="14" cy="14" r="14"/></svg>
               <Tabs value={currentView} onValueChange={(value) => setCurrentView(value as View)} className="flex-1">
                 <TabsList>
                   <TabsTrigger value="consent">Privacy & Consent</TabsTrigger>

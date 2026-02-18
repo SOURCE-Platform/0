@@ -186,7 +186,8 @@ export default function Settings() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="recording" className="space-y-4 mt-6">
+        <TabsContent value="recording" className="mt-6">
+          <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardHeader>
               <CardTitle>Recording Quality</CardTitle>
@@ -267,18 +268,20 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
 
-        <TabsContent value="storage" className="space-y-4 mt-6">
+        <TabsContent value="storage" className="mt-6">
+          <div className="grid grid-cols-2 gap-4 items-start">
           <Card>
             <CardHeader>
               <CardTitle>Storage Location</CardTitle>
               <CardDescription>Where recordings and data are stored</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex gap-3">
-                <Input value={config.storage_path} readOnly className="flex-1" />
-                <Button onClick={selectStoragePath} variant="outline" className="gap-2">
+              <div className="flex flex-col gap-3">
+                <Input value={config.storage_path} readOnly />
+                <Button onClick={selectStoragePath} variant="outline" className="gap-2 w-full">
                   <FolderOpen className="h-4 w-4" />
                   Browse
                 </Button>
@@ -292,77 +295,36 @@ export default function Settings() {
               <CardDescription>How long to keep different types of data (in days)</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="screen-retention">Screen Recordings</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="screen-retention"
-                      type="number"
-                      min="1"
-                      max="3650"
-                      value={config.retention_days.screen || 30}
-                      onChange={(e) => updateRetentionDays("screen", parseInt(e.target.value, 10) || 1)}
-                      className="w-24"
+              <div className="grid gap-6 sm:grid-cols-2">
+                {[
+                  { key: "screen", label: "Screen Recordings", default: 30 },
+                  { key: "ocr", label: "OCR Data", default: 90 },
+                  { key: "keyboard", label: "Keyboard Activity", default: 30 },
+                  { key: "mouse", label: "Mouse Activity", default: 7 },
+                ].map(({ key, label, default: def }) => (
+                  <div key={key} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label>{label}</Label>
+                      <span className="text-sm font-medium">{config.retention_days[key] ?? def} days</span>
+                    </div>
+                    <Slider
+                      value={[config.retention_days[key] ?? def]}
+                      onValueChange={(value) => updateRetentionDays(key, value[0])}
+                      min={1}
+                      max={365}
+                      step={1}
                     />
-                    <span className="text-sm text-muted-foreground">days</span>
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="ocr-retention">OCR Data</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="ocr-retention"
-                      type="number"
-                      min="1"
-                      max="3650"
-                      value={config.retention_days.ocr || 90}
-                      onChange={(e) => updateRetentionDays("ocr", parseInt(e.target.value, 10) || 1)}
-                      className="w-24"
-                    />
-                    <span className="text-sm text-muted-foreground">days</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="keyboard-retention">Keyboard Activity</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="keyboard-retention"
-                      type="number"
-                      min="1"
-                      max="3650"
-                      value={config.retention_days.keyboard || 30}
-                      onChange={(e) => updateRetentionDays("keyboard", parseInt(e.target.value, 10) || 1)}
-                      className="w-24"
-                    />
-                    <span className="text-sm text-muted-foreground">days</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="mouse-retention">Mouse Activity</Label>
-                  <div className="flex items-center gap-2">
-                    <Input
-                      id="mouse-retention"
-                      type="number"
-                      min="1"
-                      max="3650"
-                      value={config.retention_days.mouse || 7}
-                      onChange={(e) => updateRetentionDays("mouse", parseInt(e.target.value, 10) || 1)}
-                      className="w-24"
-                    />
-                    <span className="text-sm text-muted-foreground">days</span>
-                  </div>
-                </div>
+                ))}
               </div>
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
 
-        <TabsContent value="privacy" className="space-y-4 mt-6">
-          <Card>
+        <TabsContent value="privacy" className="mt-6">
+          <div className="grid grid-cols-3 gap-4 items-start">
+          <Card className="col-span-1">
             <CardHeader>
               <CardTitle>Privacy & Consent</CardTitle>
               <CardDescription>Control what data Observer can collect</CardDescription>
@@ -374,7 +336,7 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
+          <Card className="col-span-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
                 <Lock className="h-5 w-5" />
@@ -388,6 +350,7 @@ export default function Settings() {
               <p>• You can delete all data at any time</p>
             </CardContent>
           </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
