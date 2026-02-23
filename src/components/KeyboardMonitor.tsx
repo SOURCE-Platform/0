@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { TriangleAlert } from "lucide-react";
 
 interface KeyboardMonitorProps {
   sessionId: string;
@@ -72,83 +75,66 @@ export default function KeyboardMonitor({ sessionId }: KeyboardMonitorProps) {
   };
 
   return (
-    <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
+    <div className="p-4 border border-border rounded-lg">
       <h2 className="text-xl font-semibold mb-4">Keyboard Monitor</h2>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 rounded">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900 text-yellow-900 dark:text-yellow-100 rounded">
-        <div className="flex items-start">
-          <svg className="w-5 h-5 mr-2 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-          </svg>
-          <div>
-            <div className="font-semibold mb-1">Privacy Notice</div>
-            <p className="text-sm">
-              Keyboard monitoring captures keystroke statistics and patterns for productivity analysis.
-              Sensitive fields (passwords, credit cards, etc.) are automatically filtered and never logged.
-              All data is stored locally on your device.
-            </p>
-          </div>
-        </div>
-      </div>
+      <Alert className="mb-4">
+        <TriangleAlert className="h-4 w-4" />
+        <AlertTitle>Privacy Notice</AlertTitle>
+        <AlertDescription>
+          Keyboard monitoring captures keystroke statistics and patterns for productivity analysis.
+          Sensitive fields (passwords, credit cards, etc.) are automatically filtered and never logged.
+          All data is stored locally on your device.
+        </AlertDescription>
+      </Alert>
 
       {!hasConsent ? (
         <div className="mb-4">
-          <p className="text-gray-700 dark:text-gray-300 mb-2">
+          <p className="text-muted-foreground mb-2">
             Keyboard monitoring requires consent to track typing patterns and statistics.
           </p>
-          <button
-            onClick={requestConsent}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Grant Consent
-          </button>
+          <Button onClick={requestConsent}>Grant Consent</Button>
         </div>
       ) : (
         <>
-          <div className="mb-4">
-            <button
+          <div className="mb-4 flex items-center gap-3">
+            <Button
               onClick={isRecording ? handleStopRecording : handleStartRecording}
-              className={`px-4 py-2 rounded ${
-                isRecording
-                  ? 'bg-red-500 hover:bg-red-600 text-white'
-                  : 'bg-green-500 hover:bg-green-600 text-white'
-              }`}
+              variant={isRecording ? "destructive" : "default"}
             >
               {isRecording ? 'Stop Recording' : 'Start Recording'}
-            </button>
-            <span className="ml-3 text-sm text-gray-600 dark:text-gray-400">
+            </Button>
+            <span className="text-sm text-muted-foreground">
               Status: {isRecording ? 'Recording' : 'Stopped'}
             </span>
           </div>
 
           {isRecording && (
-            <div className="p-3 bg-green-50 dark:bg-green-900 rounded">
-              <div className="flex items-center">
+            <div className="p-3 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg">
+              <div className="flex items-center mb-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full mr-2 animate-pulse"></div>
-                <span className="text-sm text-gray-700 dark:text-gray-300">
+                <span className="text-sm text-foreground">
                   Actively recording keyboard events for session {sessionId.substring(0, 8)}...
                 </span>
               </div>
-              <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Keystroke count and typing speed</li>
-                  <li>Most used keys and shortcuts</li>
-                  <li>Per-application typing patterns</li>
-                </ul>
-              </div>
+              <ul className="text-xs text-muted-foreground list-disc list-inside space-y-1">
+                <li>Keystroke count and typing speed</li>
+                <li>Most used keys and shortcuts</li>
+                <li>Per-application typing patterns</li>
+              </ul>
             </div>
           )}
 
           {!isRecording && (
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-sm text-muted-foreground">
               Click "Start Recording" to begin tracking keyboard statistics for this session.
-            </div>
+            </p>
           )}
         </>
       )}

@@ -137,7 +137,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
         {onClose && (
           <button
             onClick={onClose}
-            className="px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
+            className="cursor-pointer px-3 py-1 bg-gray-500 text-white rounded hover:bg-gray-600 text-sm"
           >
             Close
           </button>

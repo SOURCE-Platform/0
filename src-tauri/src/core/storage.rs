@@ -220,6 +220,10 @@ impl RecordingStorage {
         self.base_path.join(session_id.to_string())
     }
 
+    pub fn get_session_dir(&self, session_id: &Uuid) -> PathBuf {
+        self.get_session_path(session_id)
+    }
+
     /// Calculate total size of all frames in a session
     async fn calculate_session_size(&self, session_id: &Uuid) -> StorageResult<u64> {
         let session_path = self.get_session_path(session_id);

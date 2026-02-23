@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertCircle, Circle, Monitor, StopCircle } from "lucide-react";
+import { AlertCircle, Circle, Monitor, StopCircle, Folder } from "lucide-react";
+import { useUIPrefs } from "@/components/ui-prefs-provider";
 
 interface Display {
   id: number;
@@ -18,6 +19,12 @@ interface RecordingStatus {
   display_id: number | null;
   display_name: string | null;
   has_consent: boolean;
+  session_id: string | null;
+  segment_count: number;
+  total_frames: number;
+  total_motion_percentage: number;
+  is_paused: boolean;
+  save_directory: string | null;
 }
 
 export default function ScreenRecorder() {
@@ -26,27 +33,58 @@ export default function ScreenRecorder() {
   const [status, setStatus] = useState<RecordingStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const recordingStartRef = useRef<number | null>(null);
+  const { showDescriptions } = useUIPrefs();
 
   useEffect(() => {
     loadDisplaysAndStatus();
   }, []);
+
+  // Start/stop client-side timer when recording state changes
+  useEffect(() => {
+    if (status?.is_recording) {
+      if (recordingStartRef.current === null) {
+        recordingStartRef.current = Date.now();
+        setElapsedSeconds(0);
+      }
+      const interval = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - recordingStartRef.current!) / 1000));
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      recordingStartRef.current = null;
+      setElapsedSeconds(0);
+    }
+  }, [status?.is_recording]);
+
+  // Poll status every 2s while recording to get live frame/segment counts
+  useEffect(() => {
+    if (!status?.is_recording) return;
+    const interval = setInterval(async () => {
+      try {
+        const currentStatus = await invoke<RecordingStatus>("get_recording_status");
+        setStatus(currentStatus);
+      } catch {
+        // silent — don't interrupt recording UI for a poll failure
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [status?.is_recording]);
 
   async function loadDisplaysAndStatus() {
     setLoading(true);
     setError(null);
 
     try {
-      // Load displays
       const availableDisplays = await invoke<Display[]>("get_available_displays");
       setDisplays(availableDisplays);
 
-      // Select primary display by default
       const primaryDisplay = availableDisplays.find((d) => d.is_primary);
       if (primaryDisplay && !selectedDisplay) {
         setSelectedDisplay(primaryDisplay.id);
       }
 
-      // Load status
       const currentStatus = await invoke<RecordingStatus>("get_recording_status");
       setStatus(currentStatus);
     } catch (err) {
@@ -86,6 +124,14 @@ export default function ScreenRecorder() {
     }
   }
 
+  function formatElapsed(seconds: number): string {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -106,9 +152,11 @@ export default function ScreenRecorder() {
           </CardHeader>
           <CardContent className="text-red-800 dark:text-red-200">
             <p>{error}</p>
-            <p className="mt-2 text-sm">
-              This may occur on platforms without screen capture support (e.g., Linux Wayland, headless environments).
-            </p>
+            {showDescriptions && (
+              <p className="mt-2 text-sm">
+                This may occur on platforms without screen capture support (e.g., Linux Wayland, headless environments).
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -123,13 +171,17 @@ export default function ScreenRecorder() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Screen Recorder</h1>
-          <p className="text-muted-foreground">Capture your screen activity</p>
+          {showDescriptions && (
+            <p className="text-muted-foreground">Capture your screen activity</p>
+          )}
         </div>
         <div className="flex items-center gap-3">
           {isRecording && (
             <div className="flex items-center gap-2 px-3 py-2 bg-red-100 dark:bg-red-950 rounded-md">
               <Circle className="h-3 w-3 fill-red-600 text-red-600 animate-pulse" />
-              <span className="text-sm font-medium text-red-900 dark:text-red-100">Recording</span>
+              <span className="text-sm font-medium text-red-900 dark:text-red-100">
+                Recording — {formatElapsed(elapsedSeconds)}
+              </span>
             </div>
           )}
         </div>
@@ -150,15 +202,19 @@ export default function ScreenRecorder() {
         <Card className="border-yellow-500 bg-yellow-50 dark:bg-yellow-950">
           <CardHeader>
             <CardTitle className="text-yellow-900 dark:text-yellow-100">Consent Required</CardTitle>
-            <CardDescription className="text-yellow-800 dark:text-yellow-200">
-              You need to grant screen recording consent before you can start recording.
-            </CardDescription>
+            {showDescriptions && (
+              <CardDescription className="text-yellow-800 dark:text-yellow-200">
+                You need to grant screen recording consent before you can start recording.
+              </CardDescription>
+            )}
           </CardHeader>
-          <CardContent>
-            <p className="text-sm text-yellow-800 dark:text-yellow-200">
-              Please go to the <strong>Privacy & Consent</strong> tab and enable <strong>Screen Recording</strong>.
-            </p>
-          </CardContent>
+          {showDescriptions && (
+            <CardContent>
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                Please go to the <strong>Privacy & Consent</strong> tab and enable <strong>Screen Recording</strong>.
+              </p>
+            </CardContent>
+          )}
         </Card>
       )}
 
@@ -166,7 +222,9 @@ export default function ScreenRecorder() {
         <Card className="col-span-2">
           <CardHeader>
             <CardTitle>Display Selection</CardTitle>
-            <CardDescription>Choose which display to record</CardDescription>
+            {showDescriptions && (
+              <CardDescription>Choose which display to record</CardDescription>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -214,11 +272,13 @@ export default function ScreenRecorder() {
         <Card className="col-span-1">
           <CardHeader>
             <CardTitle>Recording Controls</CardTitle>
-            <CardDescription>
-              {isRecording
-                ? "Recording is active. Click stop to end the session."
-                : "Click start to begin recording your screen."}
-            </CardDescription>
+            {showDescriptions && (
+              <CardDescription>
+                {isRecording
+                  ? "Recording is active. Click stop to end the session."
+                  : "Click start to begin recording your screen."}
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             <div className="flex gap-3">
@@ -245,27 +305,59 @@ export default function ScreenRecorder() {
               )}
             </div>
 
-            {isRecording && status?.display_name && (
-              <div className="mt-4 p-4 bg-muted rounded-lg">
-                <p className="text-sm font-medium">Currently recording:</p>
-                <p className="text-sm text-muted-foreground">{status.display_name}</p>
+            {isRecording && (
+              <div className="mt-4 space-y-3">
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="p-2 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Duration</p>
+                    <p className="text-lg font-mono font-semibold tabular-nums">
+                      {formatElapsed(elapsedSeconds)}
+                    </p>
+                  </div>
+                  <div className="p-2 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Frames</p>
+                    <p className="text-lg font-mono font-semibold tabular-nums">
+                      {status?.total_frames?.toLocaleString() ?? 0}
+                    </p>
+                  </div>
+                  <div className="p-2 bg-muted rounded-lg">
+                    <p className="text-xs text-muted-foreground">Segments</p>
+                    <p className="text-lg font-mono font-semibold tabular-nums">
+                      {status?.segment_count ?? 0}
+                    </p>
+                  </div>
+                </div>
+
+                {status?.save_directory && (
+                  <div className="p-3 bg-muted rounded-lg space-y-1">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Folder className="h-3 w-3" />
+                      <span>Saving to</span>
+                    </div>
+                    <p className="text-xs font-mono break-all leading-relaxed">
+                      {status.save_directory}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
-        <CardHeader>
-          <CardTitle className="text-blue-900 dark:text-blue-100">Important Notes</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-          <p>• Recording captures raw frames - no video encoding yet</p>
-          <p>• Frames are not saved to disk in this phase</p>
-          <p>• This is infrastructure testing - full recording service coming soon</p>
-          <p>• Check console logs to see capture activity</p>
-        </CardContent>
-      </Card>
+      {showDescriptions && (
+        <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
+          <CardHeader>
+            <CardTitle className="text-blue-900 dark:text-blue-100">Important Notes</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
+            <p>• Recording captures raw frames - no video encoding yet</p>
+            <p>• Frames are not saved to disk in this phase</p>
+            <p>• This is infrastructure testing - full recording service coming soon</p>
+            <p>• Check console logs to see capture activity</p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

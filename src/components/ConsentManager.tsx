@@ -3,7 +3,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import { Lock } from "lucide-react";
+import { useUIPrefs } from "@/components/ui-prefs-provider";
 
 interface ConsentState {
   screen_recording: boolean;
@@ -61,6 +63,7 @@ const FEATURES: FeatureInfo[] = [
 ];
 
 export default function ConsentManager() {
+  const { showDescriptions } = useUIPrefs();
   const [consents, setConsents] = useState<ConsentState>({
     screen_recording: false,
     os_activity: false,
@@ -129,9 +132,11 @@ export default function ConsentManager() {
     <div className="w-full max-w-5xl mx-auto p-6 space-y-6">
       <div className="space-y-2">
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Privacy & Consent Settings</h1>
-        <p className="text-muted-foreground">
-          Control what data Observer can collect. All features require explicit consent and default to OFF.
-        </p>
+        {showDescriptions && (
+          <p className="text-muted-foreground">
+            Control what data Observer can collect. All features require explicit consent and default to OFF.
+          </p>
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -143,9 +148,11 @@ export default function ConsentManager() {
                   <span className="text-3xl">{feature.icon}</span>
                   <div>
                     <CardTitle className="text-lg">{feature.title}</CardTitle>
-                    <CardDescription className="mt-1.5">
-                      {feature.description}
-                    </CardDescription>
+                    {showDescriptions && (
+                      <CardDescription className="mt-1.5">
+                        {feature.description}
+                      </CardDescription>
+                    )}
                   </div>
                 </div>
               </div>
@@ -172,35 +179,31 @@ export default function ConsentManager() {
                       : "Disabled"}
                   </Label>
                 </div>
-                <div
-                  className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    consents[feature.key]
-                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                      : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100"
-                  }`}
-                >
+                <Badge variant={consents[feature.key] ? "default" : "secondary"}>
                   {consents[feature.key] ? "Active" : "Inactive"}
-                </div>
+                </Badge>
               </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
-            <Lock className="h-5 w-5" />
-            Privacy First
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-          <p>• All data is stored locally on your device</p>
-          <p>• No data is sent to external servers</p>
-          <p>• You have full control over your data</p>
-          <p>• You can revoke consent at any time</p>
-        </CardContent>
-      </Card>
+      {showDescriptions && (
+        <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+              <Lock className="h-5 w-5" />
+              Privacy First
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
+            <p>• All data is stored locally on your device</p>
+            <p>• No data is sent to external servers</p>
+            <p>• You have full control over your data</p>
+            <p>• You can revoke consent at any time</p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

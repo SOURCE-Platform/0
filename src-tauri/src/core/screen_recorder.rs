@@ -83,8 +83,10 @@ pub struct RecordingStatus {
     pub has_consent: bool,
     pub session_id: Option<Uuid>,
     pub segment_count: usize,
+    pub total_frames: usize,
     pub total_motion_percentage: f32,
     pub is_paused: bool,
+    pub save_directory: Option<String>,
 }
 
 /// Recording configuration
@@ -602,6 +604,11 @@ impl ScreenRecorder {
                 0.0
             };
 
+            let save_directory = self.storage
+                .get_session_dir(&s.session_id)
+                .to_string_lossy()
+                .to_string();
+
             Ok(RecordingStatus {
                 is_recording: true,
                 display_id,
@@ -609,8 +616,10 @@ impl ScreenRecorder {
                 has_consent,
                 session_id: Some(s.session_id),
                 segment_count: s.segment_count,
+                total_frames: s.total_frames,
                 total_motion_percentage,
                 is_paused: s.is_paused,
+                save_directory: Some(save_directory),
             })
         } else {
             Ok(RecordingStatus {
@@ -620,8 +629,10 @@ impl ScreenRecorder {
                 has_consent,
                 session_id: None,
                 segment_count: 0,
+                total_frames: 0,
                 total_motion_percentage: 0.0,
                 is_paused: false,
+                save_directory: None,
             })
         }
     }

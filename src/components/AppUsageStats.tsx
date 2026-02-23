@@ -109,7 +109,7 @@ export default function AppUsageStats({
         <h2 className="text-xl font-semibold">App Usage Statistics</h2>
         <button
           onClick={loadStats}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          className="cursor-pointer px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
         >
           Refresh
         </button>

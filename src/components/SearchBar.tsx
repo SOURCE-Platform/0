@@ -90,7 +90,7 @@ export function SearchBar({ onSearch, placeholder = "Search OCR results..." }: S
               setSuggestions([]);
               setShowSuggestions(false);
             }}
-            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            className="cursor-pointer absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -106,7 +106,7 @@ export function SearchBar({ onSearch, placeholder = "Search OCR results..." }: S
             <button
               key={index}
               onClick={() => handleSearch(suggestion)}
-              className={`w-full px-4 py-2 text-left hover:bg-blue-50 focus:outline-none ${
+              className={`cursor-pointer w-full px-4 py-2 text-left hover:bg-blue-50 focus:outline-none ${
                 index === selectedSuggestion ? 'bg-blue-100' : ''
               }`}
             >

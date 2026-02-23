@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react"
 
-type Theme = "dark" | "light"
+type Theme = "dark" | "light" | "system"
 
 type ThemeProviderProps = {
   children: React.ReactNode
@@ -29,53 +29,47 @@ export function ThemeProvider({
   const [theme, setThemeState] = useState<Theme>(() => {
     try {
       const stored = localStorage.getItem(storageKey)
-      console.log('Initial theme from localStorage:', stored)
-      if (stored === "dark" || stored === "light") {
+      if (stored === "dark" || stored === "light" || stored === "system") {
         return stored as Theme
       }
-      // If no valid stored value, set default and save it
-      console.log('No valid stored theme, using default:', defaultTheme)
       localStorage.setItem(storageKey, defaultTheme)
       return defaultTheme
-    } catch (error) {
-      console.error('Error reading theme from localStorage:', error)
+    } catch {
       return defaultTheme
     }
   })
 
   useEffect(() => {
-    console.log('Theme changed to:', theme)
     const root = window.document.documentElement
-    
-    // Remove both classes first
     root.classList.remove("light", "dark")
-    
-    // Add the current theme class
-    root.classList.add(theme)
-    
-    console.log('Applied class to root:', theme)
-    console.log('Root classes:', root.className)
+
+    if (theme === "system") {
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
+      root.classList.add(systemTheme)
+
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
+      const handler = (e: MediaQueryListEvent) => {
+        root.classList.remove("light", "dark")
+        root.classList.add(e.matches ? "dark" : "light")
+      }
+      mediaQuery.addEventListener("change", handler)
+      return () => mediaQuery.removeEventListener("change", handler)
+    } else {
+      root.classList.add(theme)
+    }
   }, [theme])
 
   const setTheme = (newTheme: Theme) => {
-    console.log('setTheme called with:', newTheme)
     try {
       localStorage.setItem(storageKey, newTheme)
-      console.log('Saved to localStorage:', newTheme)
-      setThemeState(newTheme)
-    } catch (error) {
-      console.error("Failed to save theme:", error)
-      setThemeState(newTheme)
+    } catch {
+      // ignore
     }
-  }
-
-  const value = {
-    theme,
-    setTheme,
+    setThemeState(newTheme)
   }
 
   return (
-    <ThemeProviderContext.Provider {...props} value={value}>
+    <ThemeProviderContext.Provider {...props} value={{ theme, setTheme }}>
       {children}
     </ThemeProviderContext.Provider>
   )
@@ -83,9 +77,7 @@ export function ThemeProvider({
 
 export const useTheme = () => {
   const context = useContext(ThemeProviderContext)
-
   if (context === undefined)
     throw new Error("useTheme must be used within a ThemeProvider")
-
   return context
 }

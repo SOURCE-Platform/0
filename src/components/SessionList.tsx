@@ -1,5 +1,11 @@
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface Session {
   id: string;
@@ -106,21 +112,21 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
   };
 
   const getSessionTypeColor = (type: string | null): string => {
-    if (!type) return 'bg-gray-500';
+    if (!type) return '#6b7280';
 
     switch (type.toLowerCase()) {
       case 'development':
-        return 'bg-blue-500';
+        return '#3b82f6';
       case 'communication':
-        return 'bg-green-500';
+        return '#22c55e';
       case 'research':
-        return 'bg-purple-500';
+        return '#a855f7';
       case 'entertainment':
-        return 'bg-pink-500';
+        return '#ec4899';
       case 'work':
-        return 'bg-yellow-500';
+        return '#eab308';
       default:
-        return 'bg-gray-500';
+        return '#6b7280';
     }
   };
 
@@ -138,76 +144,76 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
 
   if (loading && sessions.length === 0) {
     return (
-      <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Session History</h2>
-        <div className="text-gray-600 dark:text-gray-400">Loading sessions...</div>
-      </div>
+      <Card>
+        <CardContent className="p-4">
+          <h2 className="text-xl font-semibold mb-4">Session History</h2>
+          <p className="text-muted-foreground">Loading sessions...</p>
+        </CardContent>
+      </Card>
     );
   }
 
   return (
-    <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
+    <div className="p-4 border border-border rounded-lg">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-xl font-semibold">Session History</h2>
-        <button
-          onClick={loadSessions}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
+        <Button size="sm" onClick={loadSessions}>
           Refresh
-        </button>
+        </Button>
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 rounded">
-          {error}
-        </div>
+        <Alert variant="destructive" className="mb-4">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
       {/* Filters */}
       <div className="mb-4 flex gap-4">
         <div className="flex-1">
-          <input
+          <Input
             type="text"
             placeholder="Search by session ID..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
           />
         </div>
 
-        <select
-          value={filterType}
-          onChange={(e) => setFilterType(e.target.value)}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
-        >
-          <option value="all">All Types</option>
-          <option value="development">Development</option>
-          <option value="communication">Communication</option>
-          <option value="research">Research</option>
-          <option value="entertainment">Entertainment</option>
-          <option value="work">Work</option>
-          <option value="unknown">Unknown</option>
-        </select>
+        <Select value={filterType} onValueChange={setFilterType}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="All Types" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Types</SelectItem>
+            <SelectItem value="development">Development</SelectItem>
+            <SelectItem value="communication">Communication</SelectItem>
+            <SelectItem value="research">Research</SelectItem>
+            <SelectItem value="entertainment">Entertainment</SelectItem>
+            <SelectItem value="work">Work</SelectItem>
+            <SelectItem value="unknown">Unknown</SelectItem>
+          </SelectContent>
+        </Select>
 
-        <select
-          value={dateRange}
-          onChange={(e) => setDateRange(e.target.value as any)}
-          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800"
-        >
-          <option value="day">Last 24 Hours</option>
-          <option value="week">Last Week</option>
-          <option value="month">Last Month</option>
-          <option value="all">All Time</option>
-        </select>
+        <Select value={dateRange} onValueChange={(v) => setDateRange(v as typeof dateRange)}>
+          <SelectTrigger className="w-40">
+            <SelectValue placeholder="Last Week" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="day">Last 24 Hours</SelectItem>
+            <SelectItem value="week">Last Week</SelectItem>
+            <SelectItem value="month">Last Month</SelectItem>
+            <SelectItem value="all">All Time</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Sessions List */}
       {filteredSessions.length === 0 ? (
-        <div className="text-gray-600 dark:text-gray-400">
+        <p className="text-muted-foreground">
           {sessions.length === 0
             ? 'No sessions found. Start monitoring to create sessions.'
             : 'No sessions match your filters.'}
-        </div>
+        </p>
       ) : (
         <div className="space-y-2">
           {filteredSessions.map((session) => (
@@ -216,39 +222,33 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
               onClick={() => onSelectSession?.(session.id)}
               className={`p-3 border rounded cursor-pointer transition-colors ${
                 session.is_active
-                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900'
-                  : 'border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:bg-muted/50'
               }`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
                     {session.is_active && (
-                      <span className="px-2 py-1 bg-green-500 text-white text-xs rounded">
-                        ACTIVE
-                      </span>
+                      <Badge>Active</Badge>
                     )}
                     {session.session_type && (
-                      <span
-                        className={`px-2 py-1 ${getSessionTypeColor(
-                          session.session_type
-                        )} text-white text-xs rounded`}
-                      >
+                      <Badge style={{ backgroundColor: getSessionTypeColor(session.session_type) }} className="text-white border-0">
                         {session.session_type.toUpperCase()}
-                      </span>
+                      </Badge>
                     )}
-                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                    <span className="text-sm text-muted-foreground">
                       {formatDate(session.start_timestamp)} at {formatTime(session.start_timestamp)}
                     </span>
                   </div>
-                  <div className="mt-1 text-xs text-gray-500 dark:text-gray-500">
+                  <div className="mt-1 text-xs text-muted-foreground">
                     ID: {session.id.substring(0, 8)}...
                   </div>
                 </div>
 
                 <div className="text-right">
                   <div className="font-semibold">{formatDuration(session.duration_hours)}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     {session.device_id}
                   </div>
                 </div>

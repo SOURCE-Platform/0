@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
-import { FolderOpen, Lock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { FolderOpen, Lock, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucide-react";
+import { useTheme } from "@/components/theme-provider";
+import { useUIPrefs } from "@/components/ui-prefs-provider";
 
 interface Config {
   storage_path: string;
@@ -26,6 +28,8 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const { theme, setTheme } = useTheme();
+  const { showDescriptions, setShowDescriptions } = useUIPrefs();
 
   useEffect(() => {
     loadConfig();
@@ -125,7 +129,9 @@ export default function Settings() {
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
-          <p className="text-muted-foreground">Manage your application preferences and configuration</p>
+          {showDescriptions && (
+            <p className="text-muted-foreground">Manage your application preferences and configuration</p>
+          )}
         </div>
         <div className="flex gap-3">
           <Button onClick={resetToDefaults} disabled={saving} variant="outline">
@@ -166,20 +172,74 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>General Settings</CardTitle>
-              <CardDescription>Configure application behavior and startup options</CardDescription>
+              {showDescriptions && (
+                <CardDescription>Configure application behavior and startup options</CardDescription>
+              )}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
                   <Label htmlFor="auto-start" className="text-base">Launch on system startup</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Automatically start Observer when your computer boots up
-                  </p>
+                  {showDescriptions && (
+                    <p className="text-sm text-muted-foreground">
+                      Automatically start Observer when your computer boots up
+                    </p>
+                  )}
                 </div>
                 <Switch
                   id="auto-start"
                   checked={config.auto_start}
                   onCheckedChange={(checked) => updateConfig({ auto_start: checked })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>App UI</CardTitle>
+              {showDescriptions && (
+                <CardDescription>Appearance and information density</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-3">
+                <Label className="text-base">Theme</Label>
+                <div className="flex rounded-lg border overflow-hidden w-fit">
+                  {[
+                    { value: "light", label: "Light", icon: <Sun className="h-4 w-4" /> },
+                    { value: "dark",  label: "Dark",  icon: <Moon className="h-4 w-4" /> },
+                    { value: "system", label: "System", icon: <Monitor className="h-4 w-4" /> },
+                  ].map(({ value, label, icon }) => (
+                    <button
+                      key={value}
+                      onClick={() => setTheme(value as "light" | "dark" | "system")}
+                      className={`cursor-pointer flex items-center gap-2 px-4 py-2 text-sm font-medium transition-colors ${
+                        theme === value
+                          ? "bg-primary text-primary-foreground"
+                          : "hover:bg-muted text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {icon}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5">
+                  <Label htmlFor="show-descriptions" className="text-base">Show descriptions</Label>
+                  {showDescriptions && (
+                    <p className="text-sm text-muted-foreground">
+                      Display explanatory text and info panels throughout the app
+                    </p>
+                  )}
+                </div>
+                <Switch
+                  id="show-descriptions"
+                  checked={showDescriptions}
+                  onCheckedChange={setShowDescriptions}
                 />
               </div>
             </CardContent>
@@ -191,7 +251,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Recording Quality</CardTitle>
-              <CardDescription>Higher quality produces clearer screenshots but uses more storage</CardDescription>
+              {showDescriptions && <CardDescription>Higher quality produces clearer screenshots but uses more storage</CardDescription>}
             </CardHeader>
             <CardContent>
               <Select
@@ -213,7 +273,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Frames Per Second</CardTitle>
-              <CardDescription>How many screenshots to capture per second (1-60)</CardDescription>
+              {showDescriptions && <CardDescription>How many screenshots to capture per second (1-60)</CardDescription>}
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-4">
@@ -233,7 +293,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Motion Detection Threshold</CardTitle>
-              <CardDescription>Skip recording frames with less than this amount of change</CardDescription>
+              {showDescriptions && <CardDescription>Skip recording frames with less than this amount of change</CardDescription>}
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
@@ -255,7 +315,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>OCR (Text Recognition)</CardTitle>
-              <CardDescription>Extract text from screenshots for searchability</CardDescription>
+              {showDescriptions && <CardDescription>Extract text from screenshots for searchability</CardDescription>}
             </CardHeader>
             <CardContent>
               <div className="flex items-center justify-between">
@@ -276,7 +336,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Storage Location</CardTitle>
-              <CardDescription>Where recordings and data are stored</CardDescription>
+              {showDescriptions && <CardDescription>Where recordings and data are stored</CardDescription>}
             </CardHeader>
             <CardContent>
               <div className="flex flex-col gap-3">
@@ -292,7 +352,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Data Retention</CardTitle>
-              <CardDescription>How long to keep different types of data (in days)</CardDescription>
+              {showDescriptions && <CardDescription>How long to keep different types of data (in days)</CardDescription>}
             </CardHeader>
             <CardContent>
               <div className="grid gap-6 sm:grid-cols-2">
@@ -327,29 +387,33 @@ export default function Settings() {
           <Card className="col-span-1">
             <CardHeader>
               <CardTitle>Privacy & Consent</CardTitle>
-              <CardDescription>Control what data Observer can collect</CardDescription>
+              {showDescriptions && <CardDescription>Control what data Observer can collect</CardDescription>}
             </CardHeader>
-            <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                All recording features require explicit consent. To manage feature consents, please use the Privacy & Consent tab.
-              </p>
-            </CardContent>
+            {showDescriptions && (
+              <CardContent className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  All recording features require explicit consent. To manage feature consents, please use the Privacy & Consent tab.
+                </p>
+              </CardContent>
+            )}
           </Card>
 
-          <Card className="col-span-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
-                <Lock className="h-5 w-5" />
-                Privacy First
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-              <p>• All data is stored locally on your device</p>
-              <p>• No data is sent to external servers</p>
-              <p>• You have full control over your data</p>
-              <p>• You can delete all data at any time</p>
-            </CardContent>
-          </Card>
+          {showDescriptions && (
+            <Card className="col-span-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                  <Lock className="h-5 w-5" />
+                  Privacy First
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
+                <p>• All data is stored locally on your device</p>
+                <p>• No data is sent to external servers</p>
+                <p>• You have full control over your data</p>
+                <p>• You can delete all data at any time</p>
+              </CardContent>
+            </Card>
+          )}
           </div>
         </TabsContent>
       </Tabs>

@@ -56,7 +56,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
         </div>
         <button
           onClick={loadStats}
-          className="mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="cursor-pointer mt-3 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
           Retry
         </button>
@@ -83,7 +83,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
         <h2 className="text-xl font-semibold">Keyboard Statistics</h2>
         <button
           onClick={loadStats}
-          className="px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+          className="cursor-pointer px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
           title="Refresh statistics"
         >
           ↻ Refresh

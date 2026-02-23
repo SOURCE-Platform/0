@@ -166,7 +166,7 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className="text-sm text-blue-600 hover:text-blue-800"
+          className="cursor-pointer text-sm text-blue-600 hover:text-blue-800"
         >
           {showFilters ? 'Hide' : 'Show'} Filters
         </button>
@@ -247,7 +247,7 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
           <button
             onClick={() => setPage(Math.max(0, page - 1))}
             disabled={page === 0}
-            className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="cursor-pointer px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
           >
             Previous
           </button>
@@ -257,7 +257,7 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
           <button
             onClick={() => setPage(Math.min(totalPages - 1, page + 1))}
             disabled={page === totalPages - 1}
-            className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+            className="cursor-pointer px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
           >
             Next
           </button>

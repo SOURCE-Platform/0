@@ -77,7 +77,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
         <div className="flex gap-2 flex-wrap">
           <button
             onClick={() => setSelectedApp(null)}
-            className={`px-3 py-1.5 rounded text-sm transition-colors ${
+            className={`cursor-pointer px-3 py-1.5 rounded text-sm transition-colors ${
               selectedApp === null
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
@@ -89,7 +89,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
             <button
               key={app}
               onClick={() => setSelectedApp(app)}
-              className={`px-3 py-1.5 rounded text-sm transition-colors ${
+              className={`cursor-pointer px-3 py-1.5 rounded text-sm transition-colors ${
                 selectedApp === app
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
@@ -171,7 +171,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
       <div className="flex justify-end">
         <button
           onClick={loadStats}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+          className="cursor-pointer px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
         >
           Refresh Stats
         </button>

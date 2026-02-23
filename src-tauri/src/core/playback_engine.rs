@@ -6,6 +6,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PlaybackInfo {
     pub session_id: String,
     pub start_timestamp: i64,
@@ -17,6 +18,7 @@ pub struct PlaybackInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct VideoSegmentInfo {
     pub path: String,
     pub start_timestamp: i64,
@@ -25,6 +27,7 @@ pub struct VideoSegmentInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SeekInfo {
     pub video_path: String,
     pub offset_ms: i64,
@@ -62,7 +65,7 @@ impl PlaybackEngine {
     }
 
     pub async fn get_playback_info(&self, session_id: Uuid) -> Result<PlaybackInfo, Box<dyn std::error::Error + Send + Sync>> {
-        // Get screen recording for session
+        // Try to get screen recording row (may not exist for all sessions)
         let recording = sqlx::query_as::<_, ScreenRecordingRow>(
             r#"
             SELECT id, session_id, start_timestamp, end_timestamp, base_layer_path, display_id
@@ -71,8 +74,9 @@ impl PlaybackEngine {
             "#
         )
         .bind(session_id.to_string())
-        .fetch_one(&self.db.pool)
-        .await?;
+        .fetch_optional(&self.db.pool)
+        .await
+        .unwrap_or(None);
 
         // Get video segments (encoded MP4 files)
         let segments = sqlx::query_as::<_, VideoSegmentRow>(
@@ -105,14 +109,39 @@ impl PlaybackEngine {
 
         let frame_count = segments.len() as u32;
 
-        let end_timestamp = recording.end_timestamp
-            .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+        // Derive timestamps from recording row or fall back to session/segment data
+        let (start_timestamp, end_timestamp, base_layer_path, resolved_session_id) =
+            if let Some(rec) = recording {
+                let end = rec.end_timestamp
+                    .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+                (rec.start_timestamp, end, rec.base_layer_path, rec.session_id)
+            } else {
+                // Fall back to session table
+                let row = sqlx::query(
+                    "SELECT start_timestamp, end_timestamp FROM sessions WHERE id = ?"
+                )
+                .bind(session_id.to_string())
+                .fetch_optional(&self.db.pool)
+                .await
+                .unwrap_or(None);
+
+                let (start, end) = if let Some(r) = row {
+                    use sqlx::Row;
+                    let s: i64 = r.try_get("start_timestamp").unwrap_or(0);
+                    let e: Option<i64> = r.try_get("end_timestamp").unwrap_or(None);
+                    (s, e.unwrap_or_else(|| chrono::Utc::now().timestamp_millis()))
+                } else {
+                    let now = chrono::Utc::now().timestamp_millis();
+                    (now, now)
+                };
+                (start, end, String::new(), session_id.to_string())
+            };
 
         Ok(PlaybackInfo {
-            session_id: recording.session_id,
-            start_timestamp: recording.start_timestamp,
+            session_id: resolved_session_id,
+            start_timestamp,
             end_timestamp,
-            base_layer_path: recording.base_layer_path,
+            base_layer_path,
             segments: segment_infos,
             total_duration_ms: total_duration,
             frame_count,

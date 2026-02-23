@@ -5,6 +5,7 @@ import { PlaybackInfo, SeekInfo } from '../types/playback';
 import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Maximize, Minimize, Volume2, VolumeX } from 'lucide-react';
 
 interface VideoPlayerProps {
   sessionId: string;
@@ -20,6 +21,7 @@ export function VideoPlayer({
   onTimeUpdate
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [playbackInfo, setPlaybackInfo] = useState<PlaybackInfo | null>(null);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -27,6 +29,9 @@ export function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     loadPlaybackInfo();
@@ -37,6 +42,14 @@ export function VideoPlayer({
       seekToTimestamp(startTimestamp);
     }
   }, [startTimestamp, playbackInfo]);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const loadPlaybackInfo = async () => {
     try {
@@ -77,7 +90,6 @@ export function VideoPlayer({
   };
 
   const handleVideoEnded = () => {
-    // Move to next segment
     if (playbackInfo && currentSegmentIndex < playbackInfo.segments.length - 1) {
       loadSegment(currentSegmentIndex + 1);
     } else {
@@ -130,7 +142,6 @@ export function VideoPlayer({
 
       if (!playbackInfo) return;
 
-      // Find segment index
       const segmentIndex = playbackInfo.segments.findIndex(
         s => s.path === seekInfo.videoPath
       );
@@ -152,7 +163,6 @@ export function VideoPlayer({
 
     if (!playbackInfo) return;
 
-    // Calculate which segment this time falls into
     let accumulatedTime = 0;
     let targetSegmentIndex = 0;
     let offsetInSegment = seekTime;
@@ -180,6 +190,34 @@ export function VideoPlayer({
     }
   };
 
+  const handleVolumeChange = (value: number[]) => {
+    const vol = value[0];
+    setVolume(vol);
+    if (videoRef.current) {
+      videoRef.current.volume = vol;
+      if (vol > 0 && isMuted) {
+        setIsMuted(false);
+        videoRef.current.muted = false;
+      }
+    }
+  };
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      const next = !isMuted;
+      setIsMuted(next);
+      videoRef.current.muted = next;
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  };
+
   const formatTime = (seconds: number): string => {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -191,13 +229,29 @@ export function VideoPlayer({
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const toggleFullscreen = () => {
-    if (videoRef.current) {
-      if (!document.fullscreenElement) {
-        videoRef.current.requestFullscreen();
-      } else {
-        document.exitFullscreen();
-      }
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    switch (e.key) {
+      case ' ':
+        e.preventDefault();
+        isPlaying ? handlePause() : handlePlay();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        if (videoRef.current) {
+          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 5);
+        }
+        break;
+      case 'ArrowRight':
+        e.preventDefault();
+        if (videoRef.current) {
+          videoRef.current.currentTime = Math.min(duration, videoRef.current.currentTime + 5);
+        }
+        break;
+      case 'm':
+      case 'M':
+        e.preventDefault();
+        toggleMute();
+        break;
     }
   };
 
@@ -222,7 +276,12 @@ export function VideoPlayer({
   }
 
   return (
-    <div className="video-player flex flex-col gap-2">
+    <div
+      ref={containerRef}
+      className="video-player flex flex-col gap-2 outline-none"
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+    >
       <div className="video-container relative bg-black rounded-lg overflow-hidden">
         <video
           ref={videoRef}
@@ -273,8 +332,21 @@ export function VideoPlayer({
               </SelectContent>
             </Select>
 
+            <Button onClick={toggleMute} variant="outline" size="sm">
+              {isMuted || volume === 0 ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+            </Button>
+
+            <Slider
+              value={[isMuted ? 0 : volume]}
+              min={0}
+              max={1}
+              step={0.05}
+              onValueChange={handleVolumeChange}
+              className="w-20"
+            />
+
             <Button onClick={toggleFullscreen} variant="outline" size="sm">
-              ⛶
+              {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
             </Button>
           </div>
         </div>

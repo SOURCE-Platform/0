@@ -75,6 +75,18 @@ pub struct AppState {
     pub input_recorder: Option<Arc<InputRecorder>>,
     pub search_engine: Arc<SearchEngine>,
     pub playback_engine: Option<Arc<PlaybackEngine>>,
+    pub storage: Option<Arc<RecordingStorage>>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
+pub struct RecordingInfo {
+    pub session_id: String,
+    pub start_timestamp: i64,
+    pub end_timestamp: Option<i64>,
+    pub segment_count: i64,
+    pub total_size_bytes: i64,
+    pub total_duration_ms: i64,
+    pub frame_count: i64,
 }
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -929,6 +941,35 @@ async fn get_frame_at_timestamp(
         .map_err(|e| format!("Failed to get frame: {}", e))
 }
 
+#[tauri::command]
+async fn get_recordings(state: State<'_, AppState>) -> Result<Vec<RecordingInfo>, String> {
+    sqlx::query_as::<_, RecordingInfo>(
+        r#"SELECT s.id as session_id, s.start_timestamp, s.end_timestamp,
+                  COUNT(vs.id) as segment_count,
+                  COALESCE(SUM(vs.file_size_bytes), 0) as total_size_bytes,
+                  (COALESCE(s.end_timestamp, strftime('%s', 'now')) - s.start_timestamp) * 1000 as total_duration_ms,
+                  COALESCE(SUM(vs.frame_count), 0) as frame_count
+           FROM sessions s
+           INNER JOIN video_segments vs ON vs.session_id = s.id
+           GROUP BY s.id
+           ORDER BY s.start_timestamp DESC"#,
+    )
+    .fetch_all(state.db.pool())
+    .await
+    .map_err(|e| format!("Failed to get recordings: {}", e))
+}
+
+#[tauri::command]
+async fn delete_recording(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let storage = state.storage.as_ref().ok_or("Storage not initialized")?;
+    let uuid = Uuid::parse_str(&session_id)
+        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    storage
+        .delete_session(uuid)
+        .await
+        .map_err(|e| format!("Failed to delete recording: {}", e))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -1048,6 +1089,7 @@ pub fn run() {
                     input_recorder,
                     search_engine,
                     playback_engine: Some(playback_engine),
+                    storage: Some(storage),
                 });
             });
 
@@ -1096,7 +1138,9 @@ pub fn run() {
             get_mouse_events_in_range,
             get_playback_info,
             seek_to_timestamp,
-            get_frame_at_timestamp
+            get_frame_at_timestamp,
+            get_recordings,
+            delete_recording
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
