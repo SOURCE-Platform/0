@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Lock } from "lucide-react";
+import { Lock, Monitor, Activity, Keyboard, Mouse, Camera, Mic, LucideIcon } from "lucide-react";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
 
 interface ConsentState {
@@ -20,7 +20,7 @@ interface FeatureInfo {
   key: keyof ConsentState;
   title: string;
   description: string;
-  icon: string;
+  icon: LucideIcon;
 }
 
 const FEATURES: FeatureInfo[] = [
@@ -28,37 +28,37 @@ const FEATURES: FeatureInfo[] = [
     key: "screen_recording",
     title: "Screen Recording",
     description: "Capture screenshots and record screen activity for productivity tracking",
-    icon: "🖥️",
+    icon: Monitor,
   },
   {
     key: "os_activity",
     title: "OS Activity Tracking",
     description: "Track application usage and window focus to understand your workflow",
-    icon: "📊",
+    icon: Activity,
   },
   {
     key: "keyboard_recording",
     title: "Keyboard Recording",
     description: "Record keyboard activity and typing patterns (keystrokes are not logged, only metadata)",
-    icon: "⌨️",
+    icon: Keyboard,
   },
   {
     key: "mouse_recording",
     title: "Mouse Recording",
     description: "Track mouse movements and clicks to analyze interaction patterns",
-    icon: "🖱️",
+    icon: Mouse,
   },
   {
     key: "camera_recording",
     title: "Camera Recording",
     description: "Optional: Record video from your camera during sessions",
-    icon: "📷",
+    icon: Camera,
   },
   {
     key: "microphone_recording",
     title: "Microphone Recording",
     description: "Optional: Record audio from your microphone during sessions",
-    icon: "🎤",
+    icon: Mic,
   },
 ];
 
@@ -145,7 +145,7 @@ export default function ConsentManager() {
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-3xl">{feature.icon}</span>
+                  <feature.icon className="h-5 w-5 text-muted-foreground shrink-0" />
                   <div>
                     <CardTitle className="text-lg">{feature.title}</CardTitle>
                     {showDescriptions && (

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { FolderOpen, Lock, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
@@ -28,6 +28,23 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [activeTab, setActiveTab] = useState("general");
+  const [displayedTab, setDisplayedTab] = useState("general");
+  const [tabFading, setTabFading] = useState(false);
+  const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleTabChange(tab: string) {
+    if (tab === activeTab) return;
+    if (fadeTimer.current) clearTimeout(fadeTimer.current);
+    setActiveTab(tab);
+    setTabFading(true);
+    fadeTimer.current = setTimeout(() => {
+      setDisplayedTab(tab);
+      setTabFading(false);
+    }, 200);
+  }
+
+  useEffect(() => () => { if (fadeTimer.current) clearTimeout(fadeTimer.current); }, []);
   const { theme, setTheme } = useTheme();
   const { showDescriptions, setShowDescriptions } = useUIPrefs();
 
@@ -160,15 +177,20 @@ export default function Settings() {
         </Card>
       )}
 
-      <Tabs defaultValue="general" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
+        <TabsList variant="line">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="recording">Recording</TabsTrigger>
           <TabsTrigger value="storage">Storage</TabsTrigger>
           <TabsTrigger value="privacy">Privacy</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="general" className="space-y-4 mt-6">
+        <div
+          className="transition-opacity duration-200 mt-6"
+          style={{ opacity: tabFading ? 0 : 1 }}
+        >
+
+        {displayedTab === "general" && <div className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle>General Settings</CardTitle>
@@ -244,10 +266,9 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>}
 
-        <TabsContent value="recording" className="mt-6">
-          <div className="grid grid-cols-2 gap-4">
+        {displayedTab === "recording" && <div className="grid grid-cols-2 gap-4">
           <Card>
             <CardHeader>
               <CardTitle>Recording Quality</CardTitle>
@@ -328,11 +349,9 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
-          </div>
-        </TabsContent>
+          </div>}
 
-        <TabsContent value="storage" className="mt-6">
-          <div className="grid grid-cols-2 gap-4 items-start">
+        {displayedTab === "storage" && <div className="grid grid-cols-2 gap-4 items-start">
           <Card>
             <CardHeader>
               <CardTitle>Storage Location</CardTitle>
@@ -379,11 +398,9 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
-          </div>
-        </TabsContent>
+          </div>}
 
-        <TabsContent value="privacy" className="mt-6">
-          <div className="grid grid-cols-3 gap-4 items-start">
+        {displayedTab === "privacy" && <div className="grid grid-cols-3 gap-4 items-start">
           <Card className="col-span-1">
             <CardHeader>
               <CardTitle>Privacy & Consent</CardTitle>
@@ -414,8 +431,9 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
-          </div>
-        </TabsContent>
+          </div>}
+
+        </div>
       </Tabs>
     </div>
   );
