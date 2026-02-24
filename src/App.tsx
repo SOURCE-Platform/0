@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from "react";
-import ConsentManager from "./components/ConsentManager";
 import Settings from "./components/Settings";
 import ScreenRecorder from "./components/ScreenRecorder";
 import Recordings from "./components/Recordings";
@@ -8,10 +7,9 @@ import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 
-type View = "consent" | "settings" | "recorder" | "recordings" | "hardware";
+type View = "settings" | "recorder" | "recordings" | "hardware";
 
 const TABS = [
-  { value: "consent",    label: "Privacy & Consent" },
   { value: "recorder",   label: "Screen Recorder" },
   { value: "recordings", label: "Recordings" },
   { value: "hardware",   label: "Hardware" },
@@ -19,8 +17,8 @@ const TABS = [
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState<View>("consent");
-  const [displayedView, setDisplayedView] = useState<View>("consent");
+  const [activeTab, setActiveTab] = useState<View>("recorder");
+  const [displayedView, setDisplayedView] = useState<View>("recorder");
   const [fading, setFading] = useState(false);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,7 +55,6 @@ function App() {
             style={{ opacity: fading ? 0 : 1 }}
           >
             <div className="container mx-auto px-6 py-6">
-              {displayedView === "consent"    && <ConsentManager />}
               {displayedView === "recorder"   && <ScreenRecorder />}
               {displayedView === "recordings" && <Recordings />}
               {displayedView === "hardware"   && <Hardware />}

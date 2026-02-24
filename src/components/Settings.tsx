@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { Switch } from "@/components/ui/switch";
-import { FolderOpen, Lock, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucide-react";
+import { FolderOpen, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucide-react";
+import ConsentManager from "@/components/ConsentManager";
 import { useTheme } from "@/components/theme-provider";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
 
@@ -404,38 +405,7 @@ export default function Settings() {
           </Card>
           </div>}
 
-        {displayedTab === "privacy" && <div className="grid grid-cols-3 gap-4 items-start">
-          <Card className="col-span-1">
-            <CardHeader>
-              <CardTitle>Privacy & Consent</CardTitle>
-              {showDescriptions && <CardDescription>Control what data Observer can collect</CardDescription>}
-            </CardHeader>
-            {showDescriptions && (
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  All recording features require explicit consent. To manage feature consents, please use the Privacy & Consent tab.
-                </p>
-              </CardContent>
-            )}
-          </Card>
-
-          {showDescriptions && (
-            <Card className="col-span-2 border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
-                  <Lock className="h-5 w-5" />
-                  Privacy First
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-                <p>• All data is stored locally on your device</p>
-                <p>• No data is sent to external servers</p>
-                <p>• You have full control over your data</p>
-                <p>• You can delete all data at any time</p>
-              </CardContent>
-            </Card>
-          )}
-          </div>}
+        {displayedTab === "privacy" && <ConsentManager />}
 
         </div>
       </div>
