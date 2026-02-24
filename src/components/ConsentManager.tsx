@@ -124,8 +124,8 @@ export default function ConsentManager() {
 
       {/* ── Right: Don't record these ── */}
       <div className="flex-1 min-w-0">
-        <h2 className="text-base text-foreground underline decoration-1 underline-offset-[7px] mb-6">
-          Don't record these
+        <h2 className="text-base text-foreground mb-6">
+          <span className="underline decoration-1 underline-offset-[7px] decoration-foreground/60">Don't</span> record these
         </h2>
 
         <div className="flex gap-12">
@@ -147,7 +147,7 @@ export default function ConsentManager() {
                   />
                   <button
                     onClick={() => setWebsiteBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -164,7 +164,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addWebsite}
-                  className="shrink-0 flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                  className="shrink-0 cursor-pointer flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
@@ -182,7 +182,7 @@ export default function ConsentManager() {
                   <span className="text-sm flex-1 truncate">{app}</span>
                   <button
                     onClick={() => setAppBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -199,7 +199,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addApp}
-                  className="shrink-0 flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                  className="shrink-0 cursor-pointer flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
