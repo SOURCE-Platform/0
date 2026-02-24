@@ -125,7 +125,7 @@ export default function ConsentManager() {
       {/* ── Right: Don't record these ── */}
       <div className="flex-1 min-w-0">
         <h2 className="text-base text-foreground mb-6">
-          <span className="underline decoration-1 underline-offset-[7px] decoration-[#FF0033] dark:decoration-[#FF879F]">Don't</span> record these
+          <span className="underline decoration-dashed decoration-1 underline-offset-[7px] decoration-[#FF0033] dark:decoration-[#FF879F]">Don't</span> record these
         </h2>
 
         <div className="flex gap-12">
