@@ -22,6 +22,8 @@ interface Config {
   motion_detection_threshold: number;
   ocr_enabled: boolean;
   default_recording_fps: number;
+  website_blacklist: string[];
+  app_blacklist: string[];
 }
 
 export default function Settings() {

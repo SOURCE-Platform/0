@@ -33,6 +33,12 @@ pub struct Config {
     pub hardware_acceleration: bool,
     /// Target FPS for video encoding
     pub target_fps: u32,
+    /// Websites to exclude from recording
+    #[serde(default)]
+    pub website_blacklist: Vec<String>,
+    /// Application names to exclude from recording
+    #[serde(default)]
+    pub app_blacklist: Vec<String>,
 }
 
 impl Default for Config {
@@ -66,6 +72,8 @@ impl Default for Config {
             video_quality: "Medium".to_string(),
             hardware_acceleration: true,
             target_fps: 15,
+            website_blacklist: Vec::new(),
+            app_blacklist: Vec::new(),
         }
     }
 }
