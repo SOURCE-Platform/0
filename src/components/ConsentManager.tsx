@@ -147,7 +147,7 @@ export default function ConsentManager() {
                   />
                   <button
                     onClick={() => setWebsiteBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] hover:bg-black/15 dark:hover:bg-white/15 transition-colors"
+                    className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] hover:bg-black/[8%] dark:hover:bg-white/[8%] transition-colors"
                   >
                     <Plus className="size-4 rotate-45" />
                   </button>
@@ -164,7 +164,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addWebsite}
-                  className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] hover:bg-black/15 dark:hover:bg-white/15 transition-colors"
+                  className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] hover:bg-black/[8%] dark:hover:bg-white/[8%] transition-colors"
                 >
                   <Plus className="size-4" />
                 </button>
@@ -182,7 +182,7 @@ export default function ConsentManager() {
                   <span className="text-sm flex-1 truncate">{app}</span>
                   <button
                     onClick={() => setAppBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] hover:bg-black/15 dark:hover:bg-white/15 transition-colors"
+                    className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] hover:bg-black/[8%] dark:hover:bg-white/[8%] transition-colors"
                   >
                     <Plus className="size-4 rotate-45" />
                   </button>
@@ -199,7 +199,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addApp}
-                  className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] hover:bg-black/15 dark:hover:bg-white/15 transition-colors"
+                  className="shrink-0 cursor-pointer h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] hover:bg-black/[8%] dark:hover:bg-white/[8%] transition-colors"
                 >
                   <Plus className="size-4" />
                 </button>
