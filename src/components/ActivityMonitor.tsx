@@ -104,7 +104,7 @@ export default function ActivityMonitor({ sessionId }: ActivityMonitorProps) {
 
   return (
     <div className="p-4 border border-border rounded-lg">
-      <h2 className="text-xl font-semibold mb-4">OS Activity Monitor</h2>
+      <h2 className="text-xl font-medium mb-4">OS Activity Monitor</h2>
 
       {error && (
         <Alert variant="destructive" className="mb-4">
@@ -137,7 +137,7 @@ export default function ActivityMonitor({ sessionId }: ActivityMonitorProps) {
             <>
               {currentApp && (
                 <div className="mb-4 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                  <h3 className="font-semibold mb-2">Current Focused App</h3>
+                  <h3 className="font-medium mb-2">Current Focused App</h3>
                   <div className="text-sm">
                     <div className="font-medium">{currentApp.name}</div>
                     <div className="text-muted-foreground">{currentApp.bundle_id}</div>
@@ -147,7 +147,7 @@ export default function ActivityMonitor({ sessionId }: ActivityMonitorProps) {
               )}
 
               <div className="mt-4">
-                <h3 className="font-semibold mb-2">
+                <h3 className="font-medium mb-2">
                   Running Applications ({runningApps.length})
                 </h3>
                 <div className="max-h-96 overflow-y-auto border border-border rounded-lg">

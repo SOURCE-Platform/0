@@ -415,7 +415,7 @@ export default function Hardware() {
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Hardware</h1>
+        <h1 className="text-xl font-medium tracking-tight">Hardware</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Manage smart sensors, servers, and connected devices on your network.
         </p>
@@ -792,7 +792,7 @@ function DeviceDetail({
         <div className="flex items-start gap-3">
           <HealthDot status={device.status} />
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-base leading-tight">{device.name}</h3>
+            <h3 className="font-medium text-base leading-tight">{device.name}</h3>
             <p className="text-xs text-muted-foreground mt-0.5">{TYPE_LABEL[device.type]}</p>
           </div>
         </div>

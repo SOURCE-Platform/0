@@ -131,7 +131,7 @@ export default function ConsentManager() {
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Privacy & Consent Settings</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Privacy & Consent Settings</h1>
         {showDescriptions && (
           <p className="text-muted-foreground">
             Control what data Observer can collect. All features require explicit consent and default to OFF.

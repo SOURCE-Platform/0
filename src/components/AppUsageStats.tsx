@@ -97,7 +97,7 @@ export default function AppUsageStats({
   if (loading && stats.length === 0) {
     return (
       <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">App Usage Statistics</h2>
+        <h2 className="text-xl font-medium mb-4">App Usage Statistics</h2>
         <div className="text-gray-600 dark:text-gray-400">Loading...</div>
       </div>
     );
@@ -106,7 +106,7 @@ export default function AppUsageStats({
   return (
     <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">App Usage Statistics</h2>
+        <h2 className="text-xl font-medium">App Usage Statistics</h2>
         <button
           onClick={loadStats}
           className="cursor-pointer px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
@@ -174,7 +174,7 @@ export default function AppUsageStats({
 
           {/* Detailed Table */}
           <div className="mt-6">
-            <h3 className="font-semibold mb-2">Detailed Statistics</h3>
+            <h3 className="font-medium mb-2">Detailed Statistics</h3>
             <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded">
               <table className="w-full text-sm">
                 <thead className="bg-gray-100 dark:bg-gray-800">

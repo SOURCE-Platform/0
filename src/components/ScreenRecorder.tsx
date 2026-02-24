@@ -170,7 +170,7 @@ export default function ScreenRecorder() {
     <div className="w-full max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Screen Recorder</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Screen Recorder</h1>
           {showDescriptions && (
             <p className="text-muted-foreground">Capture your screen activity</p>
           )}
@@ -310,19 +310,19 @@ export default function ScreenRecorder() {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="p-2 bg-muted rounded-lg">
                     <p className="text-xs text-muted-foreground">Duration</p>
-                    <p className="text-lg font-mono font-semibold tabular-nums">
+                    <p className="text-lg font-mono font-medium tabular-nums">
                       {formatElapsed(elapsedSeconds)}
                     </p>
                   </div>
                   <div className="p-2 bg-muted rounded-lg">
                     <p className="text-xs text-muted-foreground">Frames</p>
-                    <p className="text-lg font-mono font-semibold tabular-nums">
+                    <p className="text-lg font-mono font-medium tabular-nums">
                       {status?.total_frames?.toLocaleString() ?? 0}
                     </p>
                   </div>
                   <div className="p-2 bg-muted rounded-lg">
                     <p className="text-xs text-muted-foreground">Segments</p>
-                    <p className="text-lg font-mono font-semibold tabular-nums">
+                    <p className="text-lg font-mono font-medium tabular-nums">
                       {status?.segment_count ?? 0}
                     </p>
                   </div>

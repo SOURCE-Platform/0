@@ -101,7 +101,7 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
       <span>
         {parts.map((part, i) =>
           part.toLowerCase() === query.toLowerCase() ? (
-            <mark key={i} className="bg-yellow-200 font-semibold">
+            <mark key={i} className="bg-yellow-200 font-medium">
               {part}
             </mark>
           ) : (
@@ -131,7 +131,7 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
   if (error) {
     return (
       <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
-        <p className="font-semibold">Search Error</p>
+        <p className="font-medium">Search Error</p>
         <p className="text-sm">{error}</p>
       </div>
     );
@@ -161,8 +161,8 @@ export function SearchResults({ query, sessionId }: SearchResultsProps) {
       {/* Search metadata */}
       <div className="flex justify-between items-center pb-4 border-b">
         <div className="text-sm text-gray-600">
-          Found <span className="font-semibold">{results.total_count}</span> results in{' '}
-          <span className="font-semibold">{results.query_time_ms}ms</span>
+          Found <span className="font-medium">{results.total_count}</span> results in{' '}
+          <span className="font-medium">{results.query_time_ms}ms</span>
         </div>
         <button
           onClick={() => setShowFilters(!showFilters)}

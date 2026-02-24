@@ -53,7 +53,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-light;
   }
 }
 
@@ -81,6 +81,16 @@
 
 body {
   font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+@keyframes tab-underline-exit {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+@keyframes tab-underline-enter {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
 }
 
 @theme inline {

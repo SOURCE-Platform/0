@@ -67,7 +67,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
   if (!stats || stats.total_keystrokes === 0) {
     return (
       <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Keyboard Statistics</h2>
+        <h2 className="text-xl font-medium mb-4">Keyboard Statistics</h2>
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           No keyboard data available for this session yet.
           <br />
@@ -80,7 +80,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
   return (
     <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Keyboard Statistics</h2>
+        <h2 className="text-xl font-medium">Keyboard Statistics</h2>
         <button
           onClick={loadStats}
           className="cursor-pointer px-3 py-1 text-sm bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
@@ -94,21 +94,21 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="p-4 bg-blue-50 dark:bg-blue-900 rounded-lg">
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Keystrokes</div>
-          <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+          <div className="text-2xl font-semibold text-blue-700 dark:text-blue-300">
             {stats.total_keystrokes.toLocaleString()}
           </div>
         </div>
 
         <div className="p-4 bg-green-50 dark:bg-green-900 rounded-lg">
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Keys per Minute</div>
-          <div className="text-2xl font-bold text-green-700 dark:text-green-300">
+          <div className="text-2xl font-semibold text-green-700 dark:text-green-300">
             {stats.keys_per_minute.toFixed(1)}
           </div>
         </div>
 
         <div className="p-4 bg-purple-50 dark:bg-purple-900 rounded-lg">
           <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Typing Speed</div>
-          <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+          <div className="text-2xl font-semibold text-purple-700 dark:text-purple-300">
             {stats.typing_speed_wpm ? `${stats.typing_speed_wpm} WPM` : 'N/A'}
           </div>
         </div>
@@ -117,7 +117,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
       {/* Most Used Keys */}
       {stats.most_used_keys.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-lg font-semibold mb-3">Most Used Keys</h3>
+          <h3 className="text-lg font-medium mb-3">Most Used Keys</h3>
           <div className="space-y-2">
             {stats.most_used_keys.map(([key, count], index) => {
               const maxCount = stats.most_used_keys[0][1];
@@ -133,7 +133,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
                       className="bg-blue-500 h-full flex items-center justify-end px-2 transition-all"
                       style={{ width: `${percentage}%` }}
                     >
-                      <span className="text-xs text-white font-semibold">
+                      <span className="text-xs text-white font-medium">
                         {count}
                       </span>
                     </div>
@@ -151,7 +151,7 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
       {/* Shortcut Usage */}
       {stats.shortcut_usage.length > 0 && (
         <div>
-          <h3 className="text-lg font-semibold mb-3">Top Keyboard Shortcuts</h3>
+          <h3 className="text-lg font-medium mb-3">Top Keyboard Shortcuts</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {stats.shortcut_usage.map(([shortcut, count], index) => (
               <div
@@ -159,17 +159,17 @@ export default function KeyboardStats({ sessionId }: KeyboardStatsProps) {
                 className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg flex items-center justify-between"
               >
                 <div className="flex items-center">
-                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded flex items-center justify-center font-semibold text-sm mr-3">
+                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded flex items-center justify-center font-medium text-sm mr-3">
                     #{index + 1}
                   </div>
                   <div>
-                    <div className="font-mono text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    <div className="font-mono text-sm font-medium text-gray-800 dark:text-gray-200">
                       {shortcut}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-lg font-bold text-gray-700 dark:text-gray-300">
+                  <div className="text-lg font-semibold text-gray-700 dark:text-gray-300">
                     {count}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400">uses</div>

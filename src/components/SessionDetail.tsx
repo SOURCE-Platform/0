@@ -106,7 +106,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
   if (loading) {
     return (
       <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Session Details</h2>
+        <h2 className="text-xl font-medium mb-4">Session Details</h2>
         <div className="text-gray-600 dark:text-gray-400">Loading session details...</div>
       </div>
     );
@@ -115,7 +115,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
   if (error) {
     return (
       <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
-        <h2 className="text-xl font-semibold mb-4">Session Details</h2>
+        <h2 className="text-xl font-medium mb-4">Session Details</h2>
         <div className="p-3 bg-red-100 dark:bg-red-900 text-red-900 dark:text-red-100 rounded">
           {error}
         </div>
@@ -133,7 +133,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
   return (
     <div className="p-4 border border-gray-300 dark:border-gray-700 rounded-lg">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Session Details</h2>
+        <h2 className="text-xl font-medium">Session Details</h2>
         {onClose && (
           <button
             onClick={onClose}
@@ -158,47 +158,47 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Duration</div>
-          <div className="text-lg font-semibold">{formatDuration(metrics.total_duration_ms)}</div>
+          <div className="text-lg font-medium">{formatDuration(metrics.total_duration_ms)}</div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Active Time</div>
-          <div className="text-lg font-semibold">{formatDuration(metrics.active_duration_ms)}</div>
+          <div className="text-lg font-medium">{formatDuration(metrics.active_duration_ms)}</div>
           <div className="text-xs text-gray-500">{activePercentage.toFixed(0)}%</div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Idle Time</div>
-          <div className="text-lg font-semibold">{formatDuration(metrics.idle_duration_ms)}</div>
+          <div className="text-lg font-medium">{formatDuration(metrics.idle_duration_ms)}</div>
           <div className="text-xs text-gray-500">{idlePercentage.toFixed(0)}%</div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Productivity</div>
-          <div className={`text-lg font-semibold ${getProductivityColor(metrics.productivity_score)}`}>
+          <div className={`text-lg font-medium ${getProductivityColor(metrics.productivity_score)}`}>
             {formatPercentage(metrics.productivity_score)}
           </div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">App Switches</div>
-          <div className="text-lg font-semibold">{metrics.app_switches}</div>
+          <div className="text-lg font-medium">{metrics.app_switches}</div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Unique Apps</div>
-          <div className="text-lg font-semibold">{metrics.unique_apps}</div>
+          <div className="text-lg font-medium">{metrics.unique_apps}</div>
         </div>
 
         <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded col-span-2">
           <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Most Used App</div>
-          <div className="text-lg font-semibold truncate">{metrics.most_used_app}</div>
+          <div className="text-lg font-medium truncate">{metrics.most_used_app}</div>
         </div>
       </div>
 
       {/* Active/Idle Duration Bar */}
       <div className="mb-6">
-        <h3 className="font-semibold mb-2">Time Distribution</h3>
+        <h3 className="font-medium mb-2">Time Distribution</h3>
         <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 flex overflow-hidden">
           <div
             className="bg-green-500"
@@ -220,7 +220,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
       {/* Application Usage */}
       {appStats.length > 0 && (
         <div className="mb-6">
-          <h3 className="font-semibold mb-2">Application Usage</h3>
+          <h3 className="font-medium mb-2">Application Usage</h3>
           <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded">
             <table className="w-full text-sm">
               <thead className="bg-gray-100 dark:bg-gray-800">
@@ -259,7 +259,7 @@ export default function SessionDetail({ sessionId, onClose }: SessionDetailProps
 
       {/* Command Statistics */}
       <div>
-        <h2 className="text-xl font-semibold mb-4 text-white">
+        <h2 className="text-xl font-medium mb-4 text-white">
           Keyboard Shortcuts & Commands
         </h2>
         <CommandStats sessionId={sessionId} />

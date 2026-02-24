@@ -146,7 +146,7 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
     return (
       <Card>
         <CardContent className="p-4">
-          <h2 className="text-xl font-semibold mb-4">Session History</h2>
+          <h2 className="text-xl font-medium mb-4">Session History</h2>
           <p className="text-muted-foreground">Loading sessions...</p>
         </CardContent>
       </Card>
@@ -156,7 +156,7 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
   return (
     <div className="p-4 border border-border rounded-lg">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-xl font-semibold">Session History</h2>
+        <h2 className="text-xl font-medium">Session History</h2>
         <Button size="sm" onClick={loadSessions}>
           Refresh
         </Button>
@@ -247,7 +247,7 @@ export default function SessionList({ onSelectSession }: SessionListProps) {
                 </div>
 
                 <div className="text-right">
-                  <div className="font-semibold">{formatDuration(session.duration_hours)}</div>
+                  <div className="font-medium">{formatDuration(session.duration_hours)}</div>
                   <div className="text-xs text-muted-foreground">
                     {session.device_id}
                   </div>

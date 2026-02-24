@@ -242,7 +242,7 @@ export function Timeline({ data, zoom, onTimeClick, onSessionClick }: TimelinePr
       />
 
       <div className="timeline-legend mt-4 flex items-center gap-4 text-sm">
-        <div className="font-semibold">Session Types:</div>
+        <div className="font-medium">Session Types:</div>
         {Object.entries({
           Work: '#4299e1',
           Development: '#48bb78',

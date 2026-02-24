@@ -145,7 +145,7 @@ export default function Settings() {
     <div className="w-full max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Settings</h1>
+          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
           {showDescriptions && (
             <p className="text-muted-foreground">Manage your application preferences and configuration</p>
           )}

@@ -76,7 +76,7 @@ export default function KeyboardMonitor({ sessionId }: KeyboardMonitorProps) {
 
   return (
     <div className="p-4 border border-border rounded-lg">
-      <h2 className="text-xl font-semibold mb-4">Keyboard Monitor</h2>
+      <h2 className="text-xl font-medium mb-4">Keyboard Monitor</h2>
 
       {error && (
         <Alert variant="destructive" className="mb-4">

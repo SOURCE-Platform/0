@@ -63,11 +63,11 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
       <div className="grid grid-cols-2 gap-4">
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-gray-400 text-sm">Total Shortcuts</div>
-          <div className="text-2xl font-bold text-white">{stats.total_shortcuts}</div>
+          <div className="text-2xl font-semibold text-white">{stats.total_shortcuts}</div>
         </div>
         <div className="bg-gray-800 rounded-lg p-4">
           <div className="text-gray-400 text-sm">Unique Shortcuts</div>
-          <div className="text-2xl font-bold text-white">{stats.unique_shortcuts}</div>
+          <div className="text-2xl font-semibold text-white">{stats.unique_shortcuts}</div>
         </div>
       </div>
 
@@ -103,7 +103,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
 
       {/* Top Shortcuts */}
       <div className="space-y-2">
-        <h3 className="text-lg font-semibold text-white">
+        <h3 className="text-lg font-medium text-white">
           {selectedApp ? `Top Shortcuts in ${selectedApp}` : 'Top Shortcuts'}
         </h3>
         <div className="space-y-2">
@@ -122,7 +122,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
                       {shortcut}
                     </span>
                   </div>
-                  <span className="text-gray-300 font-semibold">{count}</span>
+                  <span className="text-gray-300 font-medium">{count}</span>
                 </div>
                 <div className="w-full bg-gray-700 rounded-full h-2">
                   <div
@@ -139,7 +139,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
       {/* Shortcuts by App (only show if no filter is active) */}
       {!selectedApp && Object.keys(stats.shortcuts_by_app).length > 0 && (
         <div className="space-y-3">
-          <h3 className="text-lg font-semibold text-white">Shortcuts by Application</h3>
+          <h3 className="text-lg font-medium text-white">Shortcuts by Application</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(stats.shortcuts_by_app).map(([app, shortcuts]) => {
               const totalForApp = shortcuts.reduce((sum, [, count]) => sum + count, 0);
@@ -147,7 +147,7 @@ export const CommandStats: React.FC<CommandStatsProps> = ({ sessionId }) => {
 
               return (
                 <div key={app} className="bg-gray-800 rounded-lg p-4">
-                  <div className="text-white font-semibold mb-2">{app}</div>
+                  <div className="text-white font-medium mb-2">{app}</div>
                   <div className="text-gray-400 text-sm mb-2">
                     {totalForApp} shortcut{totalForApp !== 1 ? 's' : ''} used
                   </div>

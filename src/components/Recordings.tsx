@@ -149,7 +149,7 @@ export default function Recordings() {
       {/* Left panel — recordings list */}
       <div className="w-80 flex-shrink-0 flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Recordings</h2>
+          <h2 className="text-lg font-medium">Recordings</h2>
           <Button variant="outline" size="sm" onClick={loadRecordings} disabled={isLoading}>
             <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} />
           </Button>
