@@ -49,7 +49,7 @@ function Slider({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       className={cn(
-        "relative flex w-full h-5 touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
+        "relative flex w-full h-5 cursor-pointer touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",
         className
       )}
       {...props}
