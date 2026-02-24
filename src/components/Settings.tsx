@@ -144,21 +144,11 @@ export default function Settings() {
 
   return (
     <div className="w-full max-w-5xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
-          {showDescriptions && (
-            <p className="text-muted-foreground">Manage your application preferences and configuration</p>
-          )}
-        </div>
-        <div className="flex gap-3">
-          <Button onClick={resetToDefaults} disabled={saving} variant="outline">
-            Reset to Defaults
-          </Button>
-          <Button onClick={saveConfig} disabled={saving}>
-            {saving ? "Saving..." : "Save Settings"}
-          </Button>
-        </div>
+      <div className="space-y-1">
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
+        {showDescriptions && (
+          <p className="text-muted-foreground">Manage your application preferences and configuration</p>
+        )}
       </div>
 
       {message && (
@@ -268,6 +258,25 @@ export default function Settings() {
                   checked={showDescriptions}
                   onCheckedChange={setShowDescriptions}
                 />
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle>Reset to Defaults</CardTitle>
+              {showDescriptions && (
+                <CardDescription>Restore all settings to their original values</CardDescription>
+              )}
+            </CardHeader>
+            <CardContent className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">This will overwrite your current configuration.</p>
+              <div className="flex gap-3">
+                <Button onClick={resetToDefaults} disabled={saving} variant="outline">
+                  Reset to Defaults
+                </Button>
+                <Button onClick={saveConfig} disabled={saving}>
+                  {saving ? "Saving..." : "Save Settings"}
+                </Button>
               </div>
             </CardContent>
           </Card>
