@@ -86,8 +86,8 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="observer-theme">
       <UIPrefsProvider>
-        <div className="min-h-screen bg-background">
-          <div className="flex h-14 items-center px-6 gap-6">
+        <div className="h-screen overflow-hidden bg-background">
+          <div className="fixed top-0 inset-x-0 z-50 flex h-14 items-center px-6 gap-6 bg-background">
             <svg width="24" height="24" viewBox="0 0 28 28" className="fill-black dark:fill-white shrink-0">
               <circle cx="14" cy="14" r="14"/>
             </svg>
@@ -116,14 +116,16 @@ function App() {
           </div>
 
           <main
-            className="container mx-auto px-6 py-6 transition-opacity duration-200"
+            className="mt-14 h-[calc(100%-3.5rem)] overflow-y-auto mr-2 transition-opacity duration-200"
             style={{ opacity: fading ? 0 : 1 }}
           >
-            {displayedView === "consent"    && <ConsentManager />}
-            {displayedView === "recorder"   && <ScreenRecorder />}
-            {displayedView === "recordings" && <Recordings />}
-            {displayedView === "hardware"   && <Hardware />}
-            {displayedView === "settings"   && <Settings />}
+            <div className="container mx-auto px-6 py-6">
+              {displayedView === "consent"    && <ConsentManager />}
+              {displayedView === "recorder"   && <ScreenRecorder />}
+              {displayedView === "recordings" && <Recordings />}
+              {displayedView === "hardware"   && <Hardware />}
+              {displayedView === "settings"   && <Settings />}
+            </div>
           </main>
         </div>
       </UIPrefsProvider>
