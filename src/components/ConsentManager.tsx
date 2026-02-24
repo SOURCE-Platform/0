@@ -147,7 +147,7 @@ export default function ConsentManager() {
                   />
                   <button
                     onClick={() => setWebsiteBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] transition-colors"
                   >
                     <Plus className="size-3.5 rotate-45" />
                   </button>
@@ -164,7 +164,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addWebsite}
-                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
@@ -182,7 +182,7 @@ export default function ConsentManager() {
                   <span className="text-sm flex-1 truncate">{app}</span>
                   <button
                     onClick={() => setAppBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-[#FF0033] dark:hover:text-[#FF879F] transition-colors"
                   >
                     <Plus className="size-3.5 rotate-45" />
                   </button>
@@ -199,7 +199,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addApp}
-                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-[#0077FF] dark:hover:text-[#67C0FF] transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
