@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Switch } from "@/components/ui/switch";
 import { Input } from "@/components/ui/input";
-import { Plus, X, AppWindow } from "lucide-react";
+import { Plus, AppWindow } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ConsentState {
@@ -147,9 +147,9 @@ export default function ConsentManager() {
                   />
                   <button
                     onClick={() => setWebsiteBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <X className="size-3.5" />
+                    <Plus className="size-3.5 rotate-45" />
                   </button>
                 </div>
               ))}
@@ -164,7 +164,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addWebsite}
-                  className="shrink-0 cursor-pointer flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
@@ -182,9 +182,9 @@ export default function ConsentManager() {
                   <span className="text-sm flex-1 truncate">{app}</span>
                   <button
                     onClick={() => setAppBlacklist(p => p.filter((_, j) => j !== i))}
-                    className="shrink-0 cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+                    className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    <X className="size-3.5" />
+                    <Plus className="size-3.5 rotate-45" />
                   </button>
                 </div>
               ))}
@@ -199,7 +199,7 @@ export default function ConsentManager() {
                 />
                 <button
                   onClick={addApp}
-                  className="shrink-0 cursor-pointer flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                  className="shrink-0 cursor-pointer w-6 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <Plus className="size-3.5" />
                 </button>
