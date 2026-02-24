@@ -2,6 +2,16 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Slider thumb slide animation — targets the outer positioned wrapper span
+   that Radix renders around the thumb (props.style doesn't reach this element) */
+[data-slot="slider"][data-animating] > span:has([role="slider"]) {
+  transition: left 0.2s ease-in-out;
+}
+
+[data-slot="slider"][data-animating] [data-slot="slider-range"] {
+  transition: left 0.2s ease-in-out, right 0.2s ease-in-out;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
