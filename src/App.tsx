@@ -3,11 +3,12 @@ import ConsentManager from "./components/ConsentManager";
 import Settings from "./components/Settings";
 import ScreenRecorder from "./components/ScreenRecorder";
 import Recordings from "./components/Recordings";
+import Hardware from "./components/Hardware";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-type View = "consent" | "settings" | "recorder" | "recordings";
+type View = "consent" | "settings" | "recorder" | "recordings" | "hardware";
 
 function App() {
   const [currentView, setCurrentView] = useState<View>("consent");
@@ -39,18 +40,20 @@ function App() {
                 <TabsTrigger value="consent">Privacy & Consent</TabsTrigger>
                 <TabsTrigger value="recorder">Screen Recorder</TabsTrigger>
                 <TabsTrigger value="recordings">Recordings</TabsTrigger>
+                <TabsTrigger value="hardware">Hardware</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
 
           <main
-            className="container mx-auto py-6 transition-opacity duration-200"
+            className="container mx-auto px-6 py-6 transition-opacity duration-200"
             style={{ opacity: fading ? 0 : 1 }}
           >
             {displayedView === "consent" && <ConsentManager />}
             {displayedView === "recorder" && <ScreenRecorder />}
             {displayedView === "recordings" && <Recordings />}
+            {displayedView === "hardware" && <Hardware />}
             {displayedView === "settings" && <Settings />}
           </main>
         </div>

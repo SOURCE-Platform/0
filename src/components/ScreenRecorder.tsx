@@ -142,7 +142,7 @@ export default function ScreenRecorder() {
 
   if (error && displays.length === 0) {
     return (
-      <div className="w-full max-w-5xl mx-auto p-6">
+      <div className="w-full max-w-5xl mx-auto">
         <Card className="border-red-500 bg-red-50 dark:bg-red-950">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-red-900 dark:text-red-100">
@@ -167,7 +167,7 @@ export default function ScreenRecorder() {
   const hasConsent = status?.has_consent || false;
 
   return (
-    <div className="w-full max-w-5xl mx-auto p-6 space-y-6">
+    <div className="w-full max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Screen Recorder</h1>
