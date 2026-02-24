@@ -2,6 +2,19 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+/* Top-left logo gradient — background-image on the container avoids all z-index issues */
+.app-container {
+  background-color: white;
+  background-image: linear-gradient(135deg, #E2DED7 0%, white 50%);
+  background-size: 208px 208px;
+  background-repeat: no-repeat;
+  background-position: top left;
+}
+.dark .app-container {
+  background-color: #171412;
+  background-image: linear-gradient(135deg, #252118 0%, #171412 50%);
+}
+
 /* Slider thumb slide animation — targets the outer positioned wrapper span
    that Radix renders around the thumb (props.style doesn't reach this element) */
 [data-slot="slider"][data-animating] > span:has([role="slider"]) {

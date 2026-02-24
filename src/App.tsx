@@ -38,9 +38,9 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="observer-theme">
       <UIPrefsProvider>
-        <div className="h-screen overflow-hidden bg-background">
-          <div className="fixed top-0 inset-x-0 z-50 flex h-14 items-center px-6 gap-6 bg-background">
-            <svg width="24" height="24" viewBox="0 0 28 28" className="fill-black dark:fill-white shrink-0">
+        <div className="app-container h-screen overflow-hidden">
+          <div className="fixed top-0 inset-x-0 z-50 flex h-14 items-center px-6 gap-6 bg-transparent">
+            <svg width="24" height="24" viewBox="0 0 28 28" className="fill-white shrink-0">
               <circle cx="14" cy="14" r="14"/>
             </svg>
             <AnimatedTabNav
