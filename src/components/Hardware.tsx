@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 
 type HealthStatus = "online" | "degraded" | "offline";
 type DeviceType = "sensor" | "server" | "wifi";
@@ -425,13 +425,15 @@ export default function Hardware() {
         {/* Left: Tabs + content */}
         <div className="rounded-lg border bg-card overflow-hidden">
           <div className="px-4 pt-4 pb-0">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as HardwareTab)}>
-              <TabsList variant="line">
-                <TabsTrigger value="sensors">Sensors</TabsTrigger>
-                <TabsTrigger value="server">Server</TabsTrigger>
-                <TabsTrigger value="connected">Connected Devices</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <AnimatedTabNav
+              tabs={[
+                { value: "sensors",   label: "Sensors" },
+                { value: "server",    label: "Server" },
+                { value: "connected", label: "Connected Devices" },
+              ]}
+              value={activeTab}
+              onValueChange={(v) => setActiveTab(v as HardwareTab)}
+            />
           </div>
 
           <Separator />

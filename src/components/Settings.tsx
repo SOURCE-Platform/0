@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { Switch } from "@/components/ui/switch";
 import { FolderOpen, Lock, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
@@ -177,13 +177,17 @@ export default function Settings() {
         </Card>
       )}
 
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
-        <TabsList variant="line">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="recording">Recording</TabsTrigger>
-          <TabsTrigger value="storage">Storage</TabsTrigger>
-          <TabsTrigger value="privacy">Privacy</TabsTrigger>
-        </TabsList>
+      <div className="w-full">
+        <AnimatedTabNav
+          tabs={[
+            { value: "general",   label: "General" },
+            { value: "recording", label: "Recording" },
+            { value: "storage",   label: "Storage" },
+            { value: "privacy",   label: "Privacy" },
+          ]}
+          value={activeTab}
+          onValueChange={handleTabChange}
+        />
 
         <div
           className="transition-opacity duration-200 mt-6"
@@ -434,7 +438,7 @@ export default function Settings() {
           </div>}
 
         </div>
-      </Tabs>
+      </div>
     </div>
   );
 }
