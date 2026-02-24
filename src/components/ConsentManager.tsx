@@ -1,11 +1,9 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import { Lock, Monitor, Activity, Keyboard, Mouse, Camera, Mic, LucideIcon } from "lucide-react";
-import { useUIPrefs } from "@/components/ui-prefs-provider";
+import { Input } from "@/components/ui/input";
+import { Plus, X, AppWindow } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface ConsentState {
   screen_recording: boolean;
@@ -16,54 +14,19 @@ interface ConsentState {
   microphone_recording: boolean;
 }
 
-interface FeatureInfo {
-  key: keyof ConsentState;
-  title: string;
-  description: string;
-  icon: LucideIcon;
-}
+type ConsentKey = keyof ConsentState;
 
-const FEATURES: FeatureInfo[] = [
-  {
-    key: "screen_recording",
-    title: "Screen Recording",
-    description: "Capture screenshots and record screen activity for productivity tracking",
-    icon: Monitor,
-  },
-  {
-    key: "os_activity",
-    title: "OS Activity Tracking",
-    description: "Track application usage and window focus to understand your workflow",
-    icon: Activity,
-  },
-  {
-    key: "keyboard_recording",
-    title: "Keyboard Recording",
-    description: "Record keyboard activity and typing patterns (keystrokes are not logged, only metadata)",
-    icon: Keyboard,
-  },
-  {
-    key: "mouse_recording",
-    title: "Mouse Recording",
-    description: "Track mouse movements and clicks to analyze interaction patterns",
-    icon: Mouse,
-  },
-  {
-    key: "camera_recording",
-    title: "Camera Recording",
-    description: "Optional: Record video from your camera during sessions",
-    icon: Camera,
-  },
-  {
-    key: "microphone_recording",
-    title: "Microphone Recording",
-    description: "Optional: Record audio from your microphone during sessions",
-    icon: Mic,
-  },
+const FEATURES: { key: ConsentKey | null; label: string; disabled?: boolean }[] = [
+  { key: "screen_recording",    label: "Screen" },
+  { key: "os_activity",         label: "Session info" },
+  { key: null,                  label: "Background processes", disabled: true },
+  { key: "keyboard_recording",  label: "Keyboard" },
+  { key: "mouse_recording",     label: "Mouse" },
+  { key: "camera_recording",    label: "Camera" },
+  { key: "microphone_recording",label: "Mic" },
 ];
 
 export default function ConsentManager() {
-  const { showDescriptions } = useUIPrefs();
   const [consents, setConsents] = useState<ConsentState>({
     screen_recording: false,
     os_activity: false,
@@ -75,135 +38,178 @@ export default function ConsentManager() {
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadConsents();
-  }, []);
+  const [websiteBlacklist, setWebsiteBlacklist] = useState<string[]>([]);
+  const [newWebsite, setNewWebsite] = useState("");
+  const [appBlacklist, setAppBlacklist] = useState<string[]>([]);
+  const [newApp, setNewApp] = useState("");
+
+  useEffect(() => { loadConsents(); }, []);
 
   async function loadConsents() {
     try {
-      const allConsents = await invoke<Record<string, boolean>>("get_all_consents");
-      // Map backend consent keys to frontend state
+      const all = await invoke<Record<string, boolean>>("get_all_consents");
       setConsents({
-        screen_recording: allConsents.screen_recording || false,
-        os_activity: allConsents.os_activity || false,
-        keyboard_recording: allConsents.keyboard_recording || false,
-        mouse_recording: allConsents.mouse_recording || false,
-        camera_recording: allConsents.camera_recording || false,
-        microphone_recording: allConsents.microphone_recording || false,
+        screen_recording:     all.screen_recording     ?? false,
+        os_activity:          all.os_activity          ?? false,
+        keyboard_recording:   all.keyboard_recording   ?? false,
+        mouse_recording:      all.mouse_recording      ?? false,
+        camera_recording:     all.camera_recording     ?? false,
+        microphone_recording: all.microphone_recording ?? false,
       });
-    } catch (error) {
-      console.error("Failed to load consents:", error);
+    } catch (e) {
+      console.error("Failed to load consents:", e);
     } finally {
       setLoading(false);
     }
   }
 
-  async function toggleConsent(featureKey: keyof ConsentState) {
-    setUpdating(featureKey);
-    const currentValue = consents[featureKey];
-
+  async function toggleConsent(key: ConsentKey) {
+    setUpdating(key);
+    const current = consents[key];
     try {
-      if (currentValue) {
-        await invoke("revoke_consent", { feature: featureKey });
-      } else {
-        await invoke("request_consent", { feature: featureKey });
-      }
-
-      setConsents((prev) => ({
-        ...prev,
-        [featureKey]: !currentValue,
-      }));
-    } catch (error) {
-      console.error(`Failed to toggle consent for ${featureKey}:`, error);
+      await invoke(current ? "revoke_consent" : "request_consent", { feature: key });
+      setConsents(prev => ({ ...prev, [key]: !current }));
+    } catch (e) {
+      console.error(`Failed to toggle ${key}:`, e);
     } finally {
       setUpdating(null);
     }
   }
 
+  function addWebsite() {
+    const url = newWebsite.trim();
+    if (url) { setWebsiteBlacklist(p => [...p, url]); setNewWebsite(""); }
+  }
+
+  function addApp() {
+    const name = newApp.trim();
+    if (name) { setAppBlacklist(p => [...p, name]); setNewApp(""); }
+  }
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <p className="text-muted-foreground">Loading consent settings...</p>
+      <div className="flex items-center justify-center min-h-[200px]">
+        <p className="text-muted-foreground text-sm">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Privacy & Consent Settings</h1>
-        {showDescriptions && (
-          <p className="text-muted-foreground">
-            Control what data Observer can collect. All features require explicit consent and default to OFF.
-          </p>
-        )}
+    <div className="flex gap-20 pt-2">
+
+      {/* ── Left: Record these ── */}
+      <div className="shrink-0">
+        <h2 className="text-base text-foreground mb-6">Record these</h2>
+        <div className="space-y-5">
+          {FEATURES.map(f => {
+            const isOn = f.key ? consents[f.key] : false;
+            return (
+              <div key={f.label} className="flex items-center gap-3">
+                <Switch
+                  checked={isOn}
+                  onCheckedChange={() => f.key && toggleConsent(f.key)}
+                  disabled={f.disabled || updating === f.key}
+                />
+                <span className={cn(
+                  "text-sm",
+                  f.disabled || (!isOn && !f.disabled) ? "text-muted-foreground" : "text-foreground"
+                )}>
+                  {f.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {FEATURES.map((feature) => (
-          <Card key={feature.key}>
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <feature.icon className="h-5 w-5 text-muted-foreground shrink-0" />
-                  <div>
-                    <CardTitle className="text-lg">{feature.title}</CardTitle>
-                    {showDescriptions && (
-                      <CardDescription className="mt-1.5">
-                        {feature.description}
-                      </CardDescription>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    id={feature.key}
-                    checked={consents[feature.key]}
-                    onCheckedChange={() => toggleConsent(feature.key)}
-                    disabled={updating === feature.key}
+      {/* ── Right: Don't record these ── */}
+      <div className="flex-1 min-w-0">
+        <h2 className="text-base text-foreground underline decoration-1 underline-offset-[7px] mb-6">
+          Don't record these
+        </h2>
+
+        <div className="flex gap-12">
+
+          {/* Websites */}
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-muted-foreground mb-3">Websites</p>
+            <div className="space-y-2">
+              {websiteBlacklist.map((url, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <Input
+                    value={url}
+                    onChange={e => {
+                      const next = [...websiteBlacklist];
+                      next[i] = e.target.value;
+                      setWebsiteBlacklist(next);
+                    }}
+                    className="h-8 text-sm"
                   />
-                  <Label
-                    htmlFor={feature.key}
-                    className={`text-sm font-medium cursor-pointer ${
-                      updating === feature.key ? "opacity-50" : ""
-                    }`}
+                  <button
+                    onClick={() => setWebsiteBlacklist(p => p.filter((_, j) => j !== i))}
+                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
                   >
-                    {updating === feature.key
-                      ? "Updating..."
-                      : consents[feature.key]
-                      ? "Enabled"
-                      : "Disabled"}
-                  </Label>
+                    <X className="size-3.5" />
+                  </button>
                 </div>
-                <Badge variant={consents[feature.key] ? "default" : "secondary"}>
-                  {consents[feature.key] ? "Active" : "Inactive"}
-                </Badge>
+              ))}
+              {/* Add row */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Paste URL"
+                  value={newWebsite}
+                  onChange={e => setNewWebsite(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addWebsite()}
+                  className="h-8 text-sm"
+                />
+                <button
+                  onClick={addWebsite}
+                  className="shrink-0 flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                >
+                  <Plus className="size-3.5" />
+                </button>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+          </div>
+
+          {/* Apps */}
+          <div className="w-48 shrink-0">
+            <p className="text-sm text-muted-foreground mb-3">Apps</p>
+            <div className="space-y-2">
+              {appBlacklist.map((app, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <AppWindow className="size-4 text-muted-foreground shrink-0" />
+                  <span className="text-sm flex-1 truncate">{app}</span>
+                  <button
+                    onClick={() => setAppBlacklist(p => p.filter((_, j) => j !== i))}
+                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
+              ))}
+              {/* Add row */}
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="App name"
+                  value={newApp}
+                  onChange={e => setNewApp(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && addApp()}
+                  className="h-8 text-sm"
+                />
+                <button
+                  onClick={addApp}
+                  className="shrink-0 flex items-center justify-center size-8 rounded border border-input text-muted-foreground hover:text-foreground hover:border-foreground/50 transition-colors"
+                >
+                  <Plus className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
 
-      {showDescriptions && (
-        <Card className="border-blue-200 dark:border-blue-900 bg-blue-50 dark:bg-blue-950">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
-              <Lock className="h-5 w-5" />
-              Privacy First
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm text-blue-800 dark:text-blue-200">
-            <p>• All data is stored locally on your device</p>
-            <p>• No data is sent to external servers</p>
-            <p>• You have full control over your data</p>
-            <p>• You can revoke consent at any time</p>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }
