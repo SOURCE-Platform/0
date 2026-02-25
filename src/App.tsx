@@ -3,16 +3,18 @@ import Settings from "./components/Settings";
 import ScreenRecorder from "./components/ScreenRecorder";
 import Recordings from "./components/Recordings";
 import Hardware from "./components/Hardware";
+import ID from "./components/ID";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 
-type View = "settings" | "recorder" | "recordings" | "hardware";
+type View = "settings" | "recorder" | "recordings" | "hardware" | "id";
 
 const TABS = [
   { value: "recorder",   label: "Screen Recorder" },
   { value: "recordings", label: "Recordings" },
   { value: "hardware",   label: "Hardware" },
+  { value: "id",         label: "ID" },
   { value: "settings",   label: "Settings" },
 ];
 
@@ -39,6 +41,7 @@ function App() {
     <ThemeProvider defaultTheme="light" storageKey="observer-theme">
       <UIPrefsProvider>
         <div className="app-container h-screen overflow-hidden">
+          {/* Header */}
           <div className="fixed top-0 inset-x-0 z-50 flex h-14 items-center px-6 gap-6 bg-transparent">
             <svg width="24" height="24" viewBox="0 0 28 28" className="fill-white shrink-0">
               <circle cx="14" cy="14" r="14"/>
@@ -50,14 +53,22 @@ function App() {
             />
           </div>
 
+          {/* Left sidebar — same width as header height (w-14 = 56px) */}
+          <div className="fixed left-0 top-14 bottom-0 z-40 w-14 flex flex-col items-start justify-end pl-6 pb-[18px]">
+            <div className="w-6 h-6 rounded-full bg-neutral-600 flex items-center justify-center overflow-hidden shrink-0">
+              <span className="text-[9px] font-medium text-white leading-none select-none">A</span>
+            </div>
+          </div>
+
           <main
-            className="mt-14 h-[calc(100%-3.5rem)] overflow-y-auto mr-2 transition-opacity duration-200"
+            className="mt-14 ml-14 h-[calc(100%-3.5rem)] overflow-y-auto mr-2 transition-opacity duration-200"
             style={{ opacity: fading ? 0 : 1 }}
           >
             <div className="container mx-auto px-6 py-6">
               {displayedView === "recorder"   && <ScreenRecorder />}
               {displayedView === "recordings" && <Recordings />}
               {displayedView === "hardware"   && <Hardware />}
+              {displayedView === "id"         && <ID />}
               {displayedView === "settings"   && <Settings />}
             </div>
           </main>
