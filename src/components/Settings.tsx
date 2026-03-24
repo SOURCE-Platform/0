@@ -13,6 +13,15 @@ import { FolderOpen, AlertCircle, CheckCircle2, Sun, Moon, Monitor } from "lucid
 import ConsentManager from "@/components/ConsentManager";
 import { useTheme } from "@/components/theme-provider";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
+import { DISPLAY_KEY } from "@/components/TimelinePage";
+
+interface Display {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  is_primary: boolean;
+}
 
 interface Config {
   storage_path: string;
@@ -31,6 +40,10 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [displays, setDisplays] = useState<Display[]>([]);
+  const [selectedDisplay, setSelectedDisplay] = useState<string>(
+    localStorage.getItem(DISPLAY_KEY) ?? ""
+  );
   const [activeTab, setActiveTab] = useState("general");
   const [displayedTab, setDisplayedTab] = useState("general");
   const [tabFading, setTabFading] = useState(false);
@@ -57,8 +70,20 @@ export default function Settings() {
 
   async function loadConfig() {
     try {
-      const loadedConfig = await invoke<Config>("get_config");
+      const [loadedConfig, availableDisplays] = await Promise.all([
+        invoke<Config>("get_config"),
+        invoke<Display[]>("get_available_displays").catch(() => [] as Display[]),
+      ]);
       setConfig(loadedConfig);
+      setDisplays(availableDisplays);
+      // Auto-select primary if nothing stored yet
+      if (!localStorage.getItem(DISPLAY_KEY)) {
+        const primary = availableDisplays.find((d) => d.is_primary);
+        if (primary) {
+          localStorage.setItem(DISPLAY_KEY, String(primary.id));
+          setSelectedDisplay(String(primary.id));
+        }
+      }
     } catch (error) {
       console.error("Failed to load config:", error);
       setMessage({ type: "error", text: `Failed to load settings: ${error}` });
@@ -285,6 +310,39 @@ export default function Settings() {
         </div>}
 
         {displayedTab === "recording" && <div className="grid grid-cols-2 gap-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Display</CardTitle>
+              {showDescriptions && <CardDescription>Which screen to capture when recording starts</CardDescription>}
+            </CardHeader>
+            <CardContent>
+              <Select
+                value={selectedDisplay}
+                onValueChange={(value) => {
+                  setSelectedDisplay(value);
+                  localStorage.setItem(DISPLAY_KEY, value);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a display" />
+                </SelectTrigger>
+                <SelectContent>
+                  {displays.map((display) => (
+                    <SelectItem key={display.id} value={String(display.id)}>
+                      <div className="flex items-center gap-2">
+                        <Monitor className="h-4 w-4" />
+                        <span>
+                          {display.name} ({display.width}×{display.height})
+                          {display.is_primary && " — Primary"}
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle>Recording Quality</CardTitle>

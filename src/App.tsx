@@ -1,26 +1,24 @@
 import { useState, useEffect, useRef } from "react";
 import Settings from "./components/Settings";
-import ScreenRecorder from "./components/ScreenRecorder";
-import Recordings from "./components/Recordings";
+import TimelinePage from "./components/TimelinePage";
 import Hardware from "./components/Hardware";
 import ID from "./components/ID";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 
-type View = "settings" | "recorder" | "recordings" | "hardware" | "id";
+type View = "settings" | "timeline" | "hardware" | "id";
 
 const TABS = [
-  { value: "recorder",   label: "Screen Recorder" },
-  { value: "recordings", label: "Recordings" },
-  { value: "hardware",   label: "Hardware" },
-  { value: "id",         label: "ID" },
-  { value: "settings",   label: "Settings" },
+  { value: "timeline",  label: "Timeline" },
+  { value: "hardware",  label: "Hardware" },
+  { value: "id",        label: "ID" },
+  { value: "settings",  label: "Settings" },
 ];
 
 function App() {
-  const [activeTab, setActiveTab] = useState<View>("recorder");
-  const [displayedView, setDisplayedView] = useState<View>("recorder");
+  const [activeTab, setActiveTab] = useState<View>("timeline");
+  const [displayedView, setDisplayedView] = useState<View>("timeline");
   const [fading, setFading] = useState(false);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -65,11 +63,10 @@ function App() {
             style={{ opacity: fading ? 0 : 1 }}
           >
             <div className="container mx-auto px-6 py-6">
-              {displayedView === "recorder"   && <ScreenRecorder />}
-              {displayedView === "recordings" && <Recordings />}
-              {displayedView === "hardware"   && <Hardware />}
-              {displayedView === "id"         && <ID />}
-              {displayedView === "settings"   && <Settings />}
+              {displayedView === "timeline"  && <TimelinePage />}
+              {displayedView === "hardware"  && <Hardware />}
+              {displayedView === "id"        && <ID />}
+              {displayedView === "settings"  && <Settings />}
             </div>
           </main>
         </div>
