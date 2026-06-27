@@ -19,10 +19,10 @@ use uuid::Uuid;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OcrProcessorConfig {
     pub enabled: bool,
-    pub interval_seconds: u32,     // How often to run OCR (default: 60)
-    pub batch_size: usize,         // Frames to process at once (default: 5)
-    pub skip_static_frames: bool,  // Only OCR frames with motion (default: true)
-    pub max_queue_size: usize,     // Max pending jobs (default: 100)
+    pub interval_seconds: u32,    // How often to run OCR (default: 60)
+    pub batch_size: usize,        // Frames to process at once (default: 5)
+    pub skip_static_frames: bool, // Only OCR frames with motion (default: true)
+    pub max_queue_size: usize,    // Max pending jobs (default: 100)
 }
 
 impl Default for OcrProcessorConfig {
@@ -46,6 +46,8 @@ pub struct OcrJob {
     pub session_id: Uuid,
     pub frame_path: PathBuf,
     pub timestamp: i64,
+    pub display_id: Option<u32>,
+    pub trigger_reason: String,
     pub motion_regions: Vec<BoundingBox>,
 }
 
@@ -120,7 +122,8 @@ impl OcrProcessor {
                             {
                                 let mut m = metrics.write().await;
                                 m.frames_processed += 1;
-                                m.text_blocks_extracted += result.ocr_result.text_blocks.len() as u64;
+                                m.text_blocks_extracted +=
+                                    result.ocr_result.text_blocks.len() as u64;
                                 m.total_processing_time_ms += result.ocr_result.processing_time_ms;
                             }
 
@@ -149,6 +152,8 @@ impl OcrProcessor {
         session_id: Uuid,
         frame_path: PathBuf,
         timestamp: i64,
+        display_id: Option<u32>,
+        trigger_reason: String,
         motion_regions: Vec<BoundingBox>,
     ) -> Result<(), OcrError> {
         if !self.config.enabled {
@@ -172,6 +177,8 @@ impl OcrProcessor {
             session_id,
             frame_path,
             timestamp,
+            display_id,
+            trigger_reason,
             motion_regions,
         });
 
@@ -193,25 +200,30 @@ impl OcrProcessor {
         let frame = Self::load_frame(&job.frame_path)?;
 
         // Decide whether to OCR full frame or just motion regions
-        let ocr_result = if !job.motion_regions.is_empty() && Self::should_use_regions(&job.motion_regions) {
-            // OCR only motion regions (more efficient)
-            let mut results = Vec::new();
+        let ocr_result =
+            if !job.motion_regions.is_empty() && Self::should_use_regions(&job.motion_regions) {
+                // OCR only motion regions (more efficient)
+                let mut results = Vec::new();
 
-            for region in &job.motion_regions {
-                let result = ocr_engine.extract_text_from_region(&frame, region).await?;
-                results.push(result);
-            }
+                for region in &job.motion_regions {
+                    let result = ocr_engine.extract_text_from_region(&frame, region).await?;
+                    results.push(result);
+                }
 
-            Self::merge_ocr_results(results)
-        } else {
-            // OCR full frame
-            ocr_engine.extract_text_from_frame(&frame).await?
-        };
+                Self::merge_ocr_results(results)
+            } else {
+                // OCR full frame
+                ocr_engine.extract_text_from_frame(&frame).await?
+            };
 
         Ok(ProcessedOcrResult {
             session_id: job.session_id,
             timestamp: job.timestamp,
             frame_path: Some(job.frame_path),
+            display_id: job.display_id,
+            frame_width: frame.width,
+            frame_height: frame.height,
+            trigger_reason: job.trigger_reason,
             ocr_result,
         })
     }

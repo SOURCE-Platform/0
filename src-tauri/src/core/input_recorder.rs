@@ -2,6 +2,7 @@ use crate::core::command_analyzer::CommandAnalyzer;
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::database::Database;
 use crate::core::input_storage::InputStorage;
+use crate::core::ocr_trigger_signals::OcrTriggerSignals;
 use crate::models::input::{KeyboardEvent, MouseEvent};
 use std::sync::Arc;
 use std::time::Duration;
@@ -10,20 +11,20 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 // Platform-specific keyboard listener
+#[cfg(target_os = "linux")]
+use crate::platform::input::LinuxKeyboardListener as PlatformKeyboardListener;
 #[cfg(target_os = "macos")]
 use crate::platform::input::MacOSKeyboardListener as PlatformKeyboardListener;
 #[cfg(target_os = "windows")]
 use crate::platform::input::WindowsKeyboardListener as PlatformKeyboardListener;
-#[cfg(target_os = "linux")]
-use crate::platform::input::LinuxKeyboardListener as PlatformKeyboardListener;
 
 // Platform-specific mouse listener
+#[cfg(target_os = "linux")]
+use crate::platform::input::LinuxMouseListener as PlatformMouseListener;
 #[cfg(target_os = "macos")]
 use crate::platform::input::MacOSMouseListener as PlatformMouseListener;
 #[cfg(target_os = "windows")]
 use crate::platform::input::WindowsMouseListener as PlatformMouseListener;
-#[cfg(target_os = "linux")]
-use crate::platform::input::LinuxMouseListener as PlatformMouseListener;
 
 // ==============================================================================
 // Input Recorder
@@ -37,12 +38,14 @@ pub struct InputRecorder {
     mouse_listener: Arc<RwLock<Option<PlatformMouseListener>>>,
     current_session_id: Arc<RwLock<Option<String>>>,
     is_recording: Arc<RwLock<bool>>,
+    ocr_trigger_signals: Arc<OcrTriggerSignals>,
 }
 
 impl InputRecorder {
     pub async fn new(
         consent_manager: Arc<ConsentManager>,
         db: Arc<Database>,
+        ocr_trigger_signals: Arc<OcrTriggerSignals>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let storage = Arc::new(InputStorage::new(db.clone()).await?);
 
@@ -54,6 +57,7 @@ impl InputRecorder {
             mouse_listener: Arc::new(RwLock::new(None)),
             current_session_id: Arc::new(RwLock::new(None)),
             is_recording: Arc::new(RwLock::new(false)),
+            ocr_trigger_signals,
         })
     }
 
@@ -61,7 +65,8 @@ impl InputRecorder {
         &self,
         session_id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.start_recording_with_options(session_id, true, true).await
+        self.start_recording_with_options(session_id, true, true)
+            .await
     }
 
     pub async fn start_recording_with_options(
@@ -141,10 +146,17 @@ impl InputRecorder {
             let storage = self.storage.clone();
             let session_id_clone = session_id.clone();
             let is_recording_clone = self.is_recording.clone();
+            let ocr_trigger_signals = self.ocr_trigger_signals.clone();
 
             tokio::spawn(async move {
-                Self::process_mouse_events(mouse_rx, storage, session_id_clone, is_recording_clone)
-                    .await;
+                Self::process_mouse_events(
+                    mouse_rx,
+                    storage,
+                    session_id_clone,
+                    is_recording_clone,
+                    ocr_trigger_signals,
+                )
+                .await;
             });
         }
 
@@ -249,11 +261,27 @@ impl InputRecorder {
         storage: Arc<InputStorage>,
         session_id: String,
         is_recording: Arc<RwLock<bool>>,
+        ocr_trigger_signals: Arc<OcrTriggerSignals>,
     ) {
         while let Some(event) = rx.recv().await {
             // Check if still recording
             if !*is_recording.read().await {
                 break;
+            }
+
+            match &event.event_type {
+                crate::models::input::MouseEventType::ScrollWheel { .. } => {
+                    ocr_trigger_signals.mark_scroll(event.timestamp).await;
+                }
+                crate::models::input::MouseEventType::Move { .. }
+                | crate::models::input::MouseEventType::DragMove { .. }
+                | crate::models::input::MouseEventType::DragStart { .. }
+                | crate::models::input::MouseEventType::DragEnd { .. } => {
+                    ocr_trigger_signals
+                        .mark_cursor_motion(event.timestamp)
+                        .await;
+                }
+                _ => {}
             }
 
             // Store event (ignore errors to prevent blocking)

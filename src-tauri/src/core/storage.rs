@@ -104,7 +104,11 @@ impl RecordingStorage {
     }
 
     /// Save an OCR source frame to disk without creating a frames-table row.
-    pub async fn save_ocr_frame(&self, session_id: Uuid, frame: &RawFrame) -> StorageResult<PathBuf> {
+    pub async fn save_ocr_frame(
+        &self,
+        session_id: Uuid,
+        frame: &RawFrame,
+    ) -> StorageResult<PathBuf> {
         let filename = format!("{}.png", frame.timestamp);
         let frame_path = self
             .get_session_path(&session_id)
@@ -134,10 +138,11 @@ impl RecordingStorage {
         let duration = end_timestamp - start_timestamp;
 
         // Count frames
-        let frame_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM frames WHERE session_id = ?")
-            .bind(session_id.to_string())
-            .fetch_one(self.db.pool())
-            .await?;
+        let frame_count: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM frames WHERE session_id = ?")
+                .bind(session_id.to_string())
+                .fetch_one(self.db.pool())
+                .await?;
 
         // Calculate total size
         let total_size = self.calculate_session_size(&session_id).await?;
@@ -165,10 +170,11 @@ impl RecordingStorage {
 
     /// Get all frame paths for a session
     pub async fn get_session_frames(&self, session_id: Uuid) -> StorageResult<Vec<PathBuf>> {
-        let rows = sqlx::query("SELECT file_path FROM frames WHERE session_id = ? ORDER BY timestamp")
-            .bind(session_id.to_string())
-            .fetch_all(self.db.pool())
-            .await?;
+        let rows =
+            sqlx::query("SELECT file_path FROM frames WHERE session_id = ? ORDER BY timestamp")
+                .bind(session_id.to_string())
+                .fetch_all(self.db.pool())
+                .await?;
 
         let paths = rows
             .into_iter()
@@ -208,15 +214,37 @@ impl RecordingStorage {
 
     /// Delete a recording session
     pub async fn delete_session(&self, session_id: Uuid) -> StorageResult<()> {
+        let session_id_string = session_id.to_string();
+
+        sqlx::query("DELETE FROM ocr_context_entities WHERE session_id = ?")
+            .bind(&session_id_string)
+            .execute(self.db.pool())
+            .await?;
+
+        sqlx::query("DELETE FROM ocr_text_spans WHERE session_id = ?")
+            .bind(&session_id_string)
+            .execute(self.db.pool())
+            .await?;
+
+        sqlx::query("DELETE FROM ocr_scene_snapshots WHERE session_id = ?")
+            .bind(&session_id_string)
+            .execute(self.db.pool())
+            .await?;
+
+        sqlx::query("DELETE FROM ocr_results WHERE session_id = ?")
+            .bind(&session_id_string)
+            .execute(self.db.pool())
+            .await?;
+
         // Delete frames from database
         sqlx::query("DELETE FROM frames WHERE session_id = ?")
-            .bind(session_id.to_string())
+            .bind(&session_id_string)
             .execute(self.db.pool())
             .await?;
 
         // Delete session from database
         sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(session_id.to_string())
+            .bind(&session_id_string)
             .execute(self.db.pool())
             .await?;
 
@@ -322,11 +350,7 @@ impl RecordingStorage {
     }
 
     /// Save base layer for a session
-    pub async fn save_base_layer(
-        &self,
-        session_id: &Uuid,
-        frame: &RawFrame,
-    ) -> StorageResult<()> {
+    pub async fn save_base_layer(&self, session_id: &Uuid, frame: &RawFrame) -> StorageResult<()> {
         let base_layer_path = self.get_session_path(session_id).join("base_layer.png");
 
         // Save the frame as PNG

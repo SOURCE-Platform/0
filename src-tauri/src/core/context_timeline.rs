@@ -1,4 +1,5 @@
 use crate::core::database::Database;
+use crate::core::ocr_agent_context::{self, AgentSceneSnapshotDto};
 use crate::models::activity::AppInfo;
 use image::GenericImageView;
 use regex::Regex;
@@ -427,7 +428,9 @@ fn pretty_json(value: serde_json::Value) -> String {
 }
 
 fn serialized_len(value: &serde_json::Value) -> u64 {
-    serde_json::to_vec(value).map(|bytes| bytes.len() as u64).unwrap_or(0)
+    serde_json::to_vec(value)
+        .map(|bytes| bytes.len() as u64)
+        .unwrap_or(0)
 }
 
 fn context_event_storage_bytes(row: &ContextEventRow) -> u64 {
@@ -492,12 +495,63 @@ fn ocr_row_storage_bytes(row: &OcrRow) -> u64 {
     }))
 }
 
+fn scene_snapshot_storage_bytes(scene: &AgentSceneSnapshotDto) -> u64 {
+    serialized_len(&serde_json::json!({
+        "scene_id": scene.scene_id,
+        "session_id": scene.session_id,
+        "timestamp": scene.timestamp,
+        "display_id": scene.display_id,
+        "frontmost_app_name": scene.frontmost_app_name,
+        "frontmost_bundle_id": scene.frontmost_bundle_id,
+        "window_title": scene.window_title,
+        "trigger_reason": scene.trigger_reason,
+        "frame_path": scene.frame_path,
+        "frame_width": scene.frame_width,
+        "frame_height": scene.frame_height,
+        "full_text": scene.full_text,
+        "avg_confidence": scene.avg_confidence,
+        "text_blocks": scene.text_blocks,
+        "pii_entities": scene.pii_entities,
+        "raw_source": scene.raw_source,
+    }))
+}
+
 fn file_size(path: &str) -> u64 {
-    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
 fn get_frame_dimensions(path: &str) -> Option<(u32, u32)> {
     image::open(path).ok().map(|image| image.dimensions())
+}
+
+fn agent_pii_entity_to_dto(
+    entity: &ocr_agent_context::AgentPiiEntityDto,
+    timestamp: i64,
+    app_name: Option<&str>,
+    window_title: Option<&str>,
+    frame_path: Option<&str>,
+    id_suffix: usize,
+) -> PiiEntityDto {
+    PiiEntityDto {
+        id: format!(
+            "scene-pii-{}-{}-{}",
+            entity.entity_type, timestamp, id_suffix
+        ),
+        timestamp,
+        app_name: app_name.map(str::to_string),
+        window_title: window_title.map(str::to_string),
+        entity_type: entity.entity_type.clone(),
+        redacted_preview: entity.redacted_preview.clone(),
+        confidence: entity.confidence,
+        context_text: entity.context_text.clone(),
+        bounding_box: entity
+            .bounding_box
+            .as_ref()
+            .and_then(|bbox| serde_json::to_value(bbox).ok()),
+        frame_path: frame_path.map(str::to_string),
+    }
 }
 
 fn group_ocr_rows(ocr_rows: &[OcrRow]) -> Vec<OcrEventGroup> {
@@ -538,18 +592,33 @@ pub async fn build_context_timeline(
     let mouse = get_mouse_events(db, start_timestamp, end_timestamp).await?;
     let ocr_rows = get_ocr_rows(db, start_timestamp, end_timestamp).await?;
     let frames = get_frame_rows(db, start_timestamp, end_timestamp).await?;
-    let ocr_groups = group_ocr_rows(&ocr_rows);
+    let ocr_scenes =
+        ocr_agent_context::get_scene_snapshots(db, start_timestamp, end_timestamp, None).await?;
 
     let focus_rail = build_focus_rail(&snapshots, &sessions, end_timestamp);
     let visible_rail = build_visible_windows_rail(&snapshots, &sessions, end_timestamp);
     let system_rail = build_system_rail(&sessions, &events, end_timestamp);
-    let interaction_rail =
-        build_interaction_rail(&keyboard, &mouse, &ocr_rows, &snapshots, start_timestamp, end_timestamp);
-    let ocr_rail = build_ocr_rail(&ocr_groups, &snapshots);
+    let interaction_rail = build_interaction_rail(
+        &keyboard,
+        &mouse,
+        &ocr_rows,
+        &snapshots,
+        start_timestamp,
+        end_timestamp,
+    );
+    let ocr_rail = build_ocr_rail(&ocr_scenes, &snapshots);
     let evidence_rail = build_evidence_rail(&frames);
 
-    let summary = build_summary(&focus_rail, &visible_rail, &interaction_rail, &ocr_rail, &evidence_rail);
-    let now_timestamp = chrono::Utc::now().timestamp_millis().clamp(start_timestamp, end_timestamp);
+    let summary = build_summary(
+        &focus_rail,
+        &visible_rail,
+        &interaction_rail,
+        &ocr_rail,
+        &evidence_rail,
+    );
+    let now_timestamp = chrono::Utc::now()
+        .timestamp_millis()
+        .clamp(start_timestamp, end_timestamp);
 
     Ok(ContextTimelineData {
         start_timestamp,
@@ -608,7 +677,10 @@ pub async fn get_context_inspector(
         .collect();
     let mut pii_entities = Vec::new();
     for row in &nearby_ocr {
-        pii_entities.extend(detect_pii_entities(row, &infer_app_context(db, row.timestamp, Some(&row.session_id)).await?));
+        pii_entities.extend(detect_pii_entities(
+            row,
+            &infer_app_context(db, row.timestamp, Some(&row.session_id)).await?,
+        ));
     }
 
     let nearby_system_events = events
@@ -622,13 +694,16 @@ pub async fn get_context_inspector(
         focused_app,
         focused_bundle_id,
         visible_windows,
-        interaction_state: interaction_slice.as_ref().and_then(|slice| slice.interaction_state.clone()),
+        interaction_state: interaction_slice
+            .as_ref()
+            .and_then(|slice| slice.interaction_state.clone()),
         interaction_reasons: interaction_slice
             .as_ref()
             .map(|slice| slice.reasons.clone())
             .unwrap_or_default(),
         recent_input_state: if keyboard.is_empty() && mouse.is_empty() {
-            "No direct keyboard or mouse input was observed in the current inspection window.".to_string()
+            "No direct keyboard or mouse input was observed in the current inspection window."
+                .to_string()
         } else {
             format!(
                 "{} keyboard events and {} mouse events nearby",
@@ -666,18 +741,55 @@ pub async fn get_context_slice_detail(
         .cloned()
         .ok_or_else(|| format!("Unknown slice: {slice_id}"))?;
 
-    let snapshots = get_window_snapshots(db, slice.start_timestamp - 60_000, slice.end_timestamp + 60_000).await?;
-    let ocr_rows = get_ocr_rows(db, slice.start_timestamp - 60_000, slice.end_timestamp + 60_000).await?;
-    let keyboard = get_keyboard_events(db, slice.start_timestamp - 30_000, slice.end_timestamp + 30_000).await?;
-    let mouse = get_mouse_events(db, slice.start_timestamp - 30_000, slice.end_timestamp + 30_000).await?;
-    let frames = get_frame_rows(db, slice.start_timestamp - 60_000, slice.end_timestamp + 60_000).await?;
-    let events = get_context_events(db, slice.start_timestamp - 120_000, slice.end_timestamp + 120_000).await?;
-    let sessions = get_sessions(db, slice.start_timestamp - 120_000, slice.end_timestamp + 120_000).await?;
+    let snapshots = get_window_snapshots(
+        db,
+        slice.start_timestamp - 60_000,
+        slice.end_timestamp + 60_000,
+    )
+    .await?;
+    let ocr_rows = get_ocr_rows(
+        db,
+        slice.start_timestamp - 60_000,
+        slice.end_timestamp + 60_000,
+    )
+    .await?;
+    let keyboard = get_keyboard_events(
+        db,
+        slice.start_timestamp - 30_000,
+        slice.end_timestamp + 30_000,
+    )
+    .await?;
+    let mouse = get_mouse_events(
+        db,
+        slice.start_timestamp - 30_000,
+        slice.end_timestamp + 30_000,
+    )
+    .await?;
+    let frames = get_frame_rows(
+        db,
+        slice.start_timestamp - 60_000,
+        slice.end_timestamp + 60_000,
+    )
+    .await?;
+    let events = get_context_events(
+        db,
+        slice.start_timestamp - 120_000,
+        slice.end_timestamp + 120_000,
+    )
+    .await?;
+    let sessions = get_sessions(
+        db,
+        slice.start_timestamp - 120_000,
+        slice.end_timestamp + 120_000,
+    )
+    .await?;
     let context = infer_app_context(db, slice.start_timestamp, slice.session_id.as_deref()).await?;
 
     let nearby_system_events = events
         .iter()
-        .filter(|row| row.channel == "system" && (row.timestamp - slice.start_timestamp).abs() <= 120_000)
+        .filter(|row| {
+            row.channel == "system" && (row.timestamp - slice.start_timestamp).abs() <= 120_000
+        })
         .map(event_row_to_slice)
         .collect::<Vec<_>>();
 
@@ -698,7 +810,10 @@ pub async fn get_context_slice_detail(
 
     match rail_id {
         "system" => {
-            if let Some(session_id) = slice_id.strip_prefix("session-start-").or_else(|| slice_id.strip_prefix("session-end-")) {
+            if let Some(session_id) = slice_id
+                .strip_prefix("session-start-")
+                .or_else(|| slice_id.strip_prefix("session-end-"))
+            {
                 if let Some(session) = sessions.iter().find(|session| session.id == session_id) {
                     raw_payloads.push(RawPayloadDto {
                         label: "Session row".to_string(),
@@ -772,15 +887,21 @@ pub async fn get_context_slice_detail(
         "interaction" => {
             let keyboard_rows = keyboard
                 .iter()
-                .filter(|row| row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp)
+                .filter(|row| {
+                    row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp
+                })
                 .collect::<Vec<_>>();
             let mouse_rows = mouse
                 .iter()
-                .filter(|row| row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp)
+                .filter(|row| {
+                    row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp
+                })
                 .collect::<Vec<_>>();
             let ocr_event_rows = ocr_rows
                 .iter()
-                .filter(|row| row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp)
+                .filter(|row| {
+                    row.timestamp >= slice.start_timestamp && row.timestamp <= slice.end_timestamp
+                })
                 .collect::<Vec<_>>();
 
             raw_payloads.push(RawPayloadDto {
@@ -811,31 +932,25 @@ pub async fn get_context_slice_detail(
             });
         }
         "ocr" => {
-            let ocr_groups = group_ocr_rows(&ocr_rows);
-            if let Some(group) = ocr_groups.iter().find(|group| group.id == slice_id) {
+            if let Some(scene) = ocr_agent_context::get_scene_snapshot(db, slice_id).await? {
                 let mut reconstruction_blocks = Vec::new();
-                let mut max_width = 0u32;
-                let mut max_height = 0u32;
+                let mut max_width = scene.frame_width.unwrap_or(0);
+                let mut max_height = scene.frame_height.unwrap_or(0);
 
-                for block in &group.blocks {
-                    let context = infer_app_context(db, block.timestamp, Some(&block.session_id)).await?;
-                    let entities = detect_pii_entities(block, &context);
-                    pii_entities.extend(entities.clone());
-                    let bbox = serde_json::from_str::<serde_json::Value>(&block.bounding_box).ok();
-                    if let Ok(parsed) = serde_json::from_str::<crate::models::ocr::BoundingBox>(&block.bounding_box) {
-                        max_width = max_width.max(parsed.x + parsed.width);
-                        max_height = max_height.max(parsed.y + parsed.height);
-                    }
+                for block in &scene.text_blocks {
+                    let bbox = serde_json::to_value(&block.bbox).ok();
+                    max_width = max_width.max(block.bbox.x + block.bbox.width);
+                    max_height = max_height.max(block.bbox.y + block.bbox.height);
                     reconstruction_blocks.push(OcrReconstructionBlockDto {
-                        id: block.id.clone(),
+                        id: block.block_id.clone(),
                         text: block.text.clone(),
-                        confidence: block.confidence as f32,
+                        confidence: block.confidence,
                         bounding_box: bbox,
-                        pii_entities: entities,
+                        pii_entities: Vec::new(),
                     });
                 }
 
-                if let Some(frame_path) = group.frame_path.clone() {
+                if let Some(frame_path) = scene.frame_path.clone() {
                     linked_file_paths.push(frame_path.clone());
                     if let Some((width, height)) = get_frame_dimensions(&frame_path) {
                         max_width = width.max(max_width);
@@ -843,37 +958,107 @@ pub async fn get_context_slice_detail(
                     }
                 }
 
+                pii_entities.extend(scene.pii_entities.iter().enumerate().map(
+                    |(index, entity)| {
+                        agent_pii_entity_to_dto(
+                            entity,
+                            scene.timestamp,
+                            scene.frontmost_app_name.as_deref(),
+                            scene.window_title.as_deref(),
+                            scene.frame_path.as_deref(),
+                            index + 1000,
+                        )
+                    },
+                ));
+
                 raw_payloads.push(RawPayloadDto {
-                    label: "OCR event".to_string(),
-                    raw_json: pretty_json(serde_json::json!({
-                        "id": group.id,
-                        "session_id": group.session_id,
-                        "timestamp": group.timestamp,
-                        "frame_path": group.frame_path,
-                        "text_blocks": group.blocks.iter().map(|row| serde_json::json!({
-                            "id": row.id,
-                            "text": row.text,
-                            "confidence": row.confidence,
-                            "bounding_box": serde_json::from_str::<serde_json::Value>(&row.bounding_box).unwrap_or(serde_json::Value::String(row.bounding_box.clone())),
-                        })).collect::<Vec<_>>(),
-                    })),
+                    label: "Scene snapshot".to_string(),
+                    raw_json: pretty_json(serde_json::to_value(&scene)?),
                 });
+
+                let related_spans = ocr_agent_context::get_text_spans(
+                    db,
+                    scene.timestamp.saturating_sub(5_000),
+                    scene.timestamp.saturating_add(5_000),
+                    scene.frontmost_app_name.clone(),
+                )
+                .await?
+                .into_iter()
+                .filter(|span| {
+                    span.scene_ids
+                        .iter()
+                        .any(|scene_id| scene_id == &scene.scene_id)
+                })
+                .collect::<Vec<_>>();
+
+                if !related_spans.is_empty() {
+                    raw_payloads.push(RawPayloadDto {
+                        label: "Related text spans".to_string(),
+                        raw_json: pretty_json(serde_json::to_value(&related_spans)?),
+                    });
+                }
+
+                let related_entities = ocr_agent_context::get_context_entities(
+                    db,
+                    scene.timestamp.saturating_sub(120_000),
+                    scene.timestamp.saturating_add(120_000),
+                    scene.frontmost_app_name.clone(),
+                    None,
+                )
+                .await?
+                .into_iter()
+                .filter(|entity| {
+                    entity
+                        .scene_ids
+                        .iter()
+                        .any(|scene_id| scene_id == &scene.scene_id)
+                })
+                .collect::<Vec<_>>();
+
+                if !related_entities.is_empty() {
+                    raw_payloads.push(RawPayloadDto {
+                        label: "Related context entities".to_string(),
+                        raw_json: pretty_json(serde_json::to_value(&related_entities)?),
+                    });
+                }
 
                 ocr_reconstruction = Some(OcrReconstructionDto {
                     width: max_width.max(1280),
                     height: max_height.max(720),
-                    frame_path: group.frame_path.clone(),
-                    backdrop_available: group
+                    frame_path: scene.frame_path.clone(),
+                    backdrop_available: scene
                         .frame_path
                         .as_ref()
                         .map(|path| Path::new(path).exists())
                         .unwrap_or(false),
                     blocks: reconstruction_blocks,
                 });
+            } else {
+                let ocr_groups = group_ocr_rows(&ocr_rows);
+                if let Some(group) = ocr_groups.iter().find(|group| group.id == slice_id) {
+                    raw_payloads.push(RawPayloadDto {
+                        label: "OCR event (raw fallback)".to_string(),
+                        raw_json: pretty_json(serde_json::json!({
+                            "id": group.id,
+                            "session_id": group.session_id,
+                            "timestamp": group.timestamp,
+                            "frame_path": group.frame_path,
+                            "text_blocks": group.blocks.iter().map(|row| serde_json::json!({
+                                "id": row.id,
+                                "text": row.text,
+                                "confidence": row.confidence,
+                                "bounding_box": serde_json::from_str::<serde_json::Value>(&row.bounding_box).unwrap_or(serde_json::Value::String(row.bounding_box.clone())),
+                            })).collect::<Vec<_>>(),
+                        })),
+                    });
+                }
             }
         }
         "evidence" => {
-            if let Some(frame) = frames.iter().find(|row| format!("frame-{}-{}", row.session_id, row.timestamp) == slice_id) {
+            if let Some(frame) = frames
+                .iter()
+                .find(|row| format!("frame-{}-{}", row.session_id, row.timestamp) == slice_id)
+            {
                 linked_file_paths.push(frame.file_path.clone());
                 raw_payloads.push(RawPayloadDto {
                     label: "Evidence frame".to_string(),
@@ -930,16 +1115,21 @@ pub async fn get_app_usage_overview(
     let mut items: HashMap<String, AppUsageOverviewItemDto> = HashMap::new();
     let focus_rail = build_focus_rail(&snapshots, &sessions, end_timestamp);
     for slice in &focus_rail.slices {
-        let app_name = slice.app_name.clone().unwrap_or_else(|| "Unknown".to_string());
-        let entry = items.entry(app_name.clone()).or_insert(AppUsageOverviewItemDto {
-            app_name: app_name.clone(),
-            bundle_id: String::new(),
-            focused_time_ms: 0,
-            visible_time_ms: 0,
-            interaction_time_ms: 0,
-            ocr_hit_count: 0,
-            recent_segment_count: 0,
-        });
+        let app_name = slice
+            .app_name
+            .clone()
+            .unwrap_or_else(|| "Unknown".to_string());
+        let entry = items
+            .entry(app_name.clone())
+            .or_insert(AppUsageOverviewItemDto {
+                app_name: app_name.clone(),
+                bundle_id: String::new(),
+                focused_time_ms: 0,
+                visible_time_ms: 0,
+                interaction_time_ms: 0,
+                ocr_hit_count: 0,
+                recent_segment_count: 0,
+            });
         entry.focused_time_ms += slice.end_timestamp - slice.start_timestamp;
         entry.recent_segment_count += 1;
     }
@@ -951,15 +1141,17 @@ pub async fn get_app_usage_overview(
             .map(|next| (next.timestamp - snapshot.timestamp).max(1))
             .unwrap_or(DEFAULT_SNAPSHOT_SPAN_MS);
         for window in visible {
-            let entry = items.entry(window.app_name.clone()).or_insert(AppUsageOverviewItemDto {
-                app_name: window.app_name.clone(),
-                bundle_id: window.bundle_id.clone(),
-                focused_time_ms: 0,
-                visible_time_ms: 0,
-                interaction_time_ms: 0,
-                ocr_hit_count: 0,
-                recent_segment_count: 0,
-            });
+            let entry = items
+                .entry(window.app_name.clone())
+                .or_insert(AppUsageOverviewItemDto {
+                    app_name: window.app_name.clone(),
+                    bundle_id: window.bundle_id.clone(),
+                    focused_time_ms: 0,
+                    visible_time_ms: 0,
+                    interaction_time_ms: 0,
+                    ocr_hit_count: 0,
+                    recent_segment_count: 0,
+                });
             entry.visible_time_ms += span;
             if entry.bundle_id.is_empty() {
                 entry.bundle_id = window.bundle_id;
@@ -968,42 +1160,48 @@ pub async fn get_app_usage_overview(
     }
 
     for row in keyboard {
-        let entry = items.entry(row.app_name.clone()).or_insert(AppUsageOverviewItemDto {
-            app_name: row.app_name.clone(),
-            bundle_id: String::new(),
-            focused_time_ms: 0,
-            visible_time_ms: 0,
-            interaction_time_ms: 0,
-            ocr_hit_count: 0,
-            recent_segment_count: 0,
-        });
-        entry.interaction_time_ms += 1_000;
-    }
-    for row in mouse {
-        let entry = items.entry(row.app_name.clone()).or_insert(AppUsageOverviewItemDto {
-            app_name: row.app_name.clone(),
-            bundle_id: String::new(),
-            focused_time_ms: 0,
-            visible_time_ms: 0,
-            interaction_time_ms: 0,
-            ocr_hit_count: 0,
-            recent_segment_count: 0,
-        });
-        entry.interaction_time_ms += 1_000;
-    }
-
-    for row in ocr_rows {
-        let context = infer_app_context(db, row.timestamp, Some(&row.session_id)).await?;
-        if let Some(app_name) = context.app_name {
-            let entry = items.entry(app_name.clone()).or_insert(AppUsageOverviewItemDto {
-                app_name,
-                bundle_id: context.bundle_id.unwrap_or_default(),
+        let entry = items
+            .entry(row.app_name.clone())
+            .or_insert(AppUsageOverviewItemDto {
+                app_name: row.app_name.clone(),
+                bundle_id: String::new(),
                 focused_time_ms: 0,
                 visible_time_ms: 0,
                 interaction_time_ms: 0,
                 ocr_hit_count: 0,
                 recent_segment_count: 0,
             });
+        entry.interaction_time_ms += 1_000;
+    }
+    for row in mouse {
+        let entry = items
+            .entry(row.app_name.clone())
+            .or_insert(AppUsageOverviewItemDto {
+                app_name: row.app_name.clone(),
+                bundle_id: String::new(),
+                focused_time_ms: 0,
+                visible_time_ms: 0,
+                interaction_time_ms: 0,
+                ocr_hit_count: 0,
+                recent_segment_count: 0,
+            });
+        entry.interaction_time_ms += 1_000;
+    }
+
+    for row in ocr_rows {
+        let context = infer_app_context(db, row.timestamp, Some(&row.session_id)).await?;
+        if let Some(app_name) = context.app_name {
+            let entry = items
+                .entry(app_name.clone())
+                .or_insert(AppUsageOverviewItemDto {
+                    app_name,
+                    bundle_id: context.bundle_id.unwrap_or_default(),
+                    focused_time_ms: 0,
+                    visible_time_ms: 0,
+                    interaction_time_ms: 0,
+                    ocr_hit_count: 0,
+                    recent_segment_count: 0,
+                });
             entry.ocr_hit_count += 1;
         }
     }
@@ -1035,7 +1233,12 @@ pub async fn get_pii_review(
         for entity in entities {
             let matches_app = app_filter
                 .as_ref()
-                .map(|filter| app_name.as_ref().map(|name| name == filter).unwrap_or(false))
+                .map(|filter| {
+                    app_name
+                        .as_ref()
+                        .map(|name| name == filter)
+                        .unwrap_or(false)
+                })
                 .unwrap_or(true);
             let matches_entity_type = entity_type_filter
                 .as_ref()
@@ -1226,7 +1429,11 @@ fn snapshot_span_end(
     }
 }
 
-fn build_focus_rail(snapshots: &[WindowSnapshotRow], sessions: &[SessionRow], end_timestamp: i64) -> TimelineRailDto {
+fn build_focus_rail(
+    snapshots: &[WindowSnapshotRow],
+    sessions: &[SessionRow],
+    end_timestamp: i64,
+) -> TimelineRailDto {
     let mut slices = Vec::new();
     let mut current: Option<ContextSlice> = None;
     let session_ends = session_end_lookup(sessions);
@@ -1235,9 +1442,7 @@ fn build_focus_rail(snapshots: &[WindowSnapshotRow], sessions: &[SessionRow], en
         let Some(app_name) = snapshot.frontmost_app_name.clone() else {
             continue;
         };
-        let next_timestamp = snapshots
-            .get(index + 1)
-            .map(|row| row.timestamp);
+        let next_timestamp = snapshots.get(index + 1).map(|row| row.timestamp);
         let span_end = snapshot_span_end(snapshot, next_timestamp, &session_ends, end_timestamp);
 
         match current.as_mut() {
@@ -1455,8 +1660,13 @@ fn build_interaction_rail(
             .iter()
             .map(|row| keyboard_event_storage_bytes(row))
             .sum::<u64>()
-            + ms.iter().map(|row| mouse_event_storage_bytes(row)).sum::<u64>()
-            + ocr.iter().map(|row| ocr_row_storage_bytes(row)).sum::<u64>();
+            + ms.iter()
+                .map(|row| mouse_event_storage_bytes(row))
+                .sum::<u64>()
+            + ocr
+                .iter()
+                .map(|row| ocr_row_storage_bytes(row))
+                .sum::<u64>();
         let row_count = (kb.len() + ms.len() + ocr.len()) as u64;
 
         slices.push(ContextSlice {
@@ -1510,59 +1720,56 @@ fn build_interaction_rail(
     }
 }
 
-fn build_ocr_rail(ocr_groups: &[OcrEventGroup], snapshots: &[WindowSnapshotRow]) -> TimelineRailDto {
-    let slices = ocr_groups
+fn build_ocr_rail(
+    ocr_scenes: &[AgentSceneSnapshotDto],
+    snapshots: &[WindowSnapshotRow],
+) -> TimelineRailDto {
+    let slices = ocr_scenes
         .iter()
-        .map(|group| {
+        .map(|scene| {
             let snapshot = snapshots
                 .iter()
-                .min_by_key(|snap| (snap.timestamp - group.timestamp).abs());
+                .min_by_key(|snap| (snap.timestamp - scene.timestamp).abs());
             let visible_windows = snapshot
                 .map(parse_visible_windows)
                 .transpose()
                 .unwrap_or_default()
                 .unwrap_or_default();
-            let combined_text = group
-                .blocks
-                .iter()
-                .map(|row| row.text.clone())
-                .collect::<Vec<_>>()
-                .join(" ");
-            let average_confidence = if group.blocks.is_empty() {
-                0.0
-            } else {
-                group.blocks.iter().map(|row| row.confidence).sum::<f64>() as f32 / group.blocks.len() as f32
-            };
-            let storage_bytes = group.blocks.iter().map(ocr_row_storage_bytes).sum::<u64>();
+            let storage_bytes = scene_snapshot_storage_bytes(scene);
             ContextSlice {
-                id: group.id.clone(),
+                id: scene.scene_id.clone(),
                 rail: "ocr".to_string(),
                 slice_kind: "event".to_string(),
-                start_timestamp: group.timestamp,
-                end_timestamp: group.timestamp + 5_000,
-                title: preview_text(&combined_text),
-                subtitle: Some(format!("{} text blocks", group.blocks.len())),
-                source: "ocr_storage".to_string(),
-                confidence: average_confidence,
-                session_id: Some(group.session_id.clone()),
-                app_name: snapshot.and_then(|snap| snap.frontmost_app_name.clone()),
-                window_title: None,
+                start_timestamp: scene.timestamp,
+                end_timestamp: scene.timestamp + 5_000,
+                title: preview_text(&scene.full_text),
+                subtitle: Some(format!(
+                    "{} text blocks · {}",
+                    scene.block_count, scene.trigger_reason
+                )),
+                source: "ocr_scene_snapshot".to_string(),
+                confidence: scene.avg_confidence,
+                session_id: Some(scene.session_id.clone()),
+                app_name: scene
+                    .frontmost_app_name
+                    .clone()
+                    .or_else(|| snapshot.and_then(|snap| snap.frontmost_app_name.clone())),
+                window_title: scene.window_title.clone(),
                 interaction_state: None,
-                reasons: vec!["OCR text was extracted from a captured screen frame.".to_string()],
+                reasons: vec![format!(
+                    "OCR captured this scene because {} triggered a new OCR pass.",
+                    scene.trigger_reason.replace('_', " ")
+                )],
                 visible_windows,
-                ocr_preview: Some(combined_text),
-                pii_count: group
-                    .blocks
-                    .iter()
-                    .map(|row| detect_pii_types_in_text(&row.text).len())
-                    .sum(),
-                evidence_frame_path: group.frame_path.clone(),
+                ocr_preview: Some(scene.full_text.clone()),
+                pii_count: scene.pii_entities.len(),
+                evidence_frame_path: scene.frame_path.clone(),
                 storage_bytes,
                 storage_exact: true,
-                row_count: group.blocks.len() as u64,
-                file_count: 0,
+                row_count: scene.raw_source.raw_row_ids.len() as u64,
+                file_count: scene.frame_path.as_ref().map(|_| 1).unwrap_or(0),
                 has_detail_view: true,
-                tags: vec!["ocr".to_string()],
+                tags: vec!["ocr".to_string(), scene.trigger_reason.clone()],
             }
         })
         .collect();
@@ -1593,7 +1800,10 @@ fn build_evidence_rail(frames: &[FrameRow]) -> TimelineRailDto {
             app_name: None,
             window_title: None,
             interaction_state: None,
-            reasons: vec!["This is a stored frame anchor that can support playback or OCR review.".to_string()],
+            reasons: vec![
+                "This is a stored frame anchor that can support playback or OCR review."
+                    .to_string(),
+            ],
             visible_windows: Vec::new(),
             ocr_preview: None,
             pii_count: 0,
@@ -1687,11 +1897,19 @@ fn event_row_to_slice(row: &ContextEventRow) -> ContextSlice {
         .and_then(|payload| serde_json::from_str::<serde_json::Value>(payload).ok());
     let title = payload
         .as_ref()
-        .and_then(|value| value.get("title").and_then(|value| value.as_str()).map(|value| value.to_string()))
+        .and_then(|value| {
+            value
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        })
         .unwrap_or_else(|| row.event_type.replace('_', " "));
-    let subtitle = payload
-        .as_ref()
-        .and_then(|value| value.get("subtitle").and_then(|value| value.as_str()).map(|value| value.to_string()));
+    let subtitle = payload.as_ref().and_then(|value| {
+        value
+            .get("subtitle")
+            .and_then(|value| value.as_str())
+            .map(|value| value.to_string())
+    });
 
     ContextSlice {
         id: row.id.clone(),
@@ -1704,12 +1922,18 @@ fn event_row_to_slice(row: &ContextEventRow) -> ContextSlice {
         source: row.source.clone(),
         confidence: row.confidence as f32,
         session_id: row.session_id.clone(),
-        app_name: payload
-            .as_ref()
-            .and_then(|value| value.get("app_name").and_then(|value| value.as_str()).map(|value| value.to_string())),
-        window_title: payload
-            .as_ref()
-            .and_then(|value| value.get("window_title").and_then(|value| value.as_str()).map(|value| value.to_string())),
+        app_name: payload.as_ref().and_then(|value| {
+            value
+                .get("app_name")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        }),
+        window_title: payload.as_ref().and_then(|value| {
+            value
+                .get("window_title")
+                .and_then(|value| value.as_str())
+                .map(|value| value.to_string())
+        }),
         interaction_state: None,
         reasons: vec!["Persisted as an explicit desktop context event.".to_string()],
         visible_windows: Vec::new(),
@@ -1763,11 +1987,27 @@ fn detect_pii_types_in_text(text: &str) -> Vec<String> {
 
 fn detect_pii_spans(text: &str) -> Vec<(String, String)> {
     let patterns = vec![
-        ("email", Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").unwrap()),
-        ("phone", Regex::new(r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?){1}\d{3}[-.\s]?\d{4}\b").unwrap()),
-        ("government_id", Regex::new(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b").unwrap()),
-        ("credit_card", Regex::new(r"\b(?:\d[ -]*?){13,19}\b").unwrap()),
-        ("ip_address", Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap()),
+        (
+            "email",
+            Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").unwrap(),
+        ),
+        (
+            "phone",
+            Regex::new(r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?){1}\d{3}[-.\s]?\d{4}\b")
+                .unwrap(),
+        ),
+        (
+            "government_id",
+            Regex::new(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b").unwrap(),
+        ),
+        (
+            "credit_card",
+            Regex::new(r"\b(?:\d[ -]*?){13,19}\b").unwrap(),
+        ),
+        (
+            "ip_address",
+            Regex::new(r"\b(?:\d{1,3}\.){3}\d{1,3}\b").unwrap(),
+        ),
     ];
 
     let mut matches = Vec::new();
@@ -1825,7 +2065,11 @@ async fn infer_app_context(
         });
     }
 
-    let session_clause = if session_id.is_some() { "AND session_id = ?" } else { "" };
+    let session_clause = if session_id.is_some() {
+        "AND session_id = ?"
+    } else {
+        ""
+    };
     let keyboard_query = format!(
         r#"
         SELECT timestamp, app_name, window_title
@@ -1836,7 +2080,8 @@ async fn infer_app_context(
         "#,
         session_clause
     );
-    let mut keyboard_query_builder = sqlx::query_as::<_, KeyboardEventSummaryRow>(&keyboard_query).bind(timestamp);
+    let mut keyboard_query_builder =
+        sqlx::query_as::<_, KeyboardEventSummaryRow>(&keyboard_query).bind(timestamp);
     if let Some(session_id) = session_id {
         keyboard_query_builder = keyboard_query_builder.bind(session_id);
     }
@@ -2022,15 +2267,23 @@ async fn get_frame_rows(
     Ok(rows)
 }
 
-pub fn app_infos_to_visible_windows(frontmost: Option<&AppInfo>, running_apps: &[AppInfo]) -> Vec<WindowSnapshotDto> {
+pub fn app_infos_to_visible_windows(
+    frontmost: Option<&AppInfo>,
+    running_apps: &[AppInfo],
+) -> Vec<WindowSnapshotDto> {
     running_apps
         .iter()
         .map(|app| WindowSnapshotDto {
             app_name: app.name.clone(),
             bundle_id: app.bundle_id.clone(),
             process_id: app.process_id,
-            is_frontmost: frontmost.map(|item| item.process_id == app.process_id).unwrap_or(false),
-            confidence: if frontmost.map(|item| item.process_id == app.process_id).unwrap_or(false) {
+            is_frontmost: frontmost
+                .map(|item| item.process_id == app.process_id)
+                .unwrap_or(false),
+            confidence: if frontmost
+                .map(|item| item.process_id == app.process_id)
+                .unwrap_or(false)
+            {
                 0.95
             } else {
                 0.45

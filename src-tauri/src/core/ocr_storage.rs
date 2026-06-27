@@ -1,6 +1,7 @@
 // OCR storage and database operations
 
 use crate::core::database::Database;
+use crate::core::ocr_agent_context;
 use crate::models::ocr::{BoundingBox, OcrResult, TextBlock};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -35,6 +36,10 @@ pub struct ProcessedOcrResult {
     pub session_id: Uuid,
     pub timestamp: i64,
     pub frame_path: Option<PathBuf>,
+    pub display_id: Option<u32>,
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub trigger_reason: String,
     pub ocr_result: OcrResult,
 }
 
@@ -55,6 +60,7 @@ impl OcrStorage {
     pub async fn save_ocr_result(&self, result: ProcessedOcrResult) -> Result<()> {
         let pool = self.db.pool();
         let created_at = chrono::Utc::now().timestamp();
+        let mut raw_row_ids = Vec::new();
 
         // Save each text block as a separate row
         for text_block in &result.ocr_result.text_blocks {
@@ -75,7 +81,7 @@ impl OcrStorage {
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 "#,
             )
-            .bind(id)
+            .bind(&id)
             .bind(session_id)
             .bind(result.timestamp)
             .bind(frame_path)
@@ -87,7 +93,12 @@ impl OcrStorage {
             .bind(created_at)
             .execute(pool)
             .await?;
+            raw_row_ids.push(id);
         }
+
+        ocr_agent_context::reindex_processed_result(&self.db, &result, &raw_row_ids)
+            .await
+            .map_err(|e| OcrStorageError::InvalidData(e.to_string()))?;
 
         Ok(())
     }
@@ -205,9 +216,8 @@ impl OcrStorage {
     /// Delete OCR results older than specified days
     pub async fn cleanup_old_results(&self, retention_days: u32) -> Result<u64> {
         let pool = self.db.pool();
-        let cutoff_timestamp = chrono::Utc::now()
-            .timestamp()
-            - (retention_days as i64 * 24 * 60 * 60);
+        let cutoff_timestamp =
+            chrono::Utc::now().timestamp() - (retention_days as i64 * 24 * 60 * 60);
 
         let result = sqlx::query("DELETE FROM ocr_results WHERE created_at < ?")
             .bind(cutoff_timestamp)

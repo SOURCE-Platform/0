@@ -3,6 +3,8 @@
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::motion_detector::{MotionDetector, MotionResult};
 use crate::core::ocr_processor::OcrProcessor;
+use crate::core::ocr_trigger_signals::OcrTriggerSignals;
+use crate::core::os_activity::OsActivityRecorder;
 use crate::core::storage::RecordingStorage;
 use crate::core::video_encoder::{CompressionQuality, VideoCodec, VideoEncoder};
 use crate::models::capture::{CaptureError, CaptureResult, Display, RawFrame};
@@ -15,6 +17,9 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use tokio::time::{Duration, Instant};
 use uuid::Uuid;
+
+const OCR_APP_SWITCH_POLL_MS: i64 = 250;
+const OCR_LARGE_SCENE_CHANGE_THRESHOLD: f32 = 0.35;
 
 /// Platform-agnostic screen capture trait
 #[async_trait]
@@ -107,8 +112,8 @@ impl Default for RecordingConfig {
     fn default() -> Self {
         Self {
             target_fps: 10,
-            buffer_size: 60,          // 6 seconds at 10fps
-            no_motion_threshold: 20,  // ~2 seconds at 10fps
+            buffer_size: 60,                  // 6 seconds at 10fps
+            no_motion_threshold: 20,          // ~2 seconds at 10fps
             motion_detection_threshold: 0.05, // 5% pixels changed
             codec: VideoCodec::H264,
             quality: CompressionQuality::Medium,
@@ -131,6 +136,8 @@ struct RecordingState {
     segment_count: usize,
     is_paused: bool,
     last_ocr_capture_at: Option<i64>,
+    last_app_poll_at: Option<i64>,
+    last_frontmost_bundle_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -159,6 +166,8 @@ pub struct ScreenRecorder {
     power_manager: Arc<PowerManager>,
     ocr_processor: Arc<RwLock<Option<Arc<OcrProcessor>>>>,
     ocr_capture_settings: Arc<RwLock<OcrCaptureSettings>>,
+    ocr_trigger_signals: Arc<OcrTriggerSignals>,
+    os_activity_recorder: Arc<RwLock<Option<Arc<OsActivityRecorder>>>>,
 }
 
 impl ScreenRecorder {
@@ -166,6 +175,7 @@ impl ScreenRecorder {
     pub async fn new(
         consent_manager: Arc<ConsentManager>,
         storage: Arc<RecordingStorage>,
+        ocr_trigger_signals: Arc<OcrTriggerSignals>,
     ) -> CaptureResult<Self> {
         let capture = create_screen_capture().await?;
         let power_manager = Arc::new(PowerManager::new());
@@ -186,6 +196,8 @@ impl ScreenRecorder {
             power_manager,
             ocr_processor: Arc::new(RwLock::new(None)),
             ocr_capture_settings: Arc::new(RwLock::new(OcrCaptureSettings::default())),
+            ocr_trigger_signals,
+            os_activity_recorder: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -194,6 +206,7 @@ impl ScreenRecorder {
         consent_manager: Arc<ConsentManager>,
         storage: Arc<RecordingStorage>,
         config: RecordingConfig,
+        ocr_trigger_signals: Arc<OcrTriggerSignals>,
     ) -> CaptureResult<Self> {
         let capture = create_screen_capture().await?;
         let power_manager = Arc::new(PowerManager::new());
@@ -214,11 +227,17 @@ impl ScreenRecorder {
             power_manager,
             ocr_processor: Arc::new(RwLock::new(None)),
             ocr_capture_settings: Arc::new(RwLock::new(OcrCaptureSettings::default())),
+            ocr_trigger_signals,
+            os_activity_recorder: Arc::new(RwLock::new(None)),
         })
     }
 
     pub async fn attach_ocr_processor(&self, processor: Arc<OcrProcessor>) {
         *self.ocr_processor.write().await = Some(processor);
+    }
+
+    pub async fn attach_os_activity_recorder(&self, recorder: Arc<OsActivityRecorder>) {
+        *self.os_activity_recorder.write().await = Some(recorder);
     }
 
     pub async fn configure_ocr_capture(&self, enabled: bool, interval_seconds: u32) {
@@ -261,12 +280,16 @@ impl ScreenRecorder {
 
         // Verify display exists
         let displays = self.get_available_displays().await?;
-        let display = displays.iter().find(|d| d.id == display_id)
+        let display = displays
+            .iter()
+            .find(|d| d.id == display_id)
             .ok_or(CaptureError::DisplayNotFound(display_id))?;
 
         // Create recording session
-        let session_id = self.storage.create_session(display_id).await
-            .map_err(|e| CaptureError::CaptureFailed(format!("Failed to create session: {}", e)))?;
+        let session_id =
+            self.storage.create_session(display_id).await.map_err(|e| {
+                CaptureError::CaptureFailed(format!("Failed to create session: {}", e))
+            })?;
 
         // Initialize recording state
         let motion_detector = MotionDetector::new(self.config.motion_detection_threshold);
@@ -274,7 +297,8 @@ impl ScreenRecorder {
             self.config.codec,
             self.config.quality,
             self.config.hardware_acceleration,
-        ).map_err(|e| CaptureError::CaptureFailed(format!("Failed to create encoder: {}", e)))?;
+        )
+        .map_err(|e| CaptureError::CaptureFailed(format!("Failed to create encoder: {}", e)))?;
 
         let recording_state = RecordingState {
             session_id,
@@ -289,13 +313,17 @@ impl ScreenRecorder {
             segment_count: 0,
             is_paused: false,
             last_ocr_capture_at: None,
+            last_app_poll_at: None,
+            last_frontmost_bundle_id: None,
         };
 
         *self.state.write().await = Some(recording_state);
         *self.stop_signal.write().await = false;
 
-        println!("Started recording from display: {} ({}x{})",
-            display.name, display.width, display.height);
+        println!(
+            "Started recording from display: {} ({}x{})",
+            display.name, display.width, display.height
+        );
         println!("Session ID: {}", session_id);
 
         // Start recording loop in background
@@ -325,8 +353,9 @@ impl ScreenRecorder {
 
         if let Some(session_id) = session_id {
             // End the session
-            self.storage.end_session(session_id).await
-                .map_err(|e| CaptureError::CaptureFailed(format!("Failed to end session: {}", e)))?;
+            self.storage.end_session(session_id).await.map_err(|e| {
+                CaptureError::CaptureFailed(format!("Failed to end session: {}", e))
+            })?;
 
             println!("Stopped recording session: {}", session_id);
         }
@@ -373,6 +402,8 @@ impl ScreenRecorder {
             power_manager: Arc::clone(&self.power_manager),
             ocr_processor: Arc::clone(&self.ocr_processor),
             ocr_capture_settings: Arc::clone(&self.ocr_capture_settings),
+            ocr_trigger_signals: Arc::clone(&self.ocr_trigger_signals),
+            os_activity_recorder: Arc::clone(&self.os_activity_recorder),
         }
     }
 
@@ -444,6 +475,8 @@ impl ScreenRecorder {
         let frame = capture.capture_frame(display_id).await?;
         drop(capture);
 
+        self.maybe_detect_app_switch(frame.timestamp).await;
+
         // Detect motion
         let motion = {
             let mut state = self.state.write().await;
@@ -484,23 +517,40 @@ impl ScreenRecorder {
             return Ok(());
         };
 
-        let session_id = {
+        if motion.has_motion && motion.changed_percentage >= OCR_LARGE_SCENE_CHANGE_THRESHOLD {
+            self.ocr_trigger_signals
+                .mark_large_scene_change(frame.timestamp)
+                .await;
+        }
+
+        let trigger_outcome = self.ocr_trigger_signals.consume_due(frame.timestamp).await;
+
+        let (session_id, display_id, trigger_reason) = {
             let mut state = self.state.write().await;
             let s = state.as_mut().ok_or(CaptureError::NotCapturing)?;
             let base_interval_ms = settings.interval_seconds as i64 * 1000;
-            let motion_boost_interval_ms = 5_000_i64;
-            let interval_ms = if motion.has_motion && motion.changed_percentage >= 0.12 {
-                base_interval_ms.min(motion_boost_interval_ms)
-            } else {
-                base_interval_ms
-            };
-            if let Some(last_timestamp) = s.last_ocr_capture_at {
-                if frame.timestamp - last_timestamp < interval_ms {
-                    return Ok(());
+            let should_capture_now = trigger_outcome.app_switch
+                || trigger_outcome.large_scene_change
+                || trigger_outcome.scroll_settled;
+
+            if !should_capture_now {
+                if let Some(last_timestamp) = s.last_ocr_capture_at {
+                    if frame.timestamp - last_timestamp < base_interval_ms {
+                        return Ok(());
+                    }
                 }
             }
             s.last_ocr_capture_at = Some(frame.timestamp);
-            s.session_id
+            let trigger_reason = if trigger_outcome.app_switch {
+                "app_switch"
+            } else if trigger_outcome.large_scene_change {
+                "scene_change"
+            } else if trigger_outcome.scroll_settled {
+                "scroll_settled"
+            } else {
+                "static_fallback"
+            };
+            (s.session_id, Some(s.display_id), trigger_reason.to_string())
         };
 
         let frame_path = self
@@ -520,15 +570,97 @@ impl ScreenRecorder {
         };
 
         processor
-            .enqueue_frame(session_id, frame_path, frame.timestamp, motion_regions)
+            .enqueue_frame(
+                session_id,
+                frame_path,
+                frame.timestamp,
+                display_id,
+                trigger_reason,
+                motion_regions,
+            )
             .await
-            .map_err(|e| CaptureError::CaptureFailed(format!("Failed to enqueue OCR frame: {}", e)))?;
+            .map_err(|e| {
+                CaptureError::CaptureFailed(format!("Failed to enqueue OCR frame: {}", e))
+            })?;
 
         Ok(())
     }
 
+    async fn maybe_detect_app_switch(&self, timestamp: i64) {
+        let should_poll = {
+            let mut state = self.state.write().await;
+            let Some(recording_state) = state.as_mut() else {
+                return;
+            };
+
+            let should_poll = recording_state
+                .last_app_poll_at
+                .map(|last| timestamp - last >= OCR_APP_SWITCH_POLL_MS)
+                .unwrap_or(true);
+
+            if should_poll {
+                recording_state.last_app_poll_at = Some(timestamp);
+            }
+
+            should_poll
+        };
+
+        if !should_poll {
+            return;
+        }
+
+        let recorder = {
+            let guard = self.os_activity_recorder.read().await;
+            guard.clone()
+        };
+        let Some(recorder) = recorder else {
+            return;
+        };
+
+        let current_bundle_id = recorder
+            .get_current_app()
+            .await
+            .ok()
+            .flatten()
+            .map(|app| app.bundle_id);
+
+        let switched = {
+            let mut state = self.state.write().await;
+            let Some(recording_state) = state.as_mut() else {
+                return;
+            };
+
+            match (
+                &recording_state.last_frontmost_bundle_id,
+                &current_bundle_id,
+            ) {
+                (Some(previous), Some(current)) if previous != current => {
+                    recording_state.last_frontmost_bundle_id = Some(current.clone());
+                    true
+                }
+                (None, Some(current)) => {
+                    recording_state.last_frontmost_bundle_id = Some(current.clone());
+                    false
+                }
+                (Some(_), None) => {
+                    recording_state.last_frontmost_bundle_id = None;
+                    false
+                }
+                _ => false,
+            }
+        };
+
+        if switched {
+            self.ocr_trigger_signals.mark_app_switch(timestamp).await;
+        }
+    }
+
     /// Handle a frame with motion detected
-    async fn handle_motion_frame(&self, frame: RawFrame, motion: MotionResult) -> CaptureResult<()> {
+    async fn handle_motion_frame(
+        &self,
+        frame: RawFrame,
+        motion: MotionResult,
+    ) -> CaptureResult<()> {
         // Check if we need to update base layer and encode
         let (should_save_base, should_encode) = {
             let mut state = self.state.write().await;
@@ -653,7 +785,10 @@ impl ScreenRecorder {
     async fn flush_buffer(&self) -> CaptureResult<()> {
         let has_frames = {
             let state = self.state.read().await;
-            state.as_ref().map(|s| !s.frame_buffer.is_empty()).unwrap_or(false)
+            state
+                .as_ref()
+                .map(|s| !s.frame_buffer.is_empty())
+                .unwrap_or(false)
         };
 
         if has_frames {
@@ -675,7 +810,9 @@ impl ScreenRecorder {
             self.storage
                 .save_base_layer(&session_id, &frame)
                 .await
-                .map_err(|e| CaptureError::CaptureFailed(format!("Failed to save base layer: {}", e)))?;
+                .map_err(|e| {
+                    CaptureError::CaptureFailed(format!("Failed to save base layer: {}", e))
+                })?;
 
             println!("Saved base layer for session {}", session_id);
         }
@@ -707,7 +844,8 @@ impl ScreenRecorder {
                 0.0
             };
 
-            let save_directory = self.storage
+            let save_directory = self
+                .storage
                 .get_session_dir(&s.session_id)
                 .to_string_lossy()
                 .to_string();
@@ -745,7 +883,7 @@ impl ScreenRecorder {
         // Check consent first
         if !self.check_consent().await? {
             return Err(CaptureError::PermissionDenied(
-                "Screen recording consent not granted".to_string()
+                "Screen recording consent not granted".to_string(),
             ));
         }
 
@@ -788,18 +926,26 @@ mod tests {
         // Initialize database, storage, and consent manager
         let db = Arc::new(Database::init().await.expect("Failed to init database"));
         let consent_manager = Arc::new(
-            ConsentManager::new(db.clone()).await.expect("Failed to create consent manager")
+            ConsentManager::new(db.clone())
+                .await
+                .expect("Failed to create consent manager"),
         );
 
         let temp_dir = std::env::temp_dir().join("observer_test_recordings");
         let storage = Arc::new(
             RecordingStorage::new(temp_dir.clone(), db.clone())
                 .await
-                .expect("Failed to create storage")
+                .expect("Failed to create storage"),
         );
 
         // Create screen recorder
-        let recorder = match ScreenRecorder::new(consent_manager.clone(), storage.clone()).await {
+        let recorder = match ScreenRecorder::new(
+            consent_manager.clone(),
+            storage.clone(),
+            Arc::new(OcrTriggerSignals::new()),
+        )
+        .await
+        {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("Failed to create recorder: {}", e);
@@ -834,14 +980,16 @@ mod tests {
         // Setup
         let db = Arc::new(Database::init().await.expect("Failed to init database"));
         let consent_manager = Arc::new(
-            ConsentManager::new(db.clone()).await.expect("Failed to create consent manager")
+            ConsentManager::new(db.clone())
+                .await
+                .expect("Failed to create consent manager"),
         );
 
         let temp_dir = std::env::temp_dir().join("observer_test_lifecycle");
         let storage = Arc::new(
             RecordingStorage::new(temp_dir.clone(), db.clone())
                 .await
-                .expect("Failed to create storage")
+                .expect("Failed to create storage"),
         );
 
         // Grant consent for testing
@@ -850,14 +998,17 @@ mod tests {
             .await
             .expect("Failed to grant consent");
 
-        let recorder = match ScreenRecorder::new(consent_manager, storage).await {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("Failed to create recorder: {}", e);
-                let _ = std::fs::remove_dir_all(&temp_dir);
-                return;
-            }
-        };
+        let recorder =
+            match ScreenRecorder::new(consent_manager, storage, Arc::new(OcrTriggerSignals::new()))
+                .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("Failed to create recorder: {}", e);
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return;
+                }
+            };
 
         // Get first display
         let displays = match recorder.get_available_displays().await {
@@ -906,14 +1057,16 @@ mod tests {
     async fn test_pause_resume() {
         let db = Arc::new(Database::init().await.expect("Failed to init database"));
         let consent_manager = Arc::new(
-            ConsentManager::new(db.clone()).await.expect("Failed to create consent manager")
+            ConsentManager::new(db.clone())
+                .await
+                .expect("Failed to create consent manager"),
         );
 
         let temp_dir = std::env::temp_dir().join("observer_test_pause");
         let storage = Arc::new(
             RecordingStorage::new(temp_dir.clone(), db.clone())
                 .await
-                .expect("Failed to create storage")
+                .expect("Failed to create storage"),
         );
 
         // Grant consent
@@ -922,13 +1075,16 @@ mod tests {
             .await
             .expect("Failed to grant consent");
 
-        let recorder = match ScreenRecorder::new(consent_manager, storage).await {
-            Ok(r) => r,
-            Err(_) => {
-                let _ = std::fs::remove_dir_all(&temp_dir);
-                return;
-            }
-        };
+        let recorder =
+            match ScreenRecorder::new(consent_manager, storage, Arc::new(OcrTriggerSignals::new()))
+                .await
+            {
+                Ok(r) => r,
+                Err(_) => {
+                    let _ = std::fs::remove_dir_all(&temp_dir);
+                    return;
+                }
+            };
 
         let displays = match recorder.get_available_displays().await {
             Ok(d) if !d.is_empty() => d,

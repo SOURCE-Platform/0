@@ -2,20 +2,27 @@ pub mod core;
 pub mod models;
 pub mod platform;
 
+use chrono;
 use core::command_analyzer::{Command, CommandAnalyzer, CommandStats};
-use core::consent::{ConsentManager, Feature};
 use core::config::{Config, ResourceProfile};
+use core::consent::{ConsentManager, Feature};
 use core::context_timeline::{
-    self, AppUsageOverviewDto, ContextInspectorDto, ContextTimelineData as DesktopContextTimelineData,
-    ContextSliceDetailDto, OcrReviewItemDto, PiiEntityDto, WindowSnapshotDto,
+    self, AppUsageOverviewDto, ContextInspectorDto, ContextSliceDetailDto,
+    ContextTimelineData as DesktopContextTimelineData, OcrReviewItemDto, PiiEntityDto,
+    WindowSnapshotDto,
 };
 use core::database::Database;
 use core::input_recorder::InputRecorder;
 use core::input_storage::{InputTimeline, TimeRange};
 use core::keyboard_recorder::KeyboardRecorder;
+use core::ocr_agent_context::{
+    self, ActivityEpisodeDto, AgentContextEntityDto, AgentContextSearchResultDto,
+    AgentSceneSnapshotDto, AgentTextSpanDto, OcrAgentSummaryDto,
+};
 use core::ocr_engine::{OcrConfig, OcrEngine};
 use core::ocr_processor::{OcrProcessor, OcrProcessorConfig};
 use core::ocr_storage::OcrStorage;
+use core::ocr_trigger_signals::OcrTriggerSignals;
 use core::os_activity::{AppUsageStats, OsActivityRecorder};
 use core::playback_engine::{PlaybackEngine, PlaybackInfo, SeekInfo};
 use core::screen_recorder::{RecordingStatus, ScreenRecorder};
@@ -25,19 +32,18 @@ use core::storage::RecordingStorage;
 use models::activity::AppInfo;
 use models::capture::Display;
 use models::input::{KeyboardEvent, KeyboardStats, MouseEvent};
-use chrono;
 use platform::get_platform;
+use sqlx::Row;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
-use std::{fs, io};
 use std::sync::{Arc, Mutex};
+use std::{fs, io};
 use tauri::{Manager, State};
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use sqlx::Row;
 
 // Timeline data structures
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -200,12 +206,8 @@ fn greet(name: &str) -> String {
 
 // Consent management commands
 #[tauri::command]
-async fn check_consent_status(
-    feature: String,
-    state: State<'_, AppState>,
-) -> Result<bool, String> {
-    let feature = Feature::from_string(&feature)
-        .map_err(|e| format!("Invalid feature: {}", e))?;
+async fn check_consent_status(feature: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let feature = Feature::from_string(&feature).map_err(|e| format!("Invalid feature: {}", e))?;
 
     state
         .consent_manager
@@ -216,8 +218,7 @@ async fn check_consent_status(
 
 #[tauri::command]
 async fn request_consent(feature: String, state: State<'_, AppState>) -> Result<(), String> {
-    let feature = Feature::from_string(&feature)
-        .map_err(|e| format!("Invalid feature: {}", e))?;
+    let feature = Feature::from_string(&feature).map_err(|e| format!("Invalid feature: {}", e))?;
 
     state
         .consent_manager
@@ -228,8 +229,7 @@ async fn request_consent(feature: String, state: State<'_, AppState>) -> Result<
 
 #[tauri::command]
 async fn revoke_consent(feature: String, state: State<'_, AppState>) -> Result<(), String> {
-    let feature = Feature::from_string(&feature)
-        .map_err(|e| format!("Invalid feature: {}", e))?;
+    let feature = Feature::from_string(&feature).map_err(|e| format!("Invalid feature: {}", e))?;
 
     state
         .consent_manager
@@ -291,8 +291,7 @@ fn update_config(config: Config, state: State<'_, AppState>) -> Result<(), Strin
 
 #[tauri::command]
 fn reset_config(state: State<'_, AppState>) -> Result<Config, String> {
-    let default_config = Config::reset()
-        .map_err(|e| format!("Failed to reset config: {}", e))?;
+    let default_config = Config::reset().map_err(|e| format!("Failed to reset config: {}", e))?;
 
     // Update in-memory config
     let mut current_config = state
@@ -308,7 +307,9 @@ fn reset_config(state: State<'_, AppState>) -> Result<Config, String> {
 // Screen recording commands
 #[tauri::command]
 async fn get_available_displays(state: State<'_, AppState>) -> Result<Vec<Display>, String> {
-    let recorder = state.screen_recorder.as_ref()
+    let recorder = state
+        .screen_recorder
+        .as_ref()
         .ok_or("Screen recorder not initialized")?;
 
     recorder
@@ -318,11 +319,10 @@ async fn get_available_displays(state: State<'_, AppState>) -> Result<Vec<Displa
 }
 
 #[tauri::command]
-async fn start_screen_recording(
-    display_id: u32,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let recorder = state.screen_recorder.as_ref()
+async fn start_screen_recording(display_id: u32, state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state
+        .screen_recorder
+        .as_ref()
         .ok_or("Screen recorder not initialized")?;
 
     recorder
@@ -333,7 +333,9 @@ async fn start_screen_recording(
 
 #[tauri::command]
 async fn stop_screen_recording(state: State<'_, AppState>) -> Result<(), String> {
-    let recorder = state.screen_recorder.as_ref()
+    let recorder = state
+        .screen_recorder
+        .as_ref()
         .ok_or("Screen recorder not initialized")?;
 
     recorder
@@ -344,7 +346,9 @@ async fn stop_screen_recording(state: State<'_, AppState>) -> Result<(), String>
 
 #[tauri::command]
 async fn get_recording_status(state: State<'_, AppState>) -> Result<RecordingStatus, String> {
-    let recorder = state.screen_recorder.as_ref()
+    let recorder = state
+        .screen_recorder
+        .as_ref()
         .ok_or("Screen recorder not initialized")?;
 
     recorder
@@ -382,10 +386,7 @@ fn interval_for_profile(profile: &ResourceProfile) -> u64 {
     }
 }
 
-async fn channel_permission_state(
-    consent_manager: &Arc<ConsentManager>,
-    channel: &str,
-) -> String {
+async fn channel_permission_state(consent_manager: &Arc<ConsentManager>, channel: &str) -> String {
     let feature = match channel {
         "system" | "focus" | "visible_windows" => Some(Feature::OsActivity),
         "keyboard" => Some(Feature::KeyboardRecording),
@@ -494,7 +495,9 @@ const CAPTURE_CHANNELS: [CaptureChannelMeta; 7] = [
 ];
 
 fn file_size(path: &Path) -> u64 {
-    fs::metadata(path).map(|metadata| metadata.len()).unwrap_or(0)
+    fs::metadata(path)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0)
 }
 
 fn directory_size(path: &Path) -> u64 {
@@ -596,8 +599,8 @@ fn get_disk_space_for_path(_path: &Path) -> Result<(u64, u64), String> {
 }
 
 async fn collect_capture_data_overview(state: &AppState) -> Result<CaptureDataOverviewDto, String> {
-    let database_path = Database::database_path()
-        .map_err(|e| format!("Failed to resolve database path: {}", e))?;
+    let database_path =
+        Database::database_path().map_err(|e| format!("Failed to resolve database path: {}", e))?;
     let configured_storage_path = state
         .config
         .lock()
@@ -707,14 +710,16 @@ async fn clear_screen_evidence_channel(state: &AppState) -> Result<(), String> {
         .fetch_all(state.db.pool())
         .await
         .map_err(|e| format!("Failed to list segment paths: {}", e))?;
-    let base_layer_paths: Vec<Option<String>> = sqlx::query_scalar("SELECT base_layer_path FROM screen_recordings")
-        .fetch_all(state.db.pool())
-        .await
-        .map_err(|e| format!("Failed to list base-layer paths: {}", e))?;
-    let session_dirs: Vec<Option<String>> = sqlx::query_scalar("SELECT recording_path FROM sessions")
-        .fetch_all(state.db.pool())
-        .await
-        .map_err(|e| format!("Failed to list recording paths: {}", e))?;
+    let base_layer_paths: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT base_layer_path FROM screen_recordings")
+            .fetch_all(state.db.pool())
+            .await
+            .map_err(|e| format!("Failed to list base-layer paths: {}", e))?;
+    let session_dirs: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT recording_path FROM sessions")
+            .fetch_all(state.db.pool())
+            .await
+            .map_err(|e| format!("Failed to list recording paths: {}", e))?;
 
     for path in frame_paths {
         let file_path = PathBuf::from(&path);
@@ -794,7 +799,8 @@ async fn persist_context_snapshot(
     prev_running_ids: &mut HashSet<String>,
 ) -> Result<(), String> {
     let timestamp = chrono::Utc::now().timestamp_millis();
-    let visible_windows = context_timeline::app_infos_to_visible_windows(frontmost.as_ref(), &running_apps);
+    let visible_windows =
+        context_timeline::app_infos_to_visible_windows(frontmost.as_ref(), &running_apps);
 
     context_timeline::insert_window_snapshot(
         &db,
@@ -903,7 +909,11 @@ async fn spawn_desktop_sampler(
     loop {
         let (generation, active, session_id) = {
             let state = runtime.read().await;
-            (state.sampler_generation, state.is_active, state.session_id.clone())
+            (
+                state.sampler_generation,
+                state.is_active,
+                state.session_id.clone(),
+            )
         };
 
         if !active {
@@ -925,25 +935,33 @@ async fn spawn_desktop_sampler(
 
         if capture_scene {
             if let Some(os_activity_recorder) = os_activity_recorder.as_ref() {
-            let frontmost = os_activity_recorder.get_current_app().await.ok().flatten();
-            let running_apps = os_activity_recorder.get_running_apps().await.unwrap_or_default();
-            if let Err(error) = persist_context_snapshot(
-                db.clone(),
-                session_id.clone(),
-                frontmost,
-                running_apps,
-                &mut prev_frontmost_bundle_id,
-                &mut prev_running_ids,
-            )
-            .await
-            {
-                let mut state = runtime.write().await;
-                state.channel_errors.insert("visible_windows".to_string(), error);
+                let frontmost = os_activity_recorder.get_current_app().await.ok().flatten();
+                let running_apps = os_activity_recorder
+                    .get_running_apps()
+                    .await
+                    .unwrap_or_default();
+                if let Err(error) = persist_context_snapshot(
+                    db.clone(),
+                    session_id.clone(),
+                    frontmost,
+                    running_apps,
+                    &mut prev_frontmost_bundle_id,
+                    &mut prev_running_ids,
+                )
+                .await
+                {
+                    let mut state = runtime.write().await;
+                    state
+                        .channel_errors
+                        .insert("visible_windows".to_string(), error);
+                }
             }
         }
-        }
 
-        tokio::time::sleep(tokio::time::Duration::from_secs(interval_for_profile(&profile))).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(interval_for_profile(
+            &profile,
+        )))
+        .await;
 
         let still_same_generation = runtime.read().await.sampler_generation == generation;
         if !still_same_generation {
@@ -991,12 +1009,19 @@ async fn start_desktop_capture(
 
     let mut started_any_channel = false;
 
-    if config.capture_channels.system || config.capture_channels.focus || config.capture_channels.visible_windows {
+    if config.capture_channels.system
+        || config.capture_channels.focus
+        || config.capture_channels.visible_windows
+    {
         if let Some(recorder) = state.os_activity_recorder.as_ref() {
             if let Err(error) = recorder.start_recording(session_id.clone()).await {
                 let mut runtime = state.desktop_capture_runtime.write().await;
-                runtime.channel_errors.insert("system".to_string(), error.to_string());
-                runtime.warnings.push("OS activity capture could not start.".to_string());
+                runtime
+                    .channel_errors
+                    .insert("system".to_string(), error.to_string());
+                runtime
+                    .warnings
+                    .push("OS activity capture could not start.".to_string());
             } else {
                 started_any_channel = true;
             }
@@ -1017,9 +1042,9 @@ async fn start_desktop_capture(
                 runtime
                     .channel_errors
                     .insert("input".to_string(), error.to_string());
-                runtime
-                    .warnings
-                    .push("Input capture could not start with the current permissions.".to_string());
+                runtime.warnings.push(
+                    "Input capture could not start with the current permissions.".to_string(),
+                );
             } else {
                 started_any_channel = true;
             }
@@ -1029,17 +1054,21 @@ async fn start_desktop_capture(
     let ocr_requested = config.capture_channels.ocr && config.ocr_enabled;
     if ocr_requested && state.ocr_processor.is_none() {
         let mut runtime = state.desktop_capture_runtime.write().await;
-        runtime
-            .channel_errors
-            .insert("ocr".to_string(), "OCR engine is unavailable on this device right now.".to_string());
-        runtime
-            .warnings
-            .push("OCR capture is enabled, but the OCR engine could not be initialized.".to_string());
+        runtime.channel_errors.insert(
+            "ocr".to_string(),
+            "OCR engine is unavailable on this device right now.".to_string(),
+        );
+        runtime.warnings.push(
+            "OCR capture is enabled, but the OCR engine could not be initialized.".to_string(),
+        );
     }
 
     if let Some(recorder) = state.screen_recorder.as_ref() {
         recorder
-            .configure_ocr_capture(ocr_requested && state.ocr_processor.is_some(), config.ocr_interval_seconds)
+            .configure_ocr_capture(
+                ocr_requested && state.ocr_processor.is_some(),
+                config.ocr_interval_seconds,
+            )
             .await;
     }
 
@@ -1048,16 +1077,14 @@ async fn start_desktop_capture(
             match recorder.get_available_displays().await {
                 Ok(displays) if displays.is_empty() => {
                     let mut runtime = state.desktop_capture_runtime.write().await;
-                    runtime
-                        .channel_errors
-                        .insert(
-                            if config.capture_channels.screen_frames {
-                                "screen_frames".to_string()
-                            } else {
-                                "ocr".to_string()
-                            },
-                            "No capturable displays are available.".to_string(),
-                        );
+                    runtime.channel_errors.insert(
+                        if config.capture_channels.screen_frames {
+                            "screen_frames".to_string()
+                        } else {
+                            "ocr".to_string()
+                        },
+                        "No capturable displays are available.".to_string(),
+                    );
                     runtime
                         .warnings
                         .push(
@@ -1075,8 +1102,13 @@ async fn start_desktop_capture(
                         .or_else(|| displays.first())
                         .cloned();
                     let resolved_display = match (display_id, fallback_display) {
-                        (Some(requested_id), _) if displays.iter().any(|display| display.id == requested_id) => {
-                            displays.iter().find(|display| display.id == requested_id).cloned()
+                        (Some(requested_id), _)
+                            if displays.iter().any(|display| display.id == requested_id) =>
+                        {
+                            displays
+                                .iter()
+                                .find(|display| display.id == requested_id)
+                                .cloned()
                         }
                         (Some(_), Some(primary_display)) => {
                             let mut runtime = state.desktop_capture_runtime.write().await;
@@ -1100,16 +1132,14 @@ async fn start_desktop_capture(
                     if let Some(display) = resolved_display {
                         if let Err(error) = recorder.start_recording(display.id).await {
                             let mut runtime = state.desktop_capture_runtime.write().await;
-                            runtime
-                                .channel_errors
-                                .insert(
-                                    if config.capture_channels.screen_frames {
-                                        "screen_frames".to_string()
-                                    } else {
-                                        "ocr".to_string()
-                                    },
-                                    error.to_string(),
-                                );
+                            runtime.channel_errors.insert(
+                                if config.capture_channels.screen_frames {
+                                    "screen_frames".to_string()
+                                } else {
+                                    "ocr".to_string()
+                                },
+                                error.to_string(),
+                            );
                             runtime.warnings.push(if config.capture_channels.screen_frames {
                                 format!(
                                     "Screen evidence capture could not start because display sampling failed: {}.",
@@ -1124,7 +1154,8 @@ async fn start_desktop_capture(
                         } else if let Ok(status) = recorder.get_status().await {
                             let mut runtime = state.desktop_capture_runtime.write().await;
                             runtime.display_id = Some(display.id);
-                            runtime.display_name = status.display_name.or(Some(display.name.clone()));
+                            runtime.display_name =
+                                status.display_name.or(Some(display.name.clone()));
                             started_any_channel = true;
                         }
                     } else {
@@ -1136,21 +1167,27 @@ async fn start_desktop_capture(
                 }
                 Err(error) => {
                     let mut runtime = state.desktop_capture_runtime.write().await;
+                    runtime.channel_errors.insert(
+                        if config.capture_channels.screen_frames {
+                            "screen_frames".to_string()
+                        } else {
+                            "ocr".to_string()
+                        },
+                        error.to_string(),
+                    );
                     runtime
-                        .channel_errors
-                        .insert(
-                            if config.capture_channels.screen_frames {
-                                "screen_frames".to_string()
-                            } else {
-                                "ocr".to_string()
-                            },
-                            error.to_string(),
-                        );
-                    runtime.warnings.push(if config.capture_channels.screen_frames {
-                        format!("Screen evidence capture could not inspect available displays: {}.", error)
-                    } else {
-                        format!("OCR capture could not inspect available displays: {}.", error)
-                    });
+                        .warnings
+                        .push(if config.capture_channels.screen_frames {
+                            format!(
+                                "Screen evidence capture could not inspect available displays: {}.",
+                                error
+                            )
+                        } else {
+                            format!(
+                                "OCR capture could not inspect available displays: {}.",
+                                error
+                            )
+                        });
                 }
             }
         }
@@ -1165,9 +1202,9 @@ async fn start_desktop_capture(
             runtime.display_id = None;
             runtime.display_name = None;
             if runtime.warnings.is_empty() {
-                runtime
-                    .warnings
-                    .push("No capture channels could start with the current configuration.".to_string());
+                runtime.warnings.push(
+                    "No capture channels could start with the current configuration.".to_string(),
+                );
             }
         }
     }
@@ -1212,8 +1249,15 @@ async fn start_desktop_capture(
 }
 
 #[tauri::command]
-async fn stop_desktop_capture(state: State<'_, AppState>) -> Result<DesktopCaptureStatusDto, String> {
-    let session_id = state.desktop_capture_runtime.read().await.session_id.clone();
+async fn stop_desktop_capture(
+    state: State<'_, AppState>,
+) -> Result<DesktopCaptureStatusDto, String> {
+    let session_id = state
+        .desktop_capture_runtime
+        .read()
+        .await
+        .session_id
+        .clone();
 
     if let Some(recorder) = state.input_recorder.as_ref() {
         let _ = recorder.stop_recording().await;
@@ -1288,9 +1332,10 @@ async fn get_channel_statuses(state: State<'_, AppState>) -> Result<Vec<ChannelS
     let mut statuses = Vec::new();
     for (channel, enabled, _table, last_query, count_query) in channels {
         let permission_state = channel_permission_state(&state.consent_manager, channel).await;
-        let last_event_time = context_timeline::get_last_event_time_for_table(&state.db, last_query)
-            .await
-            .map_err(|e| format!("Failed to inspect channel status: {}", e))?;
+        let last_event_time =
+            context_timeline::get_last_event_time_for_table(&state.db, last_query)
+                .await
+                .map_err(|e| format!("Failed to inspect channel status: {}", e))?;
         let sample_count = context_timeline::get_count_for_query(&state.db, count_query)
             .await
             .map_err(|e| format!("Failed to inspect channel count: {}", e))?;
@@ -1417,6 +1462,9 @@ async fn delete_capture_data(
                 .execute(state.db.pool())
                 .await
                 .map_err(|e| format!("Failed to delete OCR results: {}", e))?;
+            ocr_agent_context::delete_all_derived(&state.db)
+                .await
+                .map_err(|e| format!("Failed to delete derived OCR data: {}", e))?;
         }
         Some("screen_frames") => {
             clear_screen_evidence_channel(&state).await?;
@@ -1428,6 +1476,9 @@ async fn delete_capture_data(
                 .execute(state.db.pool())
                 .await
                 .map_err(|e| format!("Failed to delete OCR results: {}", e))?;
+            ocr_agent_context::delete_all_derived(&state.db)
+                .await
+                .map_err(|e| format!("Failed to delete derived OCR data: {}", e))?;
             sqlx::query("DELETE FROM keyboard_events")
                 .execute(state.db.pool())
                 .await
@@ -1713,7 +1764,11 @@ async fn get_capture_channel_preview(
         other => return Err(format!("Unknown channel: {}", other)),
     };
 
-    Ok(CapturePreviewDto { channel, label, rows })
+    Ok(CapturePreviewDto {
+        channel,
+        label,
+        rows,
+    })
 }
 
 #[tauri::command]
@@ -1754,6 +1809,99 @@ async fn get_context_slice_detail(
     )
     .await
     .map_err(|e| format!("Failed to build context slice detail: {}", e))
+}
+
+#[tauri::command]
+async fn get_scene_snapshot(
+    scene_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<AgentSceneSnapshotDto>, String> {
+    ocr_agent_context::get_scene_snapshot(&state.db, &scene_id)
+        .await
+        .map_err(|e| format!("Failed to get OCR scene snapshot: {}", e))
+}
+
+#[tauri::command]
+async fn get_scene_snapshots(
+    start_timestamp: i64,
+    end_timestamp: i64,
+    app_filter: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AgentSceneSnapshotDto>, String> {
+    ocr_agent_context::get_scene_snapshots(&state.db, start_timestamp, end_timestamp, app_filter)
+        .await
+        .map_err(|e| format!("Failed to get OCR scene snapshots: {}", e))
+}
+
+#[tauri::command]
+async fn get_text_spans(
+    start_timestamp: i64,
+    end_timestamp: i64,
+    app_filter: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AgentTextSpanDto>, String> {
+    ocr_agent_context::get_text_spans(&state.db, start_timestamp, end_timestamp, app_filter)
+        .await
+        .map_err(|e| format!("Failed to get OCR text spans: {}", e))
+}
+
+#[tauri::command]
+async fn get_context_entities(
+    start_timestamp: i64,
+    end_timestamp: i64,
+    app_filter: Option<String>,
+    entity_type: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AgentContextEntityDto>, String> {
+    ocr_agent_context::get_context_entities(
+        &state.db,
+        start_timestamp,
+        end_timestamp,
+        app_filter,
+        entity_type,
+    )
+    .await
+    .map_err(|e| format!("Failed to get OCR context entities: {}", e))
+}
+
+#[tauri::command]
+async fn search_agent_context(
+    query: String,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+    app_filter: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<AgentContextSearchResultDto>, String> {
+    ocr_agent_context::search_agent_context(
+        &state.db,
+        &query,
+        start_timestamp,
+        end_timestamp,
+        app_filter,
+    )
+    .await
+    .map_err(|e| format!("Failed to search OCR agent context: {}", e))
+}
+
+#[tauri::command]
+async fn get_activity_episode(
+    timestamp: i64,
+    state: State<'_, AppState>,
+) -> Result<ActivityEpisodeDto, String> {
+    ocr_agent_context::get_activity_episode(&state.db, timestamp)
+        .await
+        .map_err(|e| format!("Failed to get OCR activity episode: {}", e))
+}
+
+#[tauri::command]
+async fn get_ocr_agent_summary(
+    start_timestamp: i64,
+    end_timestamp: i64,
+    state: State<'_, AppState>,
+) -> Result<OcrAgentSummaryDto, String> {
+    ocr_agent_context::get_ocr_agent_summary(&state.db, start_timestamp, end_timestamp)
+        .await
+        .map_err(|e| format!("Failed to get OCR agent summary: {}", e))
 }
 
 #[tauri::command]
@@ -1811,11 +1959,10 @@ async fn get_ocr_review(
 
 // OS monitoring commands
 #[tauri::command]
-async fn start_os_monitoring(
-    session_id: String,
-    state: State<'_, AppState>,
-) -> Result<(), String> {
-    let recorder = state.os_activity_recorder.as_ref()
+async fn start_os_monitoring(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let recorder = state
+        .os_activity_recorder
+        .as_ref()
         .ok_or("OS activity recorder not initialized")?;
 
     recorder
@@ -1826,7 +1973,9 @@ async fn start_os_monitoring(
 
 #[tauri::command]
 async fn stop_os_monitoring(state: State<'_, AppState>) -> Result<(), String> {
-    let recorder = state.os_activity_recorder.as_ref()
+    let recorder = state
+        .os_activity_recorder
+        .as_ref()
         .ok_or("OS activity recorder not initialized")?;
 
     recorder
@@ -1840,7 +1989,9 @@ async fn get_app_usage_stats(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<Vec<AppUsageStats>, String> {
-    let recorder = state.os_activity_recorder.as_ref()
+    let recorder = state
+        .os_activity_recorder
+        .as_ref()
         .ok_or("OS activity recorder not initialized")?;
 
     recorder
@@ -1851,7 +2002,9 @@ async fn get_app_usage_stats(
 
 #[tauri::command]
 async fn get_running_applications(state: State<'_, AppState>) -> Result<Vec<AppInfo>, String> {
-    let recorder = state.os_activity_recorder.as_ref()
+    let recorder = state
+        .os_activity_recorder
+        .as_ref()
         .ok_or("OS activity recorder not initialized")?;
 
     recorder
@@ -1862,7 +2015,9 @@ async fn get_running_applications(state: State<'_, AppState>) -> Result<Vec<AppI
 
 #[tauri::command]
 async fn get_current_application(state: State<'_, AppState>) -> Result<Option<AppInfo>, String> {
-    let recorder = state.os_activity_recorder.as_ref()
+    let recorder = state
+        .os_activity_recorder
+        .as_ref()
         .ok_or("OS activity recorder not initialized")?;
 
     recorder
@@ -1874,7 +2029,9 @@ async fn get_current_application(state: State<'_, AppState>) -> Result<Option<Ap
 // Session management commands
 #[tauri::command]
 async fn get_current_session(state: State<'_, AppState>) -> Result<Option<Session>, String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1889,7 +2046,9 @@ async fn get_session_history(
     end: i64,
     state: State<'_, AppState>,
 ) -> Result<Vec<Session>, String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1903,7 +2062,9 @@ async fn get_session_metrics(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<SessionMetrics, String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1917,7 +2078,9 @@ async fn classify_session(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     let session_type = manager
@@ -1930,7 +2093,9 @@ async fn classify_session(
 
 #[tauri::command]
 async fn end_current_session(state: State<'_, AppState>) -> Result<(), String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1941,7 +2106,9 @@ async fn end_current_session(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 async fn start_session_monitoring(state: State<'_, AppState>) -> Result<(), String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1952,7 +2119,9 @@ async fn start_session_monitoring(state: State<'_, AppState>) -> Result<(), Stri
 
 #[tauri::command]
 async fn stop_session_monitoring(state: State<'_, AppState>) -> Result<(), String> {
-    let manager = state.session_manager.as_ref()
+    let manager = state
+        .session_manager
+        .as_ref()
         .ok_or("Session manager not initialized")?;
 
     manager
@@ -1967,7 +2136,9 @@ async fn start_keyboard_recording(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let recorder = state.keyboard_recorder.as_ref()
+    let recorder = state
+        .keyboard_recorder
+        .as_ref()
         .ok_or("Keyboard recorder not initialized")?;
 
     recorder
@@ -1978,7 +2149,9 @@ async fn start_keyboard_recording(
 
 #[tauri::command]
 async fn stop_keyboard_recording(state: State<'_, AppState>) -> Result<(), String> {
-    let recorder = state.keyboard_recorder.as_ref()
+    let recorder = state
+        .keyboard_recorder
+        .as_ref()
         .ok_or("Keyboard recorder not initialized")?;
 
     recorder
@@ -1992,7 +2165,9 @@ async fn get_keyboard_stats(
     session_id: String,
     state: State<'_, AppState>,
 ) -> Result<KeyboardStats, String> {
-    let recorder = state.keyboard_recorder.as_ref()
+    let recorder = state
+        .keyboard_recorder
+        .as_ref()
         .ok_or("Keyboard recorder not initialized")?;
 
     recorder
@@ -2003,7 +2178,9 @@ async fn get_keyboard_stats(
 
 #[tauri::command]
 async fn is_keyboard_recording(state: State<'_, AppState>) -> Result<bool, String> {
-    let recorder = state.keyboard_recorder.as_ref()
+    let recorder = state
+        .keyboard_recorder
+        .as_ref()
         .ok_or("Keyboard recorder not initialized")?;
 
     Ok(recorder.is_recording().await)
@@ -2136,8 +2313,8 @@ async fn search_in_session(
     query: String,
     state: State<'_, AppState>,
 ) -> Result<SearchResults, String> {
-    let session_uuid = Uuid::parse_str(&session_id)
-        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    let session_uuid =
+        Uuid::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
 
     state
         .search_engine
@@ -2185,7 +2362,9 @@ async fn get_timeline_data(
                 app_name: app.app_name.clone(),
                 bundle_id: app.bundle_id.clone(),
                 start_timestamp: app.start_timestamp,
-                end_timestamp: app.end_timestamp.unwrap_or(chrono::Utc::now().timestamp_millis()),
+                end_timestamp: app
+                    .end_timestamp
+                    .unwrap_or(chrono::Utc::now().timestamp_millis()),
                 focus_duration: app.focus_duration_ms,
                 color: app_color(&app.app_name),
             })
@@ -2214,7 +2393,9 @@ async fn get_timeline_data(
     let total_duration: u64 = timeline_sessions
         .iter()
         .map(|s| {
-            let end = s.end_timestamp.unwrap_or(chrono::Utc::now().timestamp_millis());
+            let end = s
+                .end_timestamp
+                .unwrap_or(chrono::Utc::now().timestamp_millis());
             (end - s.start_timestamp) as u64
         })
         .sum();
@@ -2241,7 +2422,7 @@ async fn get_app_usage_for_session(
         FROM app_usage
         WHERE session_id = ?
         ORDER BY start_timestamp ASC
-        "#
+        "#,
     )
     .bind(session_id)
     .fetch_all(&db.pool)
@@ -2374,7 +2555,7 @@ async fn get_keyboard_events_in_range(
           AND timestamp <= ?
         ORDER BY timestamp ASC
         LIMIT 100
-        "#
+        "#,
     )
     .bind(&session_id)
     .bind(start_time)
@@ -2383,20 +2564,23 @@ async fn get_keyboard_events_in_range(
     .await
     .map_err(|e| format!("Failed to get keyboard events: {}", e))?;
 
-    let events = rows.into_iter().map(|row| KeyboardEventDto {
-        id: row.id,
-        timestamp: row.timestamp,
-        event_type: row.event_type,
-        key_char: row.key_char,
-        key_code: row.key_code,
-        modifiers: ModifierDto {
-            ctrl: row.modifiers_ctrl,
-            shift: row.modifiers_shift,
-            alt: row.modifiers_alt,
-            meta: row.modifiers_meta,
-        },
-        app_name: row.app_name,
-    }).collect();
+    let events = rows
+        .into_iter()
+        .map(|row| KeyboardEventDto {
+            id: row.id,
+            timestamp: row.timestamp,
+            event_type: row.event_type,
+            key_char: row.key_char,
+            key_code: row.key_code,
+            modifiers: ModifierDto {
+                ctrl: row.modifiers_ctrl,
+                shift: row.modifiers_shift,
+                alt: row.modifiers_alt,
+                meta: row.modifiers_meta,
+            },
+            app_name: row.app_name,
+        })
+        .collect();
 
     Ok(events)
 }
@@ -2417,7 +2601,7 @@ async fn get_mouse_events_in_range(
           AND timestamp <= ?
         ORDER BY timestamp ASC
         LIMIT 100
-        "#
+        "#,
     )
     .bind(&session_id)
     .bind(start_time)
@@ -2426,16 +2610,19 @@ async fn get_mouse_events_in_range(
     .await
     .map_err(|e| format!("Failed to get mouse events: {}", e))?;
 
-    let events = rows.into_iter().map(|row| MouseEventDto {
-        id: row.id,
-        timestamp: row.timestamp,
-        event_type: row.event_type,
-        position: PositionDto {
-            x: row.position_x,
-            y: row.position_y,
-        },
-        button: row.button,
-    }).collect();
+    let events = rows
+        .into_iter()
+        .map(|row| MouseEventDto {
+            id: row.id,
+            timestamp: row.timestamp,
+            event_type: row.event_type,
+            position: PositionDto {
+                x: row.position_x,
+                y: row.position_y,
+            },
+            button: row.button,
+        })
+        .collect();
 
     Ok(events)
 }
@@ -2451,8 +2638,7 @@ async fn get_playback_info(
         .as_ref()
         .ok_or("Playback engine not initialized")?;
 
-    let uuid = Uuid::parse_str(&session_id)
-        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    let uuid = Uuid::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
 
     engine
         .get_playback_info(uuid)
@@ -2471,8 +2657,7 @@ async fn seek_to_timestamp(
         .as_ref()
         .ok_or("Playback engine not initialized")?;
 
-    let uuid = Uuid::parse_str(&session_id)
-        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    let uuid = Uuid::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
 
     engine
         .seek_to_timestamp(uuid, timestamp)
@@ -2491,8 +2676,7 @@ async fn get_frame_at_timestamp(
         .as_ref()
         .ok_or("Playback engine not initialized")?;
 
-    let uuid = Uuid::parse_str(&session_id)
-        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    let uuid = Uuid::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
 
     engine
         .get_frame_at_timestamp(uuid, timestamp)
@@ -2521,8 +2705,7 @@ async fn get_recordings(state: State<'_, AppState>) -> Result<Vec<RecordingInfo>
 #[tauri::command]
 async fn delete_recording(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
     let storage = state.storage.as_ref().ok_or("Storage not initialized")?;
-    let uuid = Uuid::parse_str(&session_id)
-        .map_err(|e| format!("Invalid session ID: {}", e))?;
+    let uuid = Uuid::parse_str(&session_id).map_err(|e| format!("Invalid session ID: {}", e))?;
     storage
         .delete_session(uuid)
         .await
@@ -2547,31 +2730,31 @@ pub fn run() {
                 let db = Arc::new(
                     Database::init()
                         .await
-                        .expect("Failed to initialize database")
+                        .expect("Failed to initialize database"),
                 );
 
                 let consent_manager = Arc::new(
                     ConsentManager::new(db.clone())
                         .await
-                        .expect("Failed to initialize consent manager")
+                        .expect("Failed to initialize consent manager"),
                 );
 
-                let config = Config::load()
-                    .expect("Failed to load configuration");
+                let config = Config::load().expect("Failed to load configuration");
                 context_timeline::init_schema(&db)
                     .await
                     .expect("Failed to initialize context timeline schema");
 
                 // Initialize recording storage
                 let platform = get_platform();
-                let data_dir = platform.get_data_directory()
+                let data_dir = platform
+                    .get_data_directory()
                     .expect("Failed to get data directory");
                 let recordings_path = data_dir.join("recordings");
 
                 let storage = Arc::new(
                     RecordingStorage::new(recordings_path, db.clone())
                         .await
-                        .expect("Failed to initialize recording storage")
+                        .expect("Failed to initialize recording storage"),
                 );
 
                 // Try to initialize OCR pipeline
@@ -2600,13 +2783,23 @@ pub fn run() {
                     }
                     Err(error) => {
                         eprintln!("Warning: Failed to initialize OCR engine: {}", error);
-                        eprintln!("OCR capture will be unavailable until Tesseract initializes cleanly");
+                        eprintln!(
+                            "OCR capture will be unavailable until Tesseract initializes cleanly"
+                        );
                         None
                     }
                 };
 
+                let ocr_trigger_signals = Arc::new(OcrTriggerSignals::new());
+
                 // Try to initialize screen recorder (may fail on some platforms)
-                let screen_recorder = match ScreenRecorder::new(consent_manager.clone(), storage.clone()).await {
+                let screen_recorder = match ScreenRecorder::new(
+                    consent_manager.clone(),
+                    storage.clone(),
+                    ocr_trigger_signals.clone(),
+                )
+                .await
+                {
                     Ok(recorder) => {
                         if let Some(ocr_processor) = ocr_processor.clone() {
                             recorder.attach_ocr_processor(ocr_processor).await;
@@ -2622,46 +2815,63 @@ pub fn run() {
                 };
 
                 // Try to initialize OS activity recorder
-                let os_activity_recorder = match OsActivityRecorder::new(consent_manager.clone(), db.clone()).await {
-                    Ok(recorder) => {
-                        println!("OS activity recorder initialized successfully");
-                        Some(Arc::new(recorder))
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to initialize OS activity recorder: {}", e);
-                        eprintln!("OS activity monitoring features will be unavailable");
-                        None
-                    }
-                };
+                let os_activity_recorder =
+                    match OsActivityRecorder::new(consent_manager.clone(), db.clone()).await {
+                        Ok(recorder) => {
+                            println!("OS activity recorder initialized successfully");
+                            Some(Arc::new(recorder))
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to initialize OS activity recorder: {}", e);
+                            eprintln!("OS activity monitoring features will be unavailable");
+                            None
+                        }
+                    };
+
+                if let (Some(screen_recorder), Some(os_activity_recorder)) =
+                    (screen_recorder.as_ref(), os_activity_recorder.as_ref())
+                {
+                    screen_recorder
+                        .attach_os_activity_recorder(os_activity_recorder.clone())
+                        .await;
+                }
 
                 // Initialize session manager
-                let session_manager = match SessionManager::new(db.clone(), SessionConfig::default()).await {
-                    Ok(manager) => {
-                        println!("Session manager initialized successfully");
-                        Some(Arc::new(manager))
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to initialize session manager: {}", e);
-                        eprintln!("Session management features will be unavailable");
-                        None
-                    }
-                };
+                let session_manager =
+                    match SessionManager::new(db.clone(), SessionConfig::default()).await {
+                        Ok(manager) => {
+                            println!("Session manager initialized successfully");
+                            Some(Arc::new(manager))
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to initialize session manager: {}", e);
+                            eprintln!("Session management features will be unavailable");
+                            None
+                        }
+                    };
 
                 // Initialize keyboard recorder
-                let keyboard_recorder = match KeyboardRecorder::new(consent_manager.clone(), db.clone()).await {
-                    Ok(recorder) => {
-                        println!("Keyboard recorder initialized successfully");
-                        Some(Arc::new(recorder))
-                    }
-                    Err(e) => {
-                        eprintln!("Warning: Failed to initialize keyboard recorder: {}", e);
-                        eprintln!("Keyboard recording features will be unavailable");
-                        None
-                    }
-                };
+                let keyboard_recorder =
+                    match KeyboardRecorder::new(consent_manager.clone(), db.clone()).await {
+                        Ok(recorder) => {
+                            println!("Keyboard recorder initialized successfully");
+                            Some(Arc::new(recorder))
+                        }
+                        Err(e) => {
+                            eprintln!("Warning: Failed to initialize keyboard recorder: {}", e);
+                            eprintln!("Keyboard recording features will be unavailable");
+                            None
+                        }
+                    };
 
                 // Initialize input recorder
-                let input_recorder = match InputRecorder::new(consent_manager.clone(), db.clone()).await {
+                let input_recorder = match InputRecorder::new(
+                    consent_manager.clone(),
+                    db.clone(),
+                    ocr_trigger_signals.clone(),
+                )
+                .await
+                {
                     Ok(recorder) => {
                         println!("Input recorder initialized successfully");
                         Some(Arc::new(recorder))
@@ -2694,7 +2904,9 @@ pub fn run() {
                     playback_engine: Some(playback_engine),
                     storage: Some(storage),
                     ocr_processor,
-                    desktop_capture_runtime: Arc::new(RwLock::new(DesktopCaptureRuntime::default())),
+                    desktop_capture_runtime: Arc::new(
+                        RwLock::new(DesktopCaptureRuntime::default()),
+                    ),
                 });
             });
 
@@ -2750,6 +2962,13 @@ pub fn run() {
             get_context_timeline,
             get_context_inspector,
             get_context_slice_detail,
+            get_scene_snapshot,
+            get_scene_snapshots,
+            get_text_spans,
+            get_context_entities,
+            search_agent_context,
+            get_activity_episode,
+            get_ocr_agent_summary,
             get_app_usage_overview,
             get_pii_review,
             get_ocr_review,
