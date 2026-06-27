@@ -2,9 +2,11 @@
 
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::motion_detector::{MotionDetector, MotionResult};
+use crate::core::ocr_processor::OcrProcessor;
 use crate::core::storage::RecordingStorage;
 use crate::core::video_encoder::{CompressionQuality, VideoCodec, VideoEncoder};
 use crate::models::capture::{CaptureError, CaptureResult, Display, RawFrame};
+use crate::models::ocr::BoundingBox as OcrBoundingBox;
 use crate::platform::capture::PlatformCapture;
 use crate::platform::power::{PowerEvent, PowerManager};
 use async_trait::async_trait;
@@ -128,6 +130,22 @@ struct RecordingState {
     motion_frames: usize,
     segment_count: usize,
     is_paused: bool,
+    last_ocr_capture_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct OcrCaptureSettings {
+    enabled: bool,
+    interval_seconds: u32,
+}
+
+impl Default for OcrCaptureSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            interval_seconds: 60,
+        }
+    }
 }
 
 /// High-level screen recorder with consent management
@@ -139,6 +157,8 @@ pub struct ScreenRecorder {
     state: Arc<RwLock<Option<RecordingState>>>,
     stop_signal: Arc<RwLock<bool>>,
     power_manager: Arc<PowerManager>,
+    ocr_processor: Arc<RwLock<Option<Arc<OcrProcessor>>>>,
+    ocr_capture_settings: Arc<RwLock<OcrCaptureSettings>>,
 }
 
 impl ScreenRecorder {
@@ -164,6 +184,8 @@ impl ScreenRecorder {
             state: Arc::new(RwLock::new(None)),
             stop_signal: Arc::new(RwLock::new(false)),
             power_manager,
+            ocr_processor: Arc::new(RwLock::new(None)),
+            ocr_capture_settings: Arc::new(RwLock::new(OcrCaptureSettings::default())),
         })
     }
 
@@ -190,7 +212,20 @@ impl ScreenRecorder {
             state: Arc::new(RwLock::new(None)),
             stop_signal: Arc::new(RwLock::new(false)),
             power_manager,
+            ocr_processor: Arc::new(RwLock::new(None)),
+            ocr_capture_settings: Arc::new(RwLock::new(OcrCaptureSettings::default())),
         })
+    }
+
+    pub async fn attach_ocr_processor(&self, processor: Arc<OcrProcessor>) {
+        *self.ocr_processor.write().await = Some(processor);
+    }
+
+    pub async fn configure_ocr_capture(&self, enabled: bool, interval_seconds: u32) {
+        *self.ocr_capture_settings.write().await = OcrCaptureSettings {
+            enabled,
+            interval_seconds: interval_seconds.max(1),
+        };
     }
 
     /// Get list of available displays
@@ -253,6 +288,7 @@ impl ScreenRecorder {
             motion_frames: 0,
             segment_count: 0,
             is_paused: false,
+            last_ocr_capture_at: None,
         };
 
         *self.state.write().await = Some(recording_state);
@@ -335,6 +371,8 @@ impl ScreenRecorder {
             state: Arc::clone(&self.state),
             stop_signal: Arc::clone(&self.stop_signal),
             power_manager: Arc::clone(&self.power_manager),
+            ocr_processor: Arc::clone(&self.ocr_processor),
+            ocr_capture_settings: Arc::clone(&self.ocr_capture_settings),
         }
     }
 
@@ -414,12 +452,77 @@ impl ScreenRecorder {
             s.motion_detector.detect_motion(&frame)
         };
 
+        if let Err(error) = self.maybe_enqueue_ocr_frame(&frame, &motion).await {
+            eprintln!("OCR enqueue error: {}", error);
+        }
+
         // Handle based on motion
         if motion.has_motion {
             self.handle_motion_frame(frame, motion).await?;
         } else {
             self.handle_static_frame(frame).await?;
         }
+
+        Ok(())
+    }
+
+    async fn maybe_enqueue_ocr_frame(
+        &self,
+        frame: &RawFrame,
+        motion: &MotionResult,
+    ) -> CaptureResult<()> {
+        let settings = self.ocr_capture_settings.read().await.clone();
+        if !settings.enabled {
+            return Ok(());
+        }
+
+        let processor = {
+            let guard = self.ocr_processor.read().await;
+            guard.clone()
+        };
+        let Some(processor) = processor else {
+            return Ok(());
+        };
+
+        let session_id = {
+            let mut state = self.state.write().await;
+            let s = state.as_mut().ok_or(CaptureError::NotCapturing)?;
+            let base_interval_ms = settings.interval_seconds as i64 * 1000;
+            let motion_boost_interval_ms = 5_000_i64;
+            let interval_ms = if motion.has_motion && motion.changed_percentage >= 0.12 {
+                base_interval_ms.min(motion_boost_interval_ms)
+            } else {
+                base_interval_ms
+            };
+            if let Some(last_timestamp) = s.last_ocr_capture_at {
+                if frame.timestamp - last_timestamp < interval_ms {
+                    return Ok(());
+                }
+            }
+            s.last_ocr_capture_at = Some(frame.timestamp);
+            s.session_id
+        };
+
+        let frame_path = self
+            .storage
+            .save_ocr_frame(session_id, frame)
+            .await
+            .map_err(|e| CaptureError::CaptureFailed(format!("Failed to save OCR frame: {}", e)))?;
+
+        let motion_regions = if motion.has_motion && !motion.bounding_boxes.is_empty() {
+            motion
+                .bounding_boxes
+                .iter()
+                .map(|region| OcrBoundingBox::new(region.x, region.y, region.width, region.height))
+                .collect::<Vec<_>>()
+        } else {
+            vec![OcrBoundingBox::new(0, 0, frame.width, frame.height)]
+        };
+
+        processor
+            .enqueue_frame(session_id, frame_path, frame.timestamp, motion_regions)
+            .await
+            .map_err(|e| CaptureError::CaptureFailed(format!("Failed to enqueue OCR frame: {}", e)))?;
 
         Ok(())
     }

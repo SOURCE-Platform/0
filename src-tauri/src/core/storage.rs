@@ -103,6 +103,22 @@ impl RecordingStorage {
         Ok(frame_path)
     }
 
+    /// Save an OCR source frame to disk without creating a frames-table row.
+    pub async fn save_ocr_frame(&self, session_id: Uuid, frame: &RawFrame) -> StorageResult<PathBuf> {
+        let filename = format!("{}.png", frame.timestamp);
+        let frame_path = self
+            .get_session_path(&session_id)
+            .join("ocr_frames")
+            .join(&filename);
+
+        if let Some(parent) = frame_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+
+        self.save_frame_as_png(frame, &frame_path)?;
+        Ok(frame_path)
+    }
+
     /// End a recording session
     pub async fn end_session(&self, session_id: Uuid) -> StorageResult<()> {
         let end_timestamp = chrono::Utc::now().timestamp();
@@ -222,6 +238,10 @@ impl RecordingStorage {
 
     pub fn get_session_dir(&self, session_id: &Uuid) -> PathBuf {
         self.get_session_path(session_id)
+    }
+
+    pub fn base_path(&self) -> PathBuf {
+        self.base_path.clone()
     }
 
     /// Calculate total size of all frames in a session

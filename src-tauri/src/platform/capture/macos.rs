@@ -1,7 +1,12 @@
 // macOS screen capture implementation using ScreenCaptureKit and Core Graphics
 
 use crate::models::capture::{CaptureError, CaptureResult, Display, PixelFormat, RawFrame};
+use cocoa::base::{id, nil};
+use cocoa::foundation::NSString;
 use core_graphics::display::CGDisplay;
+use objc::{class, msg_send, sel, sel_impl};
+use std::collections::HashMap;
+use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -12,6 +17,66 @@ pub struct MacOSScreenCapture {
 }
 
 impl MacOSScreenCapture {
+    fn nsstring_to_string(value: id) -> Option<String> {
+        if value == nil {
+            return None;
+        }
+
+        unsafe {
+            let c_str: *const i8 = msg_send![value, UTF8String];
+            if c_str.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_str).to_string_lossy().into_owned())
+            }
+        }
+    }
+
+    fn get_display_names() -> HashMap<u32, String> {
+        unsafe {
+            let mut names = HashMap::new();
+            let screens: id = msg_send![class!(NSScreen), screens];
+            if screens == nil {
+                return names;
+            }
+
+            let count: usize = msg_send![screens, count];
+            let screen_number_key = NSString::alloc(nil).init_str("NSScreenNumber");
+
+            for index in 0..count {
+                let screen: id = msg_send![screens, objectAtIndex: index];
+                if screen == nil {
+                    continue;
+                }
+
+                let description: id = msg_send![screen, deviceDescription];
+                if description == nil {
+                    continue;
+                }
+
+                let screen_number: id = msg_send![description, objectForKey: screen_number_key];
+                if screen_number == nil {
+                    continue;
+                }
+
+                let display_id: u32 = msg_send![screen_number, unsignedIntValue];
+                let has_localized_name: bool =
+                    msg_send![screen, respondsToSelector: sel!(localizedName)];
+
+                if !has_localized_name {
+                    continue;
+                }
+
+                let localized_name: id = msg_send![screen, localizedName];
+                if let Some(name) = Self::nsstring_to_string(localized_name) {
+                    names.insert(display_id, name);
+                }
+            }
+
+            names
+        }
+    }
+
     /// Create a new macOS screen capture instance
     pub async fn new() -> CaptureResult<Self> {
         // Check for screen recording permission
@@ -72,16 +137,21 @@ impl MacOSScreenCapture {
             display_ids.truncate(display_count as usize);
 
             let main_display_id = CGDisplay::main().id;
+            let display_names = Self::get_display_names();
 
             let displays: Vec<Display> = display_ids
                 .iter()
                 .filter_map(|&id| {
                     let cg_display = CGDisplay::new(id);
                     let bounds = cg_display.bounds();
+                    let name = display_names
+                        .get(&id)
+                        .cloned()
+                        .unwrap_or_else(|| format!("Display {}", id));
 
                     Some(Display {
                         id,
-                        name: format!("Display {}", id),
+                        name,
                         width: bounds.size.width as u32,
                         height: bounds.size.height as u32,
                         is_primary: id == main_display_id,

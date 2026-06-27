@@ -61,6 +61,15 @@ impl InputRecorder {
         &self,
         session_id: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.start_recording_with_options(session_id, true, true).await
+    }
+
+    pub async fn start_recording_with_options(
+        &self,
+        session_id: String,
+        capture_keyboard: bool,
+        capture_mouse: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Check if already recording
         let mut is_recording = self.is_recording.write().await;
         if *is_recording {
@@ -80,7 +89,10 @@ impl InputRecorder {
             .await
             .unwrap_or(false);
 
-        if !has_keyboard_consent && !has_mouse_consent {
+        let should_capture_keyboard = capture_keyboard && has_keyboard_consent;
+        let should_capture_mouse = capture_mouse && has_mouse_consent;
+
+        if !should_capture_keyboard && !should_capture_mouse {
             return Err("No input recording consent granted (need keyboard or mouse)".into());
         }
 
@@ -88,7 +100,7 @@ impl InputRecorder {
         *self.current_session_id.write().await = Some(session_id.clone());
 
         // Start keyboard listener if consented
-        if has_keyboard_consent {
+        if should_capture_keyboard {
             let (listener, keyboard_rx) =
                 PlatformKeyboardListener::new(self.consent_manager.clone())?;
 
@@ -117,7 +129,7 @@ impl InputRecorder {
         }
 
         // Start mouse listener if consented
-        if has_mouse_consent {
+        if should_capture_mouse {
             let (listener, mouse_rx) = PlatformMouseListener::new(self.consent_manager.clone())?;
 
             // Start listening

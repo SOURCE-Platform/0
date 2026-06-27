@@ -2,6 +2,107 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+fn default_mock_data_mode() -> bool {
+    true
+}
+
+fn default_resource_profile() -> ResourceProfile {
+    ResourceProfile::Balanced
+}
+
+fn default_pii_categories() -> Vec<String> {
+    vec![
+        "email".to_string(),
+        "phone".to_string(),
+        "government_id".to_string(),
+        "credit_card".to_string(),
+        "ip_address".to_string(),
+    ]
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceProfile {
+    Minimal,
+    Balanced,
+    HighFidelity,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CaptureChannels {
+    pub system: bool,
+    pub focus: bool,
+    pub visible_windows: bool,
+    pub ocr: bool,
+    pub keyboard: bool,
+    pub mouse: bool,
+    pub screen_frames: bool,
+    #[serde(default)]
+    pub audio_future: bool,
+    #[serde(default)]
+    pub camera_future: bool,
+    #[serde(default)]
+    pub sensor_future: bool,
+}
+
+impl Default for CaptureChannels {
+    fn default() -> Self {
+        Self {
+            system: true,
+            focus: true,
+            visible_windows: true,
+            ocr: true,
+            keyboard: true,
+            mouse: true,
+            screen_frames: true,
+            audio_future: false,
+            camera_future: false,
+            sensor_future: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PiiDetectionSettings {
+    pub detect_only: bool,
+    #[serde(default = "default_pii_categories")]
+    pub enabled_categories: Vec<String>,
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_pii_review_threshold")]
+    pub review_confidence_threshold: f32,
+}
+
+fn default_pii_review_threshold() -> f32 {
+    0.6
+}
+
+impl Default for PiiDetectionSettings {
+    fn default() -> Self {
+        Self {
+            detect_only: true,
+            enabled_categories: default_pii_categories(),
+            enabled: true,
+            review_confidence_threshold: default_pii_review_threshold(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ReviewUiDefaults {
+    pub default_timeline_view: String,
+    pub show_inferred_labels: bool,
+}
+
+impl Default for ReviewUiDefaults {
+    fn default() -> Self {
+        Self {
+            default_timeline_view: "today".to_string(),
+            show_inferred_labels: true,
+        }
+    }
+}
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
@@ -39,6 +140,21 @@ pub struct Config {
     /// Application names to exclude from recording
     #[serde(default)]
     pub app_blacklist: Vec<String>,
+    /// Whether demo/mock data should be shown in the UI
+    #[serde(default = "default_mock_data_mode")]
+    pub mock_data_mode: bool,
+    /// Per-channel capture enablement
+    #[serde(default)]
+    pub capture_channels: CaptureChannels,
+    /// Capture fidelity/resource budget
+    #[serde(default = "default_resource_profile")]
+    pub resource_profile: ResourceProfile,
+    /// PII detection and review settings
+    #[serde(default)]
+    pub pii_settings: PiiDetectionSettings,
+    /// UI defaults for review surfaces
+    #[serde(default)]
+    pub review_ui_defaults: ReviewUiDefaults,
 }
 
 impl Default for Config {
@@ -74,6 +190,11 @@ impl Default for Config {
             target_fps: 15,
             website_blacklist: Vec::new(),
             app_blacklist: Vec::new(),
+            mock_data_mode: true,
+            capture_channels: CaptureChannels::default(),
+            resource_profile: ResourceProfile::Balanced,
+            pii_settings: PiiDetectionSettings::default(),
+            review_ui_defaults: ReviewUiDefaults::default(),
         }
     }
 }
@@ -204,6 +325,14 @@ impl Config {
         // Validate OCR languages
         if self.ocr_languages.is_empty() {
             return Err("OCR languages cannot be empty".into());
+        }
+
+        if !(0.0..=1.0).contains(&self.pii_settings.review_confidence_threshold) {
+            return Err(format!(
+                "Invalid PII review confidence threshold: {}. Must be between 0.0 and 1.0",
+                self.pii_settings.review_confidence_threshold
+            )
+            .into());
         }
 
         Ok(())

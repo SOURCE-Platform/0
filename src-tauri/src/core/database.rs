@@ -68,6 +68,10 @@ impl Database {
 
         Ok(path)
     }
+
+    pub fn database_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+        Self::get_db_path()
+    }
 }
 
 // Session model
