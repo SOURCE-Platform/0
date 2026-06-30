@@ -64,14 +64,17 @@ impl PlaybackEngine {
         Self { storage, db }
     }
 
-    pub async fn get_playback_info(&self, session_id: Uuid) -> Result<PlaybackInfo, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_playback_info(
+        &self,
+        session_id: Uuid,
+    ) -> Result<PlaybackInfo, Box<dyn std::error::Error + Send + Sync>> {
         // Try to get screen recording row (may not exist for all sessions)
         let recording = sqlx::query_as::<_, ScreenRecordingRow>(
             r#"
             SELECT id, session_id, start_timestamp, end_timestamp, base_layer_path, display_id
             FROM screen_recordings
             WHERE session_id = ?
-            "#
+            "#,
         )
         .bind(session_id.to_string())
         .fetch_optional(&self.db.pool)
@@ -85,7 +88,7 @@ impl PlaybackEngine {
             FROM video_segments
             WHERE session_id = ?
             ORDER BY start_timestamp ASC
-            "#
+            "#,
         )
         .bind(session_id.to_string())
         .fetch_all(&self.db.pool)
@@ -102,34 +105,39 @@ impl PlaybackEngine {
             })
             .collect();
 
-        let total_duration: u64 = segment_infos
-            .iter()
-            .map(|s| s.duration_ms)
-            .sum();
+        let total_duration: u64 = segment_infos.iter().map(|s| s.duration_ms).sum();
 
         let frame_count = segments.len() as u32;
 
         // Derive timestamps from recording row or fall back to session/segment data
         let (start_timestamp, end_timestamp, base_layer_path, resolved_session_id) =
             if let Some(rec) = recording {
-                let end = rec.end_timestamp
+                let end = rec
+                    .end_timestamp
                     .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
-                (rec.start_timestamp, end, rec.base_layer_path, rec.session_id)
+                (
+                    rec.start_timestamp,
+                    end,
+                    rec.base_layer_path,
+                    rec.session_id,
+                )
             } else {
                 // Fall back to session table
-                let row = sqlx::query(
-                    "SELECT start_timestamp, end_timestamp FROM sessions WHERE id = ?"
-                )
-                .bind(session_id.to_string())
-                .fetch_optional(&self.db.pool)
-                .await
-                .unwrap_or(None);
+                let row =
+                    sqlx::query("SELECT start_timestamp, end_timestamp FROM sessions WHERE id = ?")
+                        .bind(session_id.to_string())
+                        .fetch_optional(&self.db.pool)
+                        .await
+                        .unwrap_or(None);
 
                 let (start, end) = if let Some(r) = row {
                     use sqlx::Row;
                     let s: i64 = r.try_get("start_timestamp").unwrap_or(0);
                     let e: Option<i64> = r.try_get("end_timestamp").unwrap_or(None);
-                    (s, e.unwrap_or_else(|| chrono::Utc::now().timestamp_millis()))
+                    (
+                        s,
+                        e.unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+                    )
                 } else {
                     let now = chrono::Utc::now().timestamp_millis();
                     (now, now)
@@ -162,7 +170,7 @@ impl PlaybackEngine {
               AND start_timestamp <= ?
               AND end_timestamp >= ?
             LIMIT 1
-            "#
+            "#,
         )
         .bind(session_id.to_string())
         .bind(timestamp)
@@ -179,7 +187,7 @@ impl PlaybackEngine {
                 SELECT id, session_id, start_timestamp, end_timestamp, base_layer_path, display_id
                 FROM screen_recordings
                 WHERE session_id = ?
-                "#
+                "#,
             )
             .bind(session_id.to_string())
             .fetch_one(&self.db.pool)
@@ -202,7 +210,7 @@ impl PlaybackEngine {
             SELECT id, session_id, file_path, start_timestamp, end_timestamp, duration_ms
             FROM frames
             WHERE file_path = ?
-            "#
+            "#,
         )
         .bind(&frame_path)
         .fetch_optional(&self.db.pool)

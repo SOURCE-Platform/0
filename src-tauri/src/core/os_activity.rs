@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
-use uuid::Uuid;
 
 use crate::core::consent::ConsentManager;
 use crate::core::database::Database;
+pub use crate::core::os_activity_storage::{ActivityStorage, AppUsage, AppUsageStats};
 
 // ==============================================================================
 // OsMonitor Trait
@@ -20,7 +20,9 @@ pub trait OsMonitor: Send + Sync {
     async fn stop_monitoring(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     fn subscribe_events(&self) -> mpsc::Receiver<AppEvent>;
     fn get_running_apps(&self) -> Result<Vec<AppInfo>, Box<dyn std::error::Error + Send + Sync>>;
-    fn get_frontmost_app(&self) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>>;
+    fn get_frontmost_app(
+        &self,
+    ) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>>;
 }
 
 // ==============================================================================
@@ -79,12 +81,19 @@ impl FocusTracker {
         }
     }
 
-    fn switch_focus(&mut self, new_pid: u32, app_name: String, bundle_id: String, timestamp: i64) -> Option<FocusDuration> {
+    fn switch_focus(
+        &mut self,
+        new_pid: u32,
+        app_name: String,
+        bundle_id: String,
+        timestamp: i64,
+    ) -> Option<FocusDuration> {
         if let Some((old_pid, old_name, old_bundle, start)) = self.current_app.take() {
             let duration_ms = timestamp - start;
             let duration = Duration::from_millis(duration_ms as u64);
 
-            self.focus_history.entry(old_pid)
+            self.focus_history
+                .entry(old_pid)
                 .and_modify(|d| *d += duration)
                 .or_insert(duration);
 
@@ -115,163 +124,6 @@ impl FocusTracker {
 }
 
 // ==============================================================================
-// Activity Storage
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct AppUsage {
-    pub id: String,
-    pub session_id: String,
-    pub app_name: String,
-    pub bundle_id: String,
-    pub process_id: i64,
-    pub start_timestamp: i64,
-    pub end_timestamp: Option<i64>,
-    pub focus_duration_ms: i64,
-    pub background_duration_ms: i64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
-pub struct AppUsageStats {
-    pub app_name: String,
-    pub bundle_id: String,
-    pub total_focus_duration_ms: i64,
-    pub total_background_duration_ms: i64,
-    pub launch_count: i64,
-    pub first_launch: i64,
-    pub last_terminate: Option<i64>,
-}
-
-#[derive(Clone)]
-pub struct ActivityStorage {
-    db: Arc<Database>,
-}
-
-impl ActivityStorage {
-    pub fn new(db: Arc<Database>) -> Self {
-        Self { db }
-    }
-
-    pub async fn init_schema(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let pool = self.db.pool();
-
-        sqlx::query(
-            "CREATE TABLE IF NOT EXISTS app_usage (
-                id TEXT PRIMARY KEY,
-                session_id TEXT NOT NULL,
-                app_name TEXT NOT NULL,
-                bundle_id TEXT NOT NULL,
-                process_id INTEGER NOT NULL,
-                start_timestamp INTEGER NOT NULL,
-                end_timestamp INTEGER,
-                focus_duration_ms INTEGER DEFAULT 0,
-                background_duration_ms INTEGER DEFAULT 0,
-                FOREIGN KEY (session_id) REFERENCES sessions(id)
-            )"
-        )
-        .execute(pool)
-        .await?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_app_usage_session ON app_usage(session_id)")
-            .execute(pool)
-            .await?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_app_usage_app ON app_usage(app_name)")
-            .execute(pool)
-            .await?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_app_usage_time ON app_usage(start_timestamp)")
-            .execute(pool)
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn record_app_launch(&self, session_id: &str, event: AppEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let id = Uuid::new_v4().to_string();
-
-        sqlx::query(
-            "INSERT INTO app_usage (id, session_id, app_name, bundle_id, process_id, start_timestamp)
-             VALUES (?, ?, ?, ?, ?, ?)"
-        )
-        .bind(id)
-        .bind(session_id)
-        .bind(event.app_info.name)
-        .bind(event.app_info.bundle_id)
-        .bind(event.app_info.process_id as i64)
-        .bind(event.timestamp)
-        .execute(self.db.pool())
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn record_app_terminate(&self, event: AppEvent) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query(
-            "UPDATE app_usage SET end_timestamp = ?
-             WHERE process_id = ? AND end_timestamp IS NULL"
-        )
-        .bind(event.timestamp)
-        .bind(event.app_info.process_id as i64)
-        .execute(self.db.pool())
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn record_focus_duration(&self, duration: FocusDuration) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query(
-            "UPDATE app_usage
-             SET focus_duration_ms = focus_duration_ms + ?
-             WHERE process_id = ? AND end_timestamp IS NULL"
-        )
-        .bind(duration.duration_ms)
-        .bind(duration.process_id as i64)
-        .execute(self.db.pool())
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn get_app_usage_for_session(&self, session_id: String) -> Result<Vec<AppUsage>, Box<dyn std::error::Error + Send + Sync>> {
-        let results = sqlx::query_as::<_, AppUsage>(
-            "SELECT id, session_id, app_name, bundle_id, process_id,
-                    start_timestamp, end_timestamp, focus_duration_ms, background_duration_ms
-             FROM app_usage
-             WHERE session_id = ?
-             ORDER BY start_timestamp DESC"
-        )
-        .bind(session_id)
-        .fetch_all(self.db.pool())
-        .await?;
-
-        Ok(results)
-    }
-
-    pub async fn get_app_usage_stats(&self, session_id: String) -> Result<Vec<AppUsageStats>, Box<dyn std::error::Error + Send + Sync>> {
-        let results = sqlx::query_as::<_, AppUsageStats>(
-            "SELECT
-                app_name,
-                bundle_id,
-                SUM(focus_duration_ms) as total_focus_duration_ms,
-                SUM(background_duration_ms) as total_background_duration_ms,
-                COUNT(*) as launch_count,
-                MIN(start_timestamp) as first_launch,
-                MAX(end_timestamp) as last_terminate
-             FROM app_usage
-             WHERE session_id = ?
-             GROUP BY app_name, bundle_id
-             ORDER BY total_focus_duration_ms DESC"
-        )
-        .bind(session_id)
-        .fetch_all(self.db.pool())
-        .await?;
-
-        Ok(results)
-    }
-}
-
-// ==============================================================================
 // OS Activity Recorder
 // ==============================================================================
 
@@ -284,7 +136,10 @@ pub struct OsActivityRecorder {
 }
 
 impl OsActivityRecorder {
-    pub async fn new(consent_manager: Arc<ConsentManager>, db: Arc<Database>) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn new(
+        consent_manager: Arc<ConsentManager>,
+        db: Arc<Database>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let monitor = create_os_monitor()?;
         let storage = ActivityStorage::new(db);
         storage.init_schema().await?;
@@ -298,10 +153,14 @@ impl OsActivityRecorder {
         })
     }
 
-    pub async fn start_recording(&self, session_id: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_recording(
+        &self,
+        session_id: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Check OsActivity consent
         use crate::core::consent::Feature;
-        let has_consent = self.consent_manager
+        let has_consent = self
+            .consent_manager
             .is_consent_granted(Feature::OsActivity)
             .await
             .map_err(|e| format!("Consent check failed: {}", e))?;
@@ -355,16 +214,23 @@ impl OsActivityRecorder {
         Ok(())
     }
 
-    pub async fn get_app_usage_stats(&self, session_id: String) -> Result<Vec<AppUsageStats>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_app_usage_stats(
+        &self,
+        session_id: String,
+    ) -> Result<Vec<AppUsageStats>, Box<dyn std::error::Error + Send + Sync>> {
         self.storage.get_app_usage_stats(session_id).await
     }
 
-    pub async fn get_current_app(&self) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_current_app(
+        &self,
+    ) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let monitor = self.monitor.read().await;
         monitor.get_frontmost_app()
     }
 
-    pub async fn get_running_apps(&self) -> Result<Vec<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_running_apps(
+        &self,
+    ) -> Result<Vec<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let monitor = self.monitor.read().await;
         monitor.get_running_apps()
     }
@@ -407,7 +273,10 @@ impl OsActivityRecorder {
                         event.app_info.bundle_id.clone(),
                         event.timestamp,
                     ) {
-                        if let Err(e) = storage.record_focus_duration(duration).await {
+                        if let Err(e) = storage
+                            .record_focus_duration(duration.process_id, duration.duration_ms)
+                            .await
+                        {
                             eprintln!("Error recording focus duration: {}", e);
                         }
                     }

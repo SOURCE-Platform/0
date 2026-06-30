@@ -1,12 +1,13 @@
 // macOS keyboard event monitoring using CGEventTap and Accessibility API
 
 use crate::core::consent::ConsentManager;
-use crate::models::input::{
-    AppContext, KeyEventType, KeyboardEvent, ModifierState, UiElement,
-};
+use crate::models::input::{AppContext, KeyEventType, KeyboardEvent, ModifierState, UiElement};
 use cocoa::base::{id, nil};
 use cocoa::foundation::NSString;
-use core_graphics::event::{CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement, CGEventType};
+use core_graphics::event::{
+    CGEvent, CGEventFlags, CGEventTap, CGEventTapLocation, CGEventTapOptions, CGEventTapPlacement,
+    CGEventType,
+};
 use objc::{class, msg_send, sel, sel_impl};
 use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
@@ -23,8 +24,10 @@ impl MacOSKeyboardListener {
     /// Create a new macOS keyboard listener
     pub fn new(
         consent_manager: Arc<ConsentManager>,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<KeyboardEvent>), Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<
+        (Self, mpsc::UnboundedReceiver<KeyboardEvent>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let (tx, rx) = mpsc::unbounded_channel();
 
         Ok((
@@ -305,7 +308,9 @@ mod tests {
             is_sensitive: true,
         };
 
-        assert!(!MacOSKeyboardListener::should_log_keystroke(&sensitive_event));
+        assert!(!MacOSKeyboardListener::should_log_keystroke(
+            &sensitive_event
+        ));
     }
 
     #[test]

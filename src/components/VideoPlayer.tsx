@@ -6,6 +6,7 @@ import { Button } from './ui/button';
 import { Slider } from './ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Maximize, Minimize, Volume2, VolumeX } from 'lucide-react';
+import { formatPlaybackTime } from './video-player-utils';
 
 interface VideoPlayerProps {
   sessionId: string;
@@ -218,17 +219,6 @@ export function VideoPlayer({
     }
   };
 
-  const formatTime = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = Math.floor(seconds % 60);
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
     switch (e.key) {
       case ' ':
@@ -312,7 +302,7 @@ export function VideoPlayer({
             />
 
             <span className="text-sm font-mono text-gray-600 dark:text-gray-400 min-w-24 text-right">
-              {formatTime(currentTime)} / {formatTime(duration)}
+              {formatPlaybackTime(currentTime)} / {formatPlaybackTime(duration)}
             </span>
 
             <Select

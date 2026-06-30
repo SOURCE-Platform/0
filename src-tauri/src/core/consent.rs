@@ -90,7 +90,7 @@ impl ConsentManager {
 
         sqlx::query(
             "INSERT INTO consent_records (id, feature_name, consent_given, timestamp, last_updated)
-             VALUES (?, ?, 0, ?, ?)"
+             VALUES (?, ?, 0, ?, ?)",
         )
         .bind(&id)
         .bind(feature_name)
@@ -104,11 +104,14 @@ impl ConsentManager {
 
     /// Check if consent is granted for a feature
     /// Returns None if feature not initialized, Some(true/false) otherwise
-    async fn check_consent(&self, feature: Feature) -> Result<Option<bool>, Box<dyn std::error::Error>> {
+    async fn check_consent(
+        &self,
+        feature: Feature,
+    ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
         let feature_name = feature.to_db_string();
 
         let result = sqlx::query_as::<_, (i64,)>(
-            "SELECT consent_given FROM consent_records WHERE feature_name = ?"
+            "SELECT consent_given FROM consent_records WHERE feature_name = ?",
         )
         .bind(feature_name)
         .fetch_optional(self.db.pool())
@@ -119,7 +122,10 @@ impl ConsentManager {
 
     /// Check if consent is granted for a feature (public API)
     /// Returns false if not initialized or not granted
-    pub async fn is_consent_granted(&self, feature: Feature) -> Result<bool, Box<dyn std::error::Error>> {
+    pub async fn is_consent_granted(
+        &self,
+        feature: Feature,
+    ) -> Result<bool, Box<dyn std::error::Error>> {
         Ok(self.check_consent(feature).await?.unwrap_or(false))
     }
 
@@ -129,7 +135,7 @@ impl ConsentManager {
         let timestamp = chrono::Utc::now().timestamp();
 
         sqlx::query(
-            "UPDATE consent_records SET consent_given = 1, last_updated = ? WHERE feature_name = ?"
+            "UPDATE consent_records SET consent_given = 1, last_updated = ? WHERE feature_name = ?",
         )
         .bind(timestamp)
         .bind(feature_name)
@@ -145,7 +151,7 @@ impl ConsentManager {
         let timestamp = chrono::Utc::now().timestamp();
 
         sqlx::query(
-            "UPDATE consent_records SET consent_given = 0, last_updated = ? WHERE feature_name = ?"
+            "UPDATE consent_records SET consent_given = 0, last_updated = ? WHERE feature_name = ?",
         )
         .bind(timestamp)
         .bind(feature_name)
@@ -156,7 +162,9 @@ impl ConsentManager {
     }
 
     /// Get all consents as a HashMap
-    pub async fn get_all_consents(&self) -> Result<HashMap<Feature, bool>, Box<dyn std::error::Error>> {
+    pub async fn get_all_consents(
+        &self,
+    ) -> Result<HashMap<Feature, bool>, Box<dyn std::error::Error>> {
         let mut consents = HashMap::new();
 
         for feature in Feature::all() {
@@ -205,11 +213,16 @@ mod tests {
     #[tokio::test]
     async fn test_consent_manager_initialization() {
         let db = setup_test_db().await;
-        let manager = ConsentManager::new(db).await.expect("Failed to create manager");
+        let manager = ConsentManager::new(db)
+            .await
+            .expect("Failed to create manager");
 
         // All features should be initialized with false consent
         for feature in Feature::all() {
-            let consent = manager.is_consent_granted(feature).await.expect("Failed to check consent");
+            let consent = manager
+                .is_consent_granted(feature)
+                .await
+                .expect("Failed to check consent");
             assert!(!consent, "Feature {:?} should default to false", feature);
         }
     }
@@ -217,21 +230,26 @@ mod tests {
     #[tokio::test]
     async fn test_grant_consent() {
         let db = setup_test_db().await;
-        let manager = ConsentManager::new(db).await.expect("Failed to create manager");
+        let manager = ConsentManager::new(db)
+            .await
+            .expect("Failed to create manager");
 
         // Grant consent for screen recording
-        manager.grant_consent(Feature::ScreenRecording)
+        manager
+            .grant_consent(Feature::ScreenRecording)
             .await
             .expect("Failed to grant consent");
 
         // Check consent is granted
-        let granted = manager.is_consent_granted(Feature::ScreenRecording)
+        let granted = manager
+            .is_consent_granted(Feature::ScreenRecording)
             .await
             .expect("Failed to check consent");
         assert!(granted, "Consent should be granted");
 
         // Other features should still be false
-        let os_activity = manager.is_consent_granted(Feature::OsActivity)
+        let os_activity = manager
+            .is_consent_granted(Feature::OsActivity)
             .await
             .expect("Failed to check consent");
         assert!(!os_activity, "Other features should remain false");
@@ -240,19 +258,24 @@ mod tests {
     #[tokio::test]
     async fn test_revoke_consent() {
         let db = setup_test_db().await;
-        let manager = ConsentManager::new(db).await.expect("Failed to create manager");
+        let manager = ConsentManager::new(db)
+            .await
+            .expect("Failed to create manager");
 
         // Grant and then revoke consent
-        manager.grant_consent(Feature::KeyboardRecording)
+        manager
+            .grant_consent(Feature::KeyboardRecording)
             .await
             .expect("Failed to grant consent");
 
-        manager.revoke_consent(Feature::KeyboardRecording)
+        manager
+            .revoke_consent(Feature::KeyboardRecording)
             .await
             .expect("Failed to revoke consent");
 
         // Check consent is revoked
-        let granted = manager.is_consent_granted(Feature::KeyboardRecording)
+        let granted = manager
+            .is_consent_granted(Feature::KeyboardRecording)
             .await
             .expect("Failed to check consent");
         assert!(!granted, "Consent should be revoked");
@@ -261,14 +284,25 @@ mod tests {
     #[tokio::test]
     async fn test_get_all_consents() {
         let db = setup_test_db().await;
-        let manager = ConsentManager::new(db).await.expect("Failed to create manager");
+        let manager = ConsentManager::new(db)
+            .await
+            .expect("Failed to create manager");
 
         // Grant consent for a few features
-        manager.grant_consent(Feature::ScreenRecording).await.unwrap();
-        manager.grant_consent(Feature::MouseRecording).await.unwrap();
+        manager
+            .grant_consent(Feature::ScreenRecording)
+            .await
+            .unwrap();
+        manager
+            .grant_consent(Feature::MouseRecording)
+            .await
+            .unwrap();
 
         // Get all consents
-        let consents = manager.get_all_consents().await.expect("Failed to get consents");
+        let consents = manager
+            .get_all_consents()
+            .await
+            .expect("Failed to get consents");
 
         assert_eq!(consents.len(), 6, "Should have 6 features");
         assert_eq!(consents.get(&Feature::ScreenRecording), Some(&true));
@@ -285,14 +319,22 @@ mod tests {
 
         // Create manager and grant consent
         {
-            let manager = ConsentManager::new(db.clone()).await.expect("Failed to create manager");
-            manager.grant_consent(Feature::ScreenRecording).await.unwrap();
+            let manager = ConsentManager::new(db.clone())
+                .await
+                .expect("Failed to create manager");
+            manager
+                .grant_consent(Feature::ScreenRecording)
+                .await
+                .unwrap();
         }
 
         // Create new manager instance and verify consent persisted
         {
-            let manager = ConsentManager::new(db).await.expect("Failed to create manager");
-            let granted = manager.is_consent_granted(Feature::ScreenRecording)
+            let manager = ConsentManager::new(db)
+                .await
+                .expect("Failed to create manager");
+            let granted = manager
+                .is_consent_granted(Feature::ScreenRecording)
                 .await
                 .expect("Failed to check consent");
             assert!(granted, "Consent should persist across manager instances");

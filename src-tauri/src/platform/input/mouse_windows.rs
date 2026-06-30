@@ -10,9 +10,9 @@ use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM},
     UI::WindowsAndMessaging::{
         CallNextHookEx, GetWindowTextW, GetWindowThreadProcessId, SetWindowsHookExW,
-        UnhookWindowsHookEx, WindowFromPoint, HHOOK, MSLLHOOKSTRUCT, WH_MOUSE_LL,
-        WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEHWHEEL,
-        WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
+        UnhookWindowsHookEx, WindowFromPoint, HHOOK, MSLLHOOKSTRUCT, WH_MOUSE_LL, WM_LBUTTONDBLCLK,
+        WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+        WM_RBUTTONDOWN,
     },
 };
 
@@ -69,8 +69,7 @@ impl WindowsMouseListener {
         Ok(())
     }
 
-    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-    {
+    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(target_os = "windows")]
         if let Some(hook) = self.hook.take() {
             unsafe {
@@ -82,11 +81,7 @@ impl WindowsMouseListener {
     }
 
     #[cfg(target_os = "windows")]
-    unsafe extern "system" fn mouse_proc(
-        n_code: i32,
-        w_param: WPARAM,
-        l_param: LPARAM,
-    ) -> LRESULT {
+    unsafe extern "system" fn mouse_proc(n_code: i32, w_param: WPARAM, l_param: LPARAM) -> LRESULT {
         if n_code >= 0 {
             let mouse_struct = *(l_param.0 as *const MSLLHOOKSTRUCT);
             let position = Point {

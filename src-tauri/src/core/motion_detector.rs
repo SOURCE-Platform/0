@@ -296,7 +296,10 @@ mod tests {
         detector.detect_motion(&frame1);
         let result = detector.detect_motion(&frame2);
 
-        assert!(result.has_motion, "Completely different frames should have motion");
+        assert!(
+            result.has_motion,
+            "Completely different frames should have motion"
+        );
         assert!(result.changed_percentage > 0.99);
     }
 

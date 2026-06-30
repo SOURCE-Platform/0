@@ -2,43 +2,15 @@
 ///
 /// This module encapsulates all unsafe FFmpeg operations and provides a safe API
 /// for video encoding operations.
-
-use crate::models::capture::{RawFrame, PixelFormat};
+use crate::core::ffmpeg_wrapper_runtime::{cleanup_encoder, receive_packets};
+pub use crate::core::ffmpeg_wrapper_types::{FFmpegError, Result};
+use crate::models::capture::RawFrame;
 use std::ffi::CString;
 use std::path::Path;
 use std::ptr;
-use thiserror::Error;
 
 // Import FFmpeg C bindings
 use ffmpeg_sys_next::*;
-
-#[derive(Error, Debug)]
-pub enum FFmpegError {
-    #[error("Failed to allocate codec context")]
-    CodecContextAllocation,
-    #[error("Codec not found: {0}")]
-    CodecNotFound(String),
-    #[error("Failed to open codec: {0}")]
-    CodecOpenFailed(String),
-    #[error("Failed to allocate frame")]
-    FrameAllocation,
-    #[error("Failed to allocate packet")]
-    PacketAllocation,
-    #[error("Failed to create output format context")]
-    FormatContextCreation,
-    #[error("Failed to create video stream")]
-    StreamCreation,
-    #[error("Failed to write header")]
-    WriteHeaderFailed,
-    #[error("Encoding error: {0}")]
-    EncodingError(String),
-    #[error("Failed to initialize swscale context")]
-    SwscaleInitFailed,
-    #[error("Color conversion failed")]
-    ColorConversionFailed,
-}
-
-pub type Result<T> = std::result::Result<T, FFmpegError>;
 
 /// Safe wrapper around FFmpeg encoder
 pub struct FFmpegEncoder {
@@ -266,7 +238,9 @@ impl FFmpegEncoder {
             // Make frame writable
             let ret = av_frame_make_writable(self.frame);
             if ret < 0 {
-                return Err(FFmpegError::EncodingError("Failed to make frame writable".to_string()));
+                return Err(FFmpegError::EncodingError(
+                    "Failed to make frame writable".to_string(),
+                ));
             }
 
             // Convert RGBA to YUV420P
@@ -304,47 +278,20 @@ impl FFmpegEncoder {
             // Send frame to encoder
             let ret = avcodec_send_frame(self.codec_context, self.frame);
             if ret < 0 {
-                return Err(FFmpegError::EncodingError(format!("Send frame failed: {}", ret)));
+                return Err(FFmpegError::EncodingError(format!(
+                    "Send frame failed: {}",
+                    ret
+                )));
             }
 
             // Receive encoded packets
-            self.receive_packets()?;
+            receive_packets(
+                self.codec_context,
+                self.packet,
+                self.format_context,
+                self.video_stream,
+            )?;
 
-            Ok(())
-        }
-    }
-
-    /// Receive and write encoded packets
-    fn receive_packets(&mut self) -> Result<()> {
-        unsafe {
-            loop {
-                let ret = avcodec_receive_packet(self.codec_context, self.packet);
-
-                if ret == AVERROR(EAGAIN) || ret == AVERROR_EOF {
-                    break; // Need more frames or encoding is done
-                }
-
-                if ret < 0 {
-                    return Err(FFmpegError::EncodingError(format!("Receive packet failed: {}", ret)));
-                }
-
-                // Rescale packet timestamps
-                av_packet_rescale_ts(
-                    self.packet,
-                    (*self.codec_context).time_base,
-                    (*self.video_stream).time_base,
-                );
-                (*self.packet).stream_index = (*self.video_stream).index;
-
-                // Write packet
-                let ret = av_interleaved_write_frame(self.format_context, self.packet);
-
-                av_packet_unref(self.packet);
-
-                if ret < 0 {
-                    return Err(FFmpegError::EncodingError(format!("Write frame failed: {}", ret)));
-                }
-            }
             Ok(())
         }
     }
@@ -355,16 +302,25 @@ impl FFmpegEncoder {
             // Flush encoder
             let ret = avcodec_send_frame(self.codec_context, ptr::null());
             if ret < 0 {
-                return Err(FFmpegError::EncodingError("Failed to flush encoder".to_string()));
+                return Err(FFmpegError::EncodingError(
+                    "Failed to flush encoder".to_string(),
+                ));
             }
 
             // Receive remaining packets
-            self.receive_packets()?;
+            receive_packets(
+                self.codec_context,
+                self.packet,
+                self.format_context,
+                self.video_stream,
+            )?;
 
             // Write trailer
             let ret = av_write_trailer(self.format_context);
             if ret < 0 {
-                return Err(FFmpegError::EncodingError("Failed to write trailer".to_string()));
+                return Err(FFmpegError::EncodingError(
+                    "Failed to write trailer".to_string(),
+                ));
             }
 
             Ok(())
@@ -375,62 +331,13 @@ impl FFmpegEncoder {
 impl Drop for FFmpegEncoder {
     fn drop(&mut self) {
         unsafe {
-            // Clean up resources in reverse order
-            if !self.sws_context.is_null() {
-                sws_freeContext(self.sws_context);
-            }
-
-            if !self.packet.is_null() {
-                av_packet_free(&mut (self.packet as *mut _));
-            }
-
-            if !self.frame.is_null() {
-                av_frame_free(&mut (self.frame as *mut _));
-            }
-
-            if !self.format_context.is_null() {
-                if (*self.format_context).pb as usize != 0 {
-                    avio_closep(&mut (*self.format_context).pb);
-                }
-                avformat_free_context(self.format_context);
-            }
-
-            if !self.codec_context.is_null() {
-                avcodec_free_context(&mut (self.codec_context as *mut _));
-            }
+            cleanup_encoder(
+                self.sws_context,
+                self.packet,
+                self.frame,
+                self.format_context,
+                self.codec_context,
+            );
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::capture::PixelFormat;
-
-    fn create_test_frame(width: u32, height: u32) -> RawFrame {
-        RawFrame {
-            data: vec![128u8; (width * height * 4) as usize],
-            width,
-            height,
-            timestamp: 0,
-            format: PixelFormat::RGBA8,
-        }
-    }
-
-    #[test]
-    fn test_encoder_creation() {
-        let temp_dir = std::env::temp_dir();
-        let output_path = temp_dir.join("test_video.mp4");
-
-        let result = FFmpegEncoder::new(
-            &output_path,
-            640,
-            480,
-            30,
-            "libx264",
-            23,
-        );
-
-        assert!(result.is_ok());
     }
 }

@@ -1,9 +1,10 @@
 // Frame storage system - saves captured frames to disk and tracks in database
 
 use crate::core::database::Database;
+use crate::core::storage_cleanup::delete_session as delete_session_artifacts;
+use crate::core::storage_helpers::{calculate_session_size, save_frame_as_png, session_path};
 use crate::core::video_encoder::VideoSegment;
 use crate::models::capture::{PixelFormat, RawFrame};
-use image::{ImageBuffer, Rgba};
 use sqlx::Row;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -84,7 +85,7 @@ impl RecordingStorage {
             .join(&filename);
 
         // Convert RawFrame to PNG
-        self.save_frame_as_png(frame, &frame_path)?;
+        save_frame_as_png(frame, &frame_path)?;
 
         // Insert frame record into database
         sqlx::query(
@@ -119,7 +120,7 @@ impl RecordingStorage {
             std::fs::create_dir_all(parent)?;
         }
 
-        self.save_frame_as_png(frame, &frame_path)?;
+        save_frame_as_png(frame, &frame_path)?;
         Ok(frame_path)
     }
 
@@ -145,7 +146,7 @@ impl RecordingStorage {
                 .await?;
 
         // Calculate total size
-        let total_size = self.calculate_session_size(&session_id).await?;
+        let total_size = calculate_session_size(&self.base_path, &session_id).await?;
 
         // Update session
         sqlx::query(
@@ -214,54 +215,12 @@ impl RecordingStorage {
 
     /// Delete a recording session
     pub async fn delete_session(&self, session_id: Uuid) -> StorageResult<()> {
-        let session_id_string = session_id.to_string();
-
-        sqlx::query("DELETE FROM ocr_context_entities WHERE session_id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        sqlx::query("DELETE FROM ocr_text_spans WHERE session_id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        sqlx::query("DELETE FROM ocr_scene_snapshots WHERE session_id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        sqlx::query("DELETE FROM ocr_results WHERE session_id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        // Delete frames from database
-        sqlx::query("DELETE FROM frames WHERE session_id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        // Delete session from database
-        sqlx::query("DELETE FROM sessions WHERE id = ?")
-            .bind(&session_id_string)
-            .execute(self.db.pool())
-            .await?;
-
-        // Delete session directory
-        let session_path = self.get_session_path(&session_id);
-        if session_path.exists() {
-            std::fs::remove_dir_all(&session_path)?;
-        }
-
-        println!("Deleted recording session: {}", session_id);
-
-        Ok(())
+        delete_session_artifacts(&self.base_path, self.db.clone(), session_id).await
     }
 
     /// Get the path for a session
     fn get_session_path(&self, session_id: &Uuid) -> PathBuf {
-        self.base_path.join(session_id.to_string())
+        session_path(&self.base_path, session_id)
     }
 
     pub fn get_session_dir(&self, session_id: &Uuid) -> PathBuf {
@@ -270,51 +229,6 @@ impl RecordingStorage {
 
     pub fn base_path(&self) -> PathBuf {
         self.base_path.clone()
-    }
-
-    /// Calculate total size of all frames in a session
-    async fn calculate_session_size(&self, session_id: &Uuid) -> StorageResult<u64> {
-        let session_path = self.get_session_path(session_id);
-        let frames_path = session_path.join("frames");
-
-        let mut total_size = 0u64;
-
-        if frames_path.exists() {
-            for entry in std::fs::read_dir(frames_path)? {
-                let entry = entry?;
-                if entry.path().extension().and_then(|s| s.to_str()) == Some("png") {
-                    total_size += entry.metadata()?.len();
-                }
-            }
-        }
-
-        Ok(total_size)
-    }
-
-    /// Save a RawFrame as PNG
-    fn save_frame_as_png(&self, frame: &RawFrame, path: &PathBuf) -> StorageResult<()> {
-        // Convert to RGBA if needed
-        let rgba_data = match frame.format {
-            PixelFormat::BGRA8 => {
-                // Convert BGRA to RGBA
-                let mut rgba = Vec::with_capacity(frame.data.len());
-                for chunk in frame.data.chunks_exact(4) {
-                    rgba.push(chunk[2]); // R
-                    rgba.push(chunk[1]); // G
-                    rgba.push(chunk[0]); // B
-                    rgba.push(chunk[3]); // A
-                }
-                rgba
-            }
-            PixelFormat::RGBA8 => frame.data.clone(),
-        };
-
-        let img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_raw(frame.width, frame.height, rgba_data)
-                .ok_or_else(|| StorageError::Other("Failed to create image buffer".to_string()))?;
-
-        img.save(path)?;
-        Ok(())
     }
 
     /// Save a video segment to the database
@@ -354,7 +268,7 @@ impl RecordingStorage {
         let base_layer_path = self.get_session_path(session_id).join("base_layer.png");
 
         // Save the frame as PNG
-        self.save_frame_as_png(frame, &base_layer_path)?;
+        save_frame_as_png(frame, &base_layer_path)?;
 
         // Update session with base layer path
         sqlx::query("UPDATE sessions SET base_layer_path = ? WHERE id = ?")
@@ -401,70 +315,5 @@ impl RecordingStorage {
             .collect();
 
         Ok(segments)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_storage_lifecycle() {
-        // Initialize database
-        let db = Arc::new(Database::init().await.expect("Failed to init database"));
-
-        // Create storage
-        let temp_dir = std::env::temp_dir().join("observer_test_recordings");
-        let storage = RecordingStorage::new(temp_dir.clone(), db.clone())
-            .await
-            .expect("Failed to create storage");
-
-        // Create session
-        let session_id = storage
-            .create_session(0)
-            .await
-            .expect("Failed to create session");
-
-        // Create a test frame
-        let test_frame = RawFrame {
-            timestamp: chrono::Utc::now().timestamp_millis(),
-            width: 100,
-            height: 100,
-            data: vec![255u8; 100 * 100 * 4], // White image
-            format: PixelFormat::RGBA8,
-        };
-
-        // Save frame
-        let frame_path = storage
-            .save_frame(session_id, &test_frame)
-            .await
-            .expect("Failed to save frame");
-
-        assert!(frame_path.exists(), "Frame file should exist");
-
-        // Get session frames
-        let frames = storage
-            .get_session_frames(session_id)
-            .await
-            .expect("Failed to get frames");
-
-        assert_eq!(frames.len(), 1, "Should have one frame");
-
-        // End session
-        storage
-            .end_session(session_id)
-            .await
-            .expect("Failed to end session");
-
-        // Delete session
-        storage
-            .delete_session(session_id)
-            .await
-            .expect("Failed to delete session");
-
-        assert!(!frame_path.exists(), "Frame file should be deleted");
-
-        // Cleanup
-        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

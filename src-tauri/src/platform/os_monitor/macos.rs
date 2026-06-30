@@ -1,7 +1,7 @@
 // macOS application monitoring using NSWorkspace
 
-use crate::models::activity::{AppEvent, AppInfo};
 use crate::core::os_activity::OsMonitor;
+use crate::models::activity::{AppEvent, AppInfo};
 use async_trait::async_trait;
 use cocoa::base::{id, nil};
 use objc::{class, msg_send, sel, sel_impl};
@@ -175,12 +175,12 @@ impl OsMonitor for MacOSMonitor {
     }
 
     fn get_running_apps(&self) -> Result<Vec<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
-        unsafe {
-            Ok(Self::get_running_applications())
-        }
+        unsafe { Ok(Self::get_running_applications()) }
     }
 
-    fn get_frontmost_app(&self) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    fn get_frontmost_app(
+        &self,
+    ) -> Result<Option<AppInfo>, Box<dyn std::error::Error + Send + Sync>> {
         unsafe {
             let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
             let frontmost_app: id = msg_send![workspace, frontmostApplication];

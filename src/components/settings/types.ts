@@ -1,0 +1,82 @@
+export interface Display {
+  id: number;
+  name: string;
+  width: number;
+  height: number;
+  is_primary: boolean;
+}
+
+export interface CaptureChannels {
+  system: boolean;
+  focus: boolean;
+  visible_windows: boolean;
+  ocr: boolean;
+  keyboard: boolean;
+  mouse: boolean;
+  screen_frames: boolean;
+  audio_future: boolean;
+  camera_future: boolean;
+  sensor_future: boolean;
+}
+
+export interface Config {
+  storage_path: string;
+  retention_days: Record<string, number>;
+  recording_quality: "High" | "Medium" | "Low";
+  auto_start: boolean;
+  motion_detection_threshold: number;
+  ocr_enabled: boolean;
+  default_recording_fps: number;
+  website_blacklist: string[];
+  app_blacklist: string[];
+  mock_data_mode: boolean;
+  capture_channels: CaptureChannels;
+  resource_profile: "minimal" | "balanced" | "high_fidelity";
+  pii_settings: {
+    detect_only: boolean;
+    enabled: boolean;
+    enabled_categories: string[];
+    review_confidence_threshold: number;
+  };
+}
+
+export interface CaptureDataChannelUsage {
+  channel: string;
+  label: string;
+  storageKind: string;
+  rowCount: number;
+  diskBytes: number;
+  lastEventTime: number | null;
+}
+
+export interface CaptureDataOverview {
+  databasePath: string;
+  configuredStoragePath: string;
+  actualRecordingsPath: string;
+  databaseSizeBytes: number;
+  recordingsSizeBytes: number;
+  totalSizeBytes: number;
+  diskTotalBytes: number;
+  diskFreeBytes: number;
+  diskUsedBytes: number;
+  sourcePercentOfDisk: number;
+  sourcePercentOfFreeSpace: number;
+  diskHealth: string;
+  diskWarning: string | null;
+  channels: CaptureDataChannelUsage[];
+  notes: string[];
+}
+
+export interface CapturePreviewRow {
+  timestamp: number | null;
+  summary: string;
+  rawJson: string;
+}
+
+export interface CapturePreview {
+  channel: string;
+  label: string;
+  rows: CapturePreviewRow[];
+}
+
+export type SettingsTab = "general" | "capture" | "privacy" | "storage";

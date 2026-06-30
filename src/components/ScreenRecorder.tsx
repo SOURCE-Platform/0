@@ -5,27 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertCircle, Circle, Monitor, StopCircle, Folder } from "lucide-react";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
-
-interface Display {
-  id: number;
-  name: string;
-  width: number;
-  height: number;
-  is_primary: boolean;
-}
-
-interface RecordingStatus {
-  is_recording: boolean;
-  display_id: number | null;
-  display_name: string | null;
-  has_consent: boolean;
-  session_id: string | null;
-  segment_count: number;
-  total_frames: number;
-  total_motion_percentage: number;
-  is_paused: boolean;
-  save_directory: string | null;
-}
+import { Display, formatElapsed, RecordingStatus } from "./screen-recorder-utils";
 
 export default function ScreenRecorder() {
   const [displays, setDisplays] = useState<Display[]>([]);
@@ -122,14 +102,6 @@ export default function ScreenRecorder() {
       console.error("Failed to stop recording:", err);
       setError(`Failed to stop recording: ${err}`);
     }
-  }
-
-  function formatElapsed(seconds: number): string {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-    return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   }
 
   if (loading) {

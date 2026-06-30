@@ -3,6 +3,8 @@
 
 #[cfg(target_os = "macos")]
 pub mod macos;
+#[cfg(target_os = "macos")]
+pub mod macos_display_names;
 
 #[cfg(target_os = "macos")]
 pub use macos::MacOSScreenCapture as PlatformCapture;

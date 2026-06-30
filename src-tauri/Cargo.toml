@@ -36,6 +36,7 @@ hostname = "0.4"
 tesseract = "0.14"
 leptonica-sys = "0.4"
 regex = "1"
+hound = "3"
 # NOTE: ffmpeg-next 6.0 is incompatible with FFmpeg 8.0+ due to removed avfft.h
 # Using ffmpeg-sys-next (low-level bindings) until ffmpeg-next 7.x is available
 # ffmpeg-next = "6.0"

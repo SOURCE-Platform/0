@@ -1,12 +1,8 @@
 // macOS screen capture implementation using ScreenCaptureKit and Core Graphics
 
+use super::macos_display_names::get_display_names;
 use crate::models::capture::{CaptureError, CaptureResult, Display, PixelFormat, RawFrame};
-use cocoa::base::{id, nil};
-use cocoa::foundation::NSString;
 use core_graphics::display::CGDisplay;
-use objc::{class, msg_send, sel, sel_impl};
-use std::collections::HashMap;
-use std::ffi::CStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -17,66 +13,6 @@ pub struct MacOSScreenCapture {
 }
 
 impl MacOSScreenCapture {
-    fn nsstring_to_string(value: id) -> Option<String> {
-        if value == nil {
-            return None;
-        }
-
-        unsafe {
-            let c_str: *const i8 = msg_send![value, UTF8String];
-            if c_str.is_null() {
-                None
-            } else {
-                Some(CStr::from_ptr(c_str).to_string_lossy().into_owned())
-            }
-        }
-    }
-
-    fn get_display_names() -> HashMap<u32, String> {
-        unsafe {
-            let mut names = HashMap::new();
-            let screens: id = msg_send![class!(NSScreen), screens];
-            if screens == nil {
-                return names;
-            }
-
-            let count: usize = msg_send![screens, count];
-            let screen_number_key = NSString::alloc(nil).init_str("NSScreenNumber");
-
-            for index in 0..count {
-                let screen: id = msg_send![screens, objectAtIndex: index];
-                if screen == nil {
-                    continue;
-                }
-
-                let description: id = msg_send![screen, deviceDescription];
-                if description == nil {
-                    continue;
-                }
-
-                let screen_number: id = msg_send![description, objectForKey: screen_number_key];
-                if screen_number == nil {
-                    continue;
-                }
-
-                let display_id: u32 = msg_send![screen_number, unsignedIntValue];
-                let has_localized_name: bool =
-                    msg_send![screen, respondsToSelector: sel!(localizedName)];
-
-                if !has_localized_name {
-                    continue;
-                }
-
-                let localized_name: id = msg_send![screen, localizedName];
-                if let Some(name) = Self::nsstring_to_string(localized_name) {
-                    names.insert(display_id, name);
-                }
-            }
-
-            names
-        }
-    }
-
     /// Create a new macOS screen capture instance
     pub async fn new() -> CaptureResult<Self> {
         // Check for screen recording permission
@@ -137,7 +73,7 @@ impl MacOSScreenCapture {
             display_ids.truncate(display_count as usize);
 
             let main_display_id = CGDisplay::main().id;
-            let display_names = Self::get_display_names();
+            let display_names = get_display_names();
 
             let displays: Vec<Display> = display_ids
                 .iter()
@@ -160,9 +96,7 @@ impl MacOSScreenCapture {
                 .collect();
 
             if displays.is_empty() {
-                return Err(CaptureError::CaptureFailed(
-                    "No displays found".to_string(),
-                ));
+                return Err(CaptureError::CaptureFailed("No displays found".to_string()));
             }
 
             Ok(displays)
@@ -177,13 +111,11 @@ impl MacOSScreenCapture {
             let display = CGDisplay::new(display_id);
 
             // Try to capture the display
-            let cg_image = display
-                .image()
-                .ok_or_else(|| {
-                    CaptureError::CaptureFailed(
-                        "Failed to capture display. Check screen recording permissions.".to_string()
-                    )
-                })?;
+            let cg_image = display.image().ok_or_else(|| {
+                CaptureError::CaptureFailed(
+                    "Failed to capture display. Check screen recording permissions.".to_string(),
+                )
+            })?;
 
             let width = cg_image.width() as u32;
             let height = cg_image.height() as u32;
@@ -304,7 +236,9 @@ mod tests {
     #[tokio::test]
     async fn test_capture_frame() {
         // Get displays first
-        let displays = MacOSScreenCapture::get_displays().await.expect("Failed to get displays");
+        let displays = MacOSScreenCapture::get_displays()
+            .await
+            .expect("Failed to get displays");
         assert!(!displays.is_empty());
 
         let primary_display = displays.iter().find(|d| d.is_primary).unwrap();
@@ -325,7 +259,11 @@ mod tests {
                 // We'll just verify the frame has reasonable dimensions and correct data size
                 assert!(frame.width > 0, "Frame width should be positive");
                 assert!(frame.height > 0, "Frame height should be positive");
-                assert_eq!(frame.data.len(), (frame.width * frame.height * 4) as usize, "Data size should match dimensions");
+                assert_eq!(
+                    frame.data.len(),
+                    (frame.width * frame.height * 4) as usize,
+                    "Data size should match dimensions"
+                );
             }
             Err(e) => {
                 eprintln!("Failed to capture frame: {}", e);
@@ -340,15 +278,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_capture_lifecycle() {
-        let displays = MacOSScreenCapture::get_displays().await.expect("Failed to get displays");
+        let displays = MacOSScreenCapture::get_displays()
+            .await
+            .expect("Failed to get displays");
         let primary_display = displays.iter().find(|d| d.is_primary).unwrap();
 
-        let mut capture = MacOSScreenCapture::new().await.expect("Failed to create capture");
+        let mut capture = MacOSScreenCapture::new()
+            .await
+            .expect("Failed to create capture");
 
         assert!(!capture.is_capturing());
 
         // Start capture
-        capture.start_capture(primary_display.id).await.expect("Failed to start capture");
+        capture
+            .start_capture(primary_display.id)
+            .await
+            .expect("Failed to start capture");
         assert!(capture.is_capturing());
         assert_eq!(capture.current_display_id(), Some(primary_display.id));
 
@@ -357,7 +302,10 @@ mod tests {
         assert!(matches!(result, Err(CaptureError::AlreadyCapturing)));
 
         // Stop capture
-        capture.stop_capture().await.expect("Failed to stop capture");
+        capture
+            .stop_capture()
+            .await
+            .expect("Failed to stop capture");
         assert!(!capture.is_capturing());
         assert_eq!(capture.current_display_id(), None);
 

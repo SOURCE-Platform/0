@@ -1,6 +1,5 @@
 /// Example program to test platform detection and abstraction
 /// Run with: cargo run --example test_platform
-
 use zero_lib::platform::get_platform;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -34,7 +33,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Test Screen Recording Support
     println!("Capabilities:");
     let supports_recording = platform.supports_screen_recording();
-    println!("  Screen Recording: {}", if supports_recording { "✓ Supported" } else { "✗ Not Supported" });
+    println!(
+        "  Screen Recording: {}",
+        if supports_recording {
+            "✓ Supported"
+        } else {
+            "✗ Not Supported"
+        }
+    );
     println!();
 
     // Test Data Directory

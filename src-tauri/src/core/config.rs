@@ -2,23 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-fn default_mock_data_mode() -> bool {
-    true
-}
-
-fn default_resource_profile() -> ResourceProfile {
-    ResourceProfile::Balanced
-}
-
-fn default_pii_categories() -> Vec<String> {
-    vec![
-        "email".to_string(),
-        "phone".to_string(),
-        "government_id".to_string(),
-        "credit_card".to_string(),
-        "ip_address".to_string(),
-    ]
-}
+use crate::core::config_defaults::{default_pii_categories, default_pii_review_threshold};
+use crate::core::config_validation::validate_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -65,16 +50,12 @@ impl Default for CaptureChannels {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PiiDetectionSettings {
     pub detect_only: bool,
-    #[serde(default = "default_pii_categories")]
+    #[serde(default = "crate::core::config_defaults::default_pii_categories")]
     pub enabled_categories: Vec<String>,
     #[serde(default)]
     pub enabled: bool,
-    #[serde(default = "default_pii_review_threshold")]
+    #[serde(default = "crate::core::config_defaults::default_pii_review_threshold")]
     pub review_confidence_threshold: f32,
-}
-
-fn default_pii_review_threshold() -> f32 {
-    0.6
 }
 
 impl Default for PiiDetectionSettings {
@@ -141,13 +122,13 @@ pub struct Config {
     #[serde(default)]
     pub app_blacklist: Vec<String>,
     /// Whether demo/mock data should be shown in the UI
-    #[serde(default = "default_mock_data_mode")]
+    #[serde(default = "crate::core::config_defaults::default_mock_data_mode")]
     pub mock_data_mode: bool,
     /// Per-channel capture enablement
     #[serde(default)]
     pub capture_channels: CaptureChannels,
     /// Capture fidelity/resource budget
-    #[serde(default = "default_resource_profile")]
+    #[serde(default = "crate::core::config_defaults::default_resource_profile")]
     pub resource_profile: ResourceProfile,
     /// PII detection and review settings
     #[serde(default)]
@@ -237,105 +218,7 @@ impl Config {
 
     /// Validate configuration values
     pub fn validate(&self) -> Result<(), Box<dyn std::error::Error>> {
-        // Validate recording quality
-        let valid_qualities = ["High", "Medium", "Low"];
-        if !valid_qualities.contains(&self.recording_quality.as_str()) {
-            return Err(format!(
-                "Invalid recording quality: {}. Must be one of: High, Medium, Low",
-                self.recording_quality
-            )
-            .into());
-        }
-
-        // Validate video quality
-        if !valid_qualities.contains(&self.video_quality.as_str()) {
-            return Err(format!(
-                "Invalid video quality: {}. Must be one of: High, Medium, Low",
-                self.video_quality
-            )
-            .into());
-        }
-
-        // Validate video codec
-        let valid_codecs = ["h264", "H264"];
-        if !valid_codecs.contains(&self.video_codec.as_str()) {
-            return Err(format!(
-                "Invalid video codec: {}. Must be one of: h264",
-                self.video_codec
-            )
-            .into());
-        }
-
-        // Validate motion detection threshold
-        if !(0.0..=1.0).contains(&self.motion_detection_threshold) {
-            return Err(format!(
-                "Invalid motion detection threshold: {}. Must be between 0.0 and 1.0",
-                self.motion_detection_threshold
-            )
-            .into());
-        }
-
-        // Validate FPS
-        if self.default_recording_fps == 0 || self.default_recording_fps > 60 {
-            return Err(format!(
-                "Invalid FPS: {}. Must be between 1 and 60",
-                self.default_recording_fps
-            )
-            .into());
-        }
-
-        // Validate target FPS
-        if self.target_fps == 0 || self.target_fps > 60 {
-            return Err(format!(
-                "Invalid target FPS: {}. Must be between 1 and 60",
-                self.target_fps
-            )
-            .into());
-        }
-
-        // Validate retention days
-        for (data_type, days) in &self.retention_days {
-            if *days == 0 || *days > 3650 {
-                return Err(format!(
-                    "Invalid retention days for {}: {}. Must be between 1 and 3650",
-                    data_type, days
-                )
-                .into());
-            }
-        }
-
-        // Validate OCR confidence threshold
-        if !(0.0..=1.0).contains(&self.ocr_confidence_threshold) {
-            return Err(format!(
-                "Invalid OCR confidence threshold: {}. Must be between 0.0 and 1.0",
-                self.ocr_confidence_threshold
-            )
-            .into());
-        }
-
-        // Validate OCR interval
-        if self.ocr_interval_seconds == 0 || self.ocr_interval_seconds > 3600 {
-            return Err(format!(
-                "Invalid OCR interval: {}. Must be between 1 and 3600 seconds",
-                self.ocr_interval_seconds
-            )
-            .into());
-        }
-
-        // Validate OCR languages
-        if self.ocr_languages.is_empty() {
-            return Err("OCR languages cannot be empty".into());
-        }
-
-        if !(0.0..=1.0).contains(&self.pii_settings.review_confidence_threshold) {
-            return Err(format!(
-                "Invalid PII review confidence threshold: {}. Must be between 0.0 and 1.0",
-                self.pii_settings.review_confidence_threshold
-            )
-            .into());
-        }
-
-        Ok(())
+        validate_config(self)
     }
 
     /// Reset to default configuration

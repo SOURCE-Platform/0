@@ -1,254 +1,16 @@
 use crate::core::database::Database;
-use serde::{Deserialize, Serialize};
+pub use crate::core::session_manager_helpers::PowerEventMonitor;
+use crate::core::session_manager_helpers::{
+    calculate_productivity_score, categorize_app, IdleDetector,
+};
+pub use crate::core::session_manager_types::{
+    AppUsageInfo, PowerEvent, Session, SessionConfig, SessionMetrics, SessionType,
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
-
-// ==============================================================================
-// Configuration
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionConfig {
-    pub idle_timeout_minutes: u32,           // Default: 30
-    pub minimum_session_duration_minutes: u32, // Default: 5
-    pub auto_end_on_sleep: bool,             // Default: true
-}
-
-impl Default for SessionConfig {
-    fn default() -> Self {
-        Self {
-            idle_timeout_minutes: 30,
-            minimum_session_duration_minutes: 5,
-            auto_end_on_sleep: true,
-        }
-    }
-}
-
-// ==============================================================================
-// Session Types
-// ==============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SessionType {
-    Work,
-    Communication,
-    Research,
-    Entertainment,
-    Development,
-    Unknown,
-}
-
-impl SessionType {
-    pub fn to_string(&self) -> &'static str {
-        match self {
-            SessionType::Work => "work",
-            SessionType::Communication => "communication",
-            SessionType::Research => "research",
-            SessionType::Entertainment => "entertainment",
-            SessionType::Development => "development",
-            SessionType::Unknown => "unknown",
-        }
-    }
-
-    pub fn from_string(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "work" => SessionType::Work,
-            "communication" => SessionType::Communication,
-            "research" => SessionType::Research,
-            "entertainment" => SessionType::Entertainment,
-            "development" => SessionType::Development,
-            _ => SessionType::Unknown,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Session {
-    pub id: String,
-    pub start_timestamp: i64,
-    pub end_timestamp: Option<i64>,
-    pub session_type: Option<String>,
-    pub device_id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionMetrics {
-    pub total_duration_ms: u64,
-    pub active_duration_ms: u64,
-    pub idle_duration_ms: u64,
-    pub app_switches: u32,
-    pub unique_apps: u32,
-    pub most_used_app: String,
-    pub productivity_score: f32, // 0.0 - 1.0
-}
-
-#[derive(Debug, Clone)]
-pub struct AppUsageInfo {
-    pub app_name: String,
-    pub focus_duration_ms: i64,
-}
-
-// ==============================================================================
-// Idle Detection
-// ==============================================================================
-
-pub struct IdleDetector;
-
-impl IdleDetector {
-    pub async fn get_idle_time() -> Result<Duration, Box<dyn std::error::Error + Send + Sync>> {
-        #[cfg(target_os = "macos")]
-        {
-            Self::get_idle_time_macos()
-        }
-
-        #[cfg(target_os = "windows")]
-        {
-            Self::get_idle_time_windows()
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            Self::get_idle_time_linux()
-        }
-
-        #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-        {
-            Ok(Duration::from_secs(0))
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    fn get_idle_time_macos() -> Result<Duration, Box<dyn std::error::Error + Send + Sync>> {
-        // For now, return a mock value
-        // TODO: Implement using IOKit's kIOHIDIdleTimeKey
-        // This requires Core Foundation bindings
-        Ok(Duration::from_secs(0))
-    }
-
-    #[cfg(target_os = "windows")]
-    fn get_idle_time_windows() -> Result<Duration, Box<dyn std::error::Error + Send + Sync>> {
-        // TODO: Implement using GetLastInputInfo
-        Ok(Duration::from_secs(0))
-    }
-
-    #[cfg(target_os = "linux")]
-    fn get_idle_time_linux() -> Result<Duration, Box<dyn std::error::Error + Send + Sync>> {
-        // TODO: Implement using XScreenSaverQueryInfo or logind
-        Ok(Duration::from_secs(0))
-    }
-}
-
-// ==============================================================================
-// Power Event Monitoring
-// ==============================================================================
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PowerEvent {
-    WillSleep,
-    DidWake,
-    BatteryLow,
-}
-
-pub struct PowerEventMonitor {
-    event_tx: mpsc::Sender<PowerEvent>,
-}
-
-impl PowerEventMonitor {
-    pub fn new() -> (Self, mpsc::Receiver<PowerEvent>) {
-        let (tx, rx) = mpsc::channel(10);
-        (Self { event_tx: tx }, rx)
-    }
-
-    pub async fn start_monitoring(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // TODO: Platform-specific implementation
-        // macOS: IORegisterForSystemPower
-        // Windows: RegisterPowerSettingNotification
-        // Linux: D-Bus org.freedesktop.login1.Manager PrepareForSleep
-        Ok(())
-    }
-}
-
-// ==============================================================================
-// Session Classification
-// ==============================================================================
-
-fn categorize_app(app_name: &str) -> SessionType {
-    let name_lower = app_name.to_lowercase();
-
-    if name_lower.contains("code")
-        || name_lower.contains("studio")
-        || name_lower.contains("vim")
-        || name_lower.contains("xcode")
-        || name_lower.contains("intellij")
-    {
-        return SessionType::Development;
-    }
-
-    if name_lower.contains("slack")
-        || name_lower.contains("teams")
-        || name_lower.contains("zoom")
-        || name_lower.contains("discord")
-        || name_lower.contains("mail")
-        || name_lower.contains("outlook")
-    {
-        return SessionType::Communication;
-    }
-
-    if name_lower.contains("safari")
-        || name_lower.contains("chrome")
-        || name_lower.contains("firefox")
-        || name_lower.contains("browser")
-    {
-        return SessionType::Research;
-    }
-
-    if name_lower.contains("spotify")
-        || name_lower.contains("netflix")
-        || name_lower.contains("youtube")
-        || name_lower.contains("music")
-        || name_lower.contains("games")
-    {
-        return SessionType::Entertainment;
-    }
-
-    if name_lower.contains("word")
-        || name_lower.contains("excel")
-        || name_lower.contains("powerpoint")
-        || name_lower.contains("keynote")
-        || name_lower.contains("pages")
-    {
-        return SessionType::Work;
-    }
-
-    SessionType::Unknown
-}
-
-fn calculate_productivity_score(apps: &[AppUsageInfo]) -> f32 {
-    if apps.is_empty() {
-        return 0.0;
-    }
-
-    let total_focus: i64 = apps.iter().map(|a| a.focus_duration_ms).sum();
-    if total_focus == 0 {
-        return 0.0;
-    }
-
-    // Average focus time per app (higher is better - means more sustained focus)
-    let avg_focus_per_app = total_focus as f32 / apps.len() as f32;
-
-    // Penalty for too many app switches (context switching is bad for productivity)
-    let switch_penalty = 1.0 / (1.0 + apps.len() as f32 * 0.1);
-
-    // Normalize average focus time to minutes, cap at 1.0 for 60+ minutes per app
-    let focus_score = (avg_focus_per_app / 60000.0).min(1.0);
-
-    focus_score * switch_penalty
-}
-
 // ==============================================================================
 // Session Manager
 // ==============================================================================
@@ -341,7 +103,9 @@ impl SessionManager {
         Ok(())
     }
 
-    pub async fn get_or_create_session(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_or_create_session(
+        &self,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let current = self.current_session_id.read().await;
         if let Some(session_id) = current.as_ref() {
             return Ok(session_id.clone());
@@ -355,17 +119,22 @@ impl SessionManager {
         Ok(session_id)
     }
 
-    async fn create_session_internal(db: &Arc<Database>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn create_session_internal(
+        db: &Arc<Database>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let session_id = Uuid::new_v4().to_string();
         let start_timestamp = chrono::Utc::now().timestamp_millis();
         let device_id = Self::get_device_id();
 
-        db.create_session(&session_id, start_timestamp, &device_id).await?;
+        db.create_session(&session_id, start_timestamp, &device_id)
+            .await?;
 
         Ok(session_id)
     }
 
-    pub async fn end_current_session(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn end_current_session(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let session_id = self.current_session_id.read().await.clone();
         if let Some(id) = session_id {
             Self::end_session_internal(&self.db, &id).await?;
@@ -374,13 +143,18 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn end_session_internal(db: &Arc<Database>, session_id: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn end_session_internal(
+        db: &Arc<Database>,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let end_timestamp = chrono::Utc::now().timestamp_millis();
         db.end_session(session_id, end_timestamp).await?;
         Ok(())
     }
 
-    pub async fn get_current_session(&self) -> Result<Option<Session>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_current_session(
+        &self,
+    ) -> Result<Option<Session>, Box<dyn std::error::Error + Send + Sync>> {
         let session_id = self.current_session_id.read().await.clone();
         if let Some(id) = session_id {
             self.get_session_by_id(&id).await.map(Some)
@@ -389,7 +163,10 @@ impl SessionManager {
         }
     }
 
-    pub async fn get_session_by_id(&self, session_id: &str) -> Result<Session, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_session_by_id(
+        &self,
+        session_id: &str,
+    ) -> Result<Session, Box<dyn std::error::Error + Send + Sync>> {
         let session = self.db.get_session(session_id).await?;
         Ok(Session {
             id: session.id,
@@ -421,7 +198,10 @@ impl SessionManager {
         Ok(sessions)
     }
 
-    pub async fn classify_session_type(&self, session_id: &str) -> Result<SessionType, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn classify_session_type(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionType, Box<dyn std::error::Error + Send + Sync>> {
         // Get app usage for this session from the app_usage table
         let apps = self.get_app_usage_for_session(session_id).await?;
 
@@ -448,7 +228,10 @@ impl SessionManager {
         Ok(session_type)
     }
 
-    pub async fn calculate_session_metrics(&self, session_id: &str) -> Result<SessionMetrics, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn calculate_session_metrics(
+        &self,
+        session_id: &str,
+    ) -> Result<SessionMetrics, Box<dyn std::error::Error + Send + Sync>> {
         let session = self.get_session_by_id(session_id).await?;
         let apps = self.get_app_usage_for_session(session_id).await?;
 
@@ -489,7 +272,10 @@ impl SessionManager {
         })
     }
 
-    async fn get_app_usage_for_session(&self, session_id: &str) -> Result<Vec<AppUsageInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_app_usage_for_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<AppUsageInfo>, Box<dyn std::error::Error + Send + Sync>> {
         // Query the app_usage table
         #[derive(sqlx::FromRow)]
         struct AppUsageRow {
@@ -502,7 +288,7 @@ impl SessionManager {
              FROM app_usage
              WHERE session_id = ?
              GROUP BY app_name
-             ORDER BY total_focus DESC"
+             ORDER BY total_focus DESC",
         )
         .bind(session_id)
         .fetch_all(self.db.pool())

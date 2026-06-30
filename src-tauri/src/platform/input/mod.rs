@@ -14,6 +14,8 @@ pub use keyboard_windows::WindowsKeyboardListener;
 #[cfg(target_os = "linux")]
 pub mod keyboard_linux;
 #[cfg(target_os = "linux")]
+pub mod keyboard_linux_keymap;
+#[cfg(target_os = "linux")]
 pub use keyboard_linux::LinuxKeyboardListener;
 
 // Mouse listeners
@@ -29,5 +31,7 @@ pub use mouse_windows::WindowsMouseListener;
 
 #[cfg(target_os = "linux")]
 pub mod mouse_linux;
+#[cfg(target_os = "linux")]
+pub mod mouse_linux_x11;
 #[cfg(target_os = "linux")]
 pub use mouse_linux::LinuxMouseListener;

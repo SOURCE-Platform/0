@@ -2,7 +2,8 @@
 
 use crate::core::database::Database;
 use crate::core::ocr_agent_context;
-use crate::models::ocr::{BoundingBox, OcrResult, TextBlock};
+pub use crate::core::ocr_storage_models::{OcrStats, SearchResult, StoredOcrResult};
+use crate::models::ocr::{BoundingBox, OcrResult};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -305,43 +306,6 @@ struct OcrStatsRow {
     total_text_length: i64,
 }
 
-// ==============================================================================
-// Public Types
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StoredOcrResult {
-    pub id: String,
-    pub session_id: Uuid,
-    pub timestamp: i64,
-    pub frame_path: Option<PathBuf>,
-    pub text: String,
-    pub confidence: f32,
-    pub bounding_box: BoundingBox,
-    pub language: String,
-    pub processing_time_ms: Option<u64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub id: String,
-    pub session_id: Uuid,
-    pub timestamp: i64,
-    pub text: String,
-    pub confidence: f32,
-    pub frame_path: Option<PathBuf>,
-    pub bounding_box: BoundingBox,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OcrStats {
-    pub frames_processed: u64,
-    pub text_blocks_extracted: u64,
-    pub average_processing_time_ms: f64,
-    pub average_confidence: f64,
-    pub total_text_length: u64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -352,6 +316,10 @@ mod tests {
             session_id: Uuid::new_v4(),
             timestamp: chrono::Utc::now().timestamp_millis(),
             frame_path: Some(PathBuf::from("/path/to/frame.png")),
+            display_id: Some(1),
+            frame_width: 1920,
+            frame_height: 1080,
+            trigger_reason: "static_fallback".to_string(),
             ocr_result: OcrResult::new(0, vec![], 100),
         };
 

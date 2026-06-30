@@ -1,9 +1,10 @@
 // Full-text search engine for OCR results using FTS5
 
 use crate::core::database::Database;
+pub use crate::core::search_engine_types::{
+    SearchFilters, SearchQuery, SearchResult, SearchResultWithContext, SearchResults, TimeRange,
+};
 use crate::models::ocr::BoundingBox;
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use std::sync::Arc;
 use thiserror::Error;
 use uuid::Uuid;
@@ -28,71 +29,6 @@ pub enum SearchError {
 }
 
 type Result<T> = std::result::Result<T, SearchError>;
-
-// ==============================================================================
-// Search Query
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchQuery {
-    pub query: String,
-    #[serde(default)]
-    pub filters: SearchFilters,
-    #[serde(default = "default_limit")]
-    pub limit: u32,
-    #[serde(default)]
-    pub offset: u32,
-}
-
-fn default_limit() -> u32 {
-    50
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SearchFilters {
-    pub session_ids: Option<Vec<Uuid>>,
-    pub date_range: Option<TimeRange>,
-    pub min_confidence: Option<f32>,
-    pub app_names: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TimeRange {
-    pub start: i64,
-    pub end: i64,
-}
-
-// ==============================================================================
-// Search Results
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResult {
-    pub id: String,
-    pub session_id: Uuid,
-    pub timestamp: i64,
-    pub text_snippet: String,
-    pub full_text: String,
-    pub confidence: f32,
-    pub bounding_box: BoundingBox,
-    pub frame_path: Option<PathBuf>,
-    pub app_context: Option<String>,
-    pub relevance_score: f32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResults {
-    pub results: Vec<SearchResult>,
-    pub total_count: u32,
-    pub query_time_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SearchResultWithContext {
-    pub result: SearchResult,
-    pub before_text: String,
-    pub after_text: String,
-}
 
 // ==============================================================================
 // Database Row Types
@@ -258,15 +194,13 @@ impl SearchEngine {
     /// Build FTS5 query string
     fn build_fts_query(&self, query: &str) -> Result<String> {
         if query.trim().is_empty() {
-            return Err(SearchError::InvalidQuery("Query cannot be empty".to_string()));
+            return Err(SearchError::InvalidQuery(
+                "Query cannot be empty".to_string(),
+            ));
         }
 
         // Sanitize query
-        let sanitized = query
-            .replace('"', "")
-            .replace('\'', "")
-            .trim()
-            .to_string();
+        let sanitized = query.replace('"', "").replace('\'', "").trim().to_string();
 
         // If query has multiple words, make it a phrase search
         if sanitized.contains(' ') {
@@ -282,10 +216,7 @@ impl SearchEngine {
         let mut clauses = Vec::new();
 
         if let Some(ref session_ids) = filters.session_ids {
-            let ids: Vec<String> = session_ids
-                .iter()
-                .map(|id| format!("'{}'", id))
-                .collect();
+            let ids: Vec<String> = session_ids.iter().map(|id| format!("'{}'", id)).collect();
             clauses.push(format!("o.session_id IN ({})", ids.join(", ")));
         }
 
@@ -360,12 +291,7 @@ impl SearchEngine {
     }
 
     /// Get OCR text in a time range
-    async fn get_ocr_in_range(
-        &self,
-        session_id: Uuid,
-        start: i64,
-        end: i64,
-    ) -> Result<String> {
+    async fn get_ocr_in_range(&self, session_id: Uuid, start: i64, end: i64) -> Result<String> {
         let texts = sqlx::query_scalar::<_, String>(
             r#"
             SELECT text FROM ocr_results
@@ -394,7 +320,7 @@ mod tests {
         let query = SearchQuery {
             query: "test".to_string(),
             filters: SearchFilters::default(),
-            limit: default_limit(),
+            limit: crate::core::search_engine_types::default_limit(),
             offset: 0,
         };
 

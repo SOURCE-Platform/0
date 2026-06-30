@@ -63,8 +63,7 @@ impl MacOSMouseListener {
         Ok(())
     }
 
-    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-    {
+    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Cleanup event tap if needed
         Ok(())
     }
@@ -148,8 +147,8 @@ impl MacOSMouseListener {
     fn is_double_click(&self, timestamp: i64, position: Point) -> bool {
         if let Some(last_pos) = self.last_click_pos {
             let time_diff = timestamp - self.last_click_time;
-            let distance = ((position.x - last_pos.x).pow(2) + (position.y - last_pos.y).pow(2))
-                as f32;
+            let distance =
+                ((position.x - last_pos.x).pow(2) + (position.y - last_pos.y).pow(2)) as f32;
 
             // Double-click if within 500ms and 5px
             time_diff < 500 && distance.sqrt() < 5.0

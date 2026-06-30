@@ -1,9 +1,9 @@
 use std::path::PathBuf;
 
 pub mod capture;
-pub mod power;
-pub mod os_monitor;
 pub mod input;
+pub mod os_monitor;
+pub mod power;
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -74,7 +74,10 @@ mod tests {
         let data_dir = platform.get_data_directory();
         assert!(data_dir.is_ok(), "Data directory should be retrievable");
         if let Ok(dir) = data_dir {
-            assert!(dir.to_str().is_some(), "Data directory should be a valid path");
+            assert!(
+                dir.to_str().is_some(),
+                "Data directory should be a valid path"
+            );
         }
 
         // Screen recording support is platform-dependent, just verify it returns a boolean
@@ -110,10 +113,15 @@ mod tests {
     #[test]
     fn test_data_directory_exists_or_creatable() {
         let platform = get_platform();
-        let data_dir = platform.get_data_directory().expect("Should get data directory");
+        let data_dir = platform
+            .get_data_directory()
+            .expect("Should get data directory");
 
         // Path should be absolute
-        assert!(data_dir.is_absolute(), "Data directory should be an absolute path");
+        assert!(
+            data_dir.is_absolute(),
+            "Data directory should be an absolute path"
+        );
 
         // Should contain .observer_data
         assert!(

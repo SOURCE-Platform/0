@@ -1,55 +1,17 @@
 // OCR processing pipeline with job queue and worker
 
 use crate::core::ocr_engine::{OcrEngine, OcrError};
+pub use crate::core::ocr_processor_types::OcrProcessorConfig;
+use crate::core::ocr_processor_types::{OcrJob, OcrMetrics};
 use crate::core::ocr_storage::{OcrStorage, ProcessedOcrResult};
 use crate::models::capture::{PixelFormat, RawFrame};
 use crate::models::ocr::{BoundingBox, OcrResult};
-use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-
-// ==============================================================================
-// Configuration
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OcrProcessorConfig {
-    pub enabled: bool,
-    pub interval_seconds: u32,    // How often to run OCR (default: 60)
-    pub batch_size: usize,        // Frames to process at once (default: 5)
-    pub skip_static_frames: bool, // Only OCR frames with motion (default: true)
-    pub max_queue_size: usize,    // Max pending jobs (default: 100)
-}
-
-impl Default for OcrProcessorConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            interval_seconds: 60,
-            batch_size: 5,
-            skip_static_frames: true,
-            max_queue_size: 100,
-        }
-    }
-}
-
-// ==============================================================================
-// OCR Job
-// ==============================================================================
-
-#[derive(Debug, Clone)]
-pub struct OcrJob {
-    pub session_id: Uuid,
-    pub frame_path: PathBuf,
-    pub timestamp: i64,
-    pub display_id: Option<u32>,
-    pub trigger_reason: String,
-    pub motion_regions: Vec<BoundingBox>,
-}
 
 // ==============================================================================
 // OCR Processor
@@ -334,19 +296,6 @@ impl OcrProcessor {
     pub async fn is_running(&self) -> bool {
         *self.is_processing.read().await
     }
-}
-
-// ==============================================================================
-// Metrics
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct OcrMetrics {
-    pub frames_processed: u64,
-    pub text_blocks_extracted: u64,
-    pub total_processing_time_ms: u64,
-    pub average_processing_time_ms: f64,
-    pub queue_size: usize,
 }
 
 #[cfg(test)]

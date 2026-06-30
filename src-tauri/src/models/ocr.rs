@@ -51,12 +51,7 @@ pub struct TextBlock {
 }
 
 impl TextBlock {
-    pub fn new(
-        text: String,
-        confidence: f32,
-        bounding_box: BoundingBox,
-        language: String,
-    ) -> Self {
+    pub fn new(text: String, confidence: f32, bounding_box: BoundingBox, language: String) -> Self {
         Self {
             text,
             confidence,

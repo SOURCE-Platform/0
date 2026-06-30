@@ -16,5 +16,6 @@ pub use windows::WindowsMonitor;
 #[cfg(target_os = "linux")]
 pub mod linux;
 #[cfg(target_os = "linux")]
+pub mod linux_support;
+#[cfg(target_os = "linux")]
 pub use linux::LinuxMonitor;
-

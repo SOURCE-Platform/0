@@ -73,11 +73,7 @@ impl Platform for MacOSPlatform {
         for line in stdout.lines() {
             if line.contains("IOPlatformUUID") {
                 if let Some(uuid_part) = line.split('=').nth(1) {
-                    let uuid = uuid_part
-                        .trim()
-                        .trim_matches('"')
-                        .trim()
-                        .to_string();
+                    let uuid = uuid_part.trim().trim_matches('"').trim().to_string();
                     return Ok(uuid);
                 }
             }
@@ -94,8 +90,7 @@ impl Platform for MacOSPlatform {
     }
 
     fn get_data_directory(&self) -> Result<PathBuf, Box<dyn std::error::Error>> {
-        let home = std::env::var("HOME")
-            .map_err(|_| "Could not determine home directory")?;
+        let home = std::env::var("HOME").map_err(|_| "Could not determine home directory")?;
 
         let mut path = PathBuf::from(home);
         path.push(".observer_data");
@@ -167,7 +162,10 @@ mod tests {
 
         if let Ok(dir) = data_dir {
             let dir_str = dir.to_string_lossy();
-            assert!(dir_str.contains(".observer_data"), "Should contain .observer_data");
+            assert!(
+                dir_str.contains(".observer_data"),
+                "Should contain .observer_data"
+            );
             assert!(dir.is_absolute(), "Should be an absolute path");
         }
     }

@@ -1,18 +1,18 @@
 use crate::core::consent::ConsentManager;
 use crate::core::database::Database;
-use crate::models::input::{KeyboardEvent, KeyEventType, KeyboardStats};
+use crate::models::input::{KeyEventType, KeyboardEvent, KeyboardStats};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 
 // Platform-specific keyboard listener
+#[cfg(target_os = "linux")]
+use crate::platform::input::LinuxKeyboardListener as PlatformKeyboardListener;
 #[cfg(target_os = "macos")]
 use crate::platform::input::MacOSKeyboardListener as PlatformKeyboardListener;
 #[cfg(target_os = "windows")]
 use crate::platform::input::WindowsKeyboardListener as PlatformKeyboardListener;
-#[cfg(target_os = "linux")]
-use crate::platform::input::LinuxKeyboardListener as PlatformKeyboardListener;
 
 // ==============================================================================
 // Database Models
@@ -62,7 +62,9 @@ impl KeyboardRecorder {
         })
     }
 
-    async fn init_schema(db: &Arc<Database>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn init_schema(
+        db: &Arc<Database>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let pool = db.pool();
 
         // Create keyboard_events table
@@ -80,28 +82,35 @@ impl KeyboardRecorder {
                 process_id INTEGER NOT NULL,
                 is_sensitive INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (session_id) REFERENCES sessions(id)
-            )"
+            )",
         )
         .execute(pool)
         .await?;
 
         // Create indexes for efficient queries
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_keyboard_events_session ON keyboard_events(session_id)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_keyboard_events_session ON keyboard_events(session_id)",
+        )
+        .execute(pool)
+        .await?;
 
         sqlx::query("CREATE INDEX IF NOT EXISTS idx_keyboard_events_timestamp ON keyboard_events(timestamp)")
             .execute(pool)
             .await?;
 
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_keyboard_events_app ON keyboard_events(app_name)")
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_keyboard_events_app ON keyboard_events(app_name)",
+        )
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
 
-    pub async fn start_recording(&self, session_id: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn start_recording(
+        &self,
+        session_id: String,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Check if already recording
         let mut is_recording = self.is_recording.write().await;
         if *is_recording {
@@ -188,7 +197,7 @@ impl KeyboardRecorder {
             "INSERT INTO keyboard_events
              (id, session_id, timestamp, event_type, key_code, key_char, modifiers,
               app_name, window_title, process_id, is_sensitive)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(session_id)
@@ -207,10 +216,13 @@ impl KeyboardRecorder {
         Ok(())
     }
 
-    pub async fn get_keyboard_stats(&self, session_id: String) -> Result<KeyboardStats, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_keyboard_stats(
+        &self,
+        session_id: String,
+    ) -> Result<KeyboardStats, Box<dyn std::error::Error + Send + Sync>> {
         // Get all keyboard events for this session
         let events = sqlx::query_as::<_, KeyboardEventRecord>(
-            "SELECT * FROM keyboard_events WHERE session_id = ? ORDER BY timestamp ASC"
+            "SELECT * FROM keyboard_events WHERE session_id = ? ORDER BY timestamp ASC",
         )
         .bind(&session_id)
         .fetch_all(self.db.pool())
@@ -228,9 +240,7 @@ impl KeyboardRecorder {
         }
 
         // Calculate total keystrokes (only KeyDown events)
-        let total_keystrokes = events.iter()
-            .filter(|e| e.event_type == "key_down")
-            .count() as u64;
+        let total_keystrokes = events.iter().filter(|e| e.event_type == "key_down").count() as u64;
 
         // Calculate duration
         let first_timestamp = events.first().unwrap().timestamp;
@@ -260,7 +270,9 @@ impl KeyboardRecorder {
         let mut shortcut_counts: HashMap<String, u32> = HashMap::new();
         for event in &events {
             if event.event_type == "key_down" {
-                if let Ok(modifiers) = serde_json::from_str::<crate::models::input::ModifierState>(&event.modifiers) {
+                if let Ok(modifiers) =
+                    serde_json::from_str::<crate::models::input::ModifierState>(&event.modifiers)
+                {
                     if !modifiers.is_empty() {
                         if let Some(ref key_str) = event.key_char {
                             let shortcut = format!("{}+{}", modifiers.to_string(), key_str);

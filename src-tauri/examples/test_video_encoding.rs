@@ -4,10 +4,9 @@
 /// to verify the FFmpeg integration works correctly.
 ///
 /// Run with: cargo run --example test_video_encoding
-
 use std::path::PathBuf;
-use zero_lib::core::video_encoder::{VideoEncoder, VideoCodec, CompressionQuality};
-use zero_lib::models::capture::{RawFrame, PixelFormat};
+use zero_lib::core::video_encoder::{CompressionQuality, VideoCodec, VideoEncoder};
+use zero_lib::models::capture::{PixelFormat, RawFrame};
 
 fn create_colored_frame(width: u32, height: u32, r: u8, g: u8, b: u8, timestamp: i64) -> RawFrame {
     let mut data = Vec::with_capacity((width * height * 4) as usize);
@@ -73,14 +72,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         true, // hardware acceleration
     )?;
 
-    match encoder.encode_frames(frames.clone(), output_path.clone(), fps).await {
+    match encoder
+        .encode_frames(frames.clone(), output_path.clone(), fps)
+        .await
+    {
         Ok(segment) => {
             println!("✓ Hardware encoding successful!");
             println!("  - Frames: {}", segment.frame_count);
             println!("  - Duration: {} ms", segment.duration_ms);
             println!("  - File size: {} KB", segment.file_size_bytes / 1024);
-            println!("  - Compression ratio: {:.1}:1",
-                     (frames.len() * width as usize * height as usize * 4) as f64 / segment.file_size_bytes as f64);
+            println!(
+                "  - Compression ratio: {:.1}:1",
+                (frames.len() * width as usize * height as usize * 4) as f64
+                    / segment.file_size_bytes as f64
+            );
         }
         Err(e) => {
             println!("✗ Hardware encoding failed: {}", e);
@@ -98,7 +103,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         false, // no hardware acceleration
     )?;
 
-    match encoder_software.encode_frames(frames.clone(), output_path_software.clone(), fps).await {
+    match encoder_software
+        .encode_frames(frames.clone(), output_path_software.clone(), fps)
+        .await
+    {
         Ok(segment) => {
             println!("✓ Software encoding successful!");
             println!("  - Frames: {}", segment.frame_count);
@@ -129,8 +137,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("\nProbing video with ffprobe...");
         let output = std::process::Command::new("ffprobe")
             .args(&[
-                "-v", "quiet",
-                "-print_format", "json",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
                 "-show_streams",
                 output_path_software.to_str().unwrap(),
             ])

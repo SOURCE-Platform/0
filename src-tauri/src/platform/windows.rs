@@ -205,7 +205,10 @@ mod tests {
 
         if let Ok(dir) = data_dir {
             let dir_str = dir.to_string_lossy();
-            assert!(dir_str.contains(".observer_data"), "Should contain .observer_data");
+            assert!(
+                dir_str.contains(".observer_data"),
+                "Should contain .observer_data"
+            );
             assert!(dir.is_absolute(), "Should be an absolute path");
         }
     }

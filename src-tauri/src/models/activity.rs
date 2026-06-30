@@ -85,11 +85,7 @@ mod tests {
 
     #[test]
     fn test_app_info_new() {
-        let app_info = AppInfo::new(
-            "Safari".to_string(),
-            "com.apple.Safari".to_string(),
-            12345,
-        );
+        let app_info = AppInfo::new("Safari".to_string(), "com.apple.Safari".to_string(), 12345);
 
         assert_eq!(app_info.name, "Safari");
         assert_eq!(app_info.bundle_id, "com.apple.Safari");
@@ -115,11 +111,7 @@ mod tests {
 
     #[test]
     fn test_app_event_serialization() {
-        let app_info = AppInfo::new(
-            "Safari".to_string(),
-            "com.apple.Safari".to_string(),
-            12345,
-        );
+        let app_info = AppInfo::new("Safari".to_string(), "com.apple.Safari".to_string(), 12345);
 
         let event = AppEvent {
             timestamp: 1234567890,

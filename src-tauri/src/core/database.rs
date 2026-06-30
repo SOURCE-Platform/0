@@ -49,9 +49,7 @@ impl Database {
 
     /// Run database migrations
     pub async fn run_migrations(&self) -> Result<(), Box<dyn std::error::Error>> {
-        sqlx::migrate!("./migrations")
-            .run(&self.pool)
-            .await?;
+        sqlx::migrate!("./migrations").run(&self.pool).await?;
         Ok(())
     }
 
@@ -96,7 +94,7 @@ impl Database {
 
         sqlx::query(
             "INSERT INTO sessions (id, start_timestamp, end_timestamp, device_id, created_at)
-             VALUES (?, ?, NULL, ?, ?)"
+             VALUES (?, ?, NULL, ?, ?)",
         )
         .bind(id)
         .bind(start_timestamp)
@@ -145,11 +143,15 @@ impl Database {
     }
 
     /// Get sessions within a time range
-    pub async fn get_sessions_in_range(&self, start: i64, end: i64) -> Result<Vec<Session>, sqlx::Error> {
+    pub async fn get_sessions_in_range(
+        &self,
+        start: i64,
+        end: i64,
+    ) -> Result<Vec<Session>, sqlx::Error> {
         sqlx::query_as::<_, Session>(
             "SELECT * FROM sessions
              WHERE start_timestamp >= ? AND start_timestamp <= ?
-             ORDER BY start_timestamp DESC"
+             ORDER BY start_timestamp DESC",
         )
         .bind(start)
         .bind(end)
@@ -191,7 +193,8 @@ mod tests {
             .expect("Failed to create session");
 
         // Get session
-        let session = db.get_session(&session_id)
+        let session = db
+            .get_session(&session_id)
             .await
             .expect("Failed to get session")
             .expect("Session not found");
@@ -219,7 +222,8 @@ mod tests {
             .expect("Failed to end session");
 
         // Verify end timestamp
-        let session = db.get_session(&session_id)
+        let session = db
+            .get_session(&session_id)
             .await
             .expect("Failed to get session")
             .expect("Session not found");
@@ -242,7 +246,8 @@ mod tests {
             .expect("Failed to delete session");
 
         // Verify deletion
-        let session = db.get_session(&session_id)
+        let session = db
+            .get_session(&session_id)
             .await
             .expect("Failed to query session");
 
@@ -263,9 +268,7 @@ mod tests {
         }
 
         // List sessions
-        let sessions = db.list_sessions()
-            .await
-            .expect("Failed to list sessions");
+        let sessions = db.list_sessions().await.expect("Failed to list sessions");
 
         assert_eq!(sessions.len(), 3);
     }

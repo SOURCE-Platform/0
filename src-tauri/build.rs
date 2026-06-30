@@ -12,9 +12,15 @@ fn main() {
 
             // Set environment variables for ffmpeg-sys-next
             std::env::set_var("FFMPEG_DIR", "/opt/homebrew/Cellar/ffmpeg/8.0_1");
-            std::env::set_var("FFMPEG_INCLUDE_DIR", "/opt/homebrew/Cellar/ffmpeg/8.0_1/include");
+            std::env::set_var(
+                "FFMPEG_INCLUDE_DIR",
+                "/opt/homebrew/Cellar/ffmpeg/8.0_1/include",
+            );
             std::env::set_var("FFMPEG_LIB_DIR", "/opt/homebrew/Cellar/ffmpeg/8.0_1/lib");
-            std::env::set_var("PKG_CONFIG_PATH", "/opt/homebrew/Cellar/ffmpeg/8.0_1/lib/pkgconfig");
+            std::env::set_var(
+                "PKG_CONFIG_PATH",
+                "/opt/homebrew/Cellar/ffmpeg/8.0_1/lib/pkgconfig",
+            );
         }
     }
 

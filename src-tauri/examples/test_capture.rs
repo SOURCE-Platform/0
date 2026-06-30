@@ -1,6 +1,6 @@
 // Test cross-platform screen capture functionality
 
-use zero_lib::models::capture::{PixelFormat};
+use zero_lib::models::capture::PixelFormat;
 use zero_lib::platform::capture::PlatformCapture;
 
 #[tokio::main]
@@ -32,7 +32,10 @@ async fn main() {
 
             // Test 2: Capture frame from primary display
             if let Some(primary) = displays.iter().find(|d| d.is_primary) {
-                println!("\nTest 2: Capturing frame from primary display (ID {})...", primary.id);
+                println!(
+                    "\nTest 2: Capturing frame from primary display (ID {})...",
+                    primary.id
+                );
                 match PlatformCapture::capture_frame(primary.id).await {
                     Ok(frame) => {
                         println!("✓ Successfully captured frame:");

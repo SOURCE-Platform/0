@@ -1,7 +1,8 @@
 #![cfg(target_os = "linux")]
 
 use crate::core::consent::{ConsentManager, Feature};
-use crate::models::input::{AppContext, KeyboardEvent, KeyEventType, ModifierState, UiElement};
+use crate::models::input::{AppContext, KeyEventType, KeyboardEvent, ModifierState, UiElement};
+use crate::platform::input::keyboard_linux_keymap::key_to_char;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -17,8 +18,10 @@ pub struct LinuxKeyboardListener {
 impl LinuxKeyboardListener {
     pub fn new(
         consent_manager: Arc<ConsentManager>,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<KeyboardEvent>), Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<
+        (Self, mpsc::UnboundedReceiver<KeyboardEvent>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let (tx, rx) = mpsc::unbounded_channel();
 
         Ok((
@@ -108,8 +111,7 @@ impl LinuxKeyboardListener {
         Ok(())
     }
 
-    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-    {
+    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Clear devices - tasks will naturally stop when trying to read
         self.devices.clear();
         Ok(())
@@ -135,7 +137,7 @@ impl LinuxKeyboardListener {
             timestamp: chrono::Utc::now().timestamp_millis(),
             event_type,
             key_code: key.code(),
-            key_char: Self::key_to_char(key),
+            key_char: key_to_char(key),
             modifiers: Self::get_modifier_state(),
             app_context,
             ui_element,
@@ -276,52 +278,6 @@ impl LinuxKeyboardListener {
         }
     }
 
-    #[cfg(target_os = "linux")]
-    fn key_to_char(key: Key) -> Option<char> {
-        use evdev::Key::*;
-
-        match key {
-            KEY_SPACE => Some(' '),
-            KEY_A => Some('a'),
-            KEY_B => Some('b'),
-            KEY_C => Some('c'),
-            KEY_D => Some('d'),
-            KEY_E => Some('e'),
-            KEY_F => Some('f'),
-            KEY_G => Some('g'),
-            KEY_H => Some('h'),
-            KEY_I => Some('i'),
-            KEY_J => Some('j'),
-            KEY_K => Some('k'),
-            KEY_L => Some('l'),
-            KEY_M => Some('m'),
-            KEY_N => Some('n'),
-            KEY_O => Some('o'),
-            KEY_P => Some('p'),
-            KEY_Q => Some('q'),
-            KEY_R => Some('r'),
-            KEY_S => Some('s'),
-            KEY_T => Some('t'),
-            KEY_U => Some('u'),
-            KEY_V => Some('v'),
-            KEY_W => Some('w'),
-            KEY_X => Some('x'),
-            KEY_Y => Some('y'),
-            KEY_Z => Some('z'),
-            KEY_0 => Some('0'),
-            KEY_1 => Some('1'),
-            KEY_2 => Some('2'),
-            KEY_3 => Some('3'),
-            KEY_4 => Some('4'),
-            KEY_5 => Some('5'),
-            KEY_6 => Some('6'),
-            KEY_7 => Some('7'),
-            KEY_8 => Some('8'),
-            KEY_9 => Some('9'),
-            _ => None,
-        }
-    }
-
     fn check_input_permissions() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Check if user can read /dev/input/event*
         let test_paths = ["/dev/input/event0", "/dev/input/event1", "/dev/input"];
@@ -335,12 +291,10 @@ impl LinuxKeyboardListener {
         }
 
         if !accessible {
-            return Err(
-                "Cannot access /dev/input. User must be in 'input' group.\n\
+            return Err("Cannot access /dev/input. User must be in 'input' group.\n\
                  Run: sudo usermod -a -G input $USER\n\
                  Then log out and log back in."
-                    .into(),
-            );
+                .into());
         }
 
         Ok(())
@@ -356,9 +310,9 @@ mod tests {
     fn test_key_conversion() {
         use evdev::Key::*;
 
-        assert_eq!(LinuxKeyboardListener::key_to_char(KEY_A), Some('a'));
-        assert_eq!(LinuxKeyboardListener::key_to_char(KEY_SPACE), Some(' '));
-        assert_eq!(LinuxKeyboardListener::key_to_char(KEY_1), Some('1'));
-        assert_eq!(LinuxKeyboardListener::key_to_char(KEY_ENTER), None);
+        assert_eq!(key_to_char(KEY_A), Some('a'));
+        assert_eq!(key_to_char(KEY_SPACE), Some(' '));
+        assert_eq!(key_to_char(KEY_1), Some('1'));
+        assert_eq!(key_to_char(KEY_ENTER), None);
     }
 }

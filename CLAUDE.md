@@ -125,3 +125,14 @@ The initial `npm run tauri dev` downloads and compiles ~500 Rust dependencies, t
 
 ## Platform Support
 Targets macOS, Windows, and Linux. Platform-specific code should be isolated in `src-tauri/src/platform/` using Rust's `#[cfg(target_os = "...")]` attributes.
+
+## Codebase Modularity Rules
+
+- Keep every source file at or under 350 lines. This is a hard repo rule.
+- If a change would push a file past that limit, split the implementation into smaller modules first.
+- Do not leave touched oversized files in place. Refactor them during the same task unless there is a concrete blocker.
+- Prefer module directories with focused files such as `types`, `service`, `queries`, `capture`, `indexing`, `hooks`, or `sections`.
+- Keep entry-point files thin. `lib.rs`, large Tauri command files, and major React screens should compose smaller modules instead of holding full implementations.
+- Split by responsibility, not by arbitrary chunks. Each file should have one clear job and stay readable in one screenful.
+- Treat monolithic files as maintenance bugs. If you encounter one, plan the refactor before continuing feature work.
+- Use the repo file-length audit during refactors so violations are visible in one command rather than by manual inspection.

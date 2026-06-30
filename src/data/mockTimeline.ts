@@ -16,7 +16,6 @@ function ts(day: number, h: number, m = 0): number {
 }
 
 export const mockActivities: ActivitySegment[] = [
-  // ── Monday Mar 17 ──────────────────────────────────────────────────────
   { id: 's1',  type: 'sleep',    start: ts(17,  0,  0), end: ts(17,  7, 30), label: 'Sleep' },
   { id: 'a1',  type: 'phone',    start: ts(17,  7, 30), end: ts(17,  8,  0), label: 'Morning check-in' },
   {
@@ -89,7 +88,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'a9',  type: 'tablet',   start: ts(17, 21,  0), end: ts(17, 22, 30), label: 'Streaming' },
   { id: 'a10', type: 'desktop',  start: ts(17, 22, 30), end: ts(18,  1,  0), label: 'Browsing' },
 
-  // ── Tuesday Mar 18 ─────────────────────────────────────────────────────
   { id: 's2',  type: 'sleep',    start: ts(18,  1,  0), end: ts(18,  8,  0), label: 'Sleep' },
   { id: 'b1',  type: 'phone',    start: ts(18,  8,  0), end: ts(18,  8, 30), label: 'Morning messages' },
   { id: 'b2',  type: 'desktop',  start: ts(18,  8, 30), end: ts(18, 13,  0), label: 'Work' },
@@ -100,7 +98,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'b7',  type: 'tablet',   start: ts(18, 21,  0), end: ts(18, 22,  0), label: 'Streaming' },
   { id: 's3',  type: 'sleep',    start: ts(18, 22,  0), end: ts(19,  7,  0), label: 'Sleep' },
 
-  // ── Wednesday Mar 19 ───────────────────────────────────────────────────
   { id: 'c1',  type: 'phone',    start: ts(19,  7,  0), end: ts(19,  7, 30), label: 'Morning check' },
   { id: 'c2',  type: 'desktop',  start: ts(19,  7, 30), end: ts(19, 12,  0), label: 'Work' },
   { id: 'c3',  type: 'physical', start: ts(19, 12,  0), end: ts(19, 13,  0), label: 'Lunch' },
@@ -110,7 +107,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'c7',  type: 'tablet',   start: ts(19, 20,  0), end: ts(19, 23,  0), label: 'Streaming' },
   { id: 'c8',  type: 'phone',    start: ts(19, 23,  0), end: ts(20,  0, 30), label: 'Late scrolling' },
 
-  // ── Thursday Mar 20 ────────────────────────────────────────────────────
   { id: 's4',  type: 'sleep',    start: ts(20,  0, 30), end: ts(20,  8, 30), label: 'Sleep' },
   { id: 'd1',  type: 'phone',    start: ts(20,  8, 30), end: ts(20,  9,  0), label: 'Morning messages' },
   { id: 'd2',  type: 'desktop',  start: ts(20,  9,  0), end: ts(20, 13, 30), label: 'Work' },
@@ -120,7 +116,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'd6',  type: 'desktop',  start: ts(20, 21,  0), end: ts(20, 23, 30), label: 'Late work' },
   { id: 'd7',  type: 'phone',    start: ts(20, 23, 30), end: ts(21,  1,  0), label: 'Unwinding' },
 
-  // ── Friday Mar 21 ──────────────────────────────────────────────────────
   { id: 's5',  type: 'sleep',    start: ts(21,  1,  0), end: ts(21,  9,  0), label: 'Sleep in' },
   { id: 'e1',  type: 'phone',    start: ts(21,  9,  0), end: ts(21, 10,  0), label: 'Slow morning' },
   { id: 'e2',  type: 'desktop',  start: ts(21, 10,  0), end: ts(21, 14,  0), label: 'Light work' },
@@ -129,7 +124,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'e5',  type: 'away',     start: ts(21, 18,  0), end: ts(21, 23,  0), label: 'Friday night out' },
   { id: 'e6',  type: 'phone',    start: ts(21, 23,  0), end: ts(22,  2,  0), label: 'Late night' },
 
-  // ── Saturday Mar 22 ────────────────────────────────────────────────────
   { id: 's6',  type: 'sleep',    start: ts(22,  2,  0), end: ts(22, 11,  0), label: 'Long sleep' },
   { id: 'f1',  type: 'phone',    start: ts(22, 11,  0), end: ts(22, 12,  0), label: 'Lazy morning' },
   { id: 'f2',  type: 'tablet',   start: ts(22, 12,  0), end: ts(22, 12, 30), label: 'Browsing' },
@@ -140,7 +134,6 @@ export const mockActivities: ActivitySegment[] = [
   { id: 'f7',  type: 'desktop',  start: ts(22, 22, 30), end: ts(22, 23, 30), label: 'Browsing' },
   { id: 'f8',  type: 'phone',    start: ts(22, 23, 30), end: ts(23,  0, 30), label: 'Scrolling' },
 
-  // ── Sunday Mar 23 ──────────────────────────────────────────────────────
   { id: 's7',  type: 'sleep',    start: ts(23,  0, 30), end: ts(23,  9,  0), label: 'Sleep' },
   {
     id: 'g1', type: 'phone', start: ts(23, 9, 0), end: ts(23, 10, 30), label: 'Sunday morning',

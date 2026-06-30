@@ -1,6 +1,5 @@
 /// Example program to test database initialization and operations
 /// Run with: cargo run --example test_database
-
 use zero_lib::core::database::Database;
 
 #[tokio::main]
@@ -24,7 +23,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Start time: {}", start_time);
     println!("  Device ID: {}", device_id);
 
-    db.create_session(&session_id, start_time, device_id).await?;
+    db.create_session(&session_id, start_time, device_id)
+        .await?;
     println!("✓ Session created\n");
 
     // Retrieve the session

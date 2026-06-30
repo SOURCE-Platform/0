@@ -1,7 +1,7 @@
 #![cfg(target_os = "windows")]
 
 use crate::core::consent::{ConsentManager, Feature};
-use crate::models::input::{AppContext, KeyboardEvent, KeyEventType, ModifierState, UiElement};
+use crate::models::input::{AppContext, KeyEventType, KeyboardEvent, ModifierState, UiElement};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -9,12 +9,10 @@ use tokio::sync::mpsc;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, WPARAM},
     System::Threading::GetCurrentThreadId,
-    UI::Input::KeyboardAndMouse::{
-        GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
-    },
+    UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT},
     UI::WindowsAndMessaging::{
-        CallNextHookEx, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId, HHOOK,
-        KBDLLHOOKSTRUCT, SetWindowsHookExW, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN,
+        CallNextHookEx, GetForegroundWindow, GetWindowTextW, GetWindowThreadProcessId,
+        SetWindowsHookExW, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, WH_KEYBOARD_LL, WM_KEYDOWN,
         WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
     },
 };
@@ -28,8 +26,10 @@ pub struct WindowsKeyboardListener {
 impl WindowsKeyboardListener {
     pub fn new(
         consent_manager: Arc<ConsentManager>,
-    ) -> Result<(Self, mpsc::UnboundedReceiver<KeyboardEvent>), Box<dyn std::error::Error + Send + Sync>>
-    {
+    ) -> Result<
+        (Self, mpsc::UnboundedReceiver<KeyboardEvent>),
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let (tx, rx) = mpsc::unbounded_channel();
 
         Ok((
@@ -66,8 +66,7 @@ impl WindowsKeyboardListener {
         Ok(())
     }
 
-    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-    {
+    pub async fn stop_listening(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         #[cfg(target_os = "windows")]
         if let Some(hook) = self.hook.take() {
             unsafe {

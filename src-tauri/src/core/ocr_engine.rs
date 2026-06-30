@@ -3,11 +3,12 @@
 use crate::models::capture::RawFrame;
 use crate::models::ocr::{BoundingBox, OcrResult, TextBlock};
 use image::{GrayImage, RgbaImage};
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tesseract::Tesseract;
 use thiserror::Error;
 use uuid::Uuid;
+
+pub use crate::core::ocr_engine_config::OcrConfig;
 
 // ==============================================================================
 // Errors
@@ -32,71 +33,6 @@ pub enum OcrError {
 }
 
 type Result<T> = std::result::Result<T, OcrError>;
-
-// ==============================================================================
-// Configuration
-// ==============================================================================
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OcrConfig {
-    pub languages: Vec<String>,       // ["eng", "spa", "fra"]
-    pub psm: u32,                     // Page segmentation mode (0-13)
-    pub oem: u32,                     // OCR Engine mode (0-3)
-    pub dpi: u32,                     // DPI for processing
-    pub confidence_threshold: f32,    // Minimum confidence (0.0-1.0)
-    pub preprocess_enabled: bool,     // Enable image preprocessing
-    pub contrast_factor: f32,         // Contrast adjustment factor (1.0 = no change)
-}
-
-impl Default for OcrConfig {
-    fn default() -> Self {
-        Self {
-            languages: vec!["eng".to_string()],
-            psm: 3,  // Fully automatic page segmentation
-            oem: 3,  // Default, based on what is available
-            dpi: 300,
-            confidence_threshold: 0.6,
-            preprocess_enabled: true,
-            contrast_factor: 1.5,
-        }
-    }
-}
-
-impl OcrConfig {
-    /// Create config with custom languages
-    pub fn with_languages(languages: Vec<String>) -> Self {
-        Self {
-            languages,
-            ..Default::default()
-        }
-    }
-
-    /// Create config optimized for screenshots
-    pub fn for_screenshots() -> Self {
-        Self {
-            languages: vec!["eng".to_string()],
-            psm: 3,  // Fully automatic
-            oem: 3,  // Default
-            dpi: 144, // Typical screen DPI
-            confidence_threshold: 0.7,
-            preprocess_enabled: true,
-            contrast_factor: 1.3,
-        }
-    }
-
-    /// Create config optimized for documents
-    pub fn for_documents() -> Self {
-        Self {
-            languages: vec!["eng".to_string()],
-            psm: 1,  // Automatic page segmentation with OSD (orientation and script detection)
-            oem: 3,
-            dpi: 300,
-            confidence_threshold: 0.8,
-            preprocess_enabled: true,
-            contrast_factor: 1.5,
-        }
-    }
-}
 
 // ==============================================================================
 // OCR Engine
@@ -265,8 +201,9 @@ impl OcrEngine {
     fn crop_frame(&self, frame: &RawFrame, region: &BoundingBox) -> Result<RawFrame> {
         let img = self.frame_to_image(frame)?;
 
-        let cropped = image::imageops::crop_imm(&img, region.x, region.y, region.width, region.height)
-            .to_image();
+        let cropped =
+            image::imageops::crop_imm(&img, region.x, region.y, region.width, region.height)
+                .to_image();
 
         Ok(RawFrame {
             timestamp: frame.timestamp,
@@ -280,19 +217,19 @@ impl OcrEngine {
     /// Get list of supported languages (commonly available)
     pub fn supported_languages() -> Vec<String> {
         vec![
-            "eng".to_string(),      // English
-            "spa".to_string(),      // Spanish
-            "fra".to_string(),      // French
-            "deu".to_string(),      // German
-            "ita".to_string(),      // Italian
-            "por".to_string(),      // Portuguese
-            "rus".to_string(),      // Russian
-            "chi_sim".to_string(),  // Chinese Simplified
-            "chi_tra".to_string(),  // Chinese Traditional
-            "jpn".to_string(),      // Japanese
-            "kor".to_string(),      // Korean
-            "ara".to_string(),      // Arabic
-            "hin".to_string(),      // Hindi
+            "eng".to_string(),     // English
+            "spa".to_string(),     // Spanish
+            "fra".to_string(),     // French
+            "deu".to_string(),     // German
+            "ita".to_string(),     // Italian
+            "por".to_string(),     // Portuguese
+            "rus".to_string(),     // Russian
+            "chi_sim".to_string(), // Chinese Simplified
+            "chi_tra".to_string(), // Chinese Traditional
+            "jpn".to_string(),     // Japanese
+            "kor".to_string(),     // Korean
+            "ara".to_string(),     // Arabic
+            "hin".to_string(),     // Hindi
         ]
     }
 
