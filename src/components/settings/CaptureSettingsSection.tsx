@@ -230,7 +230,6 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
       </Card>
 
       <GazeCalibrationCard
-        sessionId={controller.captureStatus?.sessionId ?? null}
         display={currentDisplay}
         visionEnabled={config.capture_channels.camera_future}
       />

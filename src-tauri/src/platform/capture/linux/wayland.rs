@@ -4,6 +4,8 @@ pub(super) async fn get_displays_wayland() -> CaptureResult<Vec<Display>> {
     Ok(vec![Display {
         id: 0,
         name: "Primary Display (Wayland)".to_string(),
+        x: 0,
+        y: 0,
         width: 1920,
         height: 1080,
         is_primary: true,

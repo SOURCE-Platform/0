@@ -2,13 +2,136 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Tauri + React + Typescript</title>
+    <title>SOURCE</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #171412;
+        color: #fafaf9;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+      }
+
+      #root {
+        height: 100%;
+      }
+
+      .source-boot {
+        display: flex;
+        min-height: 100%;
+        align-items: center;
+        justify-content: center;
+        background:
+          radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.06), transparent 28%),
+          linear-gradient(135deg, #252118 0%, #171412 48%);
+      }
+
+      .source-boot__panel {
+        width: min(30rem, calc(100vw - 3rem));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 1.5rem;
+        background: rgba(30, 26, 23, 0.9);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.35);
+        padding: 1.5rem 1.75rem;
+        backdrop-filter: blur(16px);
+      }
+
+      .source-boot__brand {
+        display: flex;
+        align-items: center;
+        gap: 0.875rem;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: rgba(250, 250, 249, 0.9);
+      }
+
+      .source-boot__mark {
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 999px;
+        background: #fafaf9;
+      }
+
+      .source-boot__title {
+        margin: 1rem 0 0;
+        font-size: 1.75rem;
+        line-height: 1.1;
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+
+      .source-boot__body {
+        margin: 0.75rem 0 0;
+        max-width: 34ch;
+        font-size: 0.95rem;
+        line-height: 1.65;
+        color: rgba(212, 212, 216, 0.9);
+      }
+
+      .source-boot__status {
+        margin-top: 1.25rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.7rem;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.04);
+        padding: 0.7rem 0.95rem;
+        font-size: 0.85rem;
+        color: rgba(250, 250, 249, 0.85);
+      }
+
+      .source-boot__pulse {
+        width: 0.6rem;
+        height: 0.6rem;
+        border-radius: 999px;
+        background: #f59e0b;
+        box-shadow: 0 0 0 rgba(245, 158, 11, 0.5);
+        animation: source-boot-pulse 1.4s ease-in-out infinite;
+      }
+
+      @keyframes source-boot-pulse {
+        0% {
+          transform: scale(0.9);
+          box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45);
+        }
+        70% {
+          transform: scale(1);
+          box-shadow: 0 0 0 0.8rem rgba(245, 158, 11, 0);
+        }
+        100% {
+          transform: scale(0.9);
+          box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+        }
+      }
+    </style>
   </head>
 
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="source-boot">
+        <div class="source-boot__panel">
+          <div class="source-boot__brand">
+            <span class="source-boot__mark"></span>
+            <span>SOURCE</span>
+          </div>
+          <h1 class="source-boot__title">Opening SOURCE</h1>
+          <p class="source-boot__body">
+            Loading the local capture timeline and desktop context services.
+          </p>
+          <div class="source-boot__status">
+            <span class="source-boot__pulse"></span>
+            <span>Booting interface</span>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -73,6 +73,8 @@ pub(super) async fn get_displays_x11() -> CaptureResult<Vec<Display>> {
                                     (*crtc_info).width,
                                     (*crtc_info).height
                                 ),
+                                x: (*crtc_info).x,
+                                y: (*crtc_info).y,
                                 width: (*crtc_info).width as u32,
                                 height: (*crtc_info).height as u32,
                                 is_primary: (*crtc_info).x == 0 && (*crtc_info).y == 0,
@@ -93,6 +95,8 @@ pub(super) async fn get_displays_x11() -> CaptureResult<Vec<Display>> {
             displays.push(Display {
                 id: 0,
                 name: format!("Default Display ({}x{})", width, height),
+                x: 0,
+                y: 0,
                 width,
                 height,
                 is_primary: true,

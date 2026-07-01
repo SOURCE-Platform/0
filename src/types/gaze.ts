@@ -10,6 +10,10 @@ export interface GazeCalibration {
   calibrationId: string;
   sessionId: string | null;
   createdAt: number;
+  displayId: number | null;
+  displayName: string | null;
+  displayX: number;
+  displayY: number;
   screenWidth: number;
   screenHeight: number;
   cameraId: string;
@@ -20,4 +24,10 @@ export interface GazeCalibration {
   validationQuality: string | null;
   headPoseRange: unknown;
   active: boolean;
+}
+
+export interface GazeCameraSource {
+  cameraId: string;
+  name: string;
+  index: number;
 }

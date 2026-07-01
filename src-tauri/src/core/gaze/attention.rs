@@ -16,10 +16,11 @@ pub async fn process_gaze_frame(
     db: &Arc<Database>,
     session_id: &str,
     source_id: &str,
+    display_id: Option<u32>,
     features: &FaceFeatureSampleDto,
     timestamp: i64,
 ) -> Result<Option<AttentionSnapshotDto>, String> {
-    let Some(calibration) = get_active_gaze_calibration(db).await? else {
+    let Some(calibration) = get_active_gaze_calibration(db, display_id).await? else {
         return Ok(None);
     };
     if features.confidence < 0.2 {

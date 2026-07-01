@@ -7,6 +7,15 @@ use std::path::{Path, PathBuf};
 use tokio::process::Command;
 use uuid::Uuid;
 
+const MEDIAPIPE_IMPORT_CHECK: &str =
+    "import mediapipe, cv2, onnxruntime, numpy; print(mediapipe.__version__)";
+const MEDIAPIPE_PACKAGES: &[&str] = &[
+    "mediapipe==0.10.14",
+    "opencv-python-headless==4.10.0.84",
+    "onnxruntime==1.18.1",
+    "numpy==1.26.4",
+];
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MediaPipeGazeOutput {
@@ -54,6 +63,8 @@ pub(super) async fn capture_camera_frame(
             "error",
             "-f",
             "avfoundation",
+            "-pixel_format",
+            "bgr0",
             "-framerate",
             "30",
             "-i",
@@ -123,20 +134,7 @@ pub(super) fn load_png_as_frame(path: &Path) -> Result<RawFrame, String> {
 }
 
 pub(crate) async fn mediapipe_runtime_available() -> Result<(), String> {
-    let output = Command::new("python3")
-        .args([
-            "-c",
-            "import mediapipe, cv2, onnxruntime; print(mediapipe.__version__)",
-        ])
-        .output()
-        .await
-        .map_err(|e| format!("Failed to launch python3 for MediaPipe inspection: {e}"))?;
-
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).trim().to_string())
-    }
+    ensure_mediapipe_python().await.map(|_| ())
 }
 
 async fn ensure_mediapipe_runtime_files() -> Result<PathBuf, String> {
@@ -164,6 +162,82 @@ async fn ensure_mediapipe_runtime_files() -> Result<PathBuf, String> {
     Ok(script_path)
 }
 
+async fn ensure_mediapipe_python() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not resolve home directory for MediaPipe helper.".to_string())?;
+    let helpers_dir = PathBuf::from(home).join(".observer_data").join("helpers");
+    fs::create_dir_all(&helpers_dir).map_err(|e| format!("Failed to create helpers dir: {e}"))?;
+
+    let venv_dir = helpers_dir.join(".venv");
+    let venv_python = venv_dir.join("bin").join("python3");
+    if venv_python.exists() && python_supports_mediapipe(&venv_python).await? {
+        return Ok(venv_python);
+    }
+
+    let base_python = discover_python3().await?;
+    if !venv_python.exists() {
+        let status = Command::new(&base_python)
+            .args(["-m", "venv"])
+            .arg(&venv_dir)
+            .status()
+            .await
+            .map_err(|e| format!("Failed to create SOURCE MediaPipe runtime: {e}"))?;
+        if !status.success() {
+            return Err("Could not create a local SOURCE MediaPipe runtime.".to_string());
+        }
+    }
+
+    if !python_supports_mediapipe(&venv_python).await? {
+        let status = Command::new(&venv_python)
+            .args(["-m", "pip", "install", "--quiet"])
+            .args(MEDIAPIPE_PACKAGES)
+            .status()
+            .await
+            .map_err(|e| format!("Failed to install SOURCE MediaPipe runtime packages: {e}"))?;
+        if !status.success() {
+            return Err(
+                "SOURCE could not install the local MediaPipe helper runtime.".to_string(),
+            );
+        }
+    }
+
+    if python_supports_mediapipe(&venv_python).await? {
+        Ok(venv_python)
+    } else {
+        Err("SOURCE still cannot import MediaPipe after runtime setup.".to_string())
+    }
+}
+
+async fn python_supports_mediapipe(python_path: &Path) -> Result<bool, String> {
+    let output = Command::new(python_path)
+        .args(["-c", MEDIAPIPE_IMPORT_CHECK])
+        .output()
+        .await
+        .map_err(|e| format!("Failed to inspect SOURCE MediaPipe runtime: {e}"))?;
+    Ok(output.status.success())
+}
+
+async fn discover_python3() -> Result<PathBuf, String> {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let candidates = [
+        PathBuf::from(format!("{home}/.pyenv/shims/python3")),
+        PathBuf::from("/opt/homebrew/bin/python3"),
+        PathBuf::from("/usr/local/bin/python3"),
+        PathBuf::from("/usr/bin/python3"),
+        PathBuf::from("python3"),
+    ];
+
+    for candidate in candidates {
+        let output = Command::new(&candidate).arg("--version").output().await;
+        if matches!(output, Ok(ref value) if value.status.success()) {
+            return Ok(candidate);
+        }
+    }
+
+    Err("SOURCE could not find a usable Python 3 runtime for MediaPipe setup.".to_string())
+}
+
 fn write_helper_if_needed(path: &Path, contents: &str) -> Result<(), String> {
     let should_write = match fs::read_to_string(path) {
         Ok(existing) => existing != contents,
@@ -178,9 +252,9 @@ fn write_helper_if_needed(path: &Path, contents: &str) -> Result<(), String> {
 pub(super) async fn run_mediapipe_scene_inference(
     image_path: &Path,
 ) -> Result<MediaPipeSceneOutput, String> {
-    mediapipe_runtime_available().await?;
+    let python_path = ensure_mediapipe_python().await?;
     let script_path = ensure_mediapipe_runtime_files().await?;
-    let output = Command::new("python3")
+    let output = Command::new(&python_path)
         .arg(script_path)
         .arg("scene")
         .arg(image_path)
@@ -201,9 +275,9 @@ pub(super) async fn run_mediapipe_scene_inference(
 pub(crate) async fn run_mediapipe_face_features(
     image_path: &Path,
 ) -> Result<FaceFeatureSampleDto, String> {
-    mediapipe_runtime_available().await?;
+    let python_path = ensure_mediapipe_python().await?;
     let script_path = ensure_mediapipe_runtime_files().await?;
-    let output = Command::new("python3")
+    let output = Command::new(&python_path)
         .arg(script_path)
         .arg("face_iris")
         .arg(image_path)

@@ -88,6 +88,8 @@ impl MacOSScreenCapture {
                     Some(Display {
                         id,
                         name,
+                        x: bounds.origin.x as i32,
+                        y: bounds.origin.y as i32,
                         width: bounds.size.width as u32,
                         height: bounds.size.height as u32,
                         is_primary: id == main_display_id,

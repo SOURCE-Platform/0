@@ -3,10 +3,25 @@ use crate::core::gaze::{
     self, AttentionAtTimestampDto, AttentionSnapshotDto, AttentionSpanDto, AttentionSummaryDto,
     GazeCalibrationDto, GazeSampleDto,
 };
+use crate::core::multimodal::service::list_avfoundation_sources;
+use serde::Serialize;
 use tauri::State;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraSourceDto {
+    pub camera_id: String,
+    pub name: String,
+    pub index: i32,
+}
 
 #[tauri::command]
 pub async fn start_gaze_calibration(
+    display_id: Option<u32>,
+    display_name: Option<String>,
+    camera_id: Option<String>,
+    display_x: i32,
+    display_y: i32,
     screen_width: i64,
     screen_height: i64,
     state: State<'_, AppState>,
@@ -17,7 +32,32 @@ pub async fn start_gaze_calibration(
         .await
         .session_id
         .clone();
-    gaze::start_gaze_calibration(&state.db, session_id, screen_width, screen_height).await
+    gaze::start_gaze_calibration(
+        &state.db,
+        session_id,
+        display_id,
+        display_name,
+        camera_id,
+        display_x,
+        display_y,
+        screen_width,
+        screen_height,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn list_gaze_camera_sources() -> Result<Vec<CameraSourceDto>, String> {
+    let sources = list_avfoundation_sources().await?;
+    Ok(sources
+        .video
+        .into_iter()
+        .map(|source| CameraSourceDto {
+            camera_id: format!("camera:{}", source.index),
+            name: source.name,
+            index: source.index,
+        })
+        .collect())
 }
 
 #[tauri::command]
@@ -42,9 +82,10 @@ pub async fn finalize_gaze_calibration(
 
 #[tauri::command]
 pub async fn get_active_gaze_calibration(
+    display_id: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<Option<GazeCalibrationDto>, String> {
-    gaze::get_active_gaze_calibration(&state.db).await
+    gaze::get_active_gaze_calibration(&state.db, display_id).await
 }
 
 #[tauri::command]

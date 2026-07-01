@@ -5,6 +5,7 @@ import Settings from "./components/Settings";
 import TimelinePage from "./components/TimelinePage";
 import Hardware from "./components/Hardware";
 import ID from "./components/ID";
+import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibrationOverlayPage";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
@@ -81,6 +82,7 @@ function RealModePlaceholder({
 }
 
 function App() {
+  const appMode = new URLSearchParams(window.location.search).get("mode");
   const [activeTab, setActiveTab] = useState<View>("timeline");
   const [displayedView, setDisplayedView] = useState<View>("timeline");
   const [fading, setFading] = useState(false);
@@ -156,6 +158,9 @@ function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="observer-theme">
       <UIPrefsProvider>
+        {appMode === "gaze-calibration" ? (
+          <GazeCalibrationOverlayPage />
+        ) : (
         <div className="app-container h-screen overflow-hidden">
           <div className="pointer-events-none fixed right-6 top-6 z-[200] flex max-w-sm flex-col gap-3">
             {toasts.map((toast) => (
@@ -230,6 +235,7 @@ function App() {
             </div>
           </main>
         </div>
+        )}
       </UIPrefsProvider>
     </ThemeProvider>
   );

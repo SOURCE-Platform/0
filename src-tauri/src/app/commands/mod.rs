@@ -7,6 +7,7 @@ pub mod ocr_agent;
 pub mod playback;
 pub mod system_activity;
 pub mod system_core;
+pub mod system_search;
 pub mod timeline;
 
 pub use capture_control::*;
@@ -18,4 +19,5 @@ pub use ocr_agent::*;
 pub use playback::*;
 pub use system_activity::*;
 pub use system_core::*;
+pub use system_search::*;
 pub use timeline::*;

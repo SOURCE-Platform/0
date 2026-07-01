@@ -1,4 +1,4 @@
-use super::face_capture::{capture_face_features_from_camera, choose_default_camera};
+use super::face_capture::{capture_face_features_from_camera, resolve_camera_choice};
 use super::model::{ACTIVE_GAZE_MODEL_NAME, ACTIVE_GAZE_MODEL_VERSION};
 use super::resolver::{
     build_head_pose_range, quality_bucket_for_error, validate_calibration_points,
@@ -14,14 +14,23 @@ use uuid::Uuid;
 pub async fn start_gaze_calibration(
     db: &Arc<Database>,
     session_id: Option<String>,
+    display_id: Option<u32>,
+    display_name: Option<String>,
+    camera_id: Option<String>,
+    display_x: i32,
+    display_y: i32,
     screen_width: i64,
     screen_height: i64,
 ) -> Result<GazeCalibrationDto, String> {
-    let (camera_id, _) = choose_default_camera().await?;
+    let (camera_id, _, _) = resolve_camera_choice(camera_id.as_deref()).await?;
     let calibration = GazeCalibrationDto {
         calibration_id: Uuid::new_v4().to_string(),
         session_id,
         created_at: chrono::Utc::now().timestamp_millis(),
+        display_id,
+        display_name,
+        display_x,
+        display_y,
         screen_width,
         screen_height,
         camera_id,
@@ -36,14 +45,19 @@ pub async fn start_gaze_calibration(
 
     sqlx::query(
         "INSERT INTO gaze_calibrations (
-            calibration_id, session_id, created_at, screen_width, screen_height, camera_id,
+            calibration_id, session_id, created_at, display_id, display_name, display_x,
+            display_y, screen_width, screen_height, camera_id,
             model_name, model_version, calibration_points_json, validation_error_px,
             validation_quality, head_pose_range_json, active
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
     )
     .bind(&calibration.calibration_id)
     .bind(&calibration.session_id)
     .bind(calibration.created_at)
+    .bind(calibration.display_id.map(i64::from))
+    .bind(&calibration.display_name)
+    .bind(calibration.display_x)
+    .bind(calibration.display_y)
     .bind(calibration.screen_width)
     .bind(calibration.screen_height)
     .bind(&calibration.camera_id)
@@ -107,10 +121,21 @@ pub async fn finalize_gaze_calibration(
     let head_pose_range = build_head_pose_range(&calibration.calibration_points);
     let should_activate = validation_quality != "failed";
 
-    sqlx::query("UPDATE gaze_calibrations SET active = 0")
-        .execute(db.pool())
-        .await
-        .map_err(|e| format!("Failed to clear active gaze calibration: {e}"))?;
+    match calibration.display_id {
+        Some(display_id) => {
+            sqlx::query("UPDATE gaze_calibrations SET active = 0 WHERE display_id = ?")
+                .bind(i64::from(display_id))
+                .execute(db.pool())
+                .await
+                .map_err(|e| format!("Failed to clear active gaze calibration: {e}"))?;
+        }
+        None => {
+            sqlx::query("UPDATE gaze_calibrations SET active = 0 WHERE display_id IS NULL")
+                .execute(db.pool())
+                .await
+                .map_err(|e| format!("Failed to clear active gaze calibration: {e}"))?;
+        }
+    }
     sqlx::query(
         "UPDATE gaze_calibrations
          SET validation_error_px = ?, validation_quality = ?, head_pose_range_json = ?, active = ?
@@ -132,13 +157,30 @@ pub async fn finalize_gaze_calibration(
 
 pub async fn get_active_gaze_calibration(
     db: &Arc<Database>,
+    display_id: Option<u32>,
 ) -> Result<Option<GazeCalibrationDto>, String> {
-    let row = sqlx::query_as::<_, GazeCalibrationRow>(
-        "SELECT * FROM gaze_calibrations WHERE active = 1 ORDER BY created_at DESC LIMIT 1",
-    )
-    .fetch_optional(db.pool())
-    .await
-    .map_err(|e| format!("Failed to load active gaze calibration: {e}"))?;
+    let row = if let Some(display_id) = display_id {
+        sqlx::query_as::<_, GazeCalibrationRow>(
+            "SELECT * FROM gaze_calibrations
+             WHERE active = 1 AND display_id = ?
+             ORDER BY created_at DESC
+             LIMIT 1",
+        )
+        .bind(i64::from(display_id))
+        .fetch_optional(db.pool())
+        .await
+        .map_err(|e| format!("Failed to load active gaze calibration: {e}"))?
+    } else {
+        sqlx::query_as::<_, GazeCalibrationRow>(
+            "SELECT * FROM gaze_calibrations
+             WHERE active = 1 AND display_id IS NULL
+             ORDER BY created_at DESC
+             LIMIT 1",
+        )
+        .fetch_optional(db.pool())
+        .await
+        .map_err(|e| format!("Failed to load active gaze calibration: {e}"))?
+    };
     row.map(row_to_dto).transpose()
 }
 
@@ -195,6 +237,10 @@ fn row_to_dto(row: GazeCalibrationRow) -> Result<GazeCalibrationDto, String> {
         calibration_id: row.calibration_id,
         session_id: row.session_id,
         created_at: row.created_at,
+        display_id: row.display_id.and_then(|value| u32::try_from(value).ok()),
+        display_name: row.display_name,
+        display_x: row.display_x as i32,
+        display_y: row.display_y as i32,
         screen_width: row.screen_width,
         screen_height: row.screen_height,
         camera_id: row.camera_id,

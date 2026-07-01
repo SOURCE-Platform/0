@@ -26,6 +26,7 @@ pub(super) async fn run_visual_loop(
     generation: u64,
     session_id: String,
     source_id: String,
+    display_id: Option<u32>,
     source_name: String,
     video_index: i32,
 ) {
@@ -233,9 +234,15 @@ pub(super) async fn run_visual_loop(
         .await;
 
         let _ = reindex_visual_state_spans(&db, &session_id, &source_id).await;
-        if let Err(error) =
-            gaze::process_gaze_frame(&db, &session_id, &source_id, &scene.face_iris, timestamp)
-                .await
+        if let Err(error) = gaze::process_gaze_frame(
+            &db,
+            &session_id,
+            &source_id,
+            display_id,
+            &scene.face_iris,
+            timestamp,
+        )
+        .await
         {
             eprintln!("gaze processing failed for {source_name}: {error}");
         }

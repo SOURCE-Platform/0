@@ -63,6 +63,8 @@ pub(super) async fn get_displays() -> CaptureResult<Vec<Display>> {
                     displays.push(Display {
                         id: display_id,
                         name: format!("{} ({}x{})", device_name, width, height),
+                        x: desc.DesktopCoordinates.left,
+                        y: desc.DesktopCoordinates.top,
                         width,
                         height,
                         is_primary: desc.DesktopCoordinates.left == 0

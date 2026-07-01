@@ -173,6 +173,8 @@ pub async fn start_multimodal_capture(
         return;
     }
 
+    let selected_display_id = state.desktop_capture_runtime.read().await.display_id;
+
     if let Some(service) = state.multimodal_service.as_ref() {
         match service
             .start_capture(
@@ -180,6 +182,7 @@ pub async fn start_multimodal_capture(
                 MultimodalCaptureOptions {
                     enable_visual: config.capture_channels.camera_future,
                     enable_audio: config.capture_channels.audio_future,
+                    display_id: selected_display_id,
                 },
             )
             .await

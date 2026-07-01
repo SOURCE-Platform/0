@@ -150,6 +150,7 @@ pub struct MultimodalStartReport {
 pub struct MultimodalCaptureOptions {
     pub enable_visual: bool,
     pub enable_audio: bool,
+    pub display_id: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]

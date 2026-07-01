@@ -80,6 +80,7 @@ pub fn run() {
             get_visual_audio_summary,
             get_multimodal_activity_episode,
             start_gaze_calibration,
+            list_gaze_camera_sources,
             capture_gaze_calibration_sample,
             finalize_gaze_calibration,
             get_active_gaze_calibration,

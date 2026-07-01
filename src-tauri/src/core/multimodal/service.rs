@@ -50,7 +50,15 @@ impl MultimodalService {
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
 
         if options.enable_visual {
-            start_visual_channel(self, &session_id, &sources, generation, &mut report).await?;
+            start_visual_channel(
+                self,
+                &session_id,
+                &sources,
+                generation,
+                options.display_id,
+                &mut report,
+            )
+            .await?;
         }
 
         if options.enable_audio {
@@ -78,6 +86,7 @@ async fn start_visual_channel(
     session_id: &str,
     sources: &AvFoundationSources,
     generation: u64,
+    display_id: Option<u32>,
     report: &mut MultimodalStartReport,
 ) -> Result<(), String> {
     if !service
@@ -122,6 +131,7 @@ async fn start_visual_channel(
         generation,
         session_id.to_string(),
         format!("camera:{}", source.index),
+        display_id,
         source.name,
         source.index,
     ));
