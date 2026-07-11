@@ -3,7 +3,7 @@ use crate::core::gaze::{
     self, AttentionAtTimestampDto, AttentionSnapshotDto, AttentionSpanDto, AttentionSummaryDto,
     GazeCalibrationDto, GazeSampleDto,
 };
-use crate::core::multimodal::service::list_avfoundation_sources;
+use crate::core::multimodal::list_avfoundation_sources;
 use serde::Serialize;
 use tauri::State;
 

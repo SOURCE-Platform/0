@@ -11,10 +11,18 @@ pub(super) const VISUAL_EXIT_POSTURE_CONFIDENCE: f32 = 0.55;
 pub(super) const AUDIO_MIN_SPEECH_CONFIDENCE: f32 = 0.55;
 pub(super) const AUDIO_SILENCE_HANGOVER_MS: i64 = 1_500;
 pub(super) const EVIDENCE_AUDIT_INTERVAL_MS: i64 = 60_000;
-pub(super) const VAD_RMS_SPEECH_THRESHOLD: f32 = 0.018;
-pub(super) const VAD_RMS_INTERMITTENT_THRESHOLD: f32 = 0.010;
+// The built-in MacBook microphone often reports normal speech below the
+// original thresholds, especially when used in clamshell mode.
+pub(super) const VAD_RMS_SPEECH_THRESHOLD: f32 = 0.003;
+pub(super) const VAD_RMS_INTERMITTENT_THRESHOLD: f32 = 0.0015;
 pub(super) const WHISPER_MODEL: &str = "turbo";
 pub(super) const WHISPER_VERSION: &str = "local_whisper_cli";
+pub(super) const SPEECH_EMOTION_MODEL_NAME: &str = "speech_emotion_classification_onnx";
+pub(super) const SPEECH_EMOTION_MODEL_VERSION: &str = "v1";
+pub(super) const SOUND_EVENT_MODEL_NAME: &str = "yamnet_onnx";
+pub(super) const SOUND_EVENT_MODEL_VERSION: &str = "v1";
+pub(super) const SPEECH_EMOTION_MIN_CONFIDENCE: f32 = 0.42;
+pub(super) const SOUND_EVENT_MIN_CONFIDENCE: f32 = 0.35;
 pub(super) const VISION_MODEL_NAME: &str = "mediapipe_pose_landmarker";
 pub(super) const VISION_MODEL_VERSION: &str = "v1";
 pub(super) const MOTION_MODEL_NAME: &str = "frame_delta";

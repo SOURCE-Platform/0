@@ -1,4 +1,10 @@
 import { ChannelStatus } from "@/types/contextTimeline";
+import {
+  OBSERVER_APP_TOAST_EVENT,
+  OBSERVER_CONFIG_UPDATED_EVENT,
+  ObserverAppToastDetail,
+} from "@/lib/app-config-events";
+import { Config } from "@/components/settings/types";
 
 export function formatTimestamp(value: number | null) {
   if (!value) return "No samples yet";
@@ -36,4 +42,12 @@ export function formatChannelActivity(
 
   const sampleLabel = status.sampleCount === 1 ? "sample" : "samples";
   return `${status.sampleCount} ${sampleLabel} recorded in the last hour (${status.throughputPerMinute.toFixed(2)}/min).`;
+}
+
+export function broadcastConfigUpdate(nextConfig: Config) {
+  window.dispatchEvent(new CustomEvent(OBSERVER_CONFIG_UPDATED_EVENT, { detail: nextConfig }));
+}
+
+export function showSettingsToast(detail: ObserverAppToastDetail) {
+  window.dispatchEvent(new CustomEvent(OBSERVER_APP_TOAST_EVENT, { detail }));
 }

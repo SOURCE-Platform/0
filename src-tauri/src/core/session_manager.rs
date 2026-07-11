@@ -27,6 +27,8 @@ impl SessionManager {
         db: Arc<Database>,
         config: SessionConfig,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        db.close_interrupted_sessions(chrono::Utc::now().timestamp_millis())
+            .await?;
         Ok(Self {
             db,
             current_session_id: Arc::new(RwLock::new(None)),

@@ -1,22 +1,28 @@
-use super::constants::{
-    AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS, AUDIO_VAD_WINDOW_MS,
-    EVIDENCE_AUDIT_INTERVAL_MS, VAD_RMS_INTERMITTENT_THRESHOLD, VAD_RMS_SPEECH_THRESHOLD,
-    WHISPER_MODEL, WHISPER_VERSION,
+use super::audio_capture_support::{
+    analyze_audio_chunk, classify_audio_trigger_reason, persist_sound_events,
+    persist_speech_emotion, transcribe_audio_chunk,
 };
+use super::audio_intelligence_indexing::reindex_sound_event_spans;
+use super::constants::{
+    AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS, EVIDENCE_AUDIT_INTERVAL_MS, WHISPER_VERSION,
+};
+use super::desktop_audio_runtime::capture_desktop_audio_chunk;
 use super::indexing::reindex_audio_state_spans;
 use super::media_io::{capture_audio_chunk, save_audio_evidence_chunk};
-use super::service::command_available;
 use crate::core::database::Database;
 use crate::core::storage::RecordingStorage;
-use hound::WavReader;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::fs;
-use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 use uuid::Uuid;
+
+#[derive(Debug, Clone)]
+pub(super) enum AudioCaptureSource {
+    Microphone { audio_index: i32 },
+    DesktopOutput { gain_db: f32 },
+}
 
 pub(super) async fn run_audio_loop(
     db: Arc<Database>,
@@ -25,7 +31,7 @@ pub(super) async fn run_audio_loop(
     generation: u64,
     session_id: String,
     source_id: String,
-    audio_index: i32,
+    capture_source: AudioCaptureSource,
 ) {
     let session_uuid = match Uuid::parse_str(&session_id) {
         Ok(value) => value,
@@ -44,8 +50,9 @@ pub(super) async fn run_audio_loop(
         let temp_path = temp_dir.join(format!("audio-{}.wav", Uuid::new_v4()));
         let capture_started = chrono::Utc::now().timestamp_millis();
 
-        if let Err(error) =
-            capture_audio_chunk(audio_index, AUDIO_CHUNK_DURATION_SECS, &temp_path).await
+        if let Err(error) = capture_source
+            .capture_chunk(AUDIO_CHUNK_DURATION_SECS, &temp_path)
+            .await
         {
             eprintln!("audio capture failed: {error}");
             sleep(Duration::from_millis(AUDIO_CHUNK_DURATION_MS as u64)).await;
@@ -103,13 +110,14 @@ pub(super) async fn run_audio_loop(
                 .clone()
                 .unwrap_or_else(|| temp_path.to_string_lossy().to_string());
             if let Some(transcript) = transcribe_audio_chunk(&transcript_source).await {
+                let asr_segment_id = Uuid::new_v4().to_string();
                 let _ = sqlx::query(
                     "INSERT INTO asr_segments (
                         asr_segment_id, session_id, source_id, start_timestamp, end_timestamp,
                         language, transcript, confidence, model_name, model_version, audio_chunk_ids_json, created_at
                      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 )
-                .bind(Uuid::new_v4().to_string())
+                .bind(asr_segment_id.clone())
                 .bind(&session_id)
                 .bind(&source_id)
                 .bind(capture_started)
@@ -123,10 +131,35 @@ pub(super) async fn run_audio_loop(
                 .bind(chrono::Utc::now().timestamp_millis())
                 .execute(db.pool())
                 .await;
+
+                let _ = persist_speech_emotion(
+                    &db,
+                    &temp_path,
+                    &session_id,
+                    &source_id,
+                    &audio_chunk_id,
+                    Some(asr_segment_id),
+                    capture_started,
+                    capture_ended,
+                )
+                .await;
             }
         }
 
+        let _ = persist_sound_events(
+            &db,
+            &temp_path,
+            &session_id,
+            &source_id,
+            &audio_chunk_id,
+            capture_started,
+            capture_ended,
+            speech_detected,
+        )
+        .await;
+
         let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
+        let _ = reindex_sound_event_spans(&db, &session_id, &source_id).await;
         previous_speech_detected = speech_detected;
         if retain_evidence {
             last_audit_evidence_at = Some(capture_ended);
@@ -143,111 +176,19 @@ pub(super) async fn run_audio_loop(
     }
 }
 
-fn classify_audio_trigger_reason(
-    previous_speech_detected: bool,
-    speech_detected: bool,
-    vad_score: f32,
-) -> &'static str {
-    if speech_detected && !previous_speech_detected {
-        "speech_started"
-    } else if !speech_detected && previous_speech_detected {
-        "speech_stopped"
-    } else if vad_score > 0.0 {
-        "static_fallback"
-    } else {
-        "periodic_sample"
-    }
-}
-
-fn analyze_audio_chunk(path: &Path) -> Result<(f32, bool), String> {
-    let mut reader = WavReader::open(path).map_err(|e| format!("Failed to open WAV chunk: {e}"))?;
-    let spec = reader.spec();
-    let sample_rate = spec.sample_rate as usize;
-    let window_samples = (sample_rate * AUDIO_VAD_WINDOW_MS) / 1000;
-
-    let mut window = Vec::with_capacity(window_samples.max(1));
-    let mut max_rms = 0.0f32;
-    let mut speech_windows = 0usize;
-    let mut total_windows = 0usize;
-
-    for sample in reader.samples::<i16>() {
-        let sample = sample.map_err(|e| format!("Failed to read WAV sample: {e}"))?;
-        window.push(sample as f32 / i16::MAX as f32);
-        if window.len() >= window_samples.max(1) {
-            let rms = rms_window(&window);
-            max_rms = max_rms.max(rms);
-            if rms >= VAD_RMS_SPEECH_THRESHOLD {
-                speech_windows += 1;
+impl AudioCaptureSource {
+    async fn capture_chunk(
+        &self,
+        duration_secs: f32,
+        output_path: &std::path::Path,
+    ) -> Result<(), String> {
+        match self {
+            Self::Microphone { audio_index } => {
+                capture_audio_chunk(*audio_index, duration_secs, output_path).await
             }
-            total_windows += 1;
-            window.clear();
+            Self::DesktopOutput { gain_db } => {
+                capture_desktop_audio_chunk(duration_secs, *gain_db, output_path).await
+            }
         }
     }
-    if !window.is_empty() {
-        let rms = rms_window(&window);
-        max_rms = max_rms.max(rms);
-        if rms >= VAD_RMS_SPEECH_THRESHOLD {
-            speech_windows += 1;
-        }
-        total_windows += 1;
-    }
-
-    let speech_detected = speech_windows >= 2
-        || (total_windows > 0 && max_rms >= VAD_RMS_INTERMITTENT_THRESHOLD && speech_windows > 0);
-    Ok((max_rms, speech_detected))
-}
-
-fn rms_window(samples: &[f32]) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let sum = samples.iter().map(|sample| sample * sample).sum::<f32>();
-    (sum / samples.len() as f32).sqrt()
-}
-
-async fn transcribe_audio_chunk(path: &str) -> Option<String> {
-    if !command_available("whisper").await {
-        return None;
-    }
-
-    let output_dir = std::env::temp_dir().join(format!("source_whisper_{}", Uuid::new_v4()));
-    if fs::create_dir_all(&output_dir).is_err() {
-        return None;
-    }
-
-    let output = Command::new("whisper")
-        .args([
-            "--model",
-            WHISPER_MODEL,
-            "--output_dir",
-            output_dir.to_string_lossy().as_ref(),
-            "--output_format",
-            "json",
-            "--language",
-            "en",
-            path,
-        ])
-        .output()
-        .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let stem = Path::new(path)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("chunk");
-    let json_path = output_dir.join(format!("{stem}.json"));
-    let transcript = fs::read_to_string(json_path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|json| {
-            json.get("text")
-                .and_then(|value| value.as_str())
-                .map(|value| value.trim().to_string())
-        })
-        .filter(|text| !text.is_empty());
-    let _ = fs::remove_dir_all(output_dir);
-    transcript
 }

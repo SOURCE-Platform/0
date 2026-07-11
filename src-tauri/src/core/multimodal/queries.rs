@@ -13,6 +13,10 @@ use crate::core::ocr_agent_context;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::audio_intelligence_queries::{
+    get_sound_event_detections, get_sound_event_spans, get_speech_emotion_segments,
+};
+
 pub async fn get_visual_scene_snapshot(
     db: &Arc<Database>,
     visual_scene_id: &str,
@@ -186,6 +190,11 @@ pub async fn get_visual_audio_summary(
     let audio_chunks = get_audio_chunks(db, start_timestamp, end_timestamp, None).await?;
     let audio_spans = get_audio_state_spans(db, start_timestamp, end_timestamp).await?;
     let asr_segments = get_asr_segments(db, start_timestamp, end_timestamp, None).await?;
+    let speech_emotion_segments =
+        get_speech_emotion_segments(db, start_timestamp, end_timestamp, None).await?;
+    let sound_event_detections =
+        get_sound_event_detections(db, start_timestamp, end_timestamp, None).await?;
+    let sound_event_spans = get_sound_event_spans(db, start_timestamp, end_timestamp, None).await?;
 
     Ok(VisualAudioSummaryDto {
         start_timestamp,
@@ -195,6 +204,9 @@ pub async fn get_visual_audio_summary(
         audio_chunk_count: audio_chunks.len(),
         audio_span_count: audio_spans.len(),
         asr_segment_count: asr_segments.len(),
+        speech_emotion_segment_count: speech_emotion_segments.len(),
+        sound_event_detection_count: sound_event_detections.len(),
+        sound_event_span_count: sound_event_spans.len(),
         visible_duration_ms: visual_spans
             .iter()
             .filter(|span| span.state_type == "presence" && span.label == "person_visible")
@@ -214,6 +226,18 @@ pub async fn get_visual_audio_summary(
         ),
         dominant_audio_states: top_labels(
             audio_spans.iter().map(|span| span.label.clone()).collect(),
+        ),
+        dominant_speech_emotions: top_labels(
+            speech_emotion_segments
+                .iter()
+                .map(|segment| segment.canonical_label.clone())
+                .collect(),
+        ),
+        dominant_sound_events: top_labels(
+            sound_event_spans
+                .iter()
+                .map(|span| span.canonical_label.clone())
+                .collect(),
         ),
     })
 }
@@ -255,6 +279,20 @@ pub async fn get_multimodal_activity_episode(
             None,
         )
         .await?,
+        speech_emotion_segments: get_speech_emotion_segments(
+            db,
+            timestamp.saturating_sub(60_000),
+            timestamp.saturating_add(60_000),
+            None,
+        )
+        .await?,
+        sound_event_spans: get_sound_event_spans(
+            db,
+            timestamp.saturating_sub(60_000),
+            timestamp.saturating_add(60_000),
+            None,
+        )
+        .await?,
         ocr_episode: ocr_agent_context::get_activity_episode(db, timestamp)
             .await
             .ok(),
@@ -269,6 +307,15 @@ pub async fn delete_all_multimodal_derived(db: &Arc<Database>) -> MultimodalQuer
         .execute(db.pool())
         .await?;
     sqlx::query("DELETE FROM audio_chunks")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("DELETE FROM speech_emotion_segments")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("DELETE FROM sound_event_detections")
+        .execute(db.pool())
+        .await?;
+    sqlx::query("DELETE FROM sound_event_spans")
         .execute(db.pool())
         .await?;
     sqlx::query("DELETE FROM visual_state_spans")

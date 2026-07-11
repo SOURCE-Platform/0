@@ -17,100 +17,107 @@ pub async fn persist_context_snapshot(
     running_apps: Vec<AppInfo>,
     prev_frontmost_bundle_id: &mut Option<String>,
     prev_running_ids: &mut HashSet<String>,
+    capture_system: bool,
+    capture_focus: bool,
+    capture_visible_windows: bool,
 ) -> Result<(), String> {
     let timestamp = chrono::Utc::now().timestamp_millis();
-    let visible_windows =
-        context_timeline::app_infos_to_visible_windows(frontmost.as_ref(), &running_apps);
+    if capture_visible_windows {
+        let visible_windows =
+            context_timeline::app_infos_to_visible_windows(frontmost.as_ref(), &running_apps);
+        context_timeline::insert_window_snapshot(
+            &db,
+            session_id.as_deref(),
+            timestamp,
+            frontmost.as_ref().map(|app| app.name.as_str()),
+            frontmost.as_ref().map(|app| app.bundle_id.as_str()),
+            &visible_windows,
+            "desktop_sampler",
+            0.68,
+        )
+        .await
+        .map_err(|e| format!("Failed to save window snapshot: {}", e))?;
+    }
 
-    context_timeline::insert_window_snapshot(
-        &db,
-        session_id.as_deref(),
-        timestamp,
-        frontmost.as_ref().map(|app| app.name.as_str()),
-        frontmost.as_ref().map(|app| app.bundle_id.as_str()),
-        &visible_windows,
-        "desktop_sampler",
-        0.68,
-    )
-    .await
-    .map_err(|e| format!("Failed to save window snapshot: {}", e))?;
-
-    if let Some(frontmost) = frontmost.as_ref() {
-        let has_changed = prev_frontmost_bundle_id
-            .as_ref()
-            .map(|bundle_id| bundle_id != &frontmost.bundle_id)
-            .unwrap_or(true);
-        if has_changed {
-            context_timeline::insert_context_event(
-                &db,
-                session_id.as_deref(),
-                timestamp,
-                "focus",
-                "frontmost_changed",
-                "desktop_sampler",
-                0.92,
-                Some(
-                    serde_json::json!({
-                        "title": format!("Focused {}", frontmost.name),
-                        "subtitle": frontmost.bundle_id,
-                        "app_name": frontmost.name,
-                    })
-                    .to_string(),
-                ),
-            )
-            .await
-            .map_err(|e| format!("Failed to save focus event: {}", e))?;
-            *prev_frontmost_bundle_id = Some(frontmost.bundle_id.clone());
+    if capture_focus {
+        if let Some(frontmost) = frontmost.as_ref() {
+            let has_changed = prev_frontmost_bundle_id
+                .as_ref()
+                .map(|bundle_id| bundle_id != &frontmost.bundle_id)
+                .unwrap_or(true);
+            if has_changed {
+                context_timeline::insert_context_event(
+                    &db,
+                    session_id.as_deref(),
+                    timestamp,
+                    "focus",
+                    "frontmost_changed",
+                    "desktop_sampler",
+                    0.92,
+                    Some(
+                        serde_json::json!({
+                            "title": format!("Focused {}", frontmost.name),
+                            "subtitle": frontmost.bundle_id,
+                            "app_name": frontmost.name,
+                        })
+                        .to_string(),
+                    ),
+                )
+                .await
+                .map_err(|e| format!("Failed to save focus event: {}", e))?;
+                *prev_frontmost_bundle_id = Some(frontmost.bundle_id.clone());
+            }
         }
     }
 
-    let current_running_ids = running_apps
-        .iter()
-        .map(|app| app.bundle_id.clone())
-        .collect::<HashSet<_>>();
-    for launched in current_running_ids.difference(prev_running_ids) {
-        if let Some(app) = running_apps.iter().find(|app| &app.bundle_id == launched) {
+    if capture_system {
+        let current_running_ids = running_apps
+            .iter()
+            .map(|app| app.bundle_id.clone())
+            .collect::<HashSet<_>>();
+        for launched in current_running_ids.difference(prev_running_ids) {
+            if let Some(app) = running_apps.iter().find(|app| &app.bundle_id == launched) {
+                let _ = context_timeline::insert_context_event(
+                    &db,
+                    session_id.as_deref(),
+                    timestamp,
+                    "system",
+                    "app_launch_detected",
+                    "desktop_sampler",
+                    0.6,
+                    Some(
+                        serde_json::json!({
+                            "title": format!("{} appeared", app.name),
+                            "subtitle": "Running app set changed",
+                            "app_name": app.name,
+                        })
+                        .to_string(),
+                    ),
+                )
+                .await;
+            }
+        }
+        for bundle_id in prev_running_ids.difference(&current_running_ids) {
             let _ = context_timeline::insert_context_event(
                 &db,
                 session_id.as_deref(),
                 timestamp,
                 "system",
-                "app_launch_detected",
+                "app_quit_detected",
                 "desktop_sampler",
-                0.6,
+                0.45,
                 Some(
                     serde_json::json!({
-                        "title": format!("{} appeared", app.name),
-                        "subtitle": "Running app set changed",
-                        "app_name": app.name,
+                        "title": "Running app disappeared",
+                        "subtitle": bundle_id,
                     })
                     .to_string(),
                 ),
             )
             .await;
         }
+        *prev_running_ids = current_running_ids;
     }
-    for bundle_id in prev_running_ids.difference(&current_running_ids) {
-        let _ = context_timeline::insert_context_event(
-            &db,
-            session_id.as_deref(),
-            timestamp,
-            "system",
-            "app_quit_detected",
-            "desktop_sampler",
-            0.45,
-            Some(
-                serde_json::json!({
-                    "title": "Running app disappeared",
-                    "subtitle": bundle_id,
-                })
-                .to_string(),
-            ),
-        )
-        .await;
-    }
-
-    *prev_running_ids = current_running_ids;
     Ok(())
 }
 
@@ -136,24 +143,36 @@ pub async fn spawn_desktop_sampler(
             break;
         }
 
-        let interval = config
+        let (interval, capture_system, capture_focus, capture_visible_windows) = config
             .lock()
             .ok()
-            .map(|cfg| interval_for_profile(&cfg.resource_profile))
-            .unwrap_or(5);
+            .map(|cfg| {
+                (
+                    interval_for_profile(&cfg.resource_profile),
+                    cfg.capture_channels.system,
+                    cfg.capture_channels.focus,
+                    cfg.capture_channels.visible_windows,
+                )
+            })
+            .unwrap_or((5, false, false, false));
 
-        if let Some(recorder) = os_activity_recorder.as_ref() {
-            let frontmost = recorder.get_current_app().await.ok().flatten();
-            let running_apps = recorder.get_running_apps().await.unwrap_or_default();
-            let _ = persist_context_snapshot(
-                db.clone(),
-                session_id.clone(),
-                frontmost,
-                running_apps,
-                &mut prev_frontmost_bundle_id,
-                &mut prev_running_ids,
-            )
-            .await;
+        if capture_system || capture_focus || capture_visible_windows {
+            if let Some(recorder) = os_activity_recorder.as_ref() {
+                let frontmost = recorder.get_current_app().await.ok().flatten();
+                let running_apps = recorder.get_running_apps().await.unwrap_or_default();
+                let _ = persist_context_snapshot(
+                    db.clone(),
+                    session_id.clone(),
+                    frontmost,
+                    running_apps,
+                    &mut prev_frontmost_bundle_id,
+                    &mut prev_running_ids,
+                    capture_system,
+                    capture_focus,
+                    capture_visible_windows,
+                )
+                .await;
+            }
         }
 
         tokio::time::sleep(tokio::time::Duration::from_secs(interval)).await;
@@ -183,6 +202,10 @@ pub async fn start_multimodal_capture(
                     enable_visual: config.capture_channels.camera_future,
                     enable_audio: config.capture_channels.audio_future,
                     display_id: selected_display_id,
+                    audio_source_id: config.selected_audio_input_id.clone(),
+                    enable_microphone_audio: config.audio_microphone_enabled,
+                    enable_desktop_audio: config.audio_desktop_enabled,
+                    desktop_audio_gain_db: config.desktop_audio_gain_db,
                 },
             )
             .await

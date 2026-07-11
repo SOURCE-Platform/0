@@ -203,12 +203,29 @@ impl MacOSMouseListener {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
 
-    #[test]
-    fn test_should_record_movement() {
-        let consent_manager = Arc::new(ConsentManager::new(Arc::new(
-            crate::core::database::Database::new(":memory:").unwrap(),
-        )));
+    async fn test_consent_manager() -> Arc<ConsentManager> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .expect("test database should open");
+        let database = Arc::new(crate::core::database::Database { pool });
+        database
+            .run_migrations()
+            .await
+            .expect("test migrations should run");
+        Arc::new(
+            ConsentManager::new(database)
+                .await
+                .expect("consent manager should initialize"),
+        )
+    }
+
+    #[tokio::test]
+    async fn test_should_record_movement() {
+        let consent_manager = test_consent_manager().await;
         let (listener, _rx) = MacOSMouseListener::new(consent_manager).unwrap();
 
         // Should record movement >50px
@@ -220,11 +237,9 @@ mod tests {
         assert!(!listener.should_record_movement(&small_move));
     }
 
-    #[test]
-    fn test_double_click_detection() {
-        let consent_manager = Arc::new(ConsentManager::new(Arc::new(
-            crate::core::database::Database::new(":memory:").unwrap(),
-        )));
+    #[tokio::test]
+    async fn test_double_click_detection() {
+        let consent_manager = test_consent_manager().await;
         let (mut listener, _rx) = MacOSMouseListener::new(consent_manager).unwrap();
 
         let pos = Point { x: 100, y: 100 };

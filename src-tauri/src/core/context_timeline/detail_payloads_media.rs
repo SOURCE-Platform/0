@@ -182,9 +182,24 @@ async fn collect_audio_detail_payloads(
         None,
     )
     .await?;
+    let speech_emotion_segments = multimodal::get_speech_emotion_segments(
+        db,
+        slice.start_timestamp.saturating_sub(60_000),
+        slice.end_timestamp.saturating_add(60_000),
+        None,
+    )
+    .await?;
     if let Some(segment) = asr_segments.iter().find(|item| item.asr_segment_id == slice_id) {
         state.raw_payloads.push(RawPayloadDto {
             label: "ASR segment".to_string(),
+            raw_json: pretty_json(serde_json::to_value(segment)?),
+        });
+    } else if let Some(segment) = speech_emotion_segments
+        .iter()
+        .find(|item| item.speech_emotion_segment_id == slice_id)
+    {
+        state.raw_payloads.push(RawPayloadDto {
+            label: "Speech emotion segment".to_string(),
             raw_json: pretty_json(serde_json::to_value(segment)?),
         });
     } else {
@@ -216,6 +231,62 @@ async fn collect_audio_detail_payloads(
                     raw_json: pretty_json(serde_json::to_value(&chunks)?),
                 });
             }
+        }
+    }
+
+    Ok(())
+}
+
+async fn collect_sound_event_detail_payloads(
+    db: &Arc<Database>,
+    slice: &ContextSlice,
+    slice_id: &str,
+    state: &mut SliceDetailPayloadState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let detections = multimodal::get_sound_event_detections(
+        db,
+        slice.start_timestamp.saturating_sub(60_000),
+        slice.end_timestamp.saturating_add(60_000),
+        None,
+    )
+    .await?;
+    if let Some(detection) = detections
+        .iter()
+        .find(|item| item.sound_event_detection_id == slice_id)
+    {
+        state.raw_payloads.push(RawPayloadDto {
+            label: "Sound event detection".to_string(),
+            raw_json: pretty_json(serde_json::to_value(detection)?),
+        });
+        return Ok(());
+    }
+
+    let spans = multimodal::get_sound_event_spans(
+        db,
+        slice.start_timestamp.saturating_sub(60_000),
+        slice.end_timestamp.saturating_add(60_000),
+        None,
+    )
+    .await?;
+    if let Some(span) = spans.into_iter().find(|item| item.sound_event_span_id == slice_id) {
+        state.raw_payloads.push(RawPayloadDto {
+            label: "Sound event span".to_string(),
+            raw_json: pretty_json(serde_json::to_value(&span)?),
+        });
+
+        let supporting = detections
+            .into_iter()
+            .filter(|detection| {
+                span.supporting_detection_ids
+                    .iter()
+                    .any(|id| id == &detection.sound_event_detection_id)
+            })
+            .collect::<Vec<_>>();
+        if !supporting.is_empty() {
+            state.raw_payloads.push(RawPayloadDto {
+                label: "Supporting sound event detections".to_string(),
+                raw_json: pretty_json(serde_json::to_value(&supporting)?),
+            });
         }
     }
 

@@ -106,6 +106,9 @@ pub async fn delete_capture_data(
         Some("audio_future") => {
             delete_many(
                 &[
+                    "DELETE FROM sound_event_spans",
+                    "DELETE FROM sound_event_detections",
+                    "DELETE FROM speech_emotion_segments",
                     "DELETE FROM audio_state_spans",
                     "DELETE FROM asr_segments",
                     "DELETE FROM audio_chunks",

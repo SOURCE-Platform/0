@@ -10,8 +10,16 @@ import {
   DesktopCaptureStatus,
   OcrReviewItem,
   PiiEntity,
+  TimelineRail,
 } from "@/types/contextTimeline";
 import { useTimelineInteraction } from "@/components/desktop-context-workspace/useTimelineInteraction";
+
+function walkRails(rails: TimelineRail[], visit: (rail: TimelineRail) => void) {
+  rails.forEach((rail) => {
+    visit(rail);
+    if (rail.children.length > 0) walkRails(rail.children, visit);
+  });
+}
 
 export function useDesktopContextWorkspace(displayId: number | null) {
   const [status, setStatus] = useState<DesktopCaptureStatus | null>(null);
@@ -61,12 +69,14 @@ export function useDesktopContextWorkspace(displayId: number | null) {
 
   const appOptions = useMemo(() => {
     const names = new Set<string>();
-    timeline?.rails.forEach((rail) =>
-      rail.slices.forEach((slice) => {
-        const appName = slice.appName?.trim();
-        if (appName) names.add(appName);
-      }),
-    );
+    if (timeline?.rails) {
+      walkRails(timeline.rails, (rail) => {
+        rail.slices.forEach((slice) => {
+          const appName = slice.appName?.trim();
+          if (appName) names.add(appName);
+        });
+      });
+    }
     appUsage?.items.forEach((item) => {
       const appName = item.appName?.trim();
       if (appName) names.add(appName);
@@ -171,8 +181,12 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     setActionError(null);
     try {
       const nextStatus = await invoke<DesktopCaptureStatus>("start_desktop_capture", { displayId });
+      const freshNow = Date.now();
+      dateRangeRef.current = { start: dayStart, end: freshNow };
       setStatus(nextStatus);
+      setNowMs(freshNow);
       setIsLiveFollowing(true);
+      setWindowEndTimestamp(freshNow);
       await loadWorkspace();
     } catch (error) {
       setActionError(`Failed to start capture: ${error}`);

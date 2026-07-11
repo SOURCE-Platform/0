@@ -31,6 +31,10 @@ export interface Config {
   default_recording_fps: number;
   website_blacklist: string[];
   app_blacklist: string[];
+  selected_audio_input_id?: string | null;
+  audio_microphone_enabled: boolean;
+  audio_desktop_enabled: boolean;
+  desktop_audio_gain_db: number;
   mock_data_mode: boolean;
   capture_channels: CaptureChannels;
   resource_profile: "minimal" | "balanced" | "high_fidelity";
@@ -79,6 +83,27 @@ export interface CapturePreview {
   channel: string;
   label: string;
   rows: CapturePreviewRow[];
+}
+
+export interface AudioInputSource {
+  sourceId: string;
+  name: string;
+  index: number;
+  isSystemDefault: boolean;
+}
+
+export interface AudioMeterReading {
+  sourceId: string;
+  sourceName: string;
+  level: number;
+  status: "active" | "unavailable" | "degraded";
+  message: string | null;
+  sampledAt: number;
+}
+
+export interface AudioSourceMeters {
+  microphone: AudioMeterReading;
+  desktop: AudioMeterReading;
 }
 
 export type SettingsTab = "general" | "capture" | "privacy" | "storage";

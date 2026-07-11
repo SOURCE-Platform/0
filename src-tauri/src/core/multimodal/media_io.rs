@@ -85,7 +85,7 @@ pub(super) async fn capture_camera_frame(
     }
 }
 
-pub(super) async fn capture_audio_chunk(
+pub(crate) async fn capture_audio_chunk(
     audio_index: i32,
     duration_secs: f32,
     output_path: &Path,
@@ -196,9 +196,7 @@ async fn ensure_mediapipe_python() -> Result<PathBuf, String> {
             .await
             .map_err(|e| format!("Failed to install SOURCE MediaPipe runtime packages: {e}"))?;
         if !status.success() {
-            return Err(
-                "SOURCE could not install the local MediaPipe helper runtime.".to_string(),
-            );
+            return Err("SOURCE could not install the local MediaPipe helper runtime.".to_string());
         }
     }
 

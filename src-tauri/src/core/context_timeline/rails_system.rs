@@ -69,13 +69,13 @@ fn build_system_rail(
 
     slices.sort_by_key(|slice| slice.start_timestamp);
 
-    TimelineRailDto {
-        id: "system".to_string(),
-        label: "System".to_string(),
-        description: "Capture lifecycle, app launches/quits, and other desktop session transitions that SOURCE can detect today.".to_string(),
-        confidence_note: "Mission Control/App Expose and sleep/wake are shown only when explicitly detected. Absence is not faked.".to_string(),
+    TimelineRailDto::lane(
+        "system",
+        "System",
+        "Capture lifecycle, app launches/quits, and other desktop session transitions that SOURCE can detect today.",
+        "Mission Control/App Expose and sleep/wake are shown only when explicitly detected. Absence is not faked.",
         slices,
-    }
+    )
 }
 
 fn session_end_lookup(sessions: &[SessionRow]) -> HashMap<String, i64> {
@@ -162,4 +162,3 @@ fn event_row_to_slice(row: &ContextEventRow) -> ContextSlice {
         tags: vec![row.channel.clone(), row.event_type.clone()],
     }
 }
-

@@ -9,19 +9,25 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { AudioSourceMeter } from "@/components/settings/AudioSourceMeter";
 import { CHANNEL_META, RESOURCE_PROFILE_META } from "@/components/settings/constants";
 import { GazeCalibrationCard } from "@/components/settings/GazeCalibrationCard";
 import { SettingsController } from "@/components/settings/useSettingsController";
 import { formatChannelActivity, formatTimestamp } from "@/components/settings/utils";
-
 export function CaptureSettingsSection({ controller }: { controller: SettingsController }) {
   const { config } = controller;
   if (!config) return null;
   const currentDisplay =
     controller.displays.find((display) => String(display.id) === controller.selectedDisplay) ?? null;
-
+  const systemDefaultAudioInput = controller.audioInputSources.find(
+    (source) => source.isSystemDefault,
+  );
+  const automaticAudioLabel = systemDefaultAudioInput
+    ? systemDefaultAudioInput.name
+    : "No macOS default microphone detected";
   return (
     <div className="space-y-4">
       <Card>
@@ -56,7 +62,6 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                 })}
               </div>
             </div>
-
             <div className="space-y-2">
               <Label className="text-base">Evidence Display</Label>
               <Select value={controller.selectedDisplay} onValueChange={controller.selectDisplay}>
@@ -79,7 +84,6 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
           </div>
         </CardContent>
       </Card>
-
       <Card>
         <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div className="space-y-1.5">
@@ -134,7 +138,6 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                 : ""}
             </span>
           </div>
-
           <TooltipProvider>
             {CHANNEL_META.map((channel) => {
               const status = controller.channelStatuses.find((item) => item.channel === channel.key);
@@ -191,6 +194,114 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                               controller.captureStatus?.isActive ?? false,
                               isEnabled,
                             )}
+                          </div>
+                        </div>
+                      ) : null}
+                      {channel.key === "audio_future" ? (
+                        <div className="max-w-xl space-y-4 pt-2">
+                          <div className="rounded-lg border border-border/60 bg-muted/15 p-3">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <Label className="text-sm">Record microphone</Label>
+                                <p className="max-w-[52ch] text-xs leading-5 text-muted-foreground">
+                                  Captures your selected live input for speech,
+                                  emotion, and nearby sound events.
+                                </p>
+                              </div>
+                              <Switch
+                                checked={config.audio_microphone_enabled}
+                                onCheckedChange={controller.updateAudioMicrophoneEnabled}
+                              />
+                            </div>
+                            <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem] sm:items-end">
+                              <div className="space-y-2">
+                                <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                                  Microphone Input
+                                </Label>
+                                <Select
+                                  value={config.selected_audio_input_id ?? "__auto__"}
+                                  onValueChange={controller.selectAudioInput}
+                                  disabled={!config.audio_microphone_enabled}
+                                >
+                                  <SelectTrigger className="h-auto min-h-10">
+                                    <SelectValue placeholder="Choose a microphone" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__auto__" className="h-auto py-2">
+                                      <div className="flex flex-col items-start text-left">
+                                        <span>{automaticAudioLabel}</span>
+                                        {systemDefaultAudioInput ? (
+                                          <span className="text-xs text-muted-foreground">
+                                            macOS default
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                    </SelectItem>
+                                    {controller.audioInputSources
+                                      .filter((source) => !source.isSystemDefault)
+                                      .map((source) => (
+                                        <SelectItem key={source.sourceId} value={source.sourceId}>
+                                          {source.name}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                              <AudioSourceMeter
+                                enabled={config.audio_microphone_enabled}
+                                selectedAudioInputId={config.selected_audio_input_id}
+                                desktopAudioEnabled={config.audio_desktop_enabled}
+                                desktopGainDb={config.desktop_audio_gain_db}
+                                ownsStream={
+                                  config.audio_microphone_enabled || config.audio_desktop_enabled
+                                }
+                                source="microphone"
+                              />
+                            </div>
+                          </div>
+                          <div className="rounded-lg border border-border/60 bg-muted/15 p-3">
+                            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_11rem_auto] sm:items-center">
+                              <div>
+                                <Label className="text-sm">Record desktop audio</Label>
+                                <p className="max-w-[54ch] text-xs leading-5 text-muted-foreground">
+                                  Captures mixed macOS app and system output.
+                                  Per-app separation is deferred.
+                                </p>
+                                <div className="mt-4 max-w-xs space-y-2">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <Label className="text-xs uppercase tracking-wide text-muted-foreground">
+                                      Desktop capture gain
+                                    </Label>
+                                    <span className="text-xs font-medium tabular-nums text-foreground">
+                                      +{config.desktop_audio_gain_db.toFixed(0)} dB
+                                    </span>
+                                  </div>
+                                  <Slider
+                                    aria-label="Desktop capture gain"
+                                    disabled={!config.audio_desktop_enabled}
+                                    max={24}
+                                    min={0}
+                                    onValueChange={([gainDb]) => controller.updateDesktopAudioGainDb(gainDb)}
+                                    step={1}
+                                    value={[config.desktop_audio_gain_db]}
+                                  />
+                                  <p className="max-w-[48ch] text-xs leading-4 text-muted-foreground">
+                                    Boosts SOURCE&apos;s copy, not macOS volume.
+                                  </p>
+                                </div>
+                              </div>
+                              <AudioSourceMeter
+                                enabled={config.audio_desktop_enabled}
+                                selectedAudioInputId={config.selected_audio_input_id}
+                                desktopAudioEnabled={config.audio_desktop_enabled}
+                                desktopGainDb={config.desktop_audio_gain_db}
+                                source="desktop"
+                              />
+                              <Switch
+                                checked={config.audio_desktop_enabled}
+                                onCheckedChange={controller.updateAudioDesktopEnabled}
+                              />
+                            </div>
                           </div>
                         </div>
                       ) : null}

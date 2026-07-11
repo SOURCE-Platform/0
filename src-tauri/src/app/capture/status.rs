@@ -69,7 +69,9 @@ pub async fn build_desktop_capture_status(
     let mut missing_permissions = Vec::new();
 
     for channel in &enabled_channels {
-        if channel_permission_state(&state.consent_manager, channel).await == "missing" {
+        if channel_permission_state_for_config(&state.consent_manager, channel, &config).await
+            == "missing"
+        {
             missing_permissions.push(channel.clone());
         }
     }
@@ -108,7 +110,24 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
 
     let mut statuses = Vec::new();
     for (channel, enabled, last_query, count_query) in channels {
-        let permission_state = channel_permission_state(&state.consent_manager, channel).await;
+        let permission_state =
+            channel_permission_state_for_config(&state.consent_manager, channel, &config).await;
+        if !enabled {
+            statuses.push(ChannelStatusDto {
+                channel: channel.to_string(),
+                enabled: false,
+                health: "off".to_string(),
+                permission_state,
+                last_event_time: None,
+                sample_count: 0,
+                throughput_per_minute: 0.0,
+                last_error: None,
+                supports_solo_test: !matches!(channel, "ocr"),
+                details: "This channel is off, so SOURCE will not collect new samples from it."
+                    .to_string(),
+            });
+            continue;
+        }
         let last_event_time =
             context_timeline::get_last_event_time_for_table(&state.db, last_query)
                 .await
@@ -120,15 +139,13 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
             "visible_windows" => "Best-effort running-app snapshots, not a full historical window server feed.",
             "ocr" => "OCR review stays available when text exists, but live OCR ingestion is still intentionally degradable in v1.",
             "camera_future" => "Vision scenes use local camera sampling with MediaPipe pose and face/iris analysis. Gaze and attention only promote when an active eye-tracking calibration exists.",
-            "audio_future" => "Audio state uses local microphone chunks, VAD, and optional Whisper transcription when speech is detected.",
+            "audio_future" => "Audio state can record a selected microphone and mixed desktop/app output as separate sources for VAD, ASR, emotion, and sound-event detection.",
             _ => "Ready for independent channel validation.",
         };
         statuses.push(ChannelStatusDto {
             channel: channel.to_string(),
             enabled,
-            health: if !enabled {
-                "off".to_string()
-            } else if runtime.channel_errors.contains_key(channel) || permission_state == "missing"
+            health: if runtime.channel_errors.contains_key(channel) || permission_state == "missing"
             {
                 "degraded".to_string()
             } else if last_event_time.is_some() {
@@ -148,4 +165,43 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
         });
     }
     Ok(statuses)
+}
+
+async fn channel_permission_state_for_config(
+    consent_manager: &Arc<ConsentManager>,
+    channel: &str,
+    config: &Config,
+) -> String {
+    if channel != "audio_future" {
+        return channel_permission_state(consent_manager, channel).await;
+    }
+
+    let mut missing = false;
+    let mut checked = false;
+    if config.audio_microphone_enabled {
+        checked = true;
+        missing |= !matches!(
+            consent_manager
+                .is_consent_granted(Feature::MicrophoneRecording)
+                .await,
+            Ok(true)
+        );
+    }
+    if config.audio_desktop_enabled {
+        checked = true;
+        missing |= !matches!(
+            consent_manager
+                .is_consent_granted(Feature::ScreenRecording)
+                .await,
+            Ok(true)
+        );
+    }
+
+    if !checked {
+        "not_required".to_string()
+    } else if missing {
+        "missing".to_string()
+    } else {
+        "granted".to_string()
+    }
 }

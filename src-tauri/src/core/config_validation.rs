@@ -81,6 +81,14 @@ pub(crate) fn validate_config(config: &Config) -> Result<(), Box<dyn std::error:
         return Err("OCR languages cannot be empty".into());
     }
 
+    if !(0.0..=24.0).contains(&config.desktop_audio_gain_db) {
+        return Err(format!(
+            "Invalid desktop audio gain: {}. Must be between 0 and 24 dB",
+            config.desktop_audio_gain_db
+        )
+        .into());
+    }
+
     if !(0.0..=1.0).contains(&config.pii_settings.review_confidence_threshold) {
         return Err(format!(
             "Invalid PII review confidence threshold: {}. Must be between 0.0 and 1.0",

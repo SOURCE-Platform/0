@@ -1,15 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DISPLAY_KEY } from "@/components/TimelinePage";
+import { normalizeAudioConfig, updateAudioSourceConfig, updateChannelConfig } from "@/components/settings/audioConfig";
 import { useTheme } from "@/components/theme-provider";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
-import {
-  OBSERVER_APP_TOAST_EVENT,
-  OBSERVER_CONFIG_UPDATED_EVENT,
-  ObserverAppToastDetail,
-} from "@/lib/app-config-events";
 import { ChannelStatus, DesktopCaptureStatus } from "@/types/contextTimeline";
 import {
+  AudioInputSource,
   CaptureChannels,
   CaptureDataOverview,
   CapturePreview,
@@ -17,10 +14,12 @@ import {
   Display,
   SettingsTab,
 } from "@/components/settings/types";
+import { broadcastConfigUpdate, showSettingsToast } from "@/components/settings/utils";
 
 export function useSettingsController() {
   const [config, setConfig] = useState<Config | null>(null);
   const [displays, setDisplays] = useState<Display[]>([]);
+  const [audioInputSources, setAudioInputSources] = useState<AudioInputSource[]>([]);
   const [channelStatuses, setChannelStatuses] = useState<ChannelStatus[]>([]);
   const [captureStatus, setCaptureStatus] = useState<DesktopCaptureStatus | null>(null);
   const [dataOverview, setDataOverview] = useState<CaptureDataOverview | null>(null);
@@ -61,10 +60,20 @@ export function useSettingsController() {
   async function load(silent = false) {
     if (!silent) setLoading(true);
     try {
-      const [loadedConfig, availableDisplays, loadedChannelStatuses, loadedCaptureStatus, loadedDataOverview] =
+      const [
+        loadedConfig,
+        availableDisplays,
+        loadedAudioInputSources,
+        loadedChannelStatuses,
+        loadedCaptureStatus,
+        loadedDataOverview,
+      ] =
         await Promise.all([
           invoke<Config>("get_config"),
           invoke<Display[]>("get_available_displays").catch(() => [] as Display[]),
+          invoke<AudioInputSource[]>("list_audio_input_sources").catch(
+            () => [] as AudioInputSource[],
+          ),
           invoke<ChannelStatus[]>("get_channel_statuses").catch(() => [] as ChannelStatus[]),
           invoke<DesktopCaptureStatus>("get_desktop_capture_status").catch(
             () => null as DesktopCaptureStatus | null,
@@ -74,8 +83,9 @@ export function useSettingsController() {
           ),
         ]);
 
-      setConfig(loadedConfig);
+      setConfig(normalizeAudioConfig(loadedConfig));
       setDisplays(availableDisplays);
+      setAudioInputSources(loadedAudioInputSources);
       setChannelStatuses(loadedChannelStatuses);
       setCaptureStatus(loadedCaptureStatus);
       setDataOverview(loadedDataOverview);
@@ -96,18 +106,10 @@ export function useSettingsController() {
         }
       }
     } catch (error) {
-      showToast({ type: "error", text: `Failed to load settings: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to load settings: ${error}` });
     } finally {
       if (!silent) setLoading(false);
     }
-  }
-
-  function broadcastConfigUpdate(nextConfig: Config) {
-    window.dispatchEvent(new CustomEvent(OBSERVER_CONFIG_UPDATED_EVENT, { detail: nextConfig }));
-  }
-
-  function showToast(detail: ObserverAppToastDetail) {
-    window.dispatchEvent(new CustomEvent(OBSERVER_APP_TOAST_EVENT, { detail }));
   }
 
   function updateConfig(updates: Partial<Config>) {
@@ -116,13 +118,7 @@ export function useSettingsController() {
 
   function updateChannel(channel: keyof CaptureChannels, enabled: boolean) {
     if (!config) return;
-    setConfig({
-      ...config,
-      capture_channels: {
-        ...config.capture_channels,
-        [channel]: enabled,
-      },
-    });
+    setConfig(updateChannelConfig(config, channel, enabled));
   }
 
   function updatePiiCategory(category: string, enabled: boolean) {
@@ -140,16 +136,20 @@ export function useSettingsController() {
     });
   }
 
+  async function persistConfig(nextConfig: Config) {
+    await invoke("update_config", { config: nextConfig });
+    broadcastConfigUpdate(nextConfig);
+  }
+
   async function saveConfig(nextConfig = config) {
     if (!nextConfig) return;
     setSaving(true);
     try {
-      await invoke("update_config", { config: nextConfig });
-      broadcastConfigUpdate(nextConfig);
+      await persistConfig(nextConfig);
       await load(true);
-      showToast({ type: "success", text: "Settings saved successfully." });
+      showSettingsToast({ type: "success", text: "Settings saved successfully." });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to save settings: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to save settings: ${error}` });
     } finally {
       setSaving(false);
     }
@@ -162,9 +162,9 @@ export function useSettingsController() {
       setConfig(defaults);
       broadcastConfigUpdate(defaults);
       await load(true);
-      showToast({ type: "success", text: "Settings reset to defaults." });
+      showSettingsToast({ type: "success", text: "Settings reset to defaults." });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to reset settings: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to reset settings: ${error}` });
     } finally {
       setSaving(false);
     }
@@ -187,7 +187,7 @@ export function useSettingsController() {
     const nextConfig = { ...config, capture_channels: nextChannels };
     setConfig(nextConfig);
     await saveConfig(nextConfig);
-    showToast({
+    showSettingsToast({
       type: "success",
       text: `Solo test mode is active for ${String(channel).split("_").join(" ")}.`,
     });
@@ -198,15 +198,19 @@ export function useSettingsController() {
   }
 
   async function handleStartCapture() {
+    if (!config) return;
     try {
+      const nextConfig = normalizeAudioConfig(config);
+      setConfig(nextConfig);
+      await persistConfig(nextConfig);
       const nextStatus = await invoke<DesktopCaptureStatus>("start_desktop_capture", {
         displayId: selectedDisplay ? Number(selectedDisplay) : null,
       });
       setCaptureStatus(nextStatus);
       await load(true);
-      showToast({ type: "success", text: "Desktop capture started." });
+      showSettingsToast({ type: "success", text: "Desktop capture started." });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to start capture: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to start capture: ${error}` });
     }
   }
 
@@ -215,9 +219,9 @@ export function useSettingsController() {
       const nextStatus = await invoke<DesktopCaptureStatus>("stop_desktop_capture");
       setCaptureStatus(nextStatus);
       await load(true);
-      showToast({ type: "success", text: "Desktop capture stopped." });
+      showSettingsToast({ type: "success", text: "Desktop capture stopped." });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to stop capture: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to stop capture: ${error}` });
     }
   }
 
@@ -225,7 +229,7 @@ export function useSettingsController() {
     try {
       await invoke("reveal_capture_data_target", { target });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to reveal path: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to reveal path: ${error}` });
     }
   }
 
@@ -243,12 +247,12 @@ export function useSettingsController() {
     try {
       await invoke("delete_capture_data", { channel });
       await load(true);
-      showToast({
+      showSettingsToast({
         type: "success",
         text: channel ? `${label} data deleted.` : "All capture data deleted.",
       });
     } catch (error) {
-      showToast({ type: "error", text: `Failed to delete data: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to delete data: ${error}` });
     } finally {
       setDeletingKey(null);
     }
@@ -263,7 +267,7 @@ export function useSettingsController() {
       });
       setChannelPreview(preview);
     } catch (error) {
-      showToast({ type: "error", text: `Failed to load raw capture preview: ${error}` });
+      showSettingsToast({ type: "error", text: `Failed to load raw capture preview: ${error}` });
     } finally {
       setLoadingPreview(false);
     }
@@ -274,9 +278,31 @@ export function useSettingsController() {
     localStorage.setItem(DISPLAY_KEY, value);
   }
 
+  function selectAudioInput(value: string) {
+    if (!config) return;
+    setConfig({
+      ...config,
+      selected_audio_input_id: value === "__auto__" ? null : value,
+    });
+  }
+
+  function updateAudioMicrophoneEnabled(enabled: boolean) {
+    if (config) setConfig(updateAudioSourceConfig(config, { audio_microphone_enabled: enabled }));
+  }
+
+  function updateAudioDesktopEnabled(enabled: boolean) {
+    if (config) setConfig(updateAudioSourceConfig(config, { audio_desktop_enabled: enabled }));
+  }
+
+  function updateDesktopAudioGainDb(gainDb: number) {
+    if (!config) return;
+    setConfig({ ...config, desktop_audio_gain_db: Math.min(24, Math.max(0, gainDb)) });
+  }
+
   return {
     config,
     displays,
+    audioInputSources,
     channelStatuses,
     captureStatus,
     dataOverview,
@@ -298,6 +324,10 @@ export function useSettingsController() {
     setTab,
     setPendingDelete,
     selectDisplay,
+    selectAudioInput,
+    updateAudioMicrophoneEnabled,
+    updateAudioDesktopEnabled,
+    updateDesktopAudioGainDb,
     updateConfig,
     updateChannel,
     updatePiiCategory,

@@ -4,6 +4,10 @@ use super::types::{
     VisualSceneSnapshotDto, VisualSceneSnapshotRow, VisualStateSpanDto, VisualStateSpanRow,
 };
 use crate::core::database::Database;
+use crate::core::multimodal::audio_intelligence_types::{
+    SoundEventDetectionDto, SoundEventDetectionRow, SoundEventSpanDto, SoundEventSpanRow,
+    SpeechEmotionSegmentDto, SpeechEmotionSegmentRow,
+};
 use crate::core::multimodal::MultimodalQueryResult;
 use serde_json::Value;
 use std::sync::Arc;
@@ -134,5 +138,66 @@ pub(super) fn audio_state_span_row_to_dto(row: AudioStateSpanRow) -> AudioStateS
         supporting_asr_segment_ids: serde_json::from_str(&row.supporting_asr_segment_ids_json)
             .unwrap_or_default(),
         avg_confidence: row.avg_confidence as f32,
+    }
+}
+
+pub(super) fn speech_emotion_segment_row_to_dto(
+    row: SpeechEmotionSegmentRow,
+) -> SpeechEmotionSegmentDto {
+    SpeechEmotionSegmentDto {
+        speech_emotion_segment_id: row.speech_emotion_segment_id,
+        session_id: row.session_id,
+        source_id: row.source_id,
+        audio_chunk_id: row.audio_chunk_id,
+        asr_segment_id: row.asr_segment_id,
+        start_timestamp: row.start_timestamp,
+        end_timestamp: row.end_timestamp,
+        trigger_reason: row.trigger_reason,
+        emotion_label: row.emotion_label,
+        canonical_label: row.canonical_label,
+        confidence: row.confidence as f32,
+        model_name: row.model_name,
+        model_version: row.model_version,
+        raw_json: serde_json::from_str(&row.raw_json).unwrap_or(Value::Null),
+    }
+}
+
+pub(super) fn sound_event_detection_row_to_dto(
+    row: SoundEventDetectionRow,
+) -> SoundEventDetectionDto {
+    SoundEventDetectionDto {
+        sound_event_detection_id: row.sound_event_detection_id,
+        session_id: row.session_id,
+        source_id: row.source_id,
+        audio_chunk_id: row.audio_chunk_id,
+        start_timestamp: row.start_timestamp,
+        end_timestamp: row.end_timestamp,
+        trigger_reason: row.trigger_reason,
+        event_label: row.event_label,
+        canonical_label: row.canonical_label,
+        confidence: row.confidence as f32,
+        model_name: row.model_name,
+        model_version: row.model_version,
+        raw_json: serde_json::from_str(&row.raw_json).unwrap_or(Value::Null),
+    }
+}
+
+pub(super) fn sound_event_span_row_to_dto(row: SoundEventSpanRow) -> SoundEventSpanDto {
+    SoundEventSpanDto {
+        sound_event_span_id: row.sound_event_span_id,
+        session_id: row.session_id,
+        source_id: row.source_id,
+        canonical_label: row.canonical_label,
+        first_seen_at: row.first_seen_at,
+        last_seen_at: row.last_seen_at,
+        duration_ms: row.duration_ms,
+        supporting_detection_ids: serde_json::from_str(&row.supporting_detection_ids_json)
+            .unwrap_or_default(),
+        supporting_audio_chunk_ids: serde_json::from_str(&row.supporting_audio_chunk_ids_json)
+            .unwrap_or_default(),
+        avg_confidence: row.avg_confidence as f32,
+        max_confidence: row.max_confidence as f32,
+        model_name: row.model_name,
+        model_version: row.model_version,
     }
 }

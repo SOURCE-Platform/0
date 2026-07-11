@@ -35,17 +35,24 @@ export function GazeCalibrationCard({
 
   useEffect(() => {
     void refreshCalibration();
-    void refreshCameraSources();
-  }, [displayId]);
+    if (visionEnabled) {
+      void refreshCameraSources();
+      return;
+    }
+    setCameraSources([]);
+    setSelectedCameraId("");
+  }, [displayId, visionEnabled]);
 
   useEffect(() => {
     const refresh = () => {
       void refreshCalibration();
-      void refreshCameraSources();
+      if (visionEnabled) {
+        void refreshCameraSources();
+      }
     };
     window.addEventListener("focus", refresh);
     return () => window.removeEventListener("focus", refresh);
-  }, [displayId]);
+  }, [displayId, visionEnabled]);
 
   useEffect(() => {
     if (!cameraSources.length) {
@@ -207,34 +214,40 @@ export function GazeCalibrationCard({
               </Tooltip>
             </TooltipProvider>
           </div>
-          <div className="max-w-md space-y-3">
-            <Select
-              value={selectedCameraId}
-              onValueChange={setSelectedCameraId}
-              disabled={!cameraSources.length || busy}
-            >
-              <SelectTrigger>
-                <SelectValue
-                  placeholder={
-                    cameraSources.length
-                      ? "Choose a camera"
-                      : "No camera currently detected"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {cameraSources.map((source) => (
-                  <SelectItem key={source.cameraId} value={source.cameraId}>
-                    {source.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <GazeCalibrationCameraPreview cameraName={selectedCamera?.name ?? null} />
-          </div>
+          {visionEnabled ? (
+            <div className="max-w-md space-y-3">
+              <Select
+                value={selectedCameraId}
+                onValueChange={setSelectedCameraId}
+                disabled={!cameraSources.length || busy}
+              >
+                <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      cameraSources.length
+                        ? "Choose a camera"
+                        : "No camera currently detected"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {cameraSources.map((source) => (
+                    <SelectItem key={source.cameraId} value={source.cameraId}>
+                      {source.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <GazeCalibrationCameraPreview cameraName={selectedCamera?.name ?? null} />
+            </div>
+          ) : (
+            <p className="max-w-[52ch] text-sm text-muted-foreground">
+              Turn on Vision / scene before SOURCE checks cameras or opens a live preview.
+            </p>
+          )}
         </div>
 
-        {!cameraSources.length ? (
+        {visionEnabled && !cameraSources.length ? (
           <p className="max-w-[60ch] text-sm text-amber-200">
             No camera source is currently available. If your MacBook lid is
             closed, connect or enable an external camera such as iPhone,
@@ -246,7 +259,7 @@ export function GazeCalibrationCard({
           <Button
             type="button"
             onClick={handleStartCalibration}
-            disabled={busy || !display || !selectedCameraId}
+            disabled={busy || !visionEnabled || !display || !selectedCameraId}
           >
             <Eye className="h-4 w-4" />
             Calibrate selected display

@@ -214,6 +214,61 @@ fn estimate_asr_segment_storage_bytes(segment: &AsrSegmentDto) -> u64 {
     }))
 }
 
+fn estimate_speech_emotion_storage_bytes(segment: &SpeechEmotionSegmentDto) -> u64 {
+    serialized_len(&serde_json::json!({
+        "speech_emotion_segment_id": segment.speech_emotion_segment_id,
+        "session_id": segment.session_id,
+        "source_id": segment.source_id,
+        "audio_chunk_id": segment.audio_chunk_id,
+        "asr_segment_id": segment.asr_segment_id,
+        "start_timestamp": segment.start_timestamp,
+        "end_timestamp": segment.end_timestamp,
+        "trigger_reason": segment.trigger_reason,
+        "emotion_label": segment.emotion_label,
+        "canonical_label": segment.canonical_label,
+        "confidence": segment.confidence,
+        "model_name": segment.model_name,
+        "model_version": segment.model_version,
+        "raw_json": segment.raw_json,
+    }))
+}
+
+fn estimate_sound_event_detection_storage_bytes(detection: &SoundEventDetectionDto) -> u64 {
+    serialized_len(&serde_json::json!({
+        "sound_event_detection_id": detection.sound_event_detection_id,
+        "session_id": detection.session_id,
+        "source_id": detection.source_id,
+        "audio_chunk_id": detection.audio_chunk_id,
+        "start_timestamp": detection.start_timestamp,
+        "end_timestamp": detection.end_timestamp,
+        "trigger_reason": detection.trigger_reason,
+        "event_label": detection.event_label,
+        "canonical_label": detection.canonical_label,
+        "confidence": detection.confidence,
+        "model_name": detection.model_name,
+        "model_version": detection.model_version,
+        "raw_json": detection.raw_json,
+    }))
+}
+
+fn estimate_sound_event_span_storage_bytes(span: &SoundEventSpanDto) -> u64 {
+    serialized_len(&serde_json::json!({
+        "sound_event_span_id": span.sound_event_span_id,
+        "session_id": span.session_id,
+        "source_id": span.source_id,
+        "canonical_label": span.canonical_label,
+        "first_seen_at": span.first_seen_at,
+        "last_seen_at": span.last_seen_at,
+        "duration_ms": span.duration_ms,
+        "supporting_detection_ids": span.supporting_detection_ids,
+        "supporting_audio_chunk_ids": span.supporting_audio_chunk_ids,
+        "avg_confidence": span.avg_confidence,
+        "max_confidence": span.max_confidence,
+        "model_name": span.model_name,
+        "model_version": span.model_version,
+    }))
+}
+
 fn parse_visible_windows(
     row: &WindowSnapshotRow,
 ) -> Result<Vec<WindowSnapshotDto>, Box<dyn std::error::Error + Send + Sync>> {

@@ -125,6 +125,17 @@ impl Database {
         Ok(())
     }
 
+    /// A process restart cannot keep recording, so open rows from an older
+    /// process are closed before a new session manager begins work.
+    pub async fn close_interrupted_sessions(&self, end_timestamp: i64) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE sessions SET end_timestamp = ? WHERE end_timestamp IS NULL")
+            .bind(end_timestamp)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
     /// Delete a session
     pub async fn delete_session(&self, id: &str) -> Result<(), sqlx::Error> {
         sqlx::query("DELETE FROM sessions WHERE id = ?")
@@ -196,8 +207,7 @@ mod tests {
         let session = db
             .get_session(&session_id)
             .await
-            .expect("Failed to get session")
-            .expect("Session not found");
+            .expect("Session should exist");
 
         assert_eq!(session.id, session_id);
         assert_eq!(session.start_timestamp, start_time);
@@ -225,8 +235,7 @@ mod tests {
         let session = db
             .get_session(&session_id)
             .await
-            .expect("Failed to get session")
-            .expect("Session not found");
+            .expect("Session should exist");
 
         assert_eq!(session.end_timestamp, Some(end_time));
     }
@@ -246,12 +255,8 @@ mod tests {
             .expect("Failed to delete session");
 
         // Verify deletion
-        let session = db
-            .get_session(&session_id)
-            .await
-            .expect("Failed to query session");
-
-        assert!(session.is_none());
+        let result = db.get_session(&session_id).await;
+        assert!(matches!(result, Err(sqlx::Error::RowNotFound)));
     }
 
     #[tokio::test]

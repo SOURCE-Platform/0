@@ -181,20 +181,19 @@ mod tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
 
-    async fn setup_test_db() -> Database {
+    async fn setup_test_db() -> Arc<Database> {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
             .expect("Failed to create in-memory database");
 
-        let db = Database { pool: pool.clone() };
+        let db = Arc::new(Database { pool });
 
         // Run migrations
         db.run_migrations().await.expect("Failed to run migrations");
 
-        // Make the pool accessible for testing
-        Database { pool }
+        db
     }
 
     #[tokio::test]

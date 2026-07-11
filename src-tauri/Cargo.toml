@@ -37,6 +37,7 @@ tesseract = "0.14"
 leptonica-sys = "0.4"
 regex = "1"
 hound = "3"
+cpal = "0.15"
 # NOTE: ffmpeg-next 6.0 is incompatible with FFmpeg 8.0+ due to removed avfft.h
 # Using ffmpeg-sys-next (low-level bindings) until ffmpeg-next 7.x is available
 # ffmpeg-next = "6.0"
@@ -44,6 +45,7 @@ ffmpeg-sys-next = "8.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = "0.2"
+screencapturekit-sys = "0.2"
 core-graphics = "0.23"
 cocoa = "0.25"
 objc = "0.2"

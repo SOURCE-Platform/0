@@ -1,5 +1,5 @@
 use super::types::FaceFeatureSampleDto;
-use crate::core::multimodal::service::{choose_video_source, list_avfoundation_sources};
+use crate::core::multimodal::{choose_video_source, list_avfoundation_sources};
 use crate::core::multimodal::{mediapipe_runtime_available, run_mediapipe_face_features};
 use std::fs;
 use std::path::Path;
@@ -21,7 +21,11 @@ pub(crate) async fn resolve_camera_choice(
 
     let source = choose_video_source(&sources.video)
         .ok_or_else(|| "No local camera source is available for gaze calibration.".to_string())?;
-    Ok((format!("camera:{}", source.index), source.index, source.name.clone()))
+    Ok((
+        format!("camera:{}", source.index),
+        source.index,
+        source.name.clone(),
+    ))
 }
 
 pub(crate) async fn capture_face_features_from_camera(

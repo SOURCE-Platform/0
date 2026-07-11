@@ -1,7 +1,8 @@
 use crate::core::database::Database;
 use crate::core::gaze;
 use crate::core::multimodal::{
-    self, AsrSegmentDto, AudioStateSpanDto, VisualSceneSnapshotDto, VisualStateSpanDto,
+    self, AsrSegmentDto, AudioStateSpanDto, SoundEventDetectionDto, SoundEventSpanDto,
+    SpeechEmotionSegmentDto, VisualSceneSnapshotDto, VisualStateSpanDto,
 };
 use crate::core::ocr_agent_context::{self, AgentSceneSnapshotDto};
 use crate::models::activity::AppInfo;
@@ -34,5 +35,7 @@ include!("rails_system.rs");
 include!("rails_activity.rs");
 include!("rails_summary.rs");
 include!("rails_media.rs");
+include!("rails_audio_labels.rs");
+include!("rails_audio_intelligence.rs");
 include!("rails_attention.rs");
 include!("fetch.rs");

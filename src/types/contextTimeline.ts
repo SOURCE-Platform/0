@@ -60,10 +60,13 @@ export interface ContextSlice {
 
 export interface TimelineRail {
   id: string;
+  kind: "group" | "lane";
   label: string;
   description: string;
   confidenceNote: string;
+  defaultExpanded: boolean;
   slices: ContextSlice[];
+  children: TimelineRail[];
 }
 
 export interface TimelineSummary {

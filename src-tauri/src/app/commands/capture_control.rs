@@ -96,6 +96,10 @@ pub async fn start_desktop_capture(
         session_id,
         started_at,
         current_generation,
+        config.capture_channels.system,
+        config.capture_channels.system
+            || config.capture_channels.focus
+            || config.capture_channels.visible_windows,
     )
     .await
 }
@@ -107,6 +111,8 @@ async fn finalize_capture_start(
     session_id: String,
     started_at: i64,
     current_generation: u64,
+    record_system_lifecycle: bool,
+    start_context_sampler: bool,
 ) -> Result<DesktopCaptureStatusDto, String> {
     {
         let mut runtime = state.desktop_capture_runtime.write().await;
@@ -128,33 +134,37 @@ async fn finalize_capture_start(
         return build_desktop_capture_status(state).await;
     }
 
-    context_timeline::insert_context_event(
-        &state.db,
-        Some(&session_id),
-        started_at,
-        "system",
-        "capture_started",
-        "desktop_capture",
-        1.0,
-        Some(
-            serde_json::json!({
-                "title": "Desktop capture started",
-                "subtitle": "SOURCE is now sampling desktop context",
-            })
-            .to_string(),
-        ),
-    )
-    .await
-    .map_err(|e| format!("Failed to persist capture start event: {}", e))?;
+    if record_system_lifecycle {
+        context_timeline::insert_context_event(
+            &state.db,
+            Some(&session_id),
+            started_at,
+            "system",
+            "capture_started",
+            "desktop_capture",
+            1.0,
+            Some(
+                serde_json::json!({
+                    "title": "Desktop capture started",
+                    "subtitle": "SOURCE is now sampling desktop context",
+                })
+                .to_string(),
+            ),
+        )
+        .await
+        .map_err(|e| format!("Failed to persist capture start event: {}", e))?;
+    }
 
-    let db = state.db.clone();
-    let os_activity = state.os_activity_recorder.clone();
-    let config_handle = state.config.clone();
-    let runtime_handle = state.desktop_capture_runtime.clone();
-    tauri::async_runtime::spawn(async move {
-        runtime_handle.write().await.sampler_generation = current_generation;
-        spawn_desktop_sampler(db, os_activity, config_handle, runtime_handle).await;
-    });
+    if start_context_sampler {
+        let db = state.db.clone();
+        let os_activity = state.os_activity_recorder.clone();
+        let config_handle = state.config.clone();
+        let runtime_handle = state.desktop_capture_runtime.clone();
+        tauri::async_runtime::spawn(async move {
+            runtime_handle.write().await.sampler_generation = current_generation;
+            spawn_desktop_sampler(db, os_activity, config_handle, runtime_handle).await;
+        });
+    }
     build_desktop_capture_status(state).await
 }
 
@@ -168,6 +178,11 @@ pub async fn stop_desktop_capture(
         .await
         .session_id
         .clone();
+    let record_system_lifecycle = state
+        .config
+        .lock()
+        .map(|config| config.capture_channels.system)
+        .unwrap_or(false);
     if let Some(recorder) = state.input_recorder.as_ref() {
         let _ = recorder.stop_recording().await;
     }
@@ -183,8 +198,10 @@ pub async fn stop_desktop_capture(
     if let Some(manager) = state.session_manager.as_ref() {
         let _ = manager.end_current_session().await;
     }
-    if let Some(session_id) = session_id.as_ref() {
-        let _ = context_timeline::insert_context_event(&state.db, Some(session_id), chrono::Utc::now().timestamp_millis(), "system", "capture_stopped", "desktop_capture", 1.0, Some(serde_json::json!({"title": "Desktop capture stopped","subtitle": "SOURCE ended the current multi-channel capture session"}).to_string())).await;
+    if record_system_lifecycle {
+        if let Some(session_id) = session_id.as_ref() {
+            let _ = context_timeline::insert_context_event(&state.db, Some(session_id), chrono::Utc::now().timestamp_millis(), "system", "capture_stopped", "desktop_capture", 1.0, Some(serde_json::json!({"title": "Desktop capture stopped","subtitle": "SOURCE ended the current multi-channel capture session"}).to_string())).await;
+        }
     }
     {
         let mut runtime = state.desktop_capture_runtime.write().await;

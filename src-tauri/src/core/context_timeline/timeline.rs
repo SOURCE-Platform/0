@@ -19,6 +19,12 @@ pub async fn build_context_timeline(
     let audio_spans = multimodal::get_audio_state_spans(db, start_timestamp, end_timestamp).await?;
     let asr_segments =
         multimodal::get_asr_segments(db, start_timestamp, end_timestamp, None).await?;
+    let speech_emotion_segments =
+        multimodal::get_speech_emotion_segments(db, start_timestamp, end_timestamp, None).await?;
+    let sound_event_detections =
+        multimodal::get_sound_event_detections(db, start_timestamp, end_timestamp, None).await?;
+    let sound_event_spans =
+        multimodal::get_sound_event_spans(db, start_timestamp, end_timestamp, None).await?;
     let attention_snapshots =
         gaze::get_attention_snapshots(db, start_timestamp, end_timestamp, None, None).await?;
     let attention_spans =
@@ -37,7 +43,13 @@ pub async fn build_context_timeline(
     );
     let ocr_rail = build_ocr_rail(&ocr_scenes, &snapshots);
     let vision_rail = build_vision_rail(&visual_scenes, &visual_spans);
-    let audio_rail = build_audio_rail(&audio_spans, &asr_segments);
+    let audio_rail = build_audio_group_rail(
+        &audio_spans,
+        &asr_segments,
+        &speech_emotion_segments,
+        &sound_event_spans,
+        &sound_event_detections,
+    );
     let attention_rail = build_attention_rail(&attention_snapshots, &attention_spans);
     let evidence_rail = build_evidence_rail(&frames);
 

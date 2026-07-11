@@ -64,13 +64,13 @@ fn build_focus_rail(
         slices.push(active);
     }
 
-    TimelineRailDto {
-        id: "focus".to_string(),
-        label: "Focus".to_string(),
-        description: "Which app SOURCE believes was frontmost at a given moment.".to_string(),
-        confidence_note: "Focus is based on OS snapshots taken during active capture. Historical gaps are left visible instead of backfilled.".to_string(),
+    TimelineRailDto::lane(
+        "focus",
+        "Focus",
+        "Which app SOURCE believes was frontmost at a given moment.",
+        "Focus is based on OS snapshots taken during active capture. Historical gaps are left visible instead of backfilled.",
         slices,
-    }
+    )
 }
 
 fn build_visible_windows_rail(
@@ -125,13 +125,13 @@ fn build_visible_windows_rail(
         })
         .collect();
 
-    TimelineRailDto {
-        id: "visible_windows".to_string(),
-        label: "Visible Windows".to_string(),
-        description: "Best-effort scene context for what else was on screen alongside the frontmost app.".to_string(),
-        confidence_note: "v1 uses running-app snapshots, not a full historical macOS window graph, so this rail is explicitly low-confidence.".to_string(),
+    TimelineRailDto::lane(
+        "visible_windows",
+        "Visible Windows",
+        "Best-effort scene context for what else was on screen alongside the frontmost app.",
+        "v1 uses running-app snapshots, not a full historical macOS window graph, so this rail is explicitly low-confidence.",
         slices,
-    }
+    )
 }
 
 fn build_interaction_rail(
@@ -280,11 +280,11 @@ fn build_interaction_rail(
         bucket_start = bucket_end;
     }
 
-    TimelineRailDto {
-        id: "interaction".to_string(),
-        label: "Interaction".to_string(),
-        description: "Hard input signals when available, plus clearly-labeled inferred activity states when direct integrations do not exist.".to_string(),
-        confidence_note: "Inferred voice input and passive viewing are always labeled as inferences, not authoritative app integrations.".to_string(),
+    TimelineRailDto::lane(
+        "interaction",
+        "Interaction",
+        "Hard input signals when available, plus clearly-labeled inferred activity states when direct integrations do not exist.",
+        "Inferred voice input and passive viewing are always labeled as inferences, not authoritative app integrations.",
         slices,
-    }
+    )
 }

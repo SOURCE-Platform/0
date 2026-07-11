@@ -197,7 +197,7 @@ mod tests {
 
         assert_eq!(result.get_high_confidence_text(0.8), "Hello Test");
         assert_eq!(result.block_count(), 3);
-        assert_eq!(result.average_confidence(), 0.783333333);
+        assert!((result.average_confidence() - 0.783333333).abs() < 0.000_001);
     }
 
     #[test]

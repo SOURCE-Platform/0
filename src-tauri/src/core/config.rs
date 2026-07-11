@@ -121,6 +121,18 @@ pub struct Config {
     /// Application names to exclude from recording
     #[serde(default)]
     pub app_blacklist: Vec<String>,
+    /// Preferred AVFoundation audio input for live microphone capture
+    #[serde(default)]
+    pub selected_audio_input_id: Option<String>,
+    /// Capture live microphone input when the audio channel is enabled
+    #[serde(default = "crate::core::config_defaults::default_audio_microphone_enabled")]
+    pub audio_microphone_enabled: bool,
+    /// Capture mixed desktop/app output when the audio channel is enabled
+    #[serde(default)]
+    pub audio_desktop_enabled: bool,
+    /// Gain applied to SOURCE's desktop-audio copy, without changing macOS output volume.
+    #[serde(default = "crate::core::config_defaults::default_desktop_audio_gain_db")]
+    pub desktop_audio_gain_db: f32,
     /// Whether demo/mock data should be shown in the UI
     #[serde(default = "crate::core::config_defaults::default_mock_data_mode")]
     pub mock_data_mode: bool,
@@ -171,6 +183,10 @@ impl Default for Config {
             target_fps: 15,
             website_blacklist: Vec::new(),
             app_blacklist: Vec::new(),
+            selected_audio_input_id: None,
+            audio_microphone_enabled: true,
+            audio_desktop_enabled: false,
+            desktop_audio_gain_db: crate::core::config_defaults::default_desktop_audio_gain_db(),
             mock_data_mode: true,
             capture_channels: CaptureChannels::default(),
             resource_profile: ResourceProfile::Balanced,

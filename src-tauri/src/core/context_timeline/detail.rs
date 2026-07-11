@@ -19,6 +19,24 @@ struct SliceQueryData {
     visible_windows: Vec<WindowSnapshotDto>,
 }
 
+fn find_rail_and_slice<'a>(
+    rails: &'a [TimelineRailDto],
+    rail_id: &str,
+    slice_id: &str,
+) -> Option<(&'a TimelineRailDto, &'a ContextSlice)> {
+    for rail in rails {
+        if rail.id == rail_id {
+            if let Some(slice) = rail.slices.iter().find(|slice| slice.id == slice_id) {
+                return Some((rail, slice));
+            }
+        }
+        if let Some(found) = find_rail_and_slice(&rail.children, rail_id, slice_id) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 async fn load_slice_query_data(
     db: &Arc<Database>,
     slice: &ContextSlice,
@@ -108,17 +126,9 @@ pub async fn get_context_slice_detail(
     end_timestamp: i64,
 ) -> Result<ContextSliceDetailDto, Box<dyn std::error::Error + Send + Sync>> {
     let timeline = build_context_timeline(db, start_timestamp, end_timestamp).await?;
-    let rail = timeline
-        .rails
-        .iter()
-        .find(|rail| rail.id == rail_id)
-        .ok_or_else(|| format!("Unknown rail: {rail_id}"))?;
-    let slice = rail
-        .slices
-        .iter()
-        .find(|slice| slice.id == slice_id)
-        .cloned()
-        .ok_or_else(|| format!("Unknown slice: {slice_id}"))?;
+    let (rail, slice) = find_rail_and_slice(&timeline.rails, rail_id, slice_id)
+        .ok_or_else(|| format!("Unknown slice lookup: {rail_id}/{slice_id}"))?;
+    let slice = slice.clone();
 
     let data = load_slice_query_data(db, &slice).await?;
     let mut state = SliceDetailPayloadState::default();

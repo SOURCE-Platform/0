@@ -21,7 +21,22 @@ async fn populate_slice_detail_payloads(
         ),
         "ocr" => collect_ocr_detail_payloads(db, slice_id, &data.ocr_rows, state).await?,
         "vision" => collect_vision_detail_payloads(db, slice, slice_id, state).await?,
-        "audio" => collect_audio_detail_payloads(db, slice, slice_id, state).await?,
+        "audio"
+        | "audio_speech"
+        | "audio_emotion_summary"
+        | "audio_emotion_summary_lane"
+        | "audio_emotion_happy"
+        | "audio_emotion_sad"
+        | "audio_emotion_angry"
+        | "audio_emotion_fearful"
+        | "audio_emotion_surprised"
+        | "audio_emotion_neutral"
+        | "audio_emotion_uncertain" => {
+            collect_audio_detail_payloads(db, slice, slice_id, state).await?
+        }
+        "sound_events" | "audio_sound_events" => {
+            collect_sound_event_detail_payloads(db, slice, slice_id, state).await?
+        }
         "attention" => collect_attention_detail_payloads(db, slice, slice_id, state).await?,
         "evidence" => collect_evidence_detail_payloads(slice_id, &data.frames, state),
         _ => {}

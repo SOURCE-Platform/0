@@ -41,10 +41,54 @@ pub struct ContextSlice {
 #[serde(rename_all = "camelCase")]
 pub struct TimelineRailDto {
     pub id: String,
+    pub kind: String,
     pub label: String,
     pub description: String,
     pub confidence_note: String,
+    pub default_expanded: bool,
     pub slices: Vec<ContextSlice>,
+    pub children: Vec<TimelineRailDto>,
+}
+
+impl TimelineRailDto {
+    fn lane(
+        id: &str,
+        label: &str,
+        description: &str,
+        confidence_note: &str,
+        slices: Vec<ContextSlice>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            kind: "lane".to_string(),
+            label: label.to_string(),
+            description: description.to_string(),
+            confidence_note: confidence_note.to_string(),
+            default_expanded: true,
+            slices,
+            children: Vec::new(),
+        }
+    }
+
+    fn group(
+        id: &str,
+        label: &str,
+        description: &str,
+        confidence_note: &str,
+        default_expanded: bool,
+        children: Vec<TimelineRailDto>,
+    ) -> Self {
+        Self {
+            id: id.to_string(),
+            kind: "group".to_string(),
+            label: label.to_string(),
+            description: description.to_string(),
+            confidence_note: confidence_note.to_string(),
+            default_expanded,
+            slices: Vec::new(),
+            children,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

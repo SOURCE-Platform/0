@@ -8,6 +8,14 @@ pub(crate) fn default_resource_profile() -> ResourceProfile {
     ResourceProfile::Balanced
 }
 
+pub(crate) fn default_audio_microphone_enabled() -> bool {
+    true
+}
+
+pub(crate) fn default_desktop_audio_gain_db() -> f32 {
+    0.0
+}
+
 pub(crate) fn default_pii_categories() -> Vec<String> {
     vec![
         "email".to_string(),

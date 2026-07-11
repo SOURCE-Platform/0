@@ -1,3 +1,4 @@
+use super::audio_intelligence_types::{SoundEventSpanDto, SpeechEmotionSegmentDto};
 use crate::core::motion_detector::MotionDetector;
 use crate::core::ocr_agent_context::ActivityEpisodeDto;
 use serde::{Deserialize, Serialize};
@@ -119,10 +120,15 @@ pub struct VisualAudioSummaryDto {
     pub audio_chunk_count: usize,
     pub audio_span_count: usize,
     pub asr_segment_count: usize,
+    pub speech_emotion_segment_count: usize,
+    pub sound_event_detection_count: usize,
+    pub sound_event_span_count: usize,
     pub visible_duration_ms: i64,
     pub speaking_duration_ms: i64,
     pub dominant_postures: Vec<String>,
     pub dominant_audio_states: Vec<String>,
+    pub dominant_speech_emotions: Vec<String>,
+    pub dominant_sound_events: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +139,8 @@ pub struct MultimodalActivityEpisodeDto {
     pub visual_spans: Vec<VisualStateSpanDto>,
     pub audio_spans: Vec<AudioStateSpanDto>,
     pub asr_segments: Vec<AsrSegmentDto>,
+    pub speech_emotion_segments: Vec<SpeechEmotionSegmentDto>,
+    pub sound_event_spans: Vec<SoundEventSpanDto>,
     pub ocr_episode: Option<ActivityEpisodeDto>,
 }
 
@@ -151,6 +159,10 @@ pub struct MultimodalCaptureOptions {
     pub enable_visual: bool,
     pub enable_audio: bool,
     pub display_id: Option<u32>,
+    pub audio_source_id: Option<String>,
+    pub enable_microphone_audio: bool,
+    pub enable_desktop_audio: bool,
+    pub desktop_audio_gain_db: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -162,7 +174,7 @@ pub struct VisionSceneDetailPayload {
 pub(super) struct MultimodalRuntimeState {
     pub generation: u64,
     pub visual_handle: Option<JoinHandle<()>>,
-    pub audio_handle: Option<JoinHandle<()>>,
+    pub audio_handles: Vec<JoinHandle<()>>,
 }
 
 #[derive(Debug, Clone)]

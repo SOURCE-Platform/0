@@ -1,10 +1,11 @@
+import { useState } from "react";
 import { addDays, startOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight, Circle, StopCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { TimelineRailTree } from "@/components/desktop-context-workspace/TimelineRailTree";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { RailLane } from "@/components/desktop-context-workspace/RailLane";
 import { TimelineRuler } from "@/components/desktop-context-workspace/TimelineRuler";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
@@ -17,6 +18,16 @@ export function DeviceContextTimelineSection({
 }: {
   controller: ReturnType<typeof useDesktopContextWorkspace>;
 }) {
+  const [expandedRails, setExpandedRails] = useState<Record<string, boolean>>({});
+  const selectedRailId = controller.selectedSlice?.rail ?? null;
+
+  function handleToggleRail(railId: string, nextExpanded: boolean) {
+    setExpandedRails((current) => ({
+      ...current,
+      [railId]: nextExpanded,
+    }));
+  }
+
   return (
     <section className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4 px-1">
@@ -146,12 +157,16 @@ export function DeviceContextTimelineSection({
               />
               <div className="space-y-2 pt-2">
                 {controller.timeline.rails.map((rail) => (
-                  <RailLane
+                  <TimelineRailTree
                     key={rail.id}
                     rail={rail}
+                    depth={0}
+                    expandedRails={expandedRails}
+                    onToggleRail={handleToggleRail}
                     windowStart={controller.effectiveWindowStart}
                     windowEnd={controller.effectiveWindowEnd}
                     selectedSliceId={controller.selectedSlice?.id ?? null}
+                    selectedRailId={selectedRailId}
                     onSelect={controller.handleSelectSlice}
                     appFilter={controller.appFilter}
                     interactionFilter={controller.interactionFilter}

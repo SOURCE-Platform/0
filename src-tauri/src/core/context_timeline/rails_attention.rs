@@ -79,13 +79,13 @@ fn build_attention_rail(
 
     slices.sort_by_key(|slice| slice.start_timestamp);
 
-    TimelineRailDto {
-        id: "attention".to_string(),
-        label: "Gaze / Attention".to_string(),
-        description: "Approximate webcam-based attention mapped onto OCR blocks, text spans, and higher-level context surfaces.".to_string(),
-        confidence_note: "This rail estimates likely attention targets with uncertainty. It is not exact word-level eye tracking.".to_string(),
+    TimelineRailDto::lane(
+        "attention",
+        "Gaze / Attention",
+        "Approximate webcam-based attention mapped onto OCR blocks, text spans, and higher-level context surfaces.",
+        "This rail estimates likely attention targets with uncertainty. It is not exact word-level eye tracking.",
         slices,
-    }
+    )
 }
 
 fn estimate_attention_snapshot_storage_bytes(snapshot: &gaze::AttentionSnapshotDto) -> u64 {

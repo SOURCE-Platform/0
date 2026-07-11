@@ -7,13 +7,16 @@ import {
   getTimelineTickMs,
   railTone,
   safeFormatDate,
+  sliceIsVisible,
 } from "@/components/desktop-context-workspace/utils";
 
 interface RailLaneProps {
   rail: TimelineRail;
+  depth: number;
   windowStart: number;
   windowEnd: number;
   selectedSliceId: string | null;
+  selectedRailId: string | null;
   onSelect: (slice: ContextSlice) => void;
   appFilter: string;
   interactionFilter: string;
@@ -21,9 +24,11 @@ interface RailLaneProps {
 
 export function RailLane({
   rail,
+  depth,
   windowStart,
   windowEnd,
   selectedSliceId,
+  selectedRailId,
   onSelect,
   appFilter,
   interactionFilter,
@@ -31,21 +36,23 @@ export function RailLane({
   const range = Math.max(1, windowEnd - windowStart);
   const tickMs = getTimelineTickMs(range);
   const tickCount = Math.max(1, Math.ceil(range / tickMs));
-  const slices = rail.slices.filter((slice) => {
-    if (appFilter !== "all" && slice.appName !== appFilter) return false;
-    if (interactionFilter !== "all" && rail.id === "interaction" && slice.interactionState !== interactionFilter) return false;
-    if (slice.endTimestamp < windowStart || slice.startTimestamp > windowEnd) return false;
-    return true;
-  });
+  const slices = rail.slices.filter((slice) =>
+    sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
+  );
+  const hasCapturedSlicesOutsideView = rail.slices.length > 0 && slices.length === 0;
+  const railPadding = depth * 16;
 
   return (
     <div className="grid gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
-      <div className="sticky left-0 z-10 flex items-center gap-2 bg-muted/10 py-1 backdrop-blur-sm">
+      <div
+        className="sticky left-0 z-10 flex items-center gap-2 bg-muted/10 py-1 backdrop-blur-sm"
+        style={{ paddingLeft: railPadding }}
+      >
         <div className="min-w-0">
           <span className="text-sm font-semibold text-foreground">{rail.label}</span>
         </div>
         <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-          {rail.slices.length}
+          {slices.length}
         </Badge>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -83,7 +90,9 @@ export function RailLane({
 
           {slices.length === 0 ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              No slices for the current filters.
+              {hasCapturedSlicesOutsideView
+                ? "Captured blocks are outside this time view. Jump to Now to see them."
+                : "No slices for the current filters."}
             </div>
           ) : (
             slices.map((slice) => {
@@ -94,6 +103,15 @@ export function RailLane({
               const width = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
               const anchor = Math.min(92, Math.max(8, left + width / 2));
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
+              const layout = getSliceLayout(rail, slice);
+              const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
+              const sourceLabel = getAudioSourceLabel(slice);
+              const titleText = [
+                sourceLabel ? `${sourceLabel} source` : null,
+                slice.title,
+                safeFormatDate(slice.startTimestamp, "p"),
+                storageLabel,
+              ].filter(Boolean).join(" • ");
 
               return (
                 <div key={slice.id}>
@@ -101,27 +119,43 @@ export function RailLane({
                     type="button"
                     onClick={() => onSelect(slice)}
                     className={`group absolute top-2 h-12 overflow-hidden rounded-xl border bg-gradient-to-r text-left shadow-sm transition ${
-                      selectedSliceId === slice.id
+                      isSelected
                         ? "border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
                     } ${railTone(rail.id, slice.interactionState)}`}
-                    style={{ left: `${left}%`, width: `${width}%`, opacity: Math.max(0.55, slice.confidence) }}
-                    title={`${slice.title} • ${safeFormatDate(slice.startTimestamp, "p")} • ${storageLabel}`}
+                    style={{
+                      left: `${left}%`,
+                      width: `${width}%`,
+                      top: `${layout.topPx}px`,
+                      height: `${layout.heightPx}px`,
+                      opacity: layout.opacity,
+                    }}
+                    title={titleText}
                   >
                     <div className="px-2 py-1.5 text-[11px] font-semibold text-white">
-                      {width > 12 ? <div className="truncate">{slice.title}</div> : null}
-                      {width > 18 && slice.subtitle ? (
+                      {sourceLabel && width > 9 ? (
+                        <div className="mb-0.5 w-fit rounded-full bg-black/30 px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-white/85">
+                          {sourceLabel}
+                        </div>
+                      ) : null}
+                      {width > 12 && layout.showInlineTitle ? <div className="truncate">{slice.title}</div> : null}
+                      {width > 18 && slice.subtitle && layout.showInlineSubtitle ? (
                         <div className="truncate pt-0.5 text-[10px] text-white/85">{slice.subtitle}</div>
                       ) : null}
                     </div>
                   </button>
 
-                  {selectedSliceId === slice.id ? (
+                  {isSelected ? (
                     <div
                       className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] -translate-x-1/2 rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur"
                       style={{ left: `${anchor}%` }}
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
+                      {sourceLabel ? (
+                        <div className="pt-0.5 text-[10px] uppercase tracking-wide text-white/75">
+                          {sourceLabel} source
+                        </div>
+                      ) : null}
                       <div className="pt-0.5 text-[10px] uppercase tracking-wide text-white/75">
                         {safeFormatDate(slice.startTimestamp, "p")} • {storageLabel}
                       </div>
@@ -138,4 +172,52 @@ export function RailLane({
       </div>
     </div>
   );
+}
+
+function getSliceLayout(rail: TimelineRail, slice: ContextSlice) {
+  const confidence = Math.max(0.2, Math.min(1, slice.confidence));
+  const isEmotionSummary = rail.id === "audio_emotion_summary_lane";
+  const isEmotionDetail = rail.id.startsWith("audio_emotion_") && rail.id !== "audio_emotion_summary_lane";
+  const isAsrEvent = rail.id === "audio_speech" && slice.tags.includes("asr");
+
+  if (isAsrEvent) {
+    return { topPx: 20, heightPx: 22, opacity: Math.max(0.65, confidence), showInlineTitle: true, showInlineSubtitle: false };
+  }
+
+  if (isEmotionSummary) {
+    const polarity = slice.tags.includes("positive")
+      ? "positive"
+      : slice.tags.includes("negative")
+        ? "negative"
+        : slice.tags.includes("centered")
+          ? "centered"
+          : "uncertain";
+    if (polarity === "positive") {
+      const heightPx = Math.max(10, confidence * 20);
+      return { topPx: 28 - heightPx, heightPx, opacity: Math.max(0.6, confidence), showInlineTitle: false, showInlineSubtitle: false };
+    }
+    if (polarity === "negative") {
+      const heightPx = Math.max(10, confidence * 20);
+      return { topPx: 28, heightPx, opacity: Math.max(0.6, confidence), showInlineTitle: false, showInlineSubtitle: false };
+    }
+    if (slice.tags.includes("uncertain")) {
+      return { topPx: 24, heightPx: 10, opacity: 0.45, showInlineTitle: false, showInlineSubtitle: false };
+    }
+    const heightPx = Math.max(8, confidence * 14);
+    return { topPx: 28 - heightPx / 2, heightPx, opacity: Math.max(0.55, confidence), showInlineTitle: false, showInlineSubtitle: false };
+  }
+
+  if (isEmotionDetail) {
+    const heightPx = Math.max(10, confidence * 38);
+    return { topPx: 50 - heightPx, heightPx, opacity: Math.max(0.55, confidence), showInlineTitle: false, showInlineSubtitle: false };
+  }
+
+  return { topPx: 8, heightPx: 48, opacity: Math.max(0.55, confidence), showInlineTitle: true, showInlineSubtitle: true };
+}
+
+function getAudioSourceLabel(slice: ContextSlice): string | null {
+  if (!slice.tags.includes("audio")) return null;
+  if (slice.source.startsWith("desktop_output:")) return "Desktop";
+  if (slice.source.startsWith("microphone:")) return "Mic";
+  return "Audio";
 }
