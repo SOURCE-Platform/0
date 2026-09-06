@@ -4,7 +4,7 @@ use crate::core::consent::ConsentManager;
 use crate::core::context_timeline;
 use crate::core::database::Database;
 use crate::core::multimodal::{
-    DictationHelper, DictationSupervisor, PipelineAction,
+    DictationHelper, DictationSupervisor, PipelineAction, SupervisorCommand,
 };
 use crate::core::input_recorder::InputRecorder;
 use crate::core::keyboard_recorder::KeyboardRecorder;
@@ -135,10 +135,21 @@ fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
                 .unwrap_or_default();
             let supervisor = DictationSupervisor::new(dictionary);
             match supervisor.run().await {
-                Ok((mut actions, _events)) => {
+                Ok((mut actions, _events, commands)) => {
                     println!("Dictation helper is ready");
                     while let Some(action) = actions.recv().await {
                         log_dictation_action(&action);
+                        // The transcript is already decided for persistence;
+                        // hand it to the helper for typing into the field
+                        // that was focused when dictation began.
+                        if let PipelineAction::InsertIntoFocusedField { id, text } = &action
+                        {
+                            let command =
+                                SupervisorCommand::Insert(id.clone(), text.clone());
+                            if commands.send(command).await.is_err() {
+                                break;
+                            }
+                        }
                     }
                     eprintln!("Dictation helper exited; restarting soon");
                 }

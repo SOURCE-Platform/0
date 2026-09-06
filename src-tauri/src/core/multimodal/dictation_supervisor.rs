@@ -36,68 +36,106 @@ impl DictationSupervisor {
     }
 
     /// Spawn the helper and pump its events into pipeline actions.
-    /// Returns receivers for actions and raw helper events.
+    /// Returns the action + event receivers plus a command sender for
+    /// driving the helper (insert text, stop sessions, shut down).
     pub async fn run(
         mut self,
     ) -> Result<
         (
             mpsc::Receiver<PipelineAction>,
             broadcast::Receiver<DictationEvent>,
+            mpsc::Sender<SupervisorCommand>,
         ),
         String,
     > {
         let (helper, mut events) = DictationHelper::spawn().await?;
         let event_feed = helper.subscribe();
         let (actions_tx, actions_rx) = mpsc::channel(64);
+        let (commands_tx, mut commands_rx) = mpsc::channel::<SupervisorCommand>(64);
         tokio::spawn(async move {
             self.helper = Some(helper);
             loop {
-                let event = match events.recv().await {
-                    Ok(event) => event,
-                    Err(_) => break,
-                };
-                log_helper_event(&event);
-                let done = matches!(event, DictationEvent::Exited);
-                let action = self
-                    .pipeline
-                    .on_event(&event, &self.dictionary, capture_timestamp_ms());
-                // Insertion follows persistence: emit the follow-up action
-                // right after PersistForeground so typing never precedes save.
-                match action {
-                    PipelineAction::PersistForeground {
-                        id,
-                        text,
-                        started_at_ms,
-                        ended_at_ms,
-                    } => {
-                        let insert = self.pipeline.take_pending_insertion(&text);
-                        let _ = actions_tx
-                            .send(PipelineAction::PersistForeground {
-                                id,
-                                text: text.clone(),
-                                started_at_ms,
-                                ended_at_ms,
-                            })
-                            .await;
-                        if let Some(insert) = insert {
-                            debug_assert!(matches!(
-                                insert,
-                                PipelineAction::InsertIntoFocusedField { .. }
-                            ));
-                            let _ = actions_tx.send(insert).await;
+                tokio::select! {
+                    incoming = events.recv() => {
+                        let event = match incoming {
+                            Ok(event) => event,
+                            Err(_) => break,
+                        };
+                        log_helper_event(&event);
+                        let done = matches!(event, DictationEvent::Exited);
+                        let action = self
+                            .pipeline
+                            .on_event(&event, &self.dictionary, capture_timestamp_ms());
+                        Self::forward(action, &mut self.pipeline, &actions_tx).await;
+                        if done {
+                            break;
                         }
                     }
-                    PipelineAction::None => {}
-                    other => {
-                        let _ = actions_tx.send(other).await;
+                    command = commands_rx.recv() => {
+                        let Some(command) = command else { break };
+                        if !Self::execute(command, &mut self.helper).await {
+                            break;
+                        }
                     }
-                }
-                if done {
-                    break;
                 }
             }
         });
-        Ok((actions_rx, event_feed))
+        Ok((actions_rx, event_feed, commands_tx))
+    }
+
+    async fn forward(
+        action: PipelineAction,
+        pipeline: &mut DictationPipeline,
+        actions_tx: &mpsc::Sender<PipelineAction>,
+    ) {
+        // Insertion follows persistence: emit the follow-up action
+        // right after PersistForeground so typing never precedes save.
+        match action {
+            PipelineAction::PersistForeground {
+                id,
+                text,
+                started_at_ms,
+                ended_at_ms,
+            } => {
+                let insert = pipeline.take_pending_insertion(&text);
+                let _ = actions_tx
+                    .send(PipelineAction::PersistForeground {
+                        id,
+                        text: text.clone(),
+                        started_at_ms,
+                        ended_at_ms,
+                    })
+                    .await;
+                if let Some(insert) = insert {
+                    debug_assert!(matches!(
+                        insert,
+                        PipelineAction::InsertIntoFocusedField { .. }
+                    ));
+                    let _ = actions_tx.send(insert).await;
+                }
+            }
+            PipelineAction::None => {}
+            other => {
+                let _ = actions_tx.send(other).await;
+            }
+        }
+    }
+
+    /// Returns false when the loop should exit.
+    async fn execute(command: SupervisorCommand, helper: &mut Option<DictationHelper>) -> bool {
+        let Some(helper) = helper else {
+            return true;
+        };
+        let result = match command {
+            SupervisorCommand::StartSession(id) => helper.start_session(&id).await,
+            SupervisorCommand::StopSession => helper.stop_session().await,
+            SupervisorCommand::Insert(id, text) => helper.request_insertion(&id, &text).await,
+            SupervisorCommand::Shutdown => return false,
+        };
+        if let Err(error) = result {
+            eprintln!("Dictation command failed: {error}");
+        }
+        true
     }
 }
 

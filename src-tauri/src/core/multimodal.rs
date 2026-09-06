@@ -42,7 +42,7 @@ pub(crate) use audio_sources::{
 };
 pub(crate) use dictation_helper::DictationHelper;
 pub(crate) use dictation_pipeline::PipelineAction;
-pub(crate) use dictation_supervisor::DictationSupervisor;
+pub(crate) use dictation_supervisor::{DictationSupervisor, SupervisorCommand};
 pub(crate) use media_io::{mediapipe_runtime_available, run_mediapipe_face_features};
 pub use queries::{
     delete_all_multimodal_derived, get_asr_segments, get_audio_chunks, get_audio_state_spans,

@@ -27,6 +27,7 @@ final class DictationRuntime: @unchecked Sendable {
     private var focusTarget: CapturedFocusTarget?
     private let inserter = TextInserter()
     private let mic = MicSessionRecorder()
+    private var partialTimer: Timer?
 
     init(parentPID: pid_t) {
         self.parentPID = parentPID
@@ -34,6 +35,7 @@ final class DictationRuntime: @unchecked Sendable {
 
     func start() {
         setupPresentation()
+        mic.onLevel = { level in ListeningIndicator.shared.setLevel(level) }
         watchParent()
         hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
@@ -61,7 +63,28 @@ final class DictationRuntime: @unchecked Sendable {
                 sessionAudioPath = mic.activeSessionPath
             }
             ListeningIndicator.shared.show()
+            startPartialTimer(id: id)
             writeDictationLine("SESSION_STARTED \(id)")
+        }
+    }
+
+    /// Display-only live words: re-transcribe a snapshot of the growing
+    /// session file every few seconds for the pill label. The authoritative
+    /// transcript still comes from the final TRANSCRIPT event.
+    private func startPartialTimer(id: String) {
+        partialTimer?.invalidate()
+        partialTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
+            guard let self, self.activeSessionID == id,
+                let snapshot = self.mic.partialSnapshotURL()
+            else {
+                return
+            }
+            self.engine.transcribe(audioPath: snapshot.path) { result in
+                try? FileManager.default.removeItem(at: snapshot)
+                if self.activeSessionID == id, !result.text.isEmpty {
+                    ListeningIndicator.shared.setTranscript(result.text)
+                }
+            }
         }
     }
 
@@ -73,6 +96,8 @@ final class DictationRuntime: @unchecked Sendable {
 
     private func finishSession(id: String) {
         activeSessionID = nil
+        partialTimer?.invalidate()
+        partialTimer = nil
         ListeningIndicator.shared.hide()
         mic.endSessionFile()
         sessionAudioPath = mic.activeSessionPath
@@ -214,10 +239,18 @@ final class RightOptionHotkey {
     }
 
     private func installTap() {
+        // Reuse the live tap; never stack duplicates (each stale tap costs
+        // the system a callback per event and eventually gets us throttled).
+        if let tap = eventTap {
+            CGEvent.tapEnable(tap: tap, enable: true)
+            return
+        }
         let mask = (1 << CGEventType.flagsChanged.rawValue)
             | (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.leftMouseDown.rawValue)
             | (1 << CGEventType.rightMouseDown.rawValue)
+            | (1 << CGEventType.tapDisabledByTimeout.rawValue)
+            | (1 << CGEventType.tapDisabledByUserInput.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
@@ -249,11 +282,21 @@ final class RightOptionHotkey {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
+        reportedUnavailable = false
+        writeDictationLine("DEBUG tap installed")
     }
 
     private func handle(event: CGEvent) {
         // Ignore keystrokes the inserter synthesized itself.
         if event.getIntegerValueField(.eventSourceUserData) == synthesizedEventTag {
+            return
+        }
+        // macOS pauses slow taps; re-enable immediately instead of dying silent.
+        if event.type == .tapDisabledByTimeout || event.type == .tapDisabledByUserInput {
+            if let tap = eventTap {
+                CGEvent.tapEnable(tap: tap, enable: true)
+                writeDictationLine("DEBUG tap re-enabled")
+            }
             return
         }
         let type = event.type
