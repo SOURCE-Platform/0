@@ -15,11 +15,13 @@ func writeDictationLine(_ line: String) {
 /// Phase 1 skeleton: lifecycle + line protocol only.
 /// Phase 2 plugs in: CGEvent Right Option tap, Core Audio capture,
 /// FluidAudio Parakeet (v2/v3), overlay + TypingService-equivalent.
-final class DictationRuntime {
+/// Session state is mutated on the main runloop only: the hotkey tap and
+/// timers already run there, and stdin commands hop there explicitly.
+final class DictationRuntime: @unchecked Sendable {
     private let parentPID: pid_t
     private var parentTimer: Timer?
     private var hotkey: RightOptionHotkey?
-    private var engine: TranscriptionEngine = StubTranscriptionEngine()
+    private var engine: TranscriptionEngine = makeDefaultEngine()
     private var activeSessionID: String?
     private var sessionAudioPath: String?
     private var focusTarget: CapturedFocusTarget?
@@ -105,11 +107,14 @@ final class DictationRuntime {
     }
 
     private func watchStdin() {
-        FileHandle.standardInput.readabilityHandler = { handle in
+        FileHandle.standardInput.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else { return }
-            for command in line.components(separatedBy: .newlines) {
-                self.handleCommand(command.trimmingCharacters(in: .whitespaces))
+            let commands = line.components(separatedBy: .newlines)
+            DispatchQueue.main.async {
+                for command in commands {
+                    self?.handleCommand(command.trimmingCharacters(in: .whitespaces))
+                }
             }
         }
     }
@@ -168,20 +173,7 @@ struct EngineTranscription {
 }
 
 protocol TranscriptionEngine {
-    func transcribe(audioPath: String, completion: @escaping (EngineTranscription) -> Void)
-}
-
-struct StubTranscriptionEngine: TranscriptionEngine {
-    func transcribe(audioPath: String, completion: @escaping (EngineTranscription) -> Void) {
-        completion(
-            EngineTranscription(
-                text: "",
-                language: nil,
-                confidence: nil,
-                model: "parakeet-tdt-v3 (stub)"
-            )
-        )
-    }
+    func transcribe(audioPath: String, completion: @escaping @Sendable (EngineTranscription) -> Void)
 }
 
 /// Modifier-only Right Option toggle via a CGEvent tap.

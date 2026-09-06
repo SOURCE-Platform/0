@@ -100,6 +100,12 @@ model weights) are also reviewed.
 
 ## Implementation status
 
+Verified end to end on 2026-09-06: the SwiftPM helper (`src-tauri/native-pkg`,
+`swift build -c release`) transcribed a synthesized fixture
+("Hello world, this is a transcription test.") exactly at 0.989 confidence
+via `TRANSCRIBE_FILE` → `TRANSCRIPT`. v3 lives in the shared
+`~/Library/Application Support/FluidAudio/` cache — one copy for all apps.
+
 - `speech_provider.rs`: provider trait, `LocalMlxProvider`, dictionary
   replacements (tested, incl. longest-match + no re-matching).
 - `dictation_helper.rs`: spawn/supervise helper, `START`/`STOP`/`INSERT`,

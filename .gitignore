@@ -41,3 +41,5 @@ Thumbs.db
 *~
 .idea/
 *.iml
+# SwiftPM helper build output (16MB+ binary + SDK checkouts)
+src-tauri/native-pkg/.build/
