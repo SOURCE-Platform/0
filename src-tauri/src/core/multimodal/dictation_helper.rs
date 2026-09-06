@@ -39,8 +39,16 @@ pub struct DictationHelper {
 }
 
 impl DictationHelper {
+    /// Dev builds: absolute OUT_DIR path baked in at compile time.
+    /// Packaged app: `Contents/Resources/helpers/source-dictation`
+    /// next to the bundle (resolved from the running executable).
     pub fn helper_path() -> Option<PathBuf> {
-        option_env!("SOURCE_DICTATION_HELPER").map(PathBuf::from)
+        if let Some(path) = option_env!("SOURCE_DICTATION_HELPER").map(PathBuf::from) {
+            if path.exists() {
+                return Some(path);
+            }
+        }
+        bundled_helper_path()
     }
 
     pub fn available() -> bool {
@@ -140,6 +148,14 @@ impl DictationHelper {
             .map_err(|error| format!("Failed to flush dictation helper: {error}"))?;
         Ok(())
     }
+}
+
+/// macOS .app layout: `Contents/MacOS/<exe>` → `Contents/Resources/...`.
+fn bundled_helper_path() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    let resources = exe.parent()?.join("../Resources").canonicalize().ok()?;
+    let candidate = resources.join("helpers").join("source-dictation");
+    candidate.exists().then_some(candidate)
 }
 
 fn parse_helper_line(line: &str) -> DictationEvent {

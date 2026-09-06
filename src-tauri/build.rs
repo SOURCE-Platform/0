@@ -61,6 +61,27 @@ fn build_dictation_helper() {
     // NOTE: sources live in the SwiftPM package dir so swiftc and
     // `swift build` compile one shared copy. engine_fluidaudio.swift is
     // SPM-only (needs the FluidAudio SDK); engine_stub.swift is swiftc-only.
+    for source in [
+        "native-pkg/Package.swift",
+        "native-pkg/Package.resolved",
+        "native-pkg/Sources/SourceDictation/source_dictation.swift",
+        "native-pkg/Sources/SourceDictation/dictation_core.swift",
+        "native-pkg/Sources/SourceDictation/focus_capture.swift",
+        "native-pkg/Sources/SourceDictation/text_insertion.swift",
+        "native-pkg/Sources/SourceDictation/mic_capture.swift",
+        "native-pkg/Sources/SourceDictation/engine_fluidaudio.swift",
+        "native-pkg/Sources/SourceDictation/engine_stub.swift",
+    ] {
+        println!("cargo:rerun-if-changed={source}");
+    }
+    if let Some(binary) = build_spm_dictation_helper() {
+        println!("cargo:rustc-env=SOURCE_DICTATION_HELPER={}", binary.display());
+        return;
+    }
+    println!("cargo:warning=SwiftPM dictation build failed; falling back to stub helper");
+    let output =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"))
+            .join("source-dictation");
     let sources = [
         "native-pkg/Sources/SourceDictation/source_dictation.swift",
         "native-pkg/Sources/SourceDictation/dictation_core.swift",
@@ -69,12 +90,6 @@ fn build_dictation_helper() {
         "native-pkg/Sources/SourceDictation/mic_capture.swift",
         "native-pkg/Sources/SourceDictation/engine_stub.swift",
     ];
-    for source in sources {
-        println!("cargo:rerun-if-changed={source}");
-    }
-    let output =
-        std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"))
-            .join("source-dictation");
     let status = std::process::Command::new("swiftc")
         .args(sources)
         .args([
@@ -96,4 +111,25 @@ fn build_dictation_helper() {
         "cargo:rustc-env=SOURCE_DICTATION_HELPER={}",
         output.display()
     );
+}
+
+/// Release SwiftPM build of the full-engine helper. Returns the binary
+/// path on success, None when the SDK cannot be resolved (offline).
+#[cfg(target_os = "macos")]
+fn build_spm_dictation_helper() -> Option<std::path::PathBuf> {
+    let manifest_dir = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let status = std::process::Command::new("swift")
+        .args(["build", "-c", "release", "--disable-automatic-resolution"])
+        .current_dir(manifest_dir.join("native-pkg"))
+        .status()
+        .ok()?;
+    if !status.success() {
+        return None;
+    }
+    let binary = manifest_dir
+        .join("native-pkg")
+        .join(".build")
+        .join("release")
+        .join("SourceDictation");
+    binary.exists().then_some(binary)
 }

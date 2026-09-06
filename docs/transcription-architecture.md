@@ -106,6 +106,14 @@ Verified end to end on 2026-09-06: the SwiftPM helper (`src-tauri/native-pkg`,
 via `TRANSCRIBE_FILE` → `TRANSCRIPT`. v3 lives in the shared
 `~/Library/Application Support/FluidAudio/` cache — one copy for all apps.
 
+Phase A verified: `tauri build` embeds the 16 MB engine at
+`SOURCE.app/Contents/Resources/helpers/source-dictation` (Mach-O arm64,
+executable), and that bundled copy transcribes the fixture identically.
+`build.rs` prefers the SwiftPM full-engine build with a swiftc stub fallback;
+`DictationHelper::helper_path` resolves dev OUT_DIR first, then the bundle
+Resources dir. (DMG step fails on this machine — unsigned `bundle_dmg.sh`;
+.app itself bundles fine.)
+
 - `speech_provider.rs`: provider trait, `LocalMlxProvider`, dictionary
   replacements (tested, incl. longest-match + no re-matching).
 - `dictation_helper.rs`: spawn/supervise helper, `START`/`STOP`/`INSERT`,
