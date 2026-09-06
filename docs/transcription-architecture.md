@@ -114,6 +114,12 @@ executable), and that bundled copy transcribes the fixture identically.
 Resources dir. (DMG step fails on this machine — unsigned `bundle_dmg.sh`;
 .app itself bundles fine.)
 
+Phase B verified: `setup_app` spawns a supervise loop
+(`initialize_dictation_supervisor`) that launches the helper at startup,
+feeds its events through `DictationPipeline` with the saved dictionary,
+logs transcript actions, and respawns after crashes. Dev log shows
+"Dictation helper is ready" with the helper process parented to the app.
+
 - `speech_provider.rs`: provider trait, `LocalMlxProvider`, dictionary
   replacements (tested, incl. longest-match + no re-matching).
 - `dictation_helper.rs`: spawn/supervise helper, `START`/`STOP`/`INSERT`,

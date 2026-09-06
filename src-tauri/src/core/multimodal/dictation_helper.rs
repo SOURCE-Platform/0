@@ -52,7 +52,11 @@ impl DictationHelper {
     }
 
     pub fn available() -> bool {
-        Self::helper_path().is_some_and(|path| path.exists())
+        let available = Self::helper_path().is_some_and(|path| path.exists());
+        if !available {
+            eprintln!("Dictation helper binary not found (dev OUT_DIR or bundle Resources)");
+        }
+        available
     }
 
     /// Spawn `source-dictation serve <parent-pid>` and stream its stdout

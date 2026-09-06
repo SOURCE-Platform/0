@@ -13,6 +13,8 @@ pub struct DictationSupervisor {
     helper: Option<DictationHelper>,
 }
 
+/// Commands into the running helper. Wired in Phase C (live loop).
+#[allow(dead_code)]
 pub enum SupervisorCommand {
     StartSession(String),
     StopSession,

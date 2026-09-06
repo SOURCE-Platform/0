@@ -3,6 +3,9 @@ use crate::core::config::Config;
 use crate::core::consent::ConsentManager;
 use crate::core::context_timeline;
 use crate::core::database::Database;
+use crate::core::multimodal::{
+    DictationHelper, DictationSupervisor, PipelineAction,
+};
 use crate::core::input_recorder::InputRecorder;
 use crate::core::keyboard_recorder::KeyboardRecorder;
 use crate::core::multimodal::MultimodalService;
@@ -83,11 +86,13 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             storage.clone(),
             consent_manager.clone(),
         ));
+        let shared_config = Arc::new(Mutex::new(config));
+        initialize_dictation_supervisor(shared_config.clone());
 
         app.manage(AppState {
             db,
             consent_manager,
-            config: Arc::new(Mutex::new(config)),
+            config: shared_config,
             screen_recorder,
             os_activity_recorder,
             session_manager,
@@ -103,6 +108,63 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     });
 
     Ok(())
+}
+
+fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
+    use crate::core::multimodal::speech_provider::DictionaryEntry;
+
+    tauri::async_runtime::spawn(async move {
+        loop {
+            if !DictationHelper::available() {
+                eprintln!("Dictation helper not available; retrying soon");
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                continue;
+            }
+            let dictionary: Vec<DictionaryEntry> = config
+                .lock()
+                .map(|config| {
+                    config
+                        .custom_dictionary
+                        .iter()
+                        .map(|entry| DictionaryEntry {
+                            triggers: entry.triggers.clone(),
+                            replacement: entry.replacement.clone(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            let supervisor = DictationSupervisor::new(dictionary);
+            match supervisor.run().await {
+                Ok((mut actions, _events)) => {
+                    println!("Dictation helper is ready");
+                    while let Some(action) = actions.recv().await {
+                        log_dictation_action(&action);
+                    }
+                    eprintln!("Dictation helper exited; restarting soon");
+                }
+                Err(error) => {
+                    eprintln!("Dictation helper failed to start ({error}); retrying soon");
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        }
+    });
+}
+
+/// Phase B: visibility into the live loop. Phase D persists these.
+fn log_dictation_action(action: &PipelineAction) {
+    match action {
+        PipelineAction::PersistForeground { id, text, .. } => {
+            println!("Dictation transcript {id}: {text}");
+        }
+        PipelineAction::InsertIntoFocusedField { id, .. } => {
+            println!("Dictation {id} ready to type into focused field");
+        }
+        PipelineAction::DuplicateIgnored { id } => {
+            println!("Dictation duplicate {id} ignored");
+        }
+        PipelineAction::None => {}
+    }
 }
 
 async fn initialize_ocr_processor(

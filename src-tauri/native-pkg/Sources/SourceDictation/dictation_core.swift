@@ -187,6 +187,7 @@ final class RightOptionHotkey {
     private var rightOptionDown = false
     private var interrupted = false
     private var retryTimer: Timer?
+    private var reportedUnavailable = false
 
     init(onToggle: @escaping () -> Void) {
         self.onToggle = onToggle
@@ -221,10 +222,15 @@ final class RightOptionHotkey {
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         ) else {
             // No Accessibility permission (or headless session): stdin
-            // START/STOP remain available; retry on the timer.
-            writeDictationLine("ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\"}")
+            // START/STOP remain available; retry on the timer. Report once
+            // so host logs stay quiet.
+            if !reportedUnavailable {
+                reportedUnavailable = true
+                writeDictationLine("ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\"}")
+            }
             return
         }
+        reportedUnavailable = false
         eventTap = tap
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         if let source = runLoopSource {

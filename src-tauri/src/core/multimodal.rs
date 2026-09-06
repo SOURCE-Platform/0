@@ -11,9 +11,9 @@ mod audio_transcripts;
 mod bench_wer;
 mod constants;
 mod desktop_audio_runtime;
-mod dictation_helper;
+pub(crate) mod dictation_helper;
 mod dictation_pipeline;
-mod dictation_supervisor;
+pub(crate) mod dictation_supervisor;
 mod foreground_coordinator;
 mod speech_model;
 mod indexing;
@@ -40,6 +40,9 @@ pub use audio_meter_types::{AudioMeterReadingDto, AudioMetersDto};
 pub(crate) use audio_sources::{
     choose_video_source, default_audio_input_name, list_avfoundation_sources,
 };
+pub(crate) use dictation_helper::DictationHelper;
+pub(crate) use dictation_pipeline::PipelineAction;
+pub(crate) use dictation_supervisor::DictationSupervisor;
 pub(crate) use media_io::{mediapipe_runtime_available, run_mediapipe_face_features};
 pub use queries::{
     delete_all_multimodal_derived, get_asr_segments, get_audio_chunks, get_audio_state_spans,
