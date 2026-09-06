@@ -15,6 +15,8 @@ mod dictation_helper;
 mod dictation_pipeline;
 mod dictation_supervisor;
 mod foreground_coordinator;
+#[cfg(target_os = "macos")]
+mod fluidaudio_provider;
 mod speech_model;
 mod indexing;
 mod mappers;

@@ -1,5 +1,7 @@
 fn main() {
     #[cfg(target_os = "macos")]
+    add_swift_toolchain_rpaths();
+    #[cfg(target_os = "macos")]
     build_desktop_audio_helper();
     #[cfg(target_os = "macos")]
     build_dictation_helper();
@@ -30,6 +32,22 @@ fn main() {
     }
 
     tauri_build::build()
+}
+
+/// fluidaudio-rs links Swift runtime dylibs via @rpath but ships no rpath
+/// to the Swift toolchain, so dev binaries die in dyld. Point the linker
+/// at every toolchain Swift dir present on this machine.
+#[cfg(target_os = "macos")]
+fn add_swift_toolchain_rpaths() {
+    let candidates = [
+        "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift-5.5/macosx",
+        "/Library/Developer/CommandLineTools/usr/lib/swift-5.5/macosx",
+    ];
+    for dir in candidates {
+        if std::path::Path::new(&format!("{dir}/libswift_Concurrency.dylib")).exists() {
+            println!("cargo:rustc-link-arg=-Wl,-rpath,{dir}");
+        }
+    }
 }
 
 #[cfg(target_os = "macos")]

@@ -50,6 +50,8 @@ screencapturekit-sys = "0.2"
 core-graphics = "0.23"
 cocoa = "0.25"
 objc = "0.2"
+# Native FluidAudio transcription (same engine as FluidVoice) via Swift+C FFI.
+fluidaudio-rs = "0.14"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [
