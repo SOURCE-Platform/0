@@ -88,6 +88,7 @@ fn build_dictation_helper() {
         "native-pkg/Sources/SourceDictation/focus_capture.swift",
         "native-pkg/Sources/SourceDictation/text_insertion.swift",
         "native-pkg/Sources/SourceDictation/mic_capture.swift",
+        "native-pkg/Sources/SourceDictation/overlay.swift",
         "native-pkg/Sources/SourceDictation/engine_stub.swift",
     ];
     let status = std::process::Command::new("swiftc")

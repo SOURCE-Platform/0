@@ -33,10 +33,18 @@ final class DictationRuntime: @unchecked Sendable {
     }
 
     func start() {
+        setupPresentation()
         watchParent()
         hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
         watchStdin()
+    }
+
+    /// Stay invisible (no dock icon, no menu) while still able to show
+    /// floating panels like the listening indicator.
+    private func setupPresentation() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.prohibited)
     }
 
     /// First Right Option press opens a session, second closes it.
@@ -52,6 +60,7 @@ final class DictationRuntime: @unchecked Sendable {
             if mic.beginSession() {
                 sessionAudioPath = mic.activeSessionPath
             }
+            ListeningIndicator.shared.show()
             writeDictationLine("SESSION_STARTED \(id)")
         }
     }
@@ -64,6 +73,7 @@ final class DictationRuntime: @unchecked Sendable {
 
     private func finishSession(id: String) {
         activeSessionID = nil
+        ListeningIndicator.shared.hide()
         mic.endSessionFile()
         sessionAudioPath = mic.activeSessionPath
         writeDictationLine("SESSION_STOPPED \(id)")
@@ -223,10 +233,12 @@ final class RightOptionHotkey {
         ) else {
             // No Accessibility permission (or headless session): stdin
             // START/STOP remain available; retry on the timer. Report once
-            // so host logs stay quiet.
+            // so host logs stay quiet. AXIsProcessTrusted distinguishes
+            // "toggle missing" (false) from other tap failures (true).
             if !reportedUnavailable {
                 reportedUnavailable = true
-                writeDictationLine("ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\"}")
+                let trusted = AXIsProcessTrusted()
+                writeDictationLine("ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\", \"trusted\":\(trusted)}")
             }
             return
         }
@@ -252,6 +264,10 @@ final class RightOptionHotkey {
         guard type == .flagsChanged else { return }
         let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
         let flags = event.flags
+        // Trace option-key transitions so host logs prove the tap is live.
+        if keyCode == 58 || keyCode == 61 {
+            writeDictationLine("DEBUG key flagsChanged keyCode=\(keyCode) alt=\(flags.contains(.maskAlternate))")
+        }
         if keyCode == 61 {
             if flags.contains(.maskAlternate) {
                 rightOptionDown = true

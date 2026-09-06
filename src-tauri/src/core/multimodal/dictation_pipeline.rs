@@ -55,9 +55,10 @@ impl DictationPipeline {
             DictationEvent::Transcript(transcript) => {
                 self.on_transcript(transcript, dictionary)
             }
-            DictationEvent::Inserted { .. } | DictationEvent::Ready | DictationEvent::Exited => {
-                PipelineAction::None
-            }
+            DictationEvent::Inserted { .. }
+            | DictationEvent::Debug(_)
+            | DictationEvent::Ready
+            | DictationEvent::Exited => PipelineAction::None,
             DictationEvent::EngineError(_) => PipelineAction::None,
         }
     }

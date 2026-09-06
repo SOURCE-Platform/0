@@ -28,6 +28,7 @@ pub enum DictationEvent {
     SessionStopped { id: String },
     Transcript(DictationTranscript),
     Inserted { id: String },
+    Debug(String),
     EngineError(String),
     Exited,
 }
@@ -43,6 +44,14 @@ impl DictationHelper {
     /// Packaged app: `Contents/Resources/helpers/source-dictation`
     /// next to the bundle (resolved from the running executable).
     pub fn helper_path() -> Option<PathBuf> {
+        // Local override for live testing (e.g. point dev at the full
+        // SwiftPM engine build instead of the swiftc stub).
+        if let Ok(path) = std::env::var("SOURCE_DICTATION_HELPER_OVERRIDE") {
+            let path = PathBuf::from(path);
+            if path.exists() {
+                return Some(path);
+            }
+        }
         if let Some(path) = option_env!("SOURCE_DICTATION_HELPER").map(PathBuf::from) {
             if path.exists() {
                 return Some(path);
@@ -176,6 +185,9 @@ fn parse_helper_line(line: &str) -> DictationEvent {
     if let Some(id) = trimmed.strip_prefix("INSERTED ") {
         return DictationEvent::Inserted { id: id.trim().to_string() };
     }
+    if let Some(message) = trimmed.strip_prefix("DEBUG ") {
+        return DictationEvent::Debug(message.to_string());
+    }
     if let Some(payload) = trimmed.strip_prefix("TRANSCRIPT ") {
         return match serde_json::from_str::<DictationTranscript>(payload) {
             Ok(transcript) => DictationEvent::Transcript(transcript),
@@ -228,6 +240,14 @@ mod tests {
             DictationEvent::Inserted { id } => assert_eq!(id, "abc-123"),
             other => panic!("unexpected event: {other:?}"),
         }
+    }
+
+    #[test]
+    fn parses_debug_lines() {
+        assert!(matches!(
+            parse_helper_line("DEBUG key flagsChanged keyCode=61 alt=true"),
+            DictationEvent::Debug(_)
+        ));
     }
 
     #[test]

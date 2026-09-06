@@ -56,6 +56,7 @@ impl DictationSupervisor {
                     Ok(event) => event,
                     Err(_) => break,
                 };
+                log_helper_event(&event);
                 let done = matches!(event, DictationEvent::Exited);
                 let action = self
                     .pipeline
@@ -100,6 +101,35 @@ impl DictationSupervisor {
     }
 }
 
+/// Every helper line lands here, so Right Option presses are visible
+/// in the host log even before transcription or typing is involved.
+fn log_helper_event(event: &DictationEvent) {
+    match event {
+        DictationEvent::Ready => {}
+        DictationEvent::SessionStarted { id } => {
+            println!("Dictation session started ({id})");
+        }
+        DictationEvent::SessionStopped { id } => {
+            println!("Dictation session stopped ({id})");
+        }
+        DictationEvent::Transcript(transcript) => {
+            println!(
+                "Dictation transcript received ({} chars)",
+                transcript.text.len()
+            );
+        }
+        DictationEvent::Inserted { id } => {
+            println!("Dictation {id} typed into focused field");
+        }
+        DictationEvent::Debug(message) => {
+            println!("Dictation debug: {message}");
+        }
+        DictationEvent::EngineError(message) => {
+            eprintln!("Dictation helper error: {message}");
+        }
+        DictationEvent::Exited => {}
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::super::dictation_helper::DictationTranscript;
