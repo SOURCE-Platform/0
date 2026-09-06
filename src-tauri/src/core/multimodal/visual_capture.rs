@@ -4,11 +4,11 @@ use super::media_io::{
     capture_camera_frame, load_png_as_frame, run_mediapipe_scene_inference,
     save_visual_evidence_frame, MediaPipePoseOutput,
 };
-use super::types::VisualLoopState;
 use super::visual_detections::{
     classify_motion, classify_visual_trigger_reason, insert_detector_rows,
     should_retain_visual_evidence,
 };
+use super::visual_loop_state::VisualLoopState;
 use crate::core::database::Database;
 use crate::core::gaze;
 use crate::core::storage::RecordingStorage;

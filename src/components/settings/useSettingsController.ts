@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { DISPLAY_KEY } from "@/components/TimelinePage";
-import { normalizeAudioConfig, updateAudioSourceConfig, updateChannelConfig } from "@/components/settings/audioConfig";
+import { normalizeAudioConfig, updateChannelConfig } from "@/components/settings/audioConfig";
+import { createAudioSettingsActions } from "@/components/settings/audioSettingsActions";
 import { useTheme } from "@/components/theme-provider";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
 import { ChannelStatus, DesktopCaptureStatus } from "@/types/contextTimeline";
@@ -278,26 +279,7 @@ export function useSettingsController() {
     localStorage.setItem(DISPLAY_KEY, value);
   }
 
-  function selectAudioInput(value: string) {
-    if (!config) return;
-    setConfig({
-      ...config,
-      selected_audio_input_id: value === "__auto__" ? null : value,
-    });
-  }
-
-  function updateAudioMicrophoneEnabled(enabled: boolean) {
-    if (config) setConfig(updateAudioSourceConfig(config, { audio_microphone_enabled: enabled }));
-  }
-
-  function updateAudioDesktopEnabled(enabled: boolean) {
-    if (config) setConfig(updateAudioSourceConfig(config, { audio_desktop_enabled: enabled }));
-  }
-
-  function updateDesktopAudioGainDb(gainDb: number) {
-    if (!config) return;
-    setConfig({ ...config, desktop_audio_gain_db: Math.min(24, Math.max(0, gainDb)) });
-  }
+  const audioActions = createAudioSettingsActions(config, setConfig);
 
   return {
     config,
@@ -324,10 +306,7 @@ export function useSettingsController() {
     setTab,
     setPendingDelete,
     selectDisplay,
-    selectAudioInput,
-    updateAudioMicrophoneEnabled,
-    updateAudioDesktopEnabled,
-    updateDesktopAudioGainDb,
+    ...audioActions,
     updateConfig,
     updateChannel,
     updatePiiCategory,

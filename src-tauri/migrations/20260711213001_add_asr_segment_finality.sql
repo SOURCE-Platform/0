@@ -1,0 +1,2 @@
+ALTER TABLE asr_segments
+    ADD COLUMN is_final INTEGER NOT NULL DEFAULT 1;

@@ -46,6 +46,8 @@ pub struct TimelineRailDto {
     pub description: String,
     pub confidence_note: String,
     pub default_expanded: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub waveform: Option<TimelineWaveformDto>,
     pub slices: Vec<ContextSlice>,
     pub children: Vec<TimelineRailDto>,
 }
@@ -65,6 +67,7 @@ impl TimelineRailDto {
             description: description.to_string(),
             confidence_note: confidence_note.to_string(),
             default_expanded: true,
+            waveform: None,
             slices,
             children: Vec::new(),
         }
@@ -85,9 +88,23 @@ impl TimelineRailDto {
             description: description.to_string(),
             confidence_note: confidence_note.to_string(),
             default_expanded,
+            waveform: None,
             slices: Vec::new(),
             children,
         }
+    }
+
+    fn lane_with_waveform(
+        id: &str,
+        label: &str,
+        description: &str,
+        confidence_note: &str,
+        waveform: TimelineWaveformDto,
+        slices: Vec<ContextSlice>,
+    ) -> Self {
+        let mut rail = Self::lane(id, label, description, confidence_note, slices);
+        rail.waveform = Some(waveform);
+        rail
     }
 }
 

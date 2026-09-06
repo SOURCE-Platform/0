@@ -1,6 +1,8 @@
 fn main() {
     #[cfg(target_os = "macos")]
     build_desktop_audio_helper();
+    #[cfg(target_os = "macos")]
+    build_dictation_helper();
 
     // Configure FFmpeg paths for macOS (Homebrew installation)
     #[cfg(target_os = "macos")]
@@ -32,18 +34,62 @@ fn main() {
 
 #[cfg(target_os = "macos")]
 fn build_desktop_audio_helper() {
-    let source = "src/native/source_desktop_audio.swift";
-    println!("cargo:rerun-if-changed={source}");
+    let sources = [
+        "src/native/source_desktop_audio.swift",
+        "src/native/desktop_audio_core.swift",
+    ];
+    for source in sources {
+        println!("cargo:rerun-if-changed={source}");
+    }
     let output = std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"))
         .join("source-desktop-audio");
     let status = std::process::Command::new("swiftc")
-        .args([source, "-parse-as-library", "-O", "-o"])
+        .args(sources)
+        .args(["-parse-as-library", "-O", "-o"])
         .arg(&output)
         .status()
         .expect("Swift is required to build the macOS desktop-audio helper");
     assert!(status.success(), "Failed to build the desktop-audio helper");
     println!(
         "cargo:rustc-env=SOURCE_DESKTOP_AUDIO_HELPER={}",
+        output.display()
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn build_dictation_helper() {
+    let sources = [
+        "src/native/source_dictation.swift",
+        "src/native/dictation_core.swift",
+        "src/native/focus_capture.swift",
+        "src/native/text_insertion.swift",
+        "src/native/mic_capture.swift",
+    ];
+    for source in sources {
+        println!("cargo:rerun-if-changed={source}");
+    }
+    let output =
+        std::path::PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"))
+            .join("source-dictation");
+    let status = std::process::Command::new("swiftc")
+        .args(sources)
+        .args([
+            "-parse-as-library",
+            "-O",
+            "-framework",
+            "AppKit",
+            "-framework",
+            "ApplicationServices",
+            "-framework",
+            "AVFoundation",
+            "-o",
+        ])
+        .arg(&output)
+        .status()
+        .expect("Swift is required to build the macOS dictation helper");
+    assert!(status.success(), "Failed to build the dictation helper");
+    println!(
+        "cargo:rustc-env=SOURCE_DICTATION_HELPER={}",
         output.display()
     );
 }

@@ -65,8 +65,20 @@ export interface TimelineRail {
   description: string;
   confidenceNote: string;
   defaultExpanded: boolean;
+  waveform?: TimelineWaveform | null;
   slices: ContextSlice[];
   children: TimelineRail[];
+}
+
+export interface TimelineWaveformSample {
+  timestamp: number;
+  level: number;
+}
+
+export interface TimelineWaveform {
+  sourceId: string;
+  sourceLabel: string;
+  samples: TimelineWaveformSample[];
 }
 
 export interface TimelineSummary {

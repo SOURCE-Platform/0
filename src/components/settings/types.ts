@@ -21,6 +21,11 @@ export interface CaptureChannels {
   sensor_future: boolean;
 }
 
+export interface DictionaryEntry {
+  triggers: string[];
+  replacement: string;
+}
+
 export interface Config {
   storage_path: string;
   retention_days: Record<string, number>;
@@ -34,7 +39,11 @@ export interface Config {
   selected_audio_input_id?: string | null;
   audio_microphone_enabled: boolean;
   audio_desktop_enabled: boolean;
+  audio_transcription_enabled: boolean;
+  audio_speech_emotion_enabled: boolean;
+  audio_sound_events_enabled: boolean;
   desktop_audio_gain_db: number;
+  custom_dictionary: DictionaryEntry[];
   mock_data_mode: boolean;
   capture_channels: CaptureChannels;
   resource_profile: "minimal" | "balanced" | "high_fidelity";

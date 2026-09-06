@@ -1,129 +1,114 @@
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use uuid::Uuid;
 
 const DESKTOP_AUDIO_SAMPLE_RATE: u32 = 16_000;
-static LIVE_DESKTOP_METER: OnceLock<Mutex<Option<DesktopMeterHandle>>> = OnceLock::new();
-static LAST_DESKTOP_METER_FAILURE: OnceLock<Mutex<Option<(Instant, String)>>> = OnceLock::new();
-const DESKTOP_METER_RETRY_DELAY: Duration = Duration::from_secs(2);
+const DESKTOP_CHUNK_TIMEOUT: Duration = Duration::from_secs(4);
 
-struct DesktopMeterHandle {
+static LIVE_DESKTOP_AUDIO: OnceLock<Mutex<Option<Arc<DesktopAudioStream>>>> = OnceLock::new();
+
+struct DesktopAudioStream {
     level_bits: Arc<AtomicU32>,
     last_error: Arc<Mutex<Option<String>>>,
-    child: Arc<Mutex<Child>>,
+    capture_enabled: AtomicBool,
+    chunks: Mutex<Receiver<PathBuf>>,
+    child: Mutex<Child>,
+    spool_directory: PathBuf,
     _reader: JoinHandle<()>,
 }
 
-impl Drop for DesktopMeterHandle {
+impl Drop for DesktopAudioStream {
     fn drop(&mut self) {
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
             let _ = child.wait();
         }
+        let _ = fs::remove_dir_all(&self.spool_directory);
     }
 }
 
-pub(super) fn ensure_live_desktop_meter(gain_db: f32) -> Result<f32, String> {
-    let meter = LIVE_DESKTOP_METER.get_or_init(|| Mutex::new(None));
-    let mut active = meter
-        .lock()
-        .map_err(|_| "Desktop audio meter lock is unavailable.".to_string())?;
-    read_or_restart_desktop_meter(&mut active, gain_db)
+pub(super) fn ensure_live_desktop_meter(_gain_db: f32) -> Result<f32, String> {
+    let stream = ensure_live_desktop_stream()?;
+    stream.current_level()
 }
 
-pub(super) fn current_live_desktop_meter(gain_db: f32) -> Result<f32, String> {
-    let meter = LIVE_DESKTOP_METER
-        .get()
-        .ok_or_else(|| "Desktop audio meter has not started.".to_string())?;
-    let mut active = meter
-        .lock()
-        .map_err(|_| "Desktop audio meter lock is unavailable.".to_string())?;
-    read_or_restart_desktop_meter(&mut active, gain_db)
+pub(super) fn current_live_desktop_meter(_gain_db: f32) -> Result<f32, String> {
+    let stream = ensure_live_desktop_stream()?;
+    stream.current_level()
 }
 
 pub(super) async fn capture_desktop_audio_chunk(
-    duration_secs: f32,
+    _duration_secs: f32,
     gain_db: f32,
     output_path: &Path,
 ) -> Result<(), String> {
+    let stream = ensure_live_desktop_stream()?;
+    stream.enable_capture()?;
+
+    let raw_path = tokio::task::spawn_blocking({
+        let stream = Arc::clone(&stream);
+        move || stream.next_chunk()
+    })
+    .await
+    .map_err(|error| format!("Desktop audio chunk task failed: {error}"))??;
+
     let output_path = output_path.to_path_buf();
-    tokio::task::spawn_blocking(move || capture_chunk_blocking(duration_secs, gain_db, output_path))
+    tokio::task::spawn_blocking(move || convert_chunk(&raw_path, gain_db, &output_path))
         .await
-        .map_err(|error| format!("Desktop audio capture task failed: {error}"))?
+        .map_err(|error| format!("Desktop audio conversion task failed: {error}"))?
 }
 
-fn read_or_restart_desktop_meter(
-    active: &mut Option<DesktopMeterHandle>,
-    _gain_db: f32,
-) -> Result<f32, String> {
-    let stale = active
-        .as_ref()
-        .map(|meter| read_meter(meter).is_err())
-        .unwrap_or(true);
-    if stale {
-        *active = None;
-        if let Some(message) = recent_desktop_meter_failure() {
-            return Err(format!("Desktop audio is reconnecting. {message}"));
-        }
-        match start_desktop_meter() {
-            Ok(meter) => {
-                clear_desktop_meter_failure();
-                *active = Some(meter);
-            }
-            Err(error) => {
-                record_desktop_meter_failure(error.clone());
-                return Err(format!("Desktop audio is reconnecting. {error}"));
-            }
+pub(super) fn stop_live_desktop_capture() {
+    let Some(stream) = LIVE_DESKTOP_AUDIO
+        .get()
+        .and_then(|active| active.lock().ok())
+        .and_then(|active| active.clone())
+    else {
+        return;
+    };
+    let _ = stream.disable_capture();
+}
+
+fn ensure_live_desktop_stream() -> Result<Arc<DesktopAudioStream>, String> {
+    let active = LIVE_DESKTOP_AUDIO.get_or_init(|| Mutex::new(None));
+    let mut active = active
+        .lock()
+        .map_err(|_| "Desktop audio stream lock is unavailable.".to_string())?;
+
+    if let Some(stream) = active.as_ref() {
+        if stream.current_level().is_ok() {
+            return Ok(Arc::clone(stream));
         }
     }
-    active
-        .as_ref()
-        .map(read_meter)
-        .transpose()?
-        .ok_or_else(|| "Desktop audio meter did not start.".to_string())
+
+    *active = None;
+    let stream = Arc::new(start_desktop_stream()?);
+    *active = Some(Arc::clone(&stream));
+    Ok(stream)
 }
 
-fn recent_desktop_meter_failure() -> Option<String> {
-    let failures = LAST_DESKTOP_METER_FAILURE.get_or_init(|| Mutex::new(None));
-    let mut failure = failures.lock().ok()?;
-    let (timestamp, message) = failure.as_ref()?;
-    if timestamp.elapsed() < DESKTOP_METER_RETRY_DELAY {
-        return Some(message.clone());
-    }
-    *failure = None;
-    None
-}
+fn start_desktop_stream() -> Result<DesktopAudioStream, String> {
+    let spool_directory =
+        std::env::temp_dir().join(format!("source-desktop-audio-{}", Uuid::new_v4()));
+    fs::create_dir_all(&spool_directory)
+        .map_err(|error| format!("Could not create desktop audio spool: {error}"))?;
 
-fn record_desktop_meter_failure(message: String) {
-    let failures = LAST_DESKTOP_METER_FAILURE.get_or_init(|| Mutex::new(None));
-    if let Ok(mut failure) = failures.lock() {
-        *failure = Some((Instant::now(), message));
-    }
-}
-
-fn clear_desktop_meter_failure() {
-    let failures = LAST_DESKTOP_METER_FAILURE.get_or_init(|| Mutex::new(None));
-    if let Ok(mut failure) = failures.lock() {
-        *failure = None;
-    }
-}
-
-fn start_desktop_meter() -> Result<DesktopMeterHandle, String> {
     let parent_pid = std::process::id().to_string();
     let mut child = Command::new(helper_path()?)
-        // Keep the meter raw. Changing the user-facing gain must never restart
-        // ScreenCaptureKit; the UI applies its sensitivity curve separately.
-        .args(["meter", "0", &parent_pid])
+        .args([
+            "stream",
+            spool_directory.to_string_lossy().as_ref(),
+            &parent_pid,
+        ])
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        // The helper reports actionable ScreenCaptureKit failures on stdout.
-        // Discard stderr so an undrained pipe cannot stall the child.
         .stderr(Stdio::null())
         .spawn()
         .map_err(|error| format!("Could not start desktop audio helper: {error}"))?;
@@ -131,49 +116,50 @@ fn start_desktop_meter() -> Result<DesktopMeterHandle, String> {
         .stdout
         .take()
         .ok_or_else(|| "Desktop audio helper did not expose a signal stream.".to_string())?;
+
     let level_bits = Arc::new(AtomicU32::new(0f32.to_bits()));
     let last_error = Arc::new(Mutex::new(None));
     let (ready_tx, ready_rx) = mpsc::channel();
-    let reader = spawn_meter_reader(
+    let (chunk_tx, chunk_rx) = mpsc::channel();
+    let reader = spawn_stream_reader(
         stdout,
         Arc::clone(&level_bits),
         Arc::clone(&last_error),
         ready_tx,
+        chunk_tx,
     );
-    let child = Arc::new(Mutex::new(child));
 
     match ready_rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(())) => Ok(DesktopMeterHandle {
+        Ok(Ok(())) => Ok(DesktopAudioStream {
             level_bits,
             last_error,
-            child,
+            capture_enabled: AtomicBool::new(false),
+            chunks: Mutex::new(chunk_rx),
+            child: Mutex::new(child),
+            spool_directory,
             _reader: reader,
         }),
         Ok(Err(error)) => {
-            terminate_meter_process(&child);
+            terminate_child(&mut child);
             let _ = reader.join();
+            let _ = fs::remove_dir_all(&spool_directory);
             Err(error)
         }
         Err(_) => {
-            terminate_meter_process(&child);
+            terminate_child(&mut child);
             let _ = reader.join();
+            let _ = fs::remove_dir_all(&spool_directory);
             Err("Desktop audio helper did not become ready quickly enough.".to_string())
         }
     }
 }
 
-fn terminate_meter_process(child: &Arc<Mutex<Child>>) {
-    if let Ok(mut child) = child.lock() {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-}
-
-fn spawn_meter_reader(
+fn spawn_stream_reader(
     stdout: impl std::io::Read + Send + 'static,
     level_bits: Arc<AtomicU32>,
     last_error: Arc<Mutex<Option<String>>>,
     ready_tx: Sender<Result<(), String>>,
+    chunk_tx: Sender<PathBuf>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut ready_sent = false;
@@ -185,13 +171,12 @@ fn spawn_meter_reader(
                 if let Ok(level) = level.parse::<f32>() {
                     level_bits.store(level.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
                 }
+            } else if let Some(path) = line.strip_prefix("CHUNK ") {
+                let _ = chunk_tx.send(PathBuf::from(path));
             } else if let Some(error) = line.strip_prefix("ERROR ") {
-                let message = error.to_string();
-                if let Ok(mut stored) = last_error.lock() {
-                    *stored = Some(message.clone());
-                }
+                store_error(&last_error, error.to_string());
                 if !ready_sent {
-                    let _ = ready_tx.send(Err(message));
+                    let _ = ready_tx.send(Err(error.to_string()));
                     ready_sent = true;
                 }
             }
@@ -200,72 +185,119 @@ fn spawn_meter_reader(
             let _ = ready_tx.send(Err(
                 "Desktop audio helper exited before it was ready.".to_string()
             ));
-        } else if let Ok(mut stored) = last_error.lock() {
-            *stored = Some("Desktop audio stream was stopped by macOS.".to_string());
+        } else {
+            store_error(
+                &last_error,
+                "Desktop audio stream stopped unexpectedly.".to_string(),
+            );
         }
     })
 }
 
-fn capture_chunk_blocking(
-    duration_secs: f32,
-    gain_db: f32,
-    output_path: PathBuf,
-) -> Result<(), String> {
-    let raw_path = std::env::temp_dir().join(format!("source-desktop-{}.f32", Uuid::new_v4()));
-    let capture = Command::new(helper_path()?)
-        .args([
-            "capture",
-            raw_path.to_string_lossy().as_ref(),
-            &duration_secs.max(0.2).to_string(),
-            &gain_db.clamp(0.0, 24.0).to_string(),
-        ])
-        .output()
-        .map_err(|error| format!("Could not run desktop audio helper: {error}"))?;
-    if !capture.status.success() {
-        let details = String::from_utf8_lossy(&capture.stdout);
-        let _ = fs::remove_file(&raw_path);
-        return Err(format!("Desktop audio helper failed: {}", details.trim()));
-    }
-    if raw_path.metadata().map(|meta| meta.len()).unwrap_or(0) == 0 {
-        let _ = fs::remove_file(&raw_path);
-        return Err("Desktop audio helper received no audio samples.".to_string());
+impl DesktopAudioStream {
+    fn current_level(&self) -> Result<f32, String> {
+        if let Ok(error) = self.last_error.lock() {
+            if let Some(error) = error.clone() {
+                return Err(error);
+            }
+        }
+        Ok(f32::from_bits(self.level_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0))
     }
 
-    let conversion = Command::new("ffmpeg")
-        .args([
-            "-y",
-            "-loglevel",
-            "error",
-            "-f",
-            "f32le",
-            "-ar",
-            &DESKTOP_AUDIO_SAMPLE_RATE.to_string(),
-            "-ac",
-            "1",
-            "-i",
-            raw_path.to_string_lossy().as_ref(),
-            output_path.to_string_lossy().as_ref(),
-        ])
+    fn enable_capture(&self) -> Result<(), String> {
+        if self.capture_enabled.swap(true, Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.discard_queued_chunks();
+        self.send_command("CAPTURE_START")
+    }
+
+    fn disable_capture(&self) -> Result<(), String> {
+        if !self.capture_enabled.swap(false, Ordering::SeqCst) {
+            return Ok(());
+        }
+        self.send_command("CAPTURE_STOP")?;
+        self.discard_queued_chunks();
+        Ok(())
+    }
+
+    fn next_chunk(&self) -> Result<PathBuf, String> {
+        let chunks = self
+            .chunks
+            .lock()
+            .map_err(|_| "Desktop audio chunk queue is unavailable.".to_string())?;
+        chunks.recv_timeout(DESKTOP_CHUNK_TIMEOUT).map_err(|error| {
+            format!("Desktop audio stream did not deliver a chunk in time: {error}")
+        })
+    }
+
+    fn send_command(&self, command: &str) -> Result<(), String> {
+        let mut child = self
+            .child
+            .lock()
+            .map_err(|_| "Desktop audio helper process is unavailable.".to_string())?;
+        let stdin = child
+            .stdin
+            .as_mut()
+            .ok_or_else(|| "Desktop audio helper cannot accept capture commands.".to_string())?;
+        writeln!(stdin, "{command}")
+            .and_then(|_| stdin.flush())
+            .map_err(|error| format!("Could not control desktop audio helper: {error}"))
+    }
+
+    fn discard_queued_chunks(&self) {
+        let Ok(chunks) = self.chunks.lock() else {
+            return;
+        };
+        while let Ok(path) = chunks.try_recv() {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn convert_chunk(raw_path: &Path, gain_db: f32, output_path: &Path) -> Result<(), String> {
+    let gain_db = gain_db.clamp(0.0, 24.0);
+    let mut command = Command::new("ffmpeg");
+    command.args([
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "f32le",
+        "-ar",
+        &DESKTOP_AUDIO_SAMPLE_RATE.to_string(),
+        "-ac",
+        "1",
+        "-i",
+        raw_path.to_string_lossy().as_ref(),
+    ]);
+    if gain_db > 0.0 {
+        command.args(["-af", &format!("volume={gain_db}dB")]);
+    }
+    let output = command
+        .arg(output_path)
         .output()
         .map_err(|error| format!("Could not convert desktop audio: {error}"))?;
-    let _ = fs::remove_file(&raw_path);
-    if conversion.status.success() {
+    let _ = fs::remove_file(raw_path);
+    if output.status.success() {
         Ok(())
     } else {
         Err(format!(
             "Desktop audio conversion failed: {}",
-            String::from_utf8_lossy(&conversion.stderr).trim()
+            String::from_utf8_lossy(&output.stderr).trim()
         ))
     }
 }
 
-fn read_meter(meter: &DesktopMeterHandle) -> Result<f32, String> {
-    if let Ok(error) = meter.last_error.lock() {
-        if let Some(error) = error.clone() {
-            return Err(error);
-        }
+fn store_error(last_error: &Mutex<Option<String>>, message: String) {
+    if let Ok(mut stored) = last_error.lock() {
+        *stored = Some(message);
     }
-    Ok(f32::from_bits(meter.level_bits.load(Ordering::Relaxed)).clamp(0.0, 1.0))
+}
+
+fn terminate_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 fn helper_path() -> Result<PathBuf, String> {

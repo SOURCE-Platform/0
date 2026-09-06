@@ -39,7 +39,14 @@ export function RailLane({
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
-  const hasCapturedSlicesOutsideView = rail.slices.length > 0 && slices.length === 0;
+  const waveformSamples = (rail.waveform?.samples ?? []).filter(
+    (sample) => sample.timestamp >= windowStart && sample.timestamp <= windowEnd,
+  );
+  const hasWaveform = waveformSamples.length > 0;
+  const hasCapturedSlicesOutsideView =
+    (rail.slices.length > 0 || (rail.waveform?.samples.length ?? 0) > 0) &&
+    slices.length === 0 &&
+    !hasWaveform;
   const railPadding = depth * 16;
 
   return (
@@ -88,7 +95,8 @@ export function RailLane({
             );
           })}
 
-          {slices.length === 0 ? (
+          {hasWaveform ? <ContinuousWaveform samples={waveformSamples} windowStart={windowStart} range={range} /> : null}
+          {slices.length === 0 && !hasWaveform ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               {hasCapturedSlicesOutsideView
                 ? "Captured blocks are outside this time view. Jump to Now to see them."
@@ -118,11 +126,11 @@ export function RailLane({
                   <button
                     type="button"
                     onClick={() => onSelect(slice)}
-                    className={`group absolute top-2 h-12 overflow-hidden rounded-xl border bg-gradient-to-r text-left shadow-sm transition ${
+                    className={`group absolute top-2 h-12 overflow-hidden rounded-xl border text-left shadow-sm transition ${
                       isSelected
                         ? "border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
-                    } ${railTone(rail.id, slice.interactionState)}`}
+                    } bg-gradient-to-r ${railTone(rail.id, slice.interactionState)}`}
                     style={{
                       left: `${left}%`,
                       width: `${width}%`,
@@ -170,6 +178,41 @@ export function RailLane({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ContinuousWaveform({
+  samples,
+  windowStart,
+  range,
+}: {
+  samples: Array<{ timestamp: number; level: number }>;
+  windowStart: number;
+  range: number;
+}) {
+  const maxPoints = 300;
+  const step = Math.max(1, Math.ceil(samples.length / maxPoints));
+  const bars = samples.filter((_, index) => index % step === 0);
+  return (
+    <div className="pointer-events-none absolute inset-x-1 inset-y-2 z-[1] overflow-hidden rounded-xl bg-emerald-400/[0.03]">
+      <svg className="h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100">
+        {bars.map((sample, index) => {
+          const x = ((sample.timestamp - windowStart) / range) * 100;
+          const amplitude = Math.max(3, Math.min(44, sample.level * 48));
+          return (
+            <line
+              key={`${sample.timestamp}-${index}`}
+              x1={x}
+              x2={x}
+              y1={50 - amplitude}
+              y2={50 + amplitude}
+              stroke="rgba(74, 222, 128, 0.9)"
+              strokeWidth="0.35"
+            />
+          );
+        })}
+      </svg>
     </div>
   );
 }

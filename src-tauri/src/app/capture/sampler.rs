@@ -206,6 +206,9 @@ pub async fn start_multimodal_capture(
                     enable_microphone_audio: config.audio_microphone_enabled,
                     enable_desktop_audio: config.audio_desktop_enabled,
                     desktop_audio_gain_db: config.desktop_audio_gain_db,
+                    audio_transcription_enabled: config.audio_transcription_enabled,
+                    audio_speech_emotion_enabled: config.audio_speech_emotion_enabled,
+                    audio_sound_events_enabled: config.audio_sound_events_enabled,
                 },
             )
             .await

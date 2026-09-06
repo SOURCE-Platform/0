@@ -1,5 +1,4 @@
 use super::audio_intelligence_types::{SoundEventSpanDto, SpeechEmotionSegmentDto};
-use crate::core::motion_detector::MotionDetector;
 use crate::core::ocr_agent_context::ActivityEpisodeDto;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -76,6 +75,7 @@ pub struct AudioChunkDto {
     pub retained_as_evidence: bool,
     pub vad_score: f32,
     pub speech_detected: bool,
+    pub waveform_levels: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +92,7 @@ pub struct AsrSegmentDto {
     pub model_name: String,
     pub model_version: String,
     pub audio_chunk_ids: Vec<String>,
+    pub is_final: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +164,16 @@ pub struct MultimodalCaptureOptions {
     pub enable_microphone_audio: bool,
     pub enable_desktop_audio: bool,
     pub desktop_audio_gain_db: f32,
+    pub audio_transcription_enabled: bool,
+    pub audio_speech_emotion_enabled: bool,
+    pub audio_sound_events_enabled: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct AudioAnalysisOptions {
+    pub transcription_enabled: bool,
+    pub speech_emotion_enabled: bool,
+    pub sound_events_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -273,6 +284,7 @@ pub(super) struct AudioChunkRow {
     pub retained_as_evidence: i64,
     pub vad_score: f64,
     pub speech_detected: i64,
+    pub waveform_json: String,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -288,6 +300,7 @@ pub(super) struct AsrSegmentRow {
     pub model_name: String,
     pub model_version: String,
     pub audio_chunk_ids_json: String,
+    pub is_final: i64,
 }
 
 #[derive(Debug, Clone, FromRow)]
@@ -325,24 +338,4 @@ pub(super) struct AudioSpanSeed {
     pub supporting_audio_chunk_ids: Vec<String>,
     pub supporting_asr_segment_ids: Vec<String>,
     pub confidences: Vec<f32>,
-}
-
-pub(super) struct VisualLoopState {
-    pub motion_detector: MotionDetector,
-    pub previous_presence: Option<String>,
-    pub previous_posture: Option<String>,
-    pub last_audit_evidence_at: Option<i64>,
-}
-
-impl Default for VisualLoopState {
-    fn default() -> Self {
-        Self {
-            motion_detector: MotionDetector::new(
-                crate::core::multimodal::constants::MOTION_MOVING_THRESHOLD,
-            ),
-            previous_presence: None,
-            previous_posture: None,
-            last_audit_evidence_at: None,
-        }
-    }
 }

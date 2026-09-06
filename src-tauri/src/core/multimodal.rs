@@ -7,16 +7,27 @@ mod audio_meter;
 mod audio_meter_types;
 mod audio_runtime;
 mod audio_sources;
+mod audio_transcripts;
+mod bench_wer;
 mod constants;
 mod desktop_audio_runtime;
+mod dictation_helper;
+mod dictation_pipeline;
+mod dictation_supervisor;
+mod foreground_coordinator;
+mod speech_model;
 mod indexing;
 mod mappers;
 mod media_io;
+mod parakeet_worker;
 mod queries;
+mod retention;
 pub(crate) mod service;
+pub(crate) mod speech_provider;
 mod types;
 mod visual_capture;
 mod visual_detections;
+mod visual_loop_state;
 
 pub use audio_intelligence_queries::{
     get_sound_event_detections, get_sound_event_spans, get_speech_emotion_segments,

@@ -21,6 +21,7 @@ const DEFAULT_SNAPSHOT_SPAN_MS: i64 = 5_000;
 pub const DEFAULT_VISIBLE_WINDOW_MS: i64 = 15 * 60 * 1000;
 
 include!("types.rs");
+include!("waveform_types.rs");
 include!("schema.rs");
 include!("storage.rs");
 include!("pii.rs");
@@ -36,6 +37,8 @@ include!("rails_activity.rs");
 include!("rails_summary.rs");
 include!("rails_media.rs");
 include!("rails_audio_labels.rs");
+include!("rails_audio_waveforms.rs");
+include!("rails_audio_emotions.rs");
 include!("rails_audio_intelligence.rs");
 include!("rails_attention.rs");
 include!("fetch.rs");

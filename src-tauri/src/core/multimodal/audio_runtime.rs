@@ -2,8 +2,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
-const AUDIO_IMPORT_CHECK: &str = "import numpy, onnxruntime; print('ok')";
-const AUDIO_PACKAGES: &[&str] = &["numpy==1.26.4", "onnxruntime==1.18.1"];
+const AUDIO_IMPORT_CHECK: &str = "import numpy, onnxruntime, mlx_audio; print('ok')";
+const AUDIO_PACKAGES: &[&str] = &["numpy==1.26.4", "onnxruntime==1.18.1", "mlx-audio==0.4.5"];
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +44,20 @@ pub(crate) struct SoundEventCandidate {
     pub label: String,
     pub canonical_label: String,
     pub confidence: f32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ParakeetTranscription {
+    pub text: String,
+    pub language: Option<String>,
+    pub confidence: Option<f32>,
+}
+
+pub(super) async fn run_parakeet_transcription(
+    audio_path: &Path,
+) -> Result<ParakeetTranscription, String> {
+    super::parakeet_worker::transcribe(audio_path).await
 }
 
 pub(super) async fn run_speech_emotion_inference(
@@ -91,7 +105,7 @@ async fn ensure_audio_runtime_files() -> Result<PathBuf, String> {
     Ok(script_path)
 }
 
-async fn ensure_audio_python() -> Result<PathBuf, String> {
+pub(super) async fn ensure_audio_python() -> Result<PathBuf, String> {
     let helpers_dir = helper_dir()?;
     fs::create_dir_all(&helpers_dir).map_err(|e| format!("Failed to create helpers dir: {e}"))?;
 
@@ -162,14 +176,14 @@ async fn discover_python3() -> Result<PathBuf, String> {
     Err("SOURCE could not find a usable Python 3 runtime for audio setup.".to_string())
 }
 
-fn helper_dir() -> Result<PathBuf, String> {
+pub(super) fn helper_dir() -> Result<PathBuf, String> {
     let home = std::env::var("HOME")
         .or_else(|_| std::env::var("USERPROFILE"))
         .map_err(|_| "Could not resolve home directory for SOURCE helpers.".to_string())?;
     Ok(PathBuf::from(home).join(".observer_data").join("helpers"))
 }
 
-fn write_helper_if_needed(path: &Path, contents: &str) -> Result<(), String> {
+pub(super) fn write_helper_if_needed(path: &Path, contents: &str) -> Result<(), String> {
     let should_write = match fs::read_to_string(path) {
         Ok(existing) => existing != contents,
         Err(_) => true,

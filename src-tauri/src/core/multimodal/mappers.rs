@@ -104,6 +104,7 @@ pub(super) fn audio_chunk_row_to_dto(row: AudioChunkRow) -> AudioChunkDto {
         retained_as_evidence: row.retained_as_evidence != 0,
         vad_score: row.vad_score as f32,
         speech_detected: row.speech_detected != 0,
+        waveform_levels: serde_json::from_str(&row.waveform_json).unwrap_or_default(),
     }
 }
 
@@ -120,6 +121,7 @@ pub(super) fn asr_segment_row_to_dto(row: AsrSegmentRow) -> AsrSegmentDto {
         model_name: row.model_name,
         model_version: row.model_version,
         audio_chunk_ids: serde_json::from_str(&row.audio_chunk_ids_json).unwrap_or_default(),
+        is_final: row.is_final != 0,
     }
 }
 

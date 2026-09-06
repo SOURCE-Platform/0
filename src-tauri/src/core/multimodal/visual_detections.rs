@@ -4,7 +4,7 @@ use super::constants::{
     VISION_MODEL_VERSION, VISUAL_MIN_POSTURE_CONFIDENCE,
 };
 use super::media_io::{MediaPipeGazeOutput, MediaPipePoseOutput};
-use super::types::VisualLoopState;
+use super::visual_loop_state::VisualLoopState;
 use crate::core::database::Database;
 use crate::core::gaze::FaceFeatureSampleDto;
 use crate::core::motion_detector::MotionResult;

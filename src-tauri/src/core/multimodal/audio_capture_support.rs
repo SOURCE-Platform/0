@@ -1,18 +1,16 @@
-use super::audio_runtime::{run_sound_event_inference, run_speech_emotion_inference};
+use super::audio_runtime::{
+    run_parakeet_transcription, run_sound_event_inference, run_speech_emotion_inference,
+};
 use super::constants::{
     AUDIO_VAD_WINDOW_MS, SOUND_EVENT_MIN_CONFIDENCE, SOUND_EVENT_MODEL_NAME,
     SOUND_EVENT_MODEL_VERSION, SPEECH_EMOTION_MIN_CONFIDENCE, SPEECH_EMOTION_MODEL_NAME,
     SPEECH_EMOTION_MODEL_VERSION, VAD_RMS_INTERMITTENT_THRESHOLD, VAD_RMS_SPEECH_THRESHOLD,
-    WHISPER_MODEL,
 };
-use super::service::command_available;
 use crate::core::database::Database;
 use hound::WavReader;
-use serde_json::{json, Value};
-use std::fs;
+use serde_json::json;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::process::Command;
 use uuid::Uuid;
 
 pub(super) fn classify_audio_trigger_reason(
@@ -31,12 +29,21 @@ pub(super) fn classify_audio_trigger_reason(
     }
 }
 
-pub(crate) fn analyze_audio_chunk(path: &Path) -> Result<(f32, bool), String> {
+pub(crate) struct AudioAnalysis {
+    pub vad_score: f32,
+    pub speech_detected: bool,
+    pub waveform_levels: Vec<f32>,
+}
+
+pub(crate) fn analyze_audio_chunk(path: &Path) -> Result<AudioAnalysis, String> {
     let mut reader = WavReader::open(path).map_err(|e| format!("Failed to open WAV chunk: {e}"))?;
     let spec = reader.spec();
     let sample_rate = spec.sample_rate as usize;
     let window_samples = (sample_rate * AUDIO_VAD_WINDOW_MS) / 1000;
 
+    let waveform_window_samples = (sample_rate / 20).max(1);
+    let mut waveform_window = Vec::with_capacity(waveform_window_samples);
+    let mut waveform_levels = Vec::with_capacity(24);
     let mut window = Vec::with_capacity(window_samples.max(1));
     let mut max_rms = 0.0f32;
     let mut speech_windows = 0usize;
@@ -44,7 +51,13 @@ pub(crate) fn analyze_audio_chunk(path: &Path) -> Result<(f32, bool), String> {
 
     for sample in reader.samples::<i16>() {
         let sample = sample.map_err(|e| format!("Failed to read WAV sample: {e}"))?;
-        window.push(sample as f32 / i16::MAX as f32);
+        let normalized = sample as f32 / i16::MAX as f32;
+        window.push(normalized);
+        waveform_window.push(normalized);
+        if waveform_window.len() >= waveform_window_samples {
+            waveform_levels.push((rms_window(&waveform_window) * 12.0).clamp(0.03, 1.0));
+            waveform_window.clear();
+        }
         if window.len() >= window_samples.max(1) {
             let rms = rms_window(&window);
             max_rms = max_rms.max(rms);
@@ -66,7 +79,14 @@ pub(crate) fn analyze_audio_chunk(path: &Path) -> Result<(f32, bool), String> {
 
     let speech_detected = speech_windows >= 2
         || (total_windows > 0 && max_rms >= VAD_RMS_INTERMITTENT_THRESHOLD && speech_windows > 0);
-    Ok((max_rms, speech_detected))
+    if !waveform_window.is_empty() {
+        waveform_levels.push((rms_window(&waveform_window) * 12.0).clamp(0.03, 1.0));
+    }
+    Ok(AudioAnalysis {
+        vad_score: max_rms,
+        speech_detected,
+        waveform_levels,
+    })
 }
 
 pub(super) async fn persist_speech_emotion(
@@ -196,51 +216,13 @@ pub(super) async fn persist_sound_events(
     Ok(())
 }
 
-pub(super) async fn transcribe_audio_chunk(path: &str) -> Option<String> {
-    if !command_available("whisper").await {
-        return None;
-    }
-
-    let output_dir = std::env::temp_dir().join(format!("source_whisper_{}", Uuid::new_v4()));
-    if fs::create_dir_all(&output_dir).is_err() {
-        return None;
-    }
-
-    let output = Command::new("whisper")
-        .args([
-            "--model",
-            WHISPER_MODEL,
-            "--output_dir",
-            output_dir.to_string_lossy().as_ref(),
-            "--output_format",
-            "json",
-            "--language",
-            "en",
-            path,
-        ])
-        .output()
+pub(super) async fn transcribe_audio_chunk(
+    path: &Path,
+) -> Option<super::audio_runtime::ParakeetTranscription> {
+    run_parakeet_transcription(path)
         .await
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-
-    let stem = Path::new(path)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("chunk");
-    let json_path = output_dir.join(format!("{stem}.json"));
-    let transcript = fs::read_to_string(json_path)
         .ok()
-        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
-        .and_then(|json| {
-            json.get("text")
-                .and_then(|value| value.as_str())
-                .map(|value| value.trim().to_string())
-        })
-        .filter(|text| !text.is_empty());
-    let _ = fs::remove_dir_all(output_dir);
-    transcript
+        .filter(|result| !result.text.trim().is_empty())
 }
 
 fn rms_window(samples: &[f32]) -> f32 {

@@ -16,6 +16,18 @@ pub(crate) fn default_desktop_audio_gain_db() -> f32 {
     0.0
 }
 
+pub(crate) fn default_audio_transcription_enabled() -> bool {
+    true
+}
+
+pub(crate) fn default_audio_speech_emotion_enabled() -> bool {
+    true
+}
+
+pub(crate) fn default_audio_sound_events_enabled() -> bool {
+    true
+}
+
 pub(crate) fn default_pii_categories() -> Vec<String> {
     vec![
         "email".to_string(),

@@ -84,6 +84,16 @@ impl Default for ReviewUiDefaults {
     }
 }
 
+/// One custom dictionary rule: when `triggers` are heard, write `replacement`.
+/// Shared shape with the speech pipeline (`multimodal::speech_provider`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CustomDictionaryEntry {
+    #[serde(default)]
+    pub triggers: Vec<String>,
+    #[serde(default)]
+    pub replacement: String,
+}
+
 /// Application configuration
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Config {
@@ -130,9 +140,21 @@ pub struct Config {
     /// Capture mixed desktop/app output when the audio channel is enabled
     #[serde(default)]
     pub audio_desktop_enabled: bool,
+    /// Run local Parakeet transcription for detected speech.
+    #[serde(default = "crate::core::config_defaults::default_audio_transcription_enabled")]
+    pub audio_transcription_enabled: bool,
+    /// Run speech emotion only after voice activity is detected.
+    #[serde(default = "crate::core::config_defaults::default_audio_speech_emotion_enabled")]
+    pub audio_speech_emotion_enabled: bool,
+    /// Run local sound-event detection for captured audio.
+    #[serde(default = "crate::core::config_defaults::default_audio_sound_events_enabled")]
+    pub audio_sound_events_enabled: bool,
     /// Gain applied to SOURCE's desktop-audio copy, without changing macOS output volume.
     #[serde(default = "crate::core::config_defaults::default_desktop_audio_gain_db")]
     pub desktop_audio_gain_db: f32,
+    /// Custom dictionary: misheard phrases mapped to preferred spellings.
+    #[serde(default)]
+    pub custom_dictionary: Vec<CustomDictionaryEntry>,
     /// Whether demo/mock data should be shown in the UI
     #[serde(default = "crate::core::config_defaults::default_mock_data_mode")]
     pub mock_data_mode: bool,
@@ -150,51 +172,7 @@ pub struct Config {
     pub review_ui_defaults: ReviewUiDefaults,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        let home = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE"))
-            .unwrap_or_else(|_| ".".to_string());
-
-        let mut storage_path = PathBuf::from(home.clone());
-        storage_path.push(".observer_data");
-        storage_path.push("recordings");
-
-        let mut retention_days = HashMap::new();
-        retention_days.insert("screen".to_string(), 30);
-        retention_days.insert("ocr".to_string(), 90);
-        retention_days.insert("keyboard".to_string(), 30);
-        retention_days.insert("mouse".to_string(), 7);
-
-        Self {
-            storage_path,
-            retention_days,
-            recording_quality: "Medium".to_string(),
-            auto_start: false,
-            motion_detection_threshold: 0.05,
-            ocr_enabled: true,
-            ocr_languages: vec!["eng".to_string()],
-            ocr_confidence_threshold: 0.7,
-            ocr_interval_seconds: 60, // Run OCR every 60 seconds
-            default_recording_fps: 15,
-            video_codec: "h264".to_string(),
-            video_quality: "Medium".to_string(),
-            hardware_acceleration: true,
-            target_fps: 15,
-            website_blacklist: Vec::new(),
-            app_blacklist: Vec::new(),
-            selected_audio_input_id: None,
-            audio_microphone_enabled: true,
-            audio_desktop_enabled: false,
-            desktop_audio_gain_db: crate::core::config_defaults::default_desktop_audio_gain_db(),
-            mock_data_mode: true,
-            capture_channels: CaptureChannels::default(),
-            resource_profile: ResourceProfile::Balanced,
-            pii_settings: PiiDetectionSettings::default(),
-            review_ui_defaults: ReviewUiDefaults::default(),
-        }
-    }
-}
+include!("config_default_impl.rs");
 
 impl Config {
     /// Load configuration from file, creating with defaults if it doesn't exist

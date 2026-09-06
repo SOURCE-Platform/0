@@ -282,7 +282,7 @@ Mark each item as pass, fail, or needs tuning after testing in the UI.
 - [ ] Playing YouTube/Spotify creates desktop audio blocks.
 - [ ] Silence does not create noisy clutter.
 - [ ] ASR transcript appears when speech is detected.
-- [ ] If Whisper is missing, speech spans still work without transcript.
+- [ ] If Parakeet is unavailable, speech spans still work without transcript.
 - [ ] Audio detail shows source, transcript, raw JSON, and storage.
 
 ## 11. Audio Timeline Hierarchy

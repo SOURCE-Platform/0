@@ -1,6 +1,6 @@
 pub(super) const VISUAL_CAPTURE_INTERVAL_MS: i64 = 3_000;
-pub(super) const AUDIO_CHUNK_DURATION_SECS: f32 = 2.0;
-pub(super) const AUDIO_CHUNK_DURATION_MS: i64 = 2_000;
+pub(super) const AUDIO_CHUNK_DURATION_SECS: f32 = 1.0;
+pub(super) const AUDIO_CHUNK_DURATION_MS: i64 = 1_000;
 pub(super) const AUDIO_VAD_WINDOW_MS: usize = 500;
 pub(super) const MOTION_HIGH_THRESHOLD: f32 = 0.25;
 pub(super) const MOTION_MOVING_THRESHOLD: f32 = 0.03;
@@ -15,8 +15,8 @@ pub(super) const EVIDENCE_AUDIT_INTERVAL_MS: i64 = 60_000;
 // original thresholds, especially when used in clamshell mode.
 pub(super) const VAD_RMS_SPEECH_THRESHOLD: f32 = 0.003;
 pub(super) const VAD_RMS_INTERMITTENT_THRESHOLD: f32 = 0.0015;
-pub(super) const WHISPER_MODEL: &str = "turbo";
-pub(super) const WHISPER_VERSION: &str = "local_whisper_cli";
+pub(super) const PARAKEET_MODEL: &str = "mlx-community/parakeet-tdt-0.6b-v3";
+pub(super) const PARAKEET_VERSION: &str = "mlx_audio_0.4.5";
 pub(super) const SPEECH_EMOTION_MODEL_NAME: &str = "speech_emotion_classification_onnx";
 pub(super) const SPEECH_EMOTION_MODEL_VERSION: &str = "v1";
 pub(super) const SOUND_EVENT_MODEL_NAME: &str = "yamnet_onnx";

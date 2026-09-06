@@ -57,8 +57,8 @@ export const CHANNEL_META: Array<{
   {
     key: "audio_future",
     label: "Audio / speech",
-    description: "Microphone speech-state capture with optional Whisper ASR.",
-    help: "Samples the microphone into local chunks, runs VAD to detect speaking spans, and optionally transcribes finalized speech with the local Whisper install when it is available.",
+    description: "Microphone speech-state capture with local Parakeet ASR.",
+    help: "Samples microphone and desktop audio into short local chunks, stores waveform envelopes, and transcribes speech with local Parakeet after each chunk is captured.",
   },
 ];
 

@@ -2,6 +2,7 @@ use super::audio_capture::{run_audio_loop, AudioCaptureSource};
 use super::audio_sources::{
     choose_audio_source, choose_video_source, default_audio_input_name, list_avfoundation_sources,
 };
+use super::desktop_audio_runtime::stop_live_desktop_capture;
 use super::media_io::mediapipe_runtime_available;
 use super::types::{
     AvFoundationSources, MultimodalCaptureOptions, MultimodalRuntimeState, MultimodalStartReport,
@@ -78,6 +79,11 @@ impl MultimodalService {
                 options.enable_microphone_audio,
                 options.enable_desktop_audio,
                 options.desktop_audio_gain_db,
+                super::types::AudioAnalysisOptions {
+                    transcription_enabled: options.audio_transcription_enabled,
+                    speech_emotion_enabled: options.audio_speech_emotion_enabled,
+                    sound_events_enabled: options.audio_sound_events_enabled,
+                },
                 &mut report,
             )
             .await?;
@@ -88,6 +94,7 @@ impl MultimodalService {
 
     pub async fn stop_capture(&self) {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        stop_live_desktop_capture();
         let mut runtime = self.runtime.lock().await;
         runtime.generation = self.generation.load(Ordering::SeqCst);
         if let Some(handle) = runtime.visual_handle.take() {
@@ -167,6 +174,7 @@ async fn start_audio_channel(
     enable_microphone_audio: bool,
     enable_desktop_audio: bool,
     desktop_audio_gain_db: f32,
+    analysis_options: super::types::AudioAnalysisOptions,
     report: &mut MultimodalStartReport,
 ) -> Result<(), String> {
     if !enable_microphone_audio && !enable_desktop_audio {
@@ -175,13 +183,6 @@ async fn start_audio_channel(
                 .to_string(),
         );
         return Ok(());
-    }
-
-    if !command_available("whisper").await {
-        report.warnings.push(
-            "Whisper is unavailable, so speech spans will record without ASR transcripts."
-                .to_string(),
-        );
     }
 
     let mut source_names = Vec::new();
@@ -215,6 +216,7 @@ async fn start_audio_channel(
                 AudioCaptureSource::Microphone {
                     audio_index: source.index,
                 },
+                analysis_options,
             )));
         } else {
             report
@@ -245,6 +247,7 @@ async fn start_audio_channel(
                 AudioCaptureSource::DesktopOutput {
                     gain_db: desktop_audio_gain_db,
                 },
+                analysis_options,
             )));
         }
     }
