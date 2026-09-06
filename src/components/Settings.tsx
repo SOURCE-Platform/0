@@ -4,6 +4,7 @@ import ConsentManager from "@/components/ConsentManager";
 import { CaptureSettingsSection } from "@/components/settings/CaptureSettingsSection";
 import { DeleteCaptureDialog } from "@/components/settings/DeleteCaptureDialog";
 import { GeneralSettingsSection } from "@/components/settings/GeneralSettingsSection";
+import { HardwareSettingsSection } from "@/components/settings/HardwareSettingsSection";
 import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { StorageSettingsSection } from "@/components/settings/StorageSettingsSection";
 import { SettingsTab } from "@/components/settings/types";
@@ -37,6 +38,7 @@ export default function Settings() {
           { value: "capture", label: "Capture" },
           { value: "privacy", label: "Privacy" },
           { value: "storage", label: "Storage" },
+          { value: "hardware", label: "Hardware" },
         ]}
         value={controller.tab}
         onValueChange={(value) => controller.setTab(value as SettingsTab)}
@@ -51,6 +53,7 @@ export default function Settings() {
         </div>
       ) : null}
       {controller.tab === "storage" ? <StorageSettingsSection controller={controller} /> : null}
+      {controller.tab === "hardware" ? <HardwareSettingsSection /> : null}
 
       <Card>
         <CardHeader>

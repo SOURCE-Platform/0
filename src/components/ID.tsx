@@ -124,5 +124,16 @@ function ProfileDetail({ user }: { user: UserProfile }) {
 
 export default function ID() {
   const user = MOCK_PROFILES[0];
+  if (!user) {
+    return (
+      <div className="mx-auto w-full max-w-2xl rounded-lg border bg-card p-8 text-center">
+        <h2 className="text-xl font-medium tracking-tight">No identity profiles yet</h2>
+        <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-6 text-muted-foreground">
+          Your documents, accounts, and relationships will appear here once
+          added. Nothing demo or placeholder lives in this view.
+        </p>
+      </div>
+    );
+  }
   return <ProfileDetail user={user} />;
 }

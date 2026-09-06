@@ -103,4 +103,16 @@ mod tests {
         assert_eq!(provider.kind(), SpeechProviderKind::NativeHelper);
         assert_eq!(provider.provider_name(), "fluidaudio");
     }
+
+    /// One-shot: fetches the default (v3) model + compiles it for the
+    /// Neural Engine. Slow (minutes) and network-dependent, so ignored
+    /// by default: `cargo test fluidaudio_download -- --ignored`.
+    #[test]
+    #[ignore]
+    fn fluidaudio_download() {
+        let provider = FluidAudioProvider::new().expect("engine should construct");
+        provider
+            .ensure_initialized()
+            .expect("model download + ANE compile should succeed");
+    }
 }

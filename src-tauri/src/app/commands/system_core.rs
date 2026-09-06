@@ -146,3 +146,70 @@ pub async fn get_recording_status(state: State<'_, AppState>) -> Result<Recordin
         .await
         .map_err(|e| format!("Failed to get status: {}", e))
 }
+
+/// Basic info about the machine SOURCE runs on. Shown in Settings →
+/// Hardware. Home-device inventory lives here later; templates in
+/// `src/components/hardware/` stay on disk for that work.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HostHardwareInfo {
+    pub model: String,
+    pub chip: String,
+    pub cpu_count: String,
+    pub memory: String,
+    pub os: String,
+}
+
+#[tauri::command]
+pub fn get_host_hardware_info() -> Result<HostHardwareInfo, String> {
+    Ok(HostHardwareInfo {
+        model: sysctl_value("hw.model"),
+        chip: sysctl_value("machdep.cpu.brand_string"),
+        cpu_count: sysctl_value("hw.ncpu"),
+        memory: sysctl_memory(),
+        os: host_os(),
+    })
+}
+
+fn sysctl_value(key: &str) -> String {
+    std::process::Command::new("sysctl")
+        .arg("-n")
+        .arg(key)
+        .output()
+        .ok()
+        .and_then(|output| {
+            if output.status.success() {
+                Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+            } else {
+                None
+            }
+        })
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "Unknown".to_string())
+}
+
+fn sysctl_memory() -> String {
+    let bytes: u64 = sysctl_value("hw.memsize").parse().unwrap_or(0);
+    if bytes == 0 {
+        return "Unknown".to_string();
+    }
+    format!("{} GB", bytes / 1_073_741_824)
+}
+
+fn host_os() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let version = std::process::Command::new("sw_vers")
+            .arg("-productVersion")
+            .output()
+            .ok()
+            .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "Unknown".to_string());
+        return format!("macOS {version}");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        return std::env::consts::OS.to_string();
+    }
+}

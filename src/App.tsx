@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
 import TimelinePage from "./components/TimelinePage";
-import Hardware from "./components/Hardware";
 import ID from "./components/ID";
 import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibrationOverlayPage";
 import { ThemeProvider } from "./components/theme-provider";
@@ -11,11 +10,10 @@ import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { OBSERVER_APP_TOAST_EVENT, OBSERVER_CONFIG_UPDATED_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
 
-type View = "settings" | "timeline" | "hardware" | "id";
+type View = "settings" | "timeline" | "id";
 
 const TABS = [
   { value: "timeline",  label: "Timeline" },
-  { value: "hardware",  label: "Hardware" },
   { value: "id",        label: "ID" },
   { value: "settings",  label: "Settings" },
 ];
@@ -210,16 +208,6 @@ function App() {
             <div className="w-full px-2 py-4 xl:px-3">
               <ViewErrorBoundary>
                 {displayedView === "timeline"  && <TimelinePage mockDataMode={mockDataMode} />}
-                {displayedView === "hardware"  && (
-                  mockDataMode ? (
-                    <Hardware />
-                  ) : (
-                    <RealModePlaceholder
-                      title="Hardware is in real mode"
-                      body="Mock sensor topology is hidden right now. As real cameras, microphones, and environmental feeds come online, this view can be driven by live hardware inventory instead of the demo home network."
-                    />
-                  )
-                )}
                 {displayedView === "id"        && (
                   mockDataMode ? (
                     <ID />

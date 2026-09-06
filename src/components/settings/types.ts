@@ -115,4 +115,4 @@ export interface AudioSourceMeters {
   desktop: AudioMeterReading;
 }
 
-export type SettingsTab = "general" | "capture" | "privacy" | "storage";
+export type SettingsTab = "general" | "capture" | "privacy" | "storage" | "hardware";
