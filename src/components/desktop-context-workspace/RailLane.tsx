@@ -4,6 +4,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
 import {
   formatBytes,
+  getSnappedTicks,
   getTimelineTickMs,
   railTone,
   safeFormatDate,
@@ -35,7 +36,7 @@ export function RailLane({
 }: RailLaneProps) {
   const range = Math.max(1, windowEnd - windowStart);
   const tickMs = getTimelineTickMs(range);
-  const tickCount = Math.max(1, Math.ceil(range / tickMs));
+  const ticks = getSnappedTicks(windowStart, windowEnd, tickMs);
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
@@ -82,9 +83,7 @@ export function RailLane({
       <div className="relative h-16 rounded-2xl border border-border/70 bg-background/65">
         <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-px bg-blue-400/90 shadow-[0_0_18px_rgba(59,130,246,0.45)]" />
         <div className="relative h-full w-full">
-          {Array.from({ length: tickCount + 1 }).map((_, index) => {
-            const timestamp = windowStart + index * tickMs;
-            if (timestamp > windowEnd) return null;
+          {ticks.map((timestamp) => {
             const left = ((timestamp - windowStart) / range) * 100;
             return (
               <div

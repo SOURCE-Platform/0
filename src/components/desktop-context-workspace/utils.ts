@@ -54,6 +54,22 @@ export function getTimelineTickMs(range: number) {
   return 30 * 60 * 1000;
 }
 
+/// Tick timestamps snapped to round clock boundaries (5:10, 5:15, …),
+/// never anchored to the arbitrary window start. Both the ruler and the
+/// lane grids must use this — anything else drifts them apart.
+export function getSnappedTicks(windowStart: number, windowEnd: number, tickMs: number): number[] {
+  const first = Math.ceil(windowStart / tickMs) * tickMs;
+  const ticks: number[] = [];
+  for (let timestamp = first; timestamp <= windowEnd; timestamp += tickMs) {
+    ticks.push(timestamp);
+  }
+  // Always include the window start so the left edge has a mark.
+  if (ticks.length === 0 || ticks[0] !== windowStart) {
+    ticks.unshift(windowStart);
+  }
+  return ticks;
+}
+
 export function railTone(railId: string, interactionState?: string | null) {
   if (railId === "system") return "from-slate-500/85 to-slate-400/80";
   if (railId === "focus") return "from-blue-500/85 to-sky-400/80";
