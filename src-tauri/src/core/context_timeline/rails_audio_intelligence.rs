@@ -75,6 +75,22 @@ fn build_audio_speech_rail(
         .collect::<Vec<_>>());
 
     for segment in asr_segments {
+        // Foreground Right Option dictations read differently from overheard
+        // speech: they were deliberately spoken to be typed somewhere.
+        let dictated = segment.source_id == "fluid-voice-prompt";
+        let mut tags = vec![
+            "audio".to_string(),
+            "speech".to_string(),
+            "asr".to_string(),
+            if segment.is_final {
+                "final".to_string()
+            } else {
+                "live".to_string()
+            },
+        ];
+        if dictated {
+            tags.push("dictation".to_string());
+        }
         slices.push(ContextSlice {
             id: segment.asr_segment_id.clone(),
             rail: "audio_speech".to_string(),
@@ -83,7 +99,9 @@ fn build_audio_speech_rail(
             end_timestamp: segment.end_timestamp.max(segment.start_timestamp + 1),
             title: preview_text(&segment.transcript),
             subtitle: Some(
-                if segment.is_final {
+                if dictated {
+                    "Dictated prompt"
+                } else if segment.is_final {
                     "Final transcript"
                 } else {
                     "Live transcript"
@@ -113,16 +131,7 @@ fn build_audio_speech_rail(
             row_count: 1,
             file_count: 0,
             has_detail_view: true,
-            tags: vec![
-                "audio".to_string(),
-                "speech".to_string(),
-                "asr".to_string(),
-                if segment.is_final {
-                    "final".to_string()
-                } else {
-                    "live".to_string()
-                },
-            ],
+            tags,
         });
     }
 
