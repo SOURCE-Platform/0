@@ -124,7 +124,6 @@ fn initialize_dictation_supervisor(
     app_handle: tauri::AppHandle,
 ) {
     use crate::core::multimodal::speech_provider::DictionaryEntry;
-    use crate::core::multimodal::persist_foreground_transcript;
 
     tauri::async_runtime::spawn(async move {
         loop {

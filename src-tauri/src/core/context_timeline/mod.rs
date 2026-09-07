@@ -2,7 +2,7 @@ use crate::core::database::Database;
 use crate::core::gaze;
 use crate::core::multimodal::{
     self, AsrSegmentDto, AudioStateSpanDto, SoundEventDetectionDto, SoundEventSpanDto,
-    SpeechEmotionSegmentDto, VisualSceneSnapshotDto, VisualStateSpanDto,
+    SpeechEmotionSegmentDto, VisualSceneSnapshotDto, VisualStateSpanDto, DICTATION_SOURCE_ID,
 };
 use crate::core::ocr_agent_context::{self, AgentSceneSnapshotDto};
 use crate::models::activity::AppInfo;

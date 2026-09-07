@@ -5,7 +5,7 @@ use super::audio_capture_support::{
 use super::audio_intelligence_indexing::reindex_sound_event_spans;
 use super::audio_transcripts::TranscriptAccumulator;
 use super::constants::{
-    AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS, EVIDENCE_AUDIT_INTERVAL_MS,
+    AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS,
 };
 use super::desktop_audio_runtime::capture_desktop_audio_chunk;
 use super::indexing::reindex_audio_state_spans;
@@ -43,7 +43,6 @@ pub(super) async fn run_audio_loop(
             return;
         }
     };
-    let mut last_audit_evidence_at: Option<i64> = None;
     let mut previous_speech_detected = false;
     let transcripts = TranscriptAccumulator::new(db.clone(), session_id.clone(), source_id.clone());
 
@@ -79,10 +78,14 @@ pub(super) async fn run_audio_loop(
             analysis.speech_detected,
             analysis.vad_score,
         );
+        // Transcripts-only retention: raw audio exists solely as
+        // transcription input. Evidence is kept only for chunks a speech
+        // task will consume, and deleted the moment it is done (see the
+        // cleanup at the end of the spawned task). Waveforms, transcripts,
+        // and sound labels — all derived, none replayable — are what persist.
         let retain_evidence = analysis.speech_detected
-            || last_audit_evidence_at
-                .map(|last| capture_ended - last >= EVIDENCE_AUDIT_INTERVAL_MS)
-                .unwrap_or(true);
+            && (analysis_options.transcription_enabled
+                || analysis_options.speech_emotion_enabled);
         let retained_path = if retain_evidence {
             save_audio_evidence_chunk(&storage, session_uuid, &temp_path)
                 .await
@@ -163,9 +166,6 @@ pub(super) async fn run_audio_loop(
         let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
         let _ = reindex_sound_event_spans(&db, &session_id, &source_id).await;
         previous_speech_detected = analysis.speech_detected;
-        if retain_evidence {
-            last_audit_evidence_at = Some(capture_ended);
-        }
 
         let _ = fs::remove_file(&temp_path);
         let elapsed = chrono::Utc::now().timestamp_millis() - started_at;
@@ -222,6 +222,17 @@ fn spawn_speech_analysis_task(
             .await;
         }
         let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
+        // Transcripts-only: the evidence file has served its purpose as
+        // transcription input. Remove it and clear the row's pointer so
+        // nothing dangles at a deleted file.
+        let _ = std::fs::remove_file(&audio_path);
+        let _ = sqlx::query(
+            "UPDATE audio_chunks SET audio_path = NULL, retained_as_evidence = 0
+             WHERE audio_chunk_id = ?",
+        )
+        .bind(&audio_chunk_id)
+        .execute(db.pool())
+        .await;
     });
 }
 

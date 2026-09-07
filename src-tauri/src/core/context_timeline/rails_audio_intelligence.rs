@@ -77,7 +77,7 @@ fn build_audio_speech_rail(
     for segment in asr_segments {
         // Foreground Right Option dictations read differently from overheard
         // speech: they were deliberately spoken to be typed somewhere.
-        let dictated = segment.source_id == "fluid-voice-prompt";
+        let dictated = segment.source_id == DICTATION_SOURCE_ID;
         let mut tags = vec![
             "audio".to_string(),
             "speech".to_string(),
