@@ -103,37 +103,11 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         } else {
             wordsLabel?.isHidden = true
         }
-        gearView?.frame = NSRect(x: 17, y: 11, width: 18, height: 18)
+        gearView?.frame = NSRect(x: 14, y: 8, width: 24, height: 24)
         elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
-        // Generous click target in screen coordinates for the event-tap
-        // click detector (AppKit mouse delivery to this panel is dead).
-        Self.updateGearRect(NSRect(
-            x: panel.frame.minX + 14, y: panel.frame.minY + 8, width: 24, height: 24
-        ))
     }
 
-    /// Screen-space click target of the gear, refreshed on every layout.
-    /// Read by the event tap: a left-click inside it while a session is
-    /// active opens O's dictation settings. Lock-guarded: written on the
-    /// main thread, read on the tap thread.
-    // Manually synchronized via gearLock (main thread writes, tap thread
-    // reads), so this opts out of the concurrency checker explicitly.
-    nonisolated(unsafe) private static var storedGearRect: NSRect?
-    nonisolated(unsafe) private static let gearLock = NSLock()
-
-    static func updateGearRect(_ rect: NSRect) {
-        gearLock.lock()
-        storedGearRect = rect
-        gearLock.unlock()
-    }
-
-    static func currentGearRect() -> NSRect? {
-        gearLock.lock()
-        defer { gearLock.unlock() }
-        return storedGearRect
-    }
-
-    private var gearView: NSImageView?
+    private var gearView: GearControl?
 
     // MARK: - Build
 
@@ -176,9 +150,8 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         words.cell?.isScrollable = false
         self.wordsLabel = words
 
-        let gear = NSImageView(frame: .zero)
-        gear.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Dictation settings")
-        gear.imageScaling = .scaleProportionallyUpOrDown
+        let gear = GearControl(frame: .zero)
+        gear.onClick = { [weak self] in self?.openSettings() }
         self.gearView = gear
 
         let elapsed = NSTextField(labelWithString: "0:00")
@@ -221,6 +194,92 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             return true
         }
         return value
+    }
+}
+
+/// AppKit-native control for the gear. The two image layers crossfade so
+/// the hover tint animates reliably even though NSImage tint is not animatable.
+final class GearControl: NSView {
+    var onClick: (() -> Void)?
+
+    private let normalImage = NSImageView(frame: .zero)
+    private let hoverImage = NSImageView(frame: .zero)
+    private var trackingAreaRef: NSTrackingArea?
+    private var lastClickAt = Date.distantPast
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        let symbol = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Dictation settings")
+        for imageView in [normalImage, hoverImage] {
+            imageView.image = symbol
+            imageView.imageScaling = .scaleProportionallyUpOrDown
+            addSubview(imageView)
+        }
+        normalImage.contentTintColor = .secondaryLabelColor
+        hoverImage.contentTintColor = .white
+        hoverImage.alphaValue = 0
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("Dictation settings")
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func layout() {
+        super.layout()
+        let glyphFrame = bounds.insetBy(dx: 3, dy: 3)
+        normalImage.frame = glyphFrame
+        hoverImage.frame = glyphFrame
+    }
+
+    override func updateTrackingAreas() {
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+        super.updateTrackingAreas()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        writeDictationLine("DEBUG gear hover entered")
+        setHovered(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        writeDictationLine("DEBUG gear hover exited")
+        setHovered(false)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let now = Date()
+        guard now.timeIntervalSince(lastClickAt) >= 1 else { return }
+        lastClickAt = now
+        onClick?()
+    }
+
+    private func setHovered(_ hovered: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            normalImage.animator().alphaValue = hovered ? 0 : 1
+            hoverImage.animator().alphaValue = hovered ? 1 : 0
+        }
     }
 }
 

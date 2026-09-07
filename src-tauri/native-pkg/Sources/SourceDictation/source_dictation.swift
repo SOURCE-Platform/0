@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 
@@ -19,7 +20,7 @@ struct SourceDictation {
             let runtime = DictationRuntime(parentPID: parentPID)
             runtime.start()
             writeDictationLine("READY")
-            RunLoop.main.run()
+            NSApplication.shared.run()
         } catch {
             writeDictationLine("ERROR \(error.localizedDescription)")
             exit(1)

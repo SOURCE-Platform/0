@@ -66,6 +66,7 @@ fn build_dictation_helper() {
         "native-pkg/Package.resolved",
         "native-pkg/Sources/SourceDictation/source_dictation.swift",
         "native-pkg/Sources/SourceDictation/dictation_core.swift",
+        "native-pkg/Sources/SourceDictation/right_option_hotkey.swift",
         "native-pkg/Sources/SourceDictation/focus_capture.swift",
         "native-pkg/Sources/SourceDictation/text_insertion.swift",
         "native-pkg/Sources/SourceDictation/mic_capture.swift",
@@ -85,6 +86,7 @@ fn build_dictation_helper() {
     let sources = [
         "native-pkg/Sources/SourceDictation/source_dictation.swift",
         "native-pkg/Sources/SourceDictation/dictation_core.swift",
+        "native-pkg/Sources/SourceDictation/right_option_hotkey.swift",
         "native-pkg/Sources/SourceDictation/focus_capture.swift",
         "native-pkg/Sources/SourceDictation/text_insertion.swift",
         "native-pkg/Sources/SourceDictation/mic_capture.swift",

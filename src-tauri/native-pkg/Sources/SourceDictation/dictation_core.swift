@@ -41,20 +41,16 @@ final class DictationRuntime: @unchecked Sendable {
             writeDictationLine("OPEN_SETTINGS")
         }
         watchParent()
-        hotkey = RightOptionHotkey(
-            onToggle: { [weak self] in self?.toggleSession() },
-            isSessionActive: { [weak self] in self?.activeSessionID != nil },
-            onGearClick: { ListeningIndicator.shared.openSettings() }
-        )
+        hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
         watchStdin()
     }
 
-    /// Stay invisible (no dock icon, no menu) while still able to show
-    /// floating panels like the listening indicator.
+    /// Stay out of the Dock while allowing AppKit to deliver mouse events
+    /// to the floating listening panel.
     private func setupPresentation() {
         let app = NSApplication.shared
-        app.setActivationPolicy(.prohibited)
+        app.setActivationPolicy(.accessory)
     }
 
     /// First Right Option press opens a session, second closes it.
@@ -220,139 +216,4 @@ struct EngineTranscription {
 
 protocol TranscriptionEngine {
     func transcribe(audioPath: String, completion: @escaping @Sendable (EngineTranscription) -> Void)
-}
-
-/// Modifier-only Right Option toggle via a CGEvent tap.
-/// keyCode 61 == Right Option. Fires on release after a clean press
-/// (no other key/mouse activity in between), mirroring FluidVoice's
-/// `ModifierOnlyShortcutFlagsDecision` behavior in simplified form.
-final class RightOptionHotkey {
-    private let onToggle: () -> Void
-    private let isSessionActive: () -> Bool
-    private let onGearClick: () -> Void
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
-    private var rightOptionDown = false
-    private var interrupted = false
-    private var retryTimer: Timer?
-    private var reportedUnavailable = false
-
-    init(
-        onToggle: @escaping () -> Void,
-        isSessionActive: @escaping () -> Bool,
-        onGearClick: @escaping () -> Void
-    ) {
-        self.onToggle = onToggle
-        self.isSessionActive = isSessionActive
-        self.onGearClick = onGearClick
-    }
-
-    func start() {
-        installTap()
-        retryTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            if self.eventTap == nil {
-                self.installTap()
-            }
-        }
-    }
-
-    private func installTap() {
-        // Reuse the live tap; never stack duplicates (each stale tap costs
-        // the system a callback per event and eventually gets us throttled).
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: true)
-            return
-        }
-        let mask = (1 << CGEventType.flagsChanged.rawValue)
-            | (1 << CGEventType.keyDown.rawValue)
-            | (1 << CGEventType.leftMouseDown.rawValue)
-            | (1 << CGEventType.rightMouseDown.rawValue)
-            | (1 << CGEventType.tapDisabledByTimeout.rawValue)
-            | (1 << CGEventType.tapDisabledByUserInput.rawValue)
-        guard let tap = CGEvent.tapCreate(
-            tap: .cgSessionEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: CGEventMask(mask),
-            callback: { _, _, event, refcon in
-                guard let refcon else { return Unmanaged.passRetained(event) }
-                let hotkey = Unmanaged<RightOptionHotkey>.fromOpaque(refcon).takeUnretainedValue()
-                hotkey.handle(event: event)
-                return Unmanaged.passRetained(event)
-            },
-            userInfo: Unmanaged.passUnretained(self).toOpaque()
-        ) else {
-            // No Accessibility permission (or headless session): stdin
-            // START/STOP remain available; retry on the timer. Report once
-            // so host logs stay quiet. AXIsProcessTrusted distinguishes
-            // "toggle missing" (false) from other tap failures (true).
-            if !reportedUnavailable {
-                reportedUnavailable = true
-                let trusted = AXIsProcessTrusted()
-                writeDictationLine("ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\", \"trusted\":\(trusted)}")
-            }
-            return
-        }
-        reportedUnavailable = false
-        eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
-        if let source = runLoopSource {
-            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
-        }
-        CGEvent.tapEnable(tap: tap, enable: true)
-        reportedUnavailable = false
-        writeDictationLine("DEBUG tap installed")
-    }
-
-    private func handle(event: CGEvent) {
-        // Ignore keystrokes the inserter synthesized itself.
-        if event.getIntegerValueField(.eventSourceUserData) == synthesizedEventTag {
-            return
-        }
-        // Gear click detector: AppKit mouse delivery to the pill is dead,
-        // so clicks on the gear are caught here by screen coordinates.
-        // Only live while a session (and its pill) is showing.
-        if event.type == .leftMouseDown, isSessionActive(),
-            let gear = ListeningIndicator.currentGearRect(),
-            gear.contains(event.location)
-        {
-            onGearClick()
-            return
-        }
-        // macOS pauses slow taps; re-enable immediately instead of dying silent.
-        if event.type == .tapDisabledByTimeout || event.type == .tapDisabledByUserInput {
-            if let tap = eventTap {
-                CGEvent.tapEnable(tap: tap, enable: true)
-                writeDictationLine("DEBUG tap re-enabled")
-            }
-            return
-        }
-        let type = event.type
-        if type == .keyDown || type == .leftMouseDown || type == .rightMouseDown {
-            interrupted = true
-            return
-        }
-        guard type == .flagsChanged else { return }
-        let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
-        let flags = event.flags
-        // Trace option-key transitions so host logs prove the tap is live.
-        if keyCode == 58 || keyCode == 61 {
-            writeDictationLine("DEBUG key flagsChanged keyCode=\(keyCode) alt=\(flags.contains(.maskAlternate))")
-        }
-        if keyCode == 61 {
-            if flags.contains(.maskAlternate) {
-                rightOptionDown = true
-                interrupted = false
-            } else if rightOptionDown {
-                rightOptionDown = false
-                if !interrupted {
-                    onToggle()
-                }
-                interrupted = false
-            }
-        } else if rightOptionDown {
-            interrupted = true
-        }
-    }
 }
