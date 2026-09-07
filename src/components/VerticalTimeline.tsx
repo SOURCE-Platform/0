@@ -63,7 +63,17 @@ export default function VerticalTimeline() {
         </div>
       </div>
 
-      {!inDrill ? <WeekView mode={mode} onDrillDown={drillDown} activities={mockActivities} /> : null}
+      {!inDrill && mockActivities.length === 0 ? (
+        <div className="mx-auto w-full max-w-2xl rounded-lg border bg-card p-8 text-center">
+          <h2 className="text-xl font-medium tracking-tight">No activity yet</h2>
+          <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-6 text-muted-foreground">
+            Recorded days will appear here once capture is running. Nothing
+            demo or placeholder lives in this view.
+          </p>
+        </div>
+      ) : null}
+
+      {!inDrill && mockActivities.length > 0 ? <WeekView mode={mode} onDrillDown={drillDown} activities={mockActivities} /> : null}
       {inDrill && isLeaf ? <RecordingView segment={current} /> : null}
       {inDrill && !isLeaf ? <DetailView segment={current} onDrillDown={drillDown} /> : null}
     </div>
