@@ -13,6 +13,13 @@ import {
   safeFormatDate,
 } from "@/components/desktop-context-workspace/utils";
 
+// Audio-only focus: microphone + desktop audio and dictation are the active
+// data sources. Every other rail stays in the backend and comes back as its
+// source is onboarded — this filter is the only thing hiding them.
+function isAudioRail(railId: string): boolean {
+  return railId === "audio" || railId.startsWith("audio_");
+}
+
 export function DeviceContextTimelineSection({
   controller,
 }: {
@@ -156,7 +163,9 @@ export function DeviceContextTimelineSection({
                 endTimestamp={controller.effectiveWindowEnd}
               />
               <div className="space-y-2 pt-2">
-                {controller.timeline.rails.map((rail) => (
+                {controller.timeline.rails
+                  .filter((rail) => isAudioRail(rail.id))
+                  .map((rail) => (
                   <TimelineRailTree
                     key={rail.id}
                     rail={rail}
