@@ -6,33 +6,24 @@ fn build_audio_group_rail(
     sound_event_spans: &[SoundEventSpanDto],
     sound_event_detections: &[SoundEventDetectionDto],
 ) -> TimelineRailDto {
+    // Audio-only focus: speech transcripts (including dictation) plus
+    // environmental sound labels. Emotion rails are parked, not deleted —
+    // their builders below stay for the future emotion pass — but they no
+    // longer ship in the tree. The models still run at capture time.
     let speech_rail = build_audio_speech_rail(audio_chunks, audio_spans, asr_segments);
-    let emotion_summary_rail = build_audio_emotion_summary_rail(speech_emotion_segments);
-    let emotion_detail_rails = build_audio_emotion_detail_rails(speech_emotion_segments);
+    let _emotion_summary_rail = build_audio_emotion_summary_rail(speech_emotion_segments);
+    let _emotion_detail_rails = build_audio_emotion_detail_rails(speech_emotion_segments);
     let sound_events_rail = build_audio_sound_events_rail(sound_event_spans, sound_event_detections);
 
-    let mut children = Vec::with_capacity(3);
+    let mut children = Vec::with_capacity(2);
     children.push(speech_rail);
-    children.push(TimelineRailDto::group(
-        "audio_emotion_summary",
-        "Emotion Summary",
-        "High-level polarity view of inferred speech emotion, with positive, negative, neutral, and uncertain segments shown on one lane.",
-        "This is a summary layer derived from the local speech-emotion model. Confidence drives intensity, not a new continuous affect model.",
-        false,
-        {
-            let mut nested = Vec::with_capacity(1 + emotion_detail_rails.len());
-            nested.push(emotion_summary_rail);
-            nested.extend(emotion_detail_rails);
-            nested
-        },
-    ));
     children.push(sound_events_rail);
 
     TimelineRailDto::group(
         "audio",
         "Audio",
-        "Speech, emotion, and sound-event capture grouped under one audio hierarchy for easier review.",
-        "Audio keeps the current local speech, transcript, emotion, and sound-event models. This milestone reorganizes them without changing the underlying detectors.",
+        "Speech transcripts and sound-event labels grouped under one audio hierarchy for easier review.",
+        "Audio keeps the current local speech and transcript models; emotion rails are parked for a later pass.",
         false,
         children,
     )

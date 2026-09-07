@@ -25,7 +25,11 @@ export function DeviceContextTimelineSection({
 }: {
   controller: ReturnType<typeof useDesktopContextWorkspace>;
 }) {
-  const [expandedRails, setExpandedRails] = useState<Record<string, boolean>>({});
+  const [expandedRails, setExpandedRails] = useState<Record<string, boolean>>({
+    audio: true,
+    audio_speech: true,
+    audio_sound_events: true,
+  });
   const selectedRailId = controller.selectedSlice?.rail ?? null;
 
   function handleToggleRail(railId: string, nextExpanded: boolean) {
