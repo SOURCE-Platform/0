@@ -1,5 +1,6 @@
 import { Component, ReactNode, useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
 import TimelinePage from "./components/TimelinePage";
@@ -131,10 +132,25 @@ function App() {
     window.addEventListener(OBSERVER_CONFIG_UPDATED_EVENT, handleConfigUpdated as EventListener);
     window.addEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
 
+    // Pill gear button: jump to O's dictation settings even when the
+    // Settings view is not mounted (it consumes the flag on mount).
+    let unlistenSettings: (() => void) | undefined;
+    listen("dictation-open-settings", () => {
+      try {
+        localStorage.setItem("open-settings-tab", "dictation");
+      } catch {
+        // Storage unavailable: Settings still opens, just on its last tab.
+      }
+      handleTabClick("settings");
+    }).then((stop) => {
+      unlistenSettings = stop;
+    });
+
     return () => {
       mounted = false;
       window.removeEventListener(OBSERVER_CONFIG_UPDATED_EVENT, handleConfigUpdated as EventListener);
       window.removeEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
+      unlistenSettings?.();
       toastTimerIds.current.forEach((timerId) => clearTimeout(timerId));
       toastTimerIds.current.clear();
     };

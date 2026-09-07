@@ -21,13 +21,18 @@ final class MicSessionRecorder {
     /// Converted 16 kHz mono samples kept for display-only partial
     /// transcriptions (capped at ~60 s). Reading the open WAV file directly
     /// gives a broken header, so partials come from memory instead.
+    /// Guarded by lock: the audio tap appends on a realtime thread while
+    /// the main-thread timer snapshots.
     private var partialSamples: [Float] = []
+    private let partialLock = NSLock()
     private static let maxPartialSamples = 960_000
 
     /// Begin recording a session. Stops any previous session file first.
     func beginSession() -> Bool {
         endSessionFile()
+        partialLock.lock()
         partialSamples = []
+        partialLock.unlock()
         let spool = FileManager.default.temporaryDirectory
             .appendingPathComponent("source-dictation-sessions", isDirectory: true)
         do {
@@ -122,10 +127,18 @@ final class MicSessionRecorder {
         return sqrt(sum / Float(count))
     }
 
-    /// Valid standalone WAV of everything captured so far this session,
-    /// or nil when there is nothing to transcribe yet.
+    /// Valid standalone WAV of the recent session audio (last ~30 s),
+    /// or nil when there is nothing to transcribe yet. Bounded so
+    /// display-only partials stay fast no matter how long dictation runs.
+    private static let partialTailSamples = 480_000
+
     func partialSnapshotURL() -> URL? {
-        guard !partialSamples.isEmpty else { return nil }
+        partialLock.lock()
+        let samples = partialSamples
+        partialLock.unlock()
+        guard !samples.isEmpty else { return nil }
+        let tailStart = max(0, samples.count - Self.partialTailSamples)
+        let tail = Array(samples[tailStart...])
         guard let format = AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
         ) else {
@@ -135,12 +148,12 @@ final class MicSessionRecorder {
             .appendingPathComponent("partial-\(UUID().uuidString).wav")
         do {
             let file = try AVAudioFile(forWriting: url, settings: format.settings)
-            let frames = AVAudioFrameCount(partialSamples.count)
+            let frames = AVAudioFrameCount(tail.count)
             guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
                 return nil
             }
             buffer.frameLength = frames
-            partialSamples.withUnsafeBufferPointer { source in
+            tail.withUnsafeBufferPointer { source in
                 buffer.floatChannelData?[0].update(from: source.baseAddress!, count: source.count)
             }
             try file.write(from: buffer)
@@ -167,10 +180,12 @@ final class MicSessionRecorder {
             try? file.write(from: output)
             if let channel = output.floatChannelData?[0] {
                 let count = Int(output.frameLength)
+                partialLock.lock()
                 partialSamples.append(contentsOf: UnsafeBufferPointer(start: channel, count: count))
                 if partialSamples.count > Self.maxPartialSamples {
                     partialSamples.removeFirst(partialSamples.count - Self.maxPartialSamples)
                 }
+                partialLock.unlock()
             }
         }
     }

@@ -28,6 +28,7 @@ pub enum DictationEvent {
     SessionStopped { id: String },
     Transcript(DictationTranscript),
     Inserted { id: String },
+    OpenSettings,
     Debug(String),
     EngineError(String),
     Exited,
@@ -184,6 +185,9 @@ fn parse_helper_line(line: &str) -> DictationEvent {
     }
     if let Some(id) = trimmed.strip_prefix("INSERTED ") {
         return DictationEvent::Inserted { id: id.trim().to_string() };
+    }
+    if trimmed == "OPEN_SETTINGS" {
+        return DictationEvent::OpenSettings;
     }
     if let Some(message) = trimmed.strip_prefix("DEBUG ") {
         return DictationEvent::Debug(message.to_string());

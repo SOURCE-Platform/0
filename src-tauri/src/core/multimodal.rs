@@ -13,6 +13,7 @@ mod constants;
 mod desktop_audio_runtime;
 pub(crate) mod dictation_helper;
 mod dictation_pipeline;
+mod dictation_store;
 pub(crate) mod dictation_supervisor;
 mod foreground_coordinator;
 mod speech_model;
@@ -42,6 +43,7 @@ pub(crate) use audio_sources::{
 };
 pub(crate) use dictation_helper::DictationHelper;
 pub(crate) use dictation_pipeline::PipelineAction;
+pub(crate) use dictation_store::{persist_foreground_transcript, DICTATION_SOURCE_ID};
 pub(crate) use dictation_supervisor::{DictationSupervisor, SupervisorCommand};
 pub(crate) use media_io::{mediapipe_runtime_available, run_mediapipe_face_features};
 pub use queries::{

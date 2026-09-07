@@ -28,6 +28,7 @@ final class DictationRuntime: @unchecked Sendable {
     private let inserter = TextInserter()
     private let mic = MicSessionRecorder()
     private var partialTimer: Timer?
+    private var partialBusy = false
 
     init(parentPID: pid_t) {
         self.parentPID = parentPID
@@ -36,8 +37,15 @@ final class DictationRuntime: @unchecked Sendable {
     func start() {
         setupPresentation()
         mic.onLevel = { level in ListeningIndicator.shared.setLevel(level) }
+        ListeningIndicator.shared.onOpenSettings = {
+            writeDictationLine("OPEN_SETTINGS")
+        }
         watchParent()
-        hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
+        hotkey = RightOptionHotkey(
+            onToggle: { [weak self] in self?.toggleSession() },
+            isSessionActive: { [weak self] in self?.activeSessionID != nil },
+            onGearClick: { ListeningIndicator.shared.openSettings() }
+        )
         hotkey?.start()
         watchStdin()
     }
@@ -74,13 +82,15 @@ final class DictationRuntime: @unchecked Sendable {
     private func startPartialTimer(id: String) {
         partialTimer?.invalidate()
         partialTimer = Timer.scheduledTimer(withTimeInterval: 2.5, repeats: true) { [weak self] _ in
-            guard let self, self.activeSessionID == id,
+            guard let self, self.activeSessionID == id, !self.partialBusy,
                 let snapshot = self.mic.partialSnapshotURL()
             else {
                 return
             }
+            self.partialBusy = true
             self.engine.transcribe(audioPath: snapshot.path) { result in
                 try? FileManager.default.removeItem(at: snapshot)
+                self.partialBusy = false
                 if self.activeSessionID == id, !result.text.isEmpty {
                     ListeningIndicator.shared.setTranscript(result.text)
                 }
@@ -98,6 +108,7 @@ final class DictationRuntime: @unchecked Sendable {
         activeSessionID = nil
         partialTimer?.invalidate()
         partialTimer = nil
+        partialBusy = false
         ListeningIndicator.shared.hide()
         mic.endSessionFile()
         sessionAudioPath = mic.activeSessionPath
@@ -217,6 +228,8 @@ protocol TranscriptionEngine {
 /// `ModifierOnlyShortcutFlagsDecision` behavior in simplified form.
 final class RightOptionHotkey {
     private let onToggle: () -> Void
+    private let isSessionActive: () -> Bool
+    private let onGearClick: () -> Void
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var rightOptionDown = false
@@ -224,8 +237,14 @@ final class RightOptionHotkey {
     private var retryTimer: Timer?
     private var reportedUnavailable = false
 
-    init(onToggle: @escaping () -> Void) {
+    init(
+        onToggle: @escaping () -> Void,
+        isSessionActive: @escaping () -> Bool,
+        onGearClick: @escaping () -> Void
+    ) {
         self.onToggle = onToggle
+        self.isSessionActive = isSessionActive
+        self.onGearClick = onGearClick
     }
 
     func start() {
@@ -289,6 +308,16 @@ final class RightOptionHotkey {
     private func handle(event: CGEvent) {
         // Ignore keystrokes the inserter synthesized itself.
         if event.getIntegerValueField(.eventSourceUserData) == synthesizedEventTag {
+            return
+        }
+        // Gear click detector: AppKit mouse delivery to the pill is dead,
+        // so clicks on the gear are caught here by screen coordinates.
+        // Only live while a session (and its pill) is showing.
+        if event.type == .leftMouseDown, isSessionActive(),
+            let gear = ListeningIndicator.currentGearRect(),
+            gear.contains(event.location)
+        {
+            onGearClick()
             return
         }
         // macOS pauses slow taps; re-enable immediately instead of dying silent.

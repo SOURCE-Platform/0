@@ -96,6 +96,9 @@ impl DictationSupervisor {
                 text,
                 started_at_ms,
                 ended_at_ms,
+                language,
+                confidence,
+                model,
             } => {
                 let insert = pipeline.take_pending_insertion(&text);
                 let _ = actions_tx
@@ -104,6 +107,9 @@ impl DictationSupervisor {
                         text: text.clone(),
                         started_at_ms,
                         ended_at_ms,
+                        language,
+                        confidence,
+                        model,
                     })
                     .await;
                 if let Some(insert) = insert {
@@ -158,6 +164,9 @@ fn log_helper_event(event: &DictationEvent) {
         }
         DictationEvent::Inserted { id } => {
             println!("Dictation {id} typed into focused field");
+        }
+        DictationEvent::OpenSettings => {
+            println!("Dictation settings requested from pill");
         }
         DictationEvent::Debug(message) => {
             println!("Dictation debug: {message}");

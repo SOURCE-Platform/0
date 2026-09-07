@@ -11,7 +11,7 @@ pub struct DictationPipeline {
     pending_insertion: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PipelineAction {
     /// Transcript is new: persist with dictionary applied.
     PersistForeground {
@@ -19,9 +19,14 @@ pub enum PipelineAction {
         text: String,
         started_at_ms: i64,
         ended_at_ms: i64,
+        language: Option<String>,
+        confidence: Option<f32>,
+        model: String,
     },
     /// Transcript text ready to type into the focused field.
     InsertIntoFocusedField { id: String, text: String },
+    /// Gear clicked on the pill: open O's dictation settings.
+    OpenSettings,
     /// Duplicate delivery: acknowledge, do not persist twice.
     DuplicateIgnored { id: String },
     None,
@@ -55,6 +60,7 @@ impl DictationPipeline {
             DictationEvent::Transcript(transcript) => {
                 self.on_transcript(transcript, dictionary)
             }
+            DictationEvent::OpenSettings => PipelineAction::OpenSettings,
             DictationEvent::Inserted { .. }
             | DictationEvent::Debug(_)
             | DictationEvent::Ready
@@ -100,6 +106,9 @@ impl DictationPipeline {
             text: text.clone(),
             started_at_ms: transcript.started_at_ms,
             ended_at_ms: transcript.ended_at_ms,
+            language: transcript.language.clone(),
+            confidence: transcript.confidence,
+            model: transcript.model.clone(),
         }
     }
 

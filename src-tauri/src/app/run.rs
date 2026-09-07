@@ -26,6 +26,8 @@ pub fn run() {
             reset_config,
             get_available_displays,
             get_host_hardware_info,
+            get_dictation_words_visible,
+            set_dictation_words_visible,
             start_screen_recording,
             stop_screen_recording,
             get_recording_status,

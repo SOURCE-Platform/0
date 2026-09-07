@@ -4,7 +4,8 @@ use crate::core::consent::ConsentManager;
 use crate::core::context_timeline;
 use crate::core::database::Database;
 use crate::core::multimodal::{
-    DictationHelper, DictationSupervisor, PipelineAction, SupervisorCommand,
+    persist_foreground_transcript, DictationHelper, DictationSupervisor, PipelineAction,
+    SupervisorCommand,
 };
 use crate::core::input_recorder::InputRecorder;
 use crate::core::keyboard_recorder::KeyboardRecorder;
@@ -21,6 +22,7 @@ use crate::core::session_manager::{SessionConfig, SessionManager};
 use crate::core::storage::RecordingStorage;
 use crate::platform::get_platform;
 use std::sync::{Arc, Mutex};
+use tauri::Emitter;
 use tauri::Manager;
 use tokio::sync::RwLock;
 
@@ -87,7 +89,12 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             consent_manager.clone(),
         ));
         let shared_config = Arc::new(Mutex::new(config));
-        initialize_dictation_supervisor(shared_config.clone());
+        initialize_dictation_supervisor(
+            shared_config.clone(),
+            db.clone(),
+            session_manager.clone(),
+            app.handle().clone(),
+        );
 
         app.manage(AppState {
             db,
@@ -110,8 +117,14 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     Ok(())
 }
 
-fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
+fn initialize_dictation_supervisor(
+    config: Arc<Mutex<Config>>,
+    db: Arc<Database>,
+    session_manager: Option<Arc<SessionManager>>,
+    app_handle: tauri::AppHandle,
+) {
     use crate::core::multimodal::speech_provider::DictionaryEntry;
+    use crate::core::multimodal::persist_foreground_transcript;
 
     tauri::async_runtime::spawn(async move {
         loop {
@@ -139,9 +152,31 @@ fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
                     println!("Dictation helper is ready");
                     while let Some(action) = actions.recv().await {
                         log_dictation_action(&action);
-                        // The transcript is already decided for persistence;
-                        // hand it to the helper for typing into the field
-                        // that was focused when dictation began.
+                        // Timeline first, typing second: a typing failure
+                        // must never lose the captured transcript.
+                        if let PipelineAction::PersistForeground {
+                            id,
+                            text,
+                            started_at_ms,
+                            ended_at_ms,
+                            language,
+                            confidence,
+                            model,
+                        } = &action
+                        {
+                            persist_action(
+                                &db,
+                                &session_manager,
+                                id,
+                                text,
+                                *started_at_ms,
+                                *ended_at_ms,
+                                language.as_deref(),
+                                *confidence,
+                                model,
+                            )
+                            .await;
+                        }
                         if let PipelineAction::InsertIntoFocusedField { id, text } = &action
                         {
                             let command =
@@ -149,6 +184,9 @@ fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
                             if commands.send(command).await.is_err() {
                                 break;
                             }
+                        }
+                        if matches!(action, PipelineAction::OpenSettings) {
+                            open_dictation_settings(&app_handle);
                         }
                     }
                     eprintln!("Dictation helper exited; restarting soon");
@@ -160,6 +198,58 @@ fn initialize_dictation_supervisor(config: Arc<Mutex<Config>>) {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
+}
+
+/// Gear clicked on the dictation pill: bring O forward and jump the
+/// interface straight to the dictation settings.
+fn open_dictation_settings(app_handle: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+    if let Err(error) = app_handle.emit("dictation-open-settings", ()) {
+        eprintln!("Failed to open dictation settings: {error}");
+    }
+}
+
+async fn persist_action(
+    db: &Arc<Database>,
+    session_manager: &Option<Arc<SessionManager>>,
+    id: &str,
+    text: &str,
+    started_at_ms: i64,
+    ended_at_ms: i64,
+    language: Option<&str>,
+    confidence: Option<f32>,
+    model: &str,
+) {
+    let mut session_id = "dictation".to_string();
+    if let Some(manager) = session_manager {
+        match manager.get_current_session().await {
+            Ok(Some(session)) => session_id = session.id,
+            Ok(None) => {}
+            Err(error) => eprintln!("Dictation session lookup failed: {error}"),
+        }
+    }
+    if let Err(error) = persist_foreground_transcript(
+        db,
+        &session_id,
+        id,
+        text,
+        started_at_ms,
+        ended_at_ms,
+        language,
+        confidence,
+        model,
+    )
+    .await
+    {
+        eprintln!("{error}");
+    } else {
+        println!("Dictation {id} saved to timeline");
+    }
 }
 
 /// Phase B: visibility into the live loop. Phase D persists these.
@@ -174,6 +264,7 @@ fn log_dictation_action(action: &PipelineAction) {
         PipelineAction::DuplicateIgnored { id } => {
             println!("Dictation duplicate {id} ignored");
         }
+        PipelineAction::OpenSettings => {}
         PipelineAction::None => {}
     }
 }

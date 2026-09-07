@@ -1,10 +1,13 @@
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
+import { listen } from "@tauri-apps/api/event";
+import { useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import ConsentManager from "@/components/ConsentManager";
 import { CaptureSettingsSection } from "@/components/settings/CaptureSettingsSection";
 import { DeleteCaptureDialog } from "@/components/settings/DeleteCaptureDialog";
 import { GeneralSettingsSection } from "@/components/settings/GeneralSettingsSection";
 import { HardwareSettingsSection } from "@/components/settings/HardwareSettingsSection";
+import { DictationSettingsSection } from "@/components/settings/DictationSettingsSection";
 import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { StorageSettingsSection } from "@/components/settings/StorageSettingsSection";
 import { SettingsTab } from "@/components/settings/types";
@@ -12,6 +15,26 @@ import { useSettingsController } from "@/components/settings/useSettingsControll
 
 export default function Settings() {
   const controller = useSettingsController();
+
+  // Pill gear button jumps straight here.
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen("dictation-open-settings", () => {
+      controller.setTab("dictation");
+    }).then((stop) => {
+      unlisten = stop;
+    });
+    // Consume a pending jump requested while this view was unmounted.
+    try {
+      if (localStorage.getItem("open-settings-tab") === "dictation") {
+        localStorage.removeItem("open-settings-tab");
+        controller.setTab("dictation");
+      }
+    } catch {
+      // Storage unavailable: stay on the default tab.
+    }
+    return () => unlisten?.();
+  }, [controller.setTab]);
 
   if (controller.loading || !controller.config) {
     return (
@@ -39,6 +62,7 @@ export default function Settings() {
           { value: "privacy", label: "Privacy" },
           { value: "storage", label: "Storage" },
           { value: "hardware", label: "Hardware" },
+          { value: "dictation", label: "Dictation" },
         ]}
         value={controller.tab}
         onValueChange={(value) => controller.setTab(value as SettingsTab)}
@@ -54,6 +78,7 @@ export default function Settings() {
       ) : null}
       {controller.tab === "storage" ? <StorageSettingsSection controller={controller} /> : null}
       {controller.tab === "hardware" ? <HardwareSettingsSection /> : null}
+      {controller.tab === "dictation" ? <DictationSettingsSection /> : null}
 
       <Card>
         <CardHeader>

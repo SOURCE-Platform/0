@@ -213,3 +213,45 @@ fn host_os() -> String {
         return std::env::consts::OS.to_string();
     }
 }
+
+fn dictation_prefs_path() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME")
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .map_err(|_| "Could not resolve home directory.".to_string())?;
+    Ok(std::path::PathBuf::from(home)
+        .join(".observer_data")
+        .join("dictation-pill.json"))
+}
+
+/// Whether the pill shows running words. The helper reads this file at
+/// every session start, so changes apply to the next dictation.
+#[tauri::command]
+pub fn get_dictation_words_visible() -> Result<bool, String> {
+    let path = dictation_prefs_path()?;
+    let contents = std::fs::read_to_string(path).map_err(|_| "No prefs yet.".to_string())?;
+    serde_json::from_str::<serde_json::Value>(&contents)
+        .ok()
+        .and_then(|json| json.get("wordsVisible")?.as_bool())
+        .ok_or_else(|| "No prefs yet.".to_string())
+}
+
+#[tauri::command]
+pub fn set_dictation_words_visible(visible: bool) -> Result<(), String> {
+    let path = dictation_prefs_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("Failed to prepare prefs dir: {error}"))?;
+    }
+    let current: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|contents| serde_json::from_str(&contents).ok())
+        .unwrap_or(serde_json::json!({}));
+    let mut map = current.as_object().cloned().unwrap_or_default();
+    map.insert(
+        "wordsVisible".to_string(),
+        serde_json::Value::Bool(visible),
+    );
+    std::fs::write(&path, serde_json::Value::Object(map).to_string())
+        .map_err(|error| format!("Failed to save dictation prefs: {error}"))?;
+    Ok(())
+}

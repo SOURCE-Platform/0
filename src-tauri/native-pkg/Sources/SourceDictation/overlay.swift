@@ -1,45 +1,49 @@
 import AppKit
 import Foundation
 
-/// Session pill: live waveform, running transcript, and a words on/off chip.
-/// Stand-in for the full live-words overlay (Phase E): the transcript here
-/// is display-only (partial re-transcriptions); the final TRANSCRIPT event
-/// still carries the authoritative text. Words visibility persists in a tiny
-/// JSON file so rebuilds don't reset it.
+/// Session pill: live waveform on top, running words beneath, bottom row
+/// with a settings gear (opens O's dictation settings) and an elapsed
+/// ticker. Words visibility lives in O's dictation settings and is read
+/// fresh at every session start, so no pill UI is needed for it.
 final class ListeningIndicator: NSObject, @unchecked Sendable {
     static let shared = ListeningIndicator()
 
+    var onOpenSettings: (() -> Void)?
+
     private var panel: NSPanel?
-    private var chipPanel: NSPanel?
-    private var dot: NSView?
-    private var titleLabel: NSTextField?
     private var waveform: WaveformView?
     private var wordsLabel: NSTextField?
-    private var chipButton: NSButton?
+    private var elapsedLabel: NSTextField?
+    private var elapsedTimer: Timer?
+    private var sessionStart: Date?
     private var wordsVisible = true
 
     private override init() {
         super.init()
-        wordsVisible = Self.loadWordsVisible()
     }
 
     // MARK: - Session lifecycle
 
     func show() {
+        wordsVisible = Self.loadWordsVisible()
+        sessionStart = Date()
         DispatchQueue.main.async {
             if self.panel == nil {
                 self.build()
             }
             self.setTranscript("")
+            self.updateElapsed()
+            self.startTicker()
             self.panel?.orderFrontRegardless()
-            self.chipPanel?.orderFrontRegardless()
         }
     }
 
     func hide() {
         DispatchQueue.main.async {
+            self.elapsedTimer?.invalidate()
+            self.elapsedTimer = nil
+            self.sessionStart = nil
             self.panel?.orderOut(nil)
-            self.chipPanel?.orderOut(nil)
         }
     }
 
@@ -54,26 +58,34 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         DispatchQueue.main.async {
             guard self.wordsVisible else { return }
             self.wordsLabel?.stringValue = text
-            self.layoutForWords()
         }
     }
 
-    // MARK: - Words toggle
+    // MARK: - Ticker
 
-    func setWordsVisible(_ visible: Bool) {
-        wordsVisible = visible
-        Self.saveWordsVisible(visible)
-        DispatchQueue.main.async {
-            self.wordsLabel?.isHidden = !visible
-            self.chipButton?.title = visible ? "Words ✓" : "Words"
-            self.layoutForWords()
+    private func startTicker() {
+        elapsedTimer?.invalidate()
+        elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.updateElapsed()
         }
     }
 
-    private func layoutForWords() {
+    private func updateElapsed() {
+        guard let start = sessionStart else {
+            elapsedLabel?.stringValue = "0:00"
+            return
+        }
+        let seconds = max(0, Int(Date().timeIntervalSince(start)))
+        elapsedLabel?.stringValue = String(format: "%d:%02d", seconds / 60, seconds % 60)
+    }
+
+    // MARK: - Layout
+
+    private func relayout() {
         guard let panel, let pill = panel.contentView else { return }
         let width = panel.frame.width
-        let height: CGFloat = wordsVisible ? 108 : 64
+        // Waveform 26 + words 28 (optional) + bottom row 30 + paddings.
+        let height: CGFloat = wordsVisible ? 116 : 88
         var frame = panel.frame
         let delta = height - frame.height
         frame.origin.y -= delta
@@ -81,37 +93,55 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         panel.setFrame(frame, display: true)
         pill.frame = NSRect(x: 0, y: 0, width: width, height: height)
 
-        // Top row: red dot + title.
-        dot?.frame = NSRect(x: 18, y: height - 30, width: 14, height: 14)
-        titleLabel?.frame = NSRect(x: 40, y: height - 34, width: width - 52, height: 20)
-        // Middle: waveform strip. Bottom (optional): running words.
+        var cursor = height - 8
+        waveform?.frame = NSRect(x: 14, y: cursor - 26, width: width - 28, height: 26)
+        cursor -= 26 + 6
         if wordsVisible {
-            waveform?.frame = NSRect(x: 14, y: 36, width: width - 28, height: 24)
-            wordsLabel?.frame = NSRect(x: 14, y: 8, width: width - 28, height: 26)
+            wordsLabel?.isHidden = false
+            wordsLabel?.frame = NSRect(x: 14, y: cursor - 26, width: width - 28, height: 26)
+            cursor -= 26 + 6
         } else {
-            waveform?.frame = NSRect(x: 14, y: 8, width: width - 28, height: 22)
+            wordsLabel?.isHidden = true
         }
-        positionChip()
+        gearView?.frame = NSRect(x: 17, y: 11, width: 18, height: 18)
+        elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
+        // Generous click target in screen coordinates for the event-tap
+        // click detector (AppKit mouse delivery to this panel is dead).
+        Self.updateGearRect(NSRect(
+            x: panel.frame.minX + 14, y: panel.frame.minY + 8, width: 24, height: 24
+        ))
     }
 
-    private func positionChip() {
-        guard let panel, let chip = chipPanel else { return }
-        var frame = chip.frame
-        frame.origin.x = panel.frame.maxX - frame.width - 8
-        frame.origin.y = panel.frame.minY - frame.height - 6
-        chip.setFrameOrigin(frame.origin)
+    /// Screen-space click target of the gear, refreshed on every layout.
+    /// Read by the event tap: a left-click inside it while a session is
+    /// active opens O's dictation settings. Lock-guarded: written on the
+    /// main thread, read on the tap thread.
+    // Manually synchronized via gearLock (main thread writes, tap thread
+    // reads), so this opts out of the concurrency checker explicitly.
+    nonisolated(unsafe) private static var storedGearRect: NSRect?
+    nonisolated(unsafe) private static let gearLock = NSLock()
+
+    static func updateGearRect(_ rect: NSRect) {
+        gearLock.lock()
+        storedGearRect = rect
+        gearLock.unlock()
     }
+
+    static func currentGearRect() -> NSRect? {
+        gearLock.lock()
+        defer { gearLock.unlock() }
+        return storedGearRect
+    }
+
+    private var gearView: NSImageView?
 
     // MARK: - Build
 
     private func build() {
         let width: CGFloat = 340
-        let height: CGFloat = 64
         guard let screen = NSScreen.main else { return }
-        let x = screen.frame.midX - width / 2
-        let y = screen.frame.maxY - height - 110
         let panel = NSPanel(
-            contentRect: NSRect(x: x, y: y, width: width, height: height),
+            contentRect: NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - 220, width: width, height: 88),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -121,30 +151,16 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = true
-        panel.ignoresMouseEvents = true
+        panel.ignoresMouseEvents = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let pill = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        let pill = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: 88))
         pill.material = .hudWindow
         pill.state = .active
         pill.wantsLayer = true
         pill.layer?.cornerRadius = 20
         pill.layer?.borderWidth = 2
-        pill.layer?.borderColor = NSColor.systemYellow.cgColor
-
-        let dot = NSView(frame: .zero)
-        dot.wantsLayer = true
-        dot.layer?.cornerRadius = 7
-        dot.layer?.backgroundColor = NSColor.systemRed.cgColor
-        self.dot = dot
-
-        let title = NSTextField(labelWithString: "Listening…  (Right Option to finish)")
-        title.frame = .zero
-        title.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-        title.textColor = .labelColor
-        title.backgroundColor = .clear
-        title.isBordered = false
-        self.titleLabel = title
+        pill.layer?.borderColor = NSColor.systemGray.cgColor
 
         let waveform = WaveformView(frame: .zero)
         self.waveform = waveform
@@ -158,53 +174,39 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         words.maximumNumberOfLines = 2
         words.cell?.wraps = true
         words.cell?.isScrollable = false
-        words.isHidden = !wordsVisible
         self.wordsLabel = words
 
-        pill.addSubview(dot)
-        pill.addSubview(title)
+        let gear = NSImageView(frame: .zero)
+        gear.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: "Dictation settings")
+        gear.imageScaling = .scaleProportionallyUpOrDown
+        self.gearView = gear
+
+        let elapsed = NSTextField(labelWithString: "0:00")
+        elapsed.frame = .zero
+        elapsed.alignment = .right
+        elapsed.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        elapsed.textColor = .secondaryLabelColor
+        elapsed.backgroundColor = .clear
+        elapsed.isBordered = false
+        self.elapsedLabel = elapsed
+
         pill.addSubview(waveform)
         pill.addSubview(words)
+        pill.addSubview(gear)
+        pill.addSubview(elapsed)
         panel.contentView = pill
         self.panel = panel
-
-        buildChip(near: panel)
-        layoutForWords()
+        relayout()
     }
 
-    private func buildChip(near panel: NSPanel) {
-        let chip = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 92, height: 28),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        chip.isFloatingPanel = true
-        chip.level = .floating
-        chip.backgroundColor = .clear
-        chip.isOpaque = false
-        chip.hasShadow = true
-        chip.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-
-        let button = NSButton(title: wordsVisible ? "Words ✓" : "Words", target: nil, action: nil)
-        button.frame = NSRect(x: 0, y: 0, width: 92, height: 28)
-        button.bezelStyle = .rounded
-        button.font = NSFont.systemFont(ofSize: 12, weight: .medium)
-        button.target = self
-        button.action = #selector(toggleWords)
-        chip.contentView?.addSubview(button)
-        self.chipButton = button
-        self.chipPanel = chip
-        positionChip()
+    func openSettings() {
+        writeDictationLine("DEBUG gear clicked")
+        onOpenSettings?()
     }
 
-    @objc private func toggleWords() {
-        setWordsVisible(!wordsVisible)
-    }
+    // MARK: - Prefs (shared with O's dictation settings)
 
-    // MARK: - Prefs
-
-    private static func prefsURL() -> URL {
+    static func prefsURL() -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return home
             .appendingPathComponent(".observer_data", isDirectory: true)
@@ -220,17 +222,11 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         }
         return value
     }
-
-    private static func saveWordsVisible(_ visible: Bool) {
-        let json: [String: Any] = ["wordsVisible": visible]
-        guard let data = try? JSONSerialization.data(withJSONObject: json) else { return }
-        try? data.write(to: prefsURL())
-    }
 }
 
 /// Scrolling bar visualizer fed by mic RMS levels (~20 Hz).
 final class WaveformView: NSView {
-    private var levels: [Float] = Array(repeating: 0, count: 56)
+    private var levels: [Float] = Array(repeating: 0, count: 112)
 
     func pushLevel(_ level: Float) {
         levels.removeFirst()
@@ -244,7 +240,7 @@ final class WaveformView: NSView {
         let count = levels.count
         let slot = bounds.width / CGFloat(count)
         let barWidth = max(2, slot - 2)
-        NSColor.systemYellow.setFill()
+        NSColor.white.setFill()
         for (index, level) in levels.enumerated() {
             let height = max(2, CGFloat(level) * bounds.height)
             let x = CGFloat(index) * slot + 1
