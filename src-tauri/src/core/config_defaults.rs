@@ -1,9 +1,5 @@
 use super::config::ResourceProfile;
 
-pub(crate) fn default_mock_data_mode() -> bool {
-    true
-}
-
 pub(crate) fn default_resource_profile() -> ResourceProfile {
     ResourceProfile::Balanced
 }

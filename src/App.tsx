@@ -1,5 +1,4 @@
 import { Component, ReactNode, useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
@@ -9,7 +8,7 @@ import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibratio
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
-import { OBSERVER_APP_TOAST_EVENT, OBSERVER_CONFIG_UPDATED_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
+import { OBSERVER_APP_TOAST_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
 
 type View = "settings" | "timeline" | "id";
 
@@ -18,10 +17,6 @@ const TABS = [
   { value: "id",        label: "ID" },
   { value: "settings",  label: "Settings" },
 ];
-
-interface AppConfig {
-  mock_data_mode: boolean;
-}
 
 interface AppToast extends ObserverAppToastDetail {
   id: number;
@@ -63,56 +58,16 @@ class ViewErrorBoundary extends Component<
   }
 }
 
-function RealModePlaceholder({
-  title,
-  body,
-}: {
-  title: string;
-  body: string;
-}) {
-  return (
-    <div className="mx-auto max-w-3xl rounded-2xl border border-dashed border-border/70 bg-muted/20 px-8 py-16 text-center">
-      <h2 className="text-2xl font-semibold tracking-tight text-foreground">{title}</h2>
-      <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
-        {body}
-      </p>
-    </div>
-  );
-}
-
 function App() {
   const appMode = new URLSearchParams(window.location.search).get("mode");
   const [activeTab, setActiveTab] = useState<View>("timeline");
   const [displayedView, setDisplayedView] = useState<View>("timeline");
   const [fading, setFading] = useState(false);
-  const [mockDataMode, setMockDataMode] = useState(true);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerIds = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
-    let mounted = true;
-
-    async function loadConfig() {
-      try {
-        const config = await invoke<AppConfig>("get_config");
-        if (mounted) {
-          setMockDataMode(config.mock_data_mode ?? true);
-        }
-      } catch {
-        if (mounted) {
-          setMockDataMode(true);
-        }
-      }
-    }
-
-    loadConfig();
-
-    function handleConfigUpdated(event: Event) {
-      const customEvent = event as CustomEvent<AppConfig>;
-      setMockDataMode(customEvent.detail?.mock_data_mode ?? true);
-    }
-
     function handleAppToast(event: Event) {
       const customEvent = event as CustomEvent<ObserverAppToastDetail>;
       const detail = customEvent.detail;
@@ -129,7 +84,6 @@ function App() {
       toastTimerIds.current.set(id, timerId);
     }
 
-    window.addEventListener(OBSERVER_CONFIG_UPDATED_EVENT, handleConfigUpdated as EventListener);
     window.addEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
 
     // Pill gear button: jump to O's dictation settings even when the
@@ -147,8 +101,6 @@ function App() {
     });
 
     return () => {
-      mounted = false;
-      window.removeEventListener(OBSERVER_CONFIG_UPDATED_EVENT, handleConfigUpdated as EventListener);
       window.removeEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
       unlistenSettings?.();
       toastTimerIds.current.forEach((timerId) => clearTimeout(timerId));
@@ -223,17 +175,8 @@ function App() {
           >
             <div className="w-full px-2 py-4 xl:px-3">
               <ViewErrorBoundary>
-                {displayedView === "timeline"  && <TimelinePage mockDataMode={mockDataMode} />}
-                {displayedView === "id"        && (
-                  mockDataMode ? (
-                    <ID />
-                  ) : (
-                    <RealModePlaceholder
-                      title="Identity is in real mode"
-                      body="The demo profile dataset is turned off. Connect real identity/profile sources to populate this view, or re-enable Mock Data Mode in Settings when you want the polished demo experience."
-                    />
-                  )
-                )}
+                {displayedView === "timeline"  && <TimelinePage />}
+                {displayedView === "id"        && <ID />}
                 {displayedView === "settings"  && <Settings />}
               </ViewErrorBoundary>
             </div>

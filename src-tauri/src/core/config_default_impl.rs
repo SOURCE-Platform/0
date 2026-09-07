@@ -36,7 +36,6 @@ impl Default for Config {
             audio_sound_events_enabled: crate::core::config_defaults::default_audio_sound_events_enabled(),
             desktop_audio_gain_db: crate::core::config_defaults::default_desktop_audio_gain_db(),
             custom_dictionary: Vec::new(),
-            mock_data_mode: true,
             capture_channels: CaptureChannels::default(),
             resource_profile: ResourceProfile::Balanced,
             pii_settings: PiiDetectionSettings::default(),

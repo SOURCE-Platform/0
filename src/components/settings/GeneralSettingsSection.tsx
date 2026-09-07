@@ -18,37 +18,6 @@ export function GeneralSettingsSection({ controller }: { controller: SettingsCon
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Data Mode</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <span
-              className={`text-sm font-medium transition-colors ${
-                !config.mock_data_mode ? "text-foreground" : "text-muted-foreground"
-              }`}
-            >
-              Real
-            </span>
-            <Switch
-              id="mock-mode"
-              checked={config.mock_data_mode}
-              onCheckedChange={controller.handleMockDataModeChange}
-              disabled={controller.saving}
-              className="data-[state=checked]:bg-blue-500 data-[state=unchecked]:bg-blue-500 dark:data-[state=unchecked]:bg-blue-500"
-            />
-            <span
-              className={`text-sm font-medium transition-colors ${
-                config.mock_data_mode ? "text-foreground" : "text-muted-foreground"
-              }`}
-            >
-              Mock
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Application Behavior</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">

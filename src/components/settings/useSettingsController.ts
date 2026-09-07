@@ -171,13 +171,6 @@ export function useSettingsController() {
     }
   }
 
-  async function handleMockDataModeChange(enabled: boolean) {
-    if (!config) return;
-    const nextConfig = { ...config, mock_data_mode: enabled };
-    setConfig(nextConfig);
-    await saveConfig(nextConfig);
-  }
-
   async function enableOnlyChannel(channel: keyof CaptureChannels) {
     if (!config) return;
     const nextChannels = Object.keys(config.capture_channels).reduce((accumulator, key) => {
@@ -312,7 +305,6 @@ export function useSettingsController() {
     updatePiiCategory,
     saveConfig,
     resetToDefaults,
-    handleMockDataModeChange,
     enableOnlyChannel,
     applyResourceProfile,
     handleStartCapture,

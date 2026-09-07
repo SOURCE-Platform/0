@@ -44,7 +44,6 @@ export interface Config {
   audio_sound_events_enabled: boolean;
   desktop_audio_gain_db: number;
   custom_dictionary: DictionaryEntry[];
-  mock_data_mode: boolean;
   capture_channels: CaptureChannels;
   resource_profile: "minimal" | "balanced" | "high_fidelity";
   pii_settings: {

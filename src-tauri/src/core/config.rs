@@ -155,9 +155,6 @@ pub struct Config {
     /// Custom dictionary: misheard phrases mapped to preferred spellings.
     #[serde(default)]
     pub custom_dictionary: Vec<CustomDictionaryEntry>,
-    /// Whether demo/mock data should be shown in the UI
-    #[serde(default = "crate::core::config_defaults::default_mock_data_mode")]
-    pub mock_data_mode: bool,
     /// Per-channel capture enablement
     #[serde(default)]
     pub capture_channels: CaptureChannels,
