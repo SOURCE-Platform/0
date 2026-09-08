@@ -188,7 +188,12 @@ pub async fn start_multimodal_capture(
     config: &Config,
     started_any_channel: &mut bool,
 ) {
-    if !(config.capture_channels.camera_future || config.capture_channels.audio_future) {
+    // Audio runs whenever a microphone or desktop source is enabled, even if
+    // the audio_future channel flag is off: the flags are the source of
+    // truth, the channel flag is UI organization.
+    let audio_requested =
+        config.audio_microphone_enabled || config.audio_desktop_enabled;
+    if !(config.capture_channels.camera_future || config.capture_channels.audio_future || audio_requested) {
         return;
     }
 
@@ -200,7 +205,7 @@ pub async fn start_multimodal_capture(
                 session_id.to_string(),
                 MultimodalCaptureOptions {
                     enable_visual: config.capture_channels.camera_future,
-                    enable_audio: config.capture_channels.audio_future,
+                    enable_audio: config.capture_channels.audio_future || audio_requested,
                     display_id: selected_display_id,
                     audio_source_id: config.selected_audio_input_id.clone(),
                     enable_microphone_audio: config.audio_microphone_enabled,
