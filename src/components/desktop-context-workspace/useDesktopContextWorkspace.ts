@@ -175,6 +175,7 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     setWindowDurationMs,
     setWindowEndTimestamp,
     setIsLiveFollowing,
+    onEscape: clearSelectedSlice,
   });
 
   async function handleStartCapture() {
@@ -204,8 +205,7 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     }
   }
 
-  async function handleSelectSlice(slice: ContextSlice) {
-    setSelectedSlice(slice);
+  async function handleSelectSlice(slice: ContextSlice) {    setSelectedSlice(slice);
     setLoadingDetail(true);
     setActionError(null);
     setDetailTab(
@@ -226,6 +226,10 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     } finally {
       setLoadingDetail(false);
     }
+  }
+
+  function clearSelectedSlice() {
+    setSelectedSlice(null);
   }
 
   function shiftWindow(direction: -1 | 1) {
@@ -283,6 +287,7 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     handleStartCapture,
     handleStopCapture,
     handleSelectSlice,
+    clearSelectedSlice,
     shiftWindow,
     handleJumpToNow,
   };

@@ -19,6 +19,7 @@ interface RailLaneProps {
   selectedSliceId: string | null;
   selectedRailId: string | null;
   onSelect: (slice: ContextSlice) => void;
+  onDeselect: () => void;
   appFilter: string;
   interactionFilter: string;
 }
@@ -31,6 +32,7 @@ export function RailLane({
   selectedSliceId,
   selectedRailId,
   onSelect,
+  onDeselect,
   appFilter,
   interactionFilter,
 }: RailLaneProps) {
@@ -82,7 +84,12 @@ export function RailLane({
 
       <div className="relative h-16 rounded-2xl border border-border/70 bg-background/65">
         <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-px bg-blue-400/90 shadow-[0_0_18px_rgba(59,130,246,0.45)]" />
-        <div className="relative h-full w-full">
+        <div
+          className="relative h-full w-full"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) onDeselect();
+          }}
+        >
           {ticks.map((timestamp) => {
             const left = ((timestamp - windowStart) / range) * 100;
             return (

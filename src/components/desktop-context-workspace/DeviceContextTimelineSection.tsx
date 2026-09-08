@@ -181,6 +181,7 @@ export function DeviceContextTimelineSection({
                     selectedSliceId={controller.selectedSlice?.id ?? null}
                     selectedRailId={selectedRailId}
                     onSelect={controller.handleSelectSlice}
+                    onDeselect={controller.clearSelectedSlice}
                     appFilter={controller.appFilter}
                     interactionFilter={controller.interactionFilter}
                   />

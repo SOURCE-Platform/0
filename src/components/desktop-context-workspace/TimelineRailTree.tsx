@@ -15,6 +15,7 @@ interface TimelineRailTreeProps {
   selectedSliceId: string | null;
   selectedRailId: string | null;
   onSelect: (slice: ContextSlice) => void;
+  onDeselect: () => void;
   appFilter: string;
   interactionFilter: string;
 }
@@ -29,6 +30,7 @@ export function TimelineRailTree({
   selectedSliceId,
   selectedRailId,
   onSelect,
+  onDeselect,
   appFilter,
   interactionFilter,
 }: TimelineRailTreeProps) {
@@ -42,6 +44,7 @@ export function TimelineRailTree({
         selectedSliceId={selectedSliceId}
         selectedRailId={selectedRailId}
         onSelect={onSelect}
+        onDeselect={onDeselect}
         appFilter={appFilter}
         interactionFilter={interactionFilter}
       />
@@ -112,6 +115,7 @@ export function TimelineRailTree({
               selectedSliceId={selectedSliceId}
               selectedRailId={selectedRailId}
               onSelect={onSelect}
+              onDeselect={onDeselect}
               appFilter={appFilter}
               interactionFilter={interactionFilter}
             />
