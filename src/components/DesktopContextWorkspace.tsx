@@ -1,7 +1,6 @@
 import { AlertCircle } from "lucide-react";
 import { BlockDetailPanel } from "@/components/desktop-context-workspace/BlockDetailPanel";
 import { DeviceContextTimelineSection } from "@/components/desktop-context-workspace/DeviceContextTimelineSection";
-import { TimelineContentTabs } from "@/components/desktop-context-workspace/TimelineContentTabs";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 
 export default function DesktopContextWorkspace({ displayId }: { displayId: number | null }) {
@@ -25,7 +24,6 @@ export default function DesktopContextWorkspace({ displayId }: { displayId: numb
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-4">
           <DeviceContextTimelineSection controller={controller} />
-          <TimelineContentTabs controller={controller} />
         </div>
         <BlockDetailPanel controller={controller} />
       </div>

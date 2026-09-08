@@ -1,15 +1,13 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { addDays, startOfDay } from "date-fns";
-import { ChevronLeft, ChevronRight, Circle, StopCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TimelineRailTree } from "@/components/desktop-context-workspace/TimelineRailTree";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TimelineRuler } from "@/components/desktop-context-workspace/TimelineRuler";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
-  formatWindowScale,
   safeFormatDate,
 } from "@/components/desktop-context-workspace/utils";
 
@@ -31,6 +29,20 @@ export function DeviceContextTimelineSection({
     audio_sound_events: true,
   });
   const selectedRailId = controller.selectedSlice?.rail ?? null;
+  const autoStartedRef = useRef(false);
+
+  // Always-on vision: capture starts with the workspace (consent gates
+  // the microphones underneath). No start/stop buttons by design.
+  useEffect(() => {
+    if (autoStartedRef.current) return;
+    if (controller.loading || !controller.canStartCapture) return;
+    if (controller.status?.isActive) {
+      autoStartedRef.current = true;
+      return;
+    }
+    autoStartedRef.current = true;
+    void controller.handleStartCapture();
+  }, [controller.loading, controller.canStartCapture, controller.status?.isActive]);
 
   function handleToggleRail(railId: string, nextExpanded: boolean) {
     setExpandedRails((current) => ({
@@ -41,37 +53,6 @@ export function DeviceContextTimelineSection({
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-4 px-1">
-        <div className="space-y-2">
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">Device Context Timeline</h2>
-          <p className="max-w-[58ch] text-base leading-8 text-muted-foreground">
-            The live edge is pinned to the far right. New capture blocks appear there and drift left as your device context accumulates over time.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <Badge variant={controller.status?.isActive ? "destructive" : "outline"} className="gap-2 px-3 py-1.5">
-            <Circle className={`h-3 w-3 ${controller.status?.isActive ? "fill-current animate-pulse" : ""}`} />
-            {controller.status?.isActive
-              ? controller.status.displayName
-                ? `Capturing on ${controller.status.displayName}`
-                : "Capture running"
-              : "Capture stopped"}
-          </Badge>
-          {!controller.status?.isActive ? (
-            <Button onClick={controller.handleStartCapture} className="gap-2" disabled={!controller.canStartCapture}>
-              <Circle className="h-3.5 w-3.5 fill-current" />
-              Start Capture
-            </Button>
-          ) : (
-            <Button onClick={controller.handleStopCapture} variant="destructive" className="gap-2">
-              <StopCircle className="h-3.5 w-3.5" />
-              Stop Capture
-            </Button>
-          )}
-        </div>
-      </div>
-
       <div className="flex flex-wrap items-center gap-3 px-1">
         <Button variant="outline" size="sm" onClick={() => controller.setDayStart(addDays(controller.dayStart, -1).getTime())}>
           Previous day
@@ -106,35 +87,6 @@ export function DeviceContextTimelineSection({
               Jump to Now
             </Button>
           ) : null}
-          <Badge variant="outline" className="px-3 py-1.5 text-xs uppercase tracking-wide">
-            Zoom {formatWindowScale(controller.windowDurationMs)}
-          </Badge>
-          <Select value={controller.appFilter} onValueChange={controller.setAppFilter}>
-            <SelectTrigger className="w-[210px]">
-              <SelectValue placeholder="All apps" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All apps</SelectItem>
-              {controller.appOptions.map((app) => (
-                <SelectItem key={app} value={app}>
-                  {app}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={controller.interactionFilter} onValueChange={controller.setInteractionFilter}>
-            <SelectTrigger className="w-[210px]">
-              <SelectValue placeholder="All interaction states" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All interaction states</SelectItem>
-              <SelectItem value="active_typing">Typing</SelectItem>
-              <SelectItem value="active_pointer">Mouse / pointer</SelectItem>
-              <SelectItem value="passive_viewing">Passive viewing</SelectItem>
-              <SelectItem value="voice_input_inferred">Inferred voice input</SelectItem>
-              <SelectItem value="mixed">Mixed</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
 
