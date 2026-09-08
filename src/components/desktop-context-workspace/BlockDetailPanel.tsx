@@ -1,6 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Layers3, PanelRightOpen } from "lucide-react";
+import { Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OcrReconstructionView } from "@/components/desktop-context-workspace/OcrReconstructionView";
@@ -27,6 +28,18 @@ export function BlockDetailPanel({
         <div className="flex items-center gap-2">
           <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
           <CardTitle>Block Detail</CardTitle>
+          {controller.selectedSlice ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-7 w-7 cursor-pointer"
+              onClick={() => controller.clearSelectedSlice()}
+              aria-label="Close block detail"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          ) : null}
         </div>
         <CardDescription className="max-w-[30ch]">
           Click any timeline block to inspect what it captured, how large it is, and the exact stored payload.

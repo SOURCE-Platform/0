@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -39,6 +40,7 @@ export function RailLane({
   const range = Math.max(1, windowEnd - windowStart);
   const tickMs = getTimelineTickMs(range);
   const ticks = getSnappedTicks(windowStart, windowEnd, tickMs);
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
@@ -120,19 +122,15 @@ export function RailLane({
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
               const sourceLabel = getAudioSourceLabel(slice);
-              const titleText = [
-                sourceLabel ? `${sourceLabel} source` : null,
-                slice.title,
-                safeFormatDate(slice.startTimestamp, "p"),
-                storageLabel,
-              ].filter(Boolean).join(" • ");
 
               return (
                 <div key={slice.id}>
                   <button
                     type="button"
                     onClick={() => onSelect(slice)}
-                    className={`group absolute top-2 h-12 overflow-hidden rounded-xl border text-left shadow-sm transition ${
+                    onMouseEnter={() => setHoveredId(slice.id)}
+                    onMouseLeave={() => setHoveredId((current) => (current === slice.id ? null : current))}
+                    className={`group absolute top-2 h-12 cursor-pointer overflow-hidden rounded-xl border text-left shadow-sm transition ${
                       isSelected
                         ? "border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
@@ -144,7 +142,6 @@ export function RailLane({
                       height: `${layout.heightPx}px`,
                       opacity: layout.opacity,
                     }}
-                    title={titleText}
                   >
                     <div className="px-2 py-1.5 text-[11px] font-semibold text-white">
                       {sourceLabel && width > 9 ? (
@@ -159,7 +156,7 @@ export function RailLane({
                     </div>
                   </button>
 
-                  {isSelected ? (
+                  {hoveredId === slice.id ? (
                     <div
                       className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] -translate-x-1/2 rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur"
                       style={{ left: `${anchor}%` }}
