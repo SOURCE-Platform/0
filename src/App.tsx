@@ -1,4 +1,5 @@
 import { Component, ReactNode, useState, useEffect, useRef } from "react";
+import { isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
@@ -60,6 +61,9 @@ class ViewErrorBoundary extends Component<
 
 function App() {
   const appMode = new URLSearchParams(window.location.search).get("mode");
+  const nativeTitleBarHeight =
+    isTauri() && navigator.userAgent.includes("Mac") ? 28 : 0;
+  const contentTop = nativeTitleBarHeight + 56;
   const [activeTab, setActiveTab] = useState<View>("timeline");
   const [displayedView, setDisplayedView] = useState<View>("timeline");
   const [fading, setFading] = useState(false);
@@ -128,7 +132,17 @@ function App() {
           <GazeCalibrationOverlayPage />
         ) : (
         <div className="app-container h-screen overflow-hidden">
-          <div className="pointer-events-none fixed right-6 top-6 z-[200] flex max-w-sm flex-col gap-3">
+          {nativeTitleBarHeight > 0 && (
+            <div
+              data-tauri-drag-region
+              className="fixed inset-x-0 top-0 z-[60]"
+              style={{ height: nativeTitleBarHeight }}
+            />
+          )}
+          <div
+            className="pointer-events-none fixed right-6 z-[200] flex max-w-sm flex-col gap-3"
+            style={{ top: nativeTitleBarHeight + 24 }}
+          >
             {toasts.map((toast) => (
               <div
                 key={toast.id}
@@ -151,7 +165,10 @@ function App() {
           </div>
 
           {/* Header */}
-          <div className="fixed top-0 inset-x-0 z-50 flex h-14 items-center px-6 gap-6 bg-transparent">
+          <div
+            className="fixed inset-x-0 z-50 flex h-14 items-center gap-6 bg-transparent px-6"
+            style={{ top: nativeTitleBarHeight }}
+          >
             <svg width="24" height="24" viewBox="0 0 28 28" className="fill-white shrink-0">
               <circle cx="14" cy="14" r="14"/>
             </svg>
@@ -163,15 +180,22 @@ function App() {
           </div>
 
           {/* Left sidebar — same width as header height (w-14 = 56px) */}
-          <div className="fixed left-0 top-14 bottom-0 z-40 w-14 flex flex-col items-start justify-end pl-6 pb-[18px]">
+          <div
+            className="fixed bottom-0 left-0 z-40 flex w-14 flex-col items-start justify-end pb-[18px] pl-6"
+            style={{ top: contentTop }}
+          >
             <div className="w-6 h-6 rounded-full bg-neutral-600 flex items-center justify-center overflow-hidden shrink-0">
               <span className="text-[9px] font-medium text-white leading-none select-none">A</span>
             </div>
           </div>
 
           <main
-            className="mt-14 ml-14 mr-0 h-[calc(100%-3.5rem)] overflow-y-auto transition-opacity duration-200"
-            style={{ opacity: fading ? 0 : 1 }}
+            className="ml-14 mr-0 overflow-y-auto transition-opacity duration-200"
+            style={{
+              height: `calc(100% - ${contentTop}px)`,
+              marginTop: contentTop,
+              opacity: fading ? 0 : 1,
+            }}
           >
             <div className="w-full px-2 py-4 xl:px-3">
               <ViewErrorBoundary>

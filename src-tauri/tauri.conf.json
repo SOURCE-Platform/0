@@ -18,7 +18,7 @@
         "height": 800,
         "minWidth": 800,
         "minHeight": 600,
-        "theme": "Light",
+        "titleBarStyle": "Overlay",
         "resizable": true,
         "center": true
       }
