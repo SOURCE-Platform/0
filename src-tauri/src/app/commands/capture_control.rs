@@ -191,6 +191,9 @@ pub async fn stop_desktop_capture(
     if let Some(recorder) = state.input_recorder.as_ref() {
         let _ = recorder.stop_recording().await;
     }
+    if let Some(recorder) = state.keyboard_recorder.as_ref() {
+        let _ = recorder.stop_recording().await;
+    }
     if let Some(recorder) = state.os_activity_recorder.as_ref() {
         let _ = recorder.stop_recording().await;
     }
@@ -216,6 +219,30 @@ pub async fn stop_desktop_capture(
         runtime.audio_source_name = None;
         runtime.sampler_generation += 1;
     }
+    build_desktop_capture_status(&state).await
+}
+
+/// Applies audio-device configuration without restarting unrelated capture
+/// channels such as keyboard, mouse, or OS activity recording.
+#[tauri::command]
+pub async fn restart_multimodal_capture(
+    state: State<'_, AppState>,
+) -> Result<DesktopCaptureStatusDto, String> {
+    let (is_active, session_id) = {
+        let runtime = state.desktop_capture_runtime.read().await;
+        (runtime.is_active, runtime.session_id.clone())
+    };
+    if !is_active {
+        return build_desktop_capture_status(&state).await;
+    }
+    let session_id = session_id.ok_or("Active capture session is unavailable")?;
+    let config = state
+        .config
+        .lock()
+        .map_err(|error| format!("Failed to lock config: {error}"))?
+        .clone();
+    let mut audio_started = false;
+    start_multimodal_capture(&state, &session_id, &config, &mut audio_started).await;
     build_desktop_capture_status(&state).await
 }
 

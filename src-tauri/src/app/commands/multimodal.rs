@@ -174,7 +174,9 @@ pub async fn list_audio_input_sources() -> Result<Vec<AudioInputSourceDto>, Stri
         .audio
         .into_iter()
         .map(|source| AudioInputSourceDto {
-            source_id: format!("microphone:{}", source.index),
+            // Names stay stable when AVFoundation reindexes the remaining
+            // devices after a microphone is connected or removed.
+            source_id: format!("microphone-name:{}", source.name),
             is_system_default: default_source_name.as_deref() == Some(source.name.as_str()),
             name: source.name,
             index: source.index,

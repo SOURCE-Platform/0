@@ -6,6 +6,9 @@ use super::audio_capture_support::{analyze_audio_chunk, classify_audio_trigger_r
 use super::audio_transcripts::TranscriptAccumulator;
 use super::constants::{AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS};
 use super::desktop_audio_runtime::capture_desktop_audio_chunk;
+use super::foreground_coordinator::{
+    background_capture_epoch, background_transcription_is_paused, wait_for_background_transcription,
+};
 use super::indexing::reindex_audio_state_spans;
 use super::media_io::save_audio_evidence_chunk;
 use super::mic_capture::capture_microphone_chunk;
@@ -48,6 +51,11 @@ pub(super) async fn run_audio_loop(
     let mut last_cleanup_at = chrono::Utc::now().timestamp_millis();
 
     while generation_ref.load(Ordering::SeqCst) == generation {
+        wait_for_background_transcription().await;
+        if generation_ref.load(Ordering::SeqCst) != generation {
+            break;
+        }
+        let capture_epoch = background_capture_epoch();
         let started_at = chrono::Utc::now().timestamp_millis();
         if started_at - last_cleanup_at >= 60_000 {
             cleanup_stale_audio_inputs(&db).await;
@@ -68,6 +76,13 @@ pub(super) async fn run_audio_loop(
         }
 
         let capture_ended = chrono::Utc::now().timestamp_millis();
+        // If Right Option took ownership at any point during this sample,
+        // discard it. This prevents the same speech appearing in both lanes.
+        if background_transcription_is_paused() || background_capture_epoch() != capture_epoch {
+            let _ = fs::remove_file(&temp_path);
+            previous_speech_detected = false;
+            continue;
+        }
         let analysis = match analyze_audio_chunk(&temp_path) {
             Ok(result) => result,
             Err(error) => {

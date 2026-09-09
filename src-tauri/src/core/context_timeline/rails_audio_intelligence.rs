@@ -1,24 +1,23 @@
 fn build_audio_rails(
+    audio_chunks: &[AmbientCaptureChunk],
     asr_segments: &[AsrSegmentDto],
     speech_emotion_segments: &[SpeechEmotionSegmentDto],
     sound_event_spans: &[SoundEventSpanDto],
     sound_event_detections: &[SoundEventDetectionDto],
 ) -> Vec<TimelineRailDto> {
-    // Audio-only focus: speech transcripts (including dictation) plus
-    // environmental sound labels. Emotion rails are parked, not deleted —
-    // their builders below stay for the future emotion pass — but they no
-    // longer ship in the tree. The models still run at capture time.
-    let (dictation_rail, ambient_speech_rail) = build_audio_transcript_rails(asr_segments);
+    // Ambient capture and transcript semantics stay separate: green shows
+    // microphone ownership, while purple remains one block per dictation.
+    let dictation_rail = build_dictation_rail(asr_segments);
+    let ambient_audio_rail = build_ambient_audio_rail(audio_chunks, asr_segments);
     let _emotion_summary_rail = build_audio_emotion_summary_rail(speech_emotion_segments);
     let _emotion_detail_rails = build_audio_emotion_detail_rails(speech_emotion_segments);
     let sound_events_rail =
         build_audio_sound_events_rail(sound_event_spans, sound_event_detections);
 
-    vec![dictation_rail, ambient_speech_rail, sound_events_rail]
+    vec![dictation_rail, ambient_audio_rail, sound_events_rail]
 }
 
-/// One transcript segment rendered as a timeline slice on the given rail.
-fn transcript_slice(rail: &str, segment: &AsrSegmentDto, dictated: bool) -> ContextSlice {
+fn dictation_slice(segment: &AsrSegmentDto) -> ContextSlice {
     let mut tags = vec![
         "audio".to_string(),
         "speech".to_string(),
@@ -29,40 +28,24 @@ fn transcript_slice(rail: &str, segment: &AsrSegmentDto, dictated: bool) -> Cont
             "live".to_string()
         },
     ];
-    if dictated {
-        tags.push("dictation".to_string());
-    }
+    tags.push("dictation".to_string());
     ContextSlice {
         id: segment.asr_segment_id.clone(),
-        rail: rail.to_string(),
+        rail: "audio_dictation".to_string(),
         slice_kind: "event".to_string(),
         start_timestamp: segment.start_timestamp,
         end_timestamp: segment.end_timestamp.max(segment.start_timestamp + 1),
         title: preview_text(&segment.transcript),
-        subtitle: Some(
-            if dictated {
-                "Right Option dictation"
-            } else if segment.is_final {
-                "Ambient transcript"
-            } else {
-                "Ambient transcript in progress"
-            }
-            .to_string(),
-        ),
+        subtitle: Some("Right Option dictation".to_string()),
         source: segment.source_id.clone(),
         confidence: segment.confidence.unwrap_or(0.72),
         session_id: Some(segment.session_id.clone()),
         app_name: None,
         window_title: None,
         interaction_state: None,
-        reasons: vec![if dictated {
-            "Initiated with Right Option and transcribed before insertion."
-        } else if segment.is_final {
-            "Finalized locally after ambient speech ended."
-        } else {
-            "Local ambient transcript while speech continues."
-        }
-        .to_string()],
+        reasons: vec![
+            "Initiated with Right Option and transcribed before insertion.".to_string(),
+        ],
         visible_windows: Vec::new(),
         ocr_preview: Some(segment.transcript.clone()),
         pii_count: 0,
@@ -76,36 +59,20 @@ fn transcript_slice(rail: &str, segment: &AsrSegmentDto, dictated: bool) -> Cont
     }
 }
 
-fn build_audio_transcript_rails(
-    asr_segments: &[AsrSegmentDto],
-) -> (TimelineRailDto, TimelineRailDto) {
-    let mut dictations = Vec::new();
-    let mut ambient = Vec::new();
-    for segment in asr_segments {
-        if segment.source_id == DICTATION_SOURCE_ID {
-            dictations.push(transcript_slice("audio_dictation", segment, true));
-        } else {
-            ambient.push(transcript_slice("audio_ambient_speech", segment, false));
-        }
-    }
+fn build_dictation_rail(asr_segments: &[AsrSegmentDto]) -> TimelineRailDto {
+    let mut dictations = asr_segments
+        .iter()
+        .filter(|segment| segment.source_id == DICTATION_SOURCE_ID)
+        .map(dictation_slice)
+        .collect::<Vec<_>>();
     dictations.sort_by_key(|slice| slice.start_timestamp);
-    ambient.sort_by_key(|slice| slice.start_timestamp);
 
-    (
-        TimelineRailDto::lane(
-            "audio_dictation",
-            "Right Option Dictation",
-            "Speech deliberately initiated with the Right Option shortcut.",
-            "Each block is one finalized dictation that was sent to the focused text field.",
-            dictations,
-        ),
-        TimelineRailDto::lane(
-            "audio_ambient_speech",
-            "Ambient Speech",
-            "Always-on local transcription from enabled microphone and desktop-audio sources.",
-            "Ambient work yields while Right Option dictation finishes, then resumes automatically.",
-            ambient,
-        ),
+    TimelineRailDto::lane(
+        "audio_dictation",
+        "Right Option Dictation",
+        "Speech deliberately initiated with the Right Option shortcut.",
+        "Each block is one finalized dictation that was sent to the focused text field.",
+        dictations,
     )
 }
 
@@ -311,7 +278,13 @@ mod audio_transcript_rail_tests {
             segment("dictated", DICTATION_SOURCE_ID),
             segment("ambient", "microphone:0"),
         ];
-        let rails = build_audio_rails(&segments, &[], &[], &[]);
+        let chunks = vec![AmbientCaptureChunk {
+            session_id: "session".to_string(),
+            source_id: "microphone:0".to_string(),
+            start_timestamp: 2_500,
+            end_timestamp: 4_500,
+        }];
+        let rails = build_audio_rails(&chunks, &segments, &[], &[], &[]);
         let dictation = &rails[0];
         let ambient = &rails[1];
 
@@ -320,7 +293,7 @@ mod audio_transcript_rail_tests {
         assert_eq!(ambient.id, "audio_ambient_speech");
         assert_eq!(rails[2].id, "audio_sound_events");
         assert_eq!(dictation.slices[0].id, "dictated");
-        assert_eq!(ambient.slices[0].id, "ambient");
+        assert!(ambient.slices[0].id.starts_with("ambient-capture-session-"));
         assert!(dictation.waveform.is_none());
         assert!(ambient.waveform.is_none());
     }

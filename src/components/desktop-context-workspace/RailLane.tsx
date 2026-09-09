@@ -98,6 +98,9 @@ export function RailLane({
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
               const sourceLabel = getAudioSourceLabel(slice);
+              const transcript = slice.tags.includes("asr")
+                ? (slice.ocrPreview ?? slice.title).trim()
+                : "";
 
               return (
                 <div key={slice.id}>
@@ -119,17 +122,11 @@ export function RailLane({
                       opacity: layout.opacity,
                     }}
                   >
-                    <div className="px-2 py-1.5 text-[11px] font-semibold text-white">
-                      {sourceLabel && width > 9 ? (
-                        <div className="mb-0.5 w-fit rounded-full bg-black/30 px-1.5 py-0.5 text-[8px] uppercase tracking-wide text-white/85">
-                          {sourceLabel}
-                        </div>
-                      ) : null}
-                      {width > 12 && layout.showInlineTitle ? <div className="truncate">{slice.title}</div> : null}
-                      {width > 18 && slice.subtitle && layout.showInlineSubtitle ? (
-                        <div className="truncate pt-0.5 text-[10px] text-white/85">{slice.subtitle}</div>
-                      ) : null}
-                    </div>
+                    {transcript && layout.showInlineTitle ? (
+                      <div className="line-clamp-4 px-1.5 pt-0.5 text-[10px] font-normal leading-[11px] text-white/90">
+                        {transcript}
+                      </div>
+                    ) : null}
                   </button>
 
                   {hoveredId === slice.id ? (

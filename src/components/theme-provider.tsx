@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 
 type Theme = "dark" | "light" | "system"
 
@@ -19,6 +20,15 @@ const initialState: ThemeProviderState = {
 }
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
+
+function applyTheme(root: HTMLElement, resolvedTheme: "dark" | "light") {
+  root.classList.remove("light", "dark")
+  root.classList.add(resolvedTheme)
+  root.style.colorScheme = resolvedTheme
+  void getCurrentWindow().setTheme(resolvedTheme).catch(() => {
+    // Browser previews do not expose a native Tauri window.
+  })
+}
 
 export function ThemeProvider({
   children,
@@ -41,21 +51,19 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement
-    root.classList.remove("light", "dark")
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-      root.classList.add(systemTheme)
+      applyTheme(root, systemTheme)
 
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const handler = (e: MediaQueryListEvent) => {
-        root.classList.remove("light", "dark")
-        root.classList.add(e.matches ? "dark" : "light")
+        applyTheme(root, e.matches ? "dark" : "light")
       }
       mediaQuery.addEventListener("change", handler)
       return () => mediaQuery.removeEventListener("change", handler)
     } else {
-      root.classList.add(theme)
+      applyTheme(root, theme)
     }
   }, [theme])
 

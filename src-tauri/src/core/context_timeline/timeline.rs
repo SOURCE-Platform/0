@@ -18,6 +18,7 @@ pub async fn build_context_timeline(
         multimodal::get_visual_state_spans(db, start_timestamp, end_timestamp, None).await?;
     let asr_segments =
         multimodal::get_asr_segments(db, start_timestamp, end_timestamp, None).await?;
+    let audio_chunks = get_ambient_capture_chunks(db, start_timestamp, end_timestamp).await?;
     let speech_emotion_segments =
         multimodal::get_speech_emotion_segments(db, start_timestamp, end_timestamp, None).await?;
     let sound_event_detections =
@@ -43,6 +44,7 @@ pub async fn build_context_timeline(
     let ocr_rail = build_ocr_rail(&ocr_scenes, &snapshots);
     let vision_rail = build_vision_rail(&visual_scenes, &visual_spans);
     let audio_rails = build_audio_rails(
+        &audio_chunks,
         &asr_segments,
         &speech_emotion_segments,
         &sound_event_spans,

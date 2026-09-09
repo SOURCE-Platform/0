@@ -1,7 +1,9 @@
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
 use tokio::sync::watch;
 
 static BACKGROUND_TRANSCRIPTION_PAUSED: OnceLock<watch::Sender<bool>> = OnceLock::new();
+static BACKGROUND_CAPTURE_EPOCH: AtomicU64 = AtomicU64::new(0);
 
 fn background_transcription_gate() -> &'static watch::Sender<bool> {
     BACKGROUND_TRANSCRIPTION_PAUSED.get_or_init(|| watch::channel(false).0)
@@ -11,7 +13,18 @@ fn background_transcription_gate() -> &'static watch::Sender<bool> {
 /// a separate helper process, so this small gate is the cross-process policy
 /// point that prevents ambient inference from competing with it.
 pub fn set_background_transcription_paused(paused: bool) {
-    background_transcription_gate().send_replace(paused);
+    let was_paused = background_transcription_gate().send_replace(paused);
+    if paused && !was_paused {
+        BACKGROUND_CAPTURE_EPOCH.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+pub fn background_transcription_is_paused() -> bool {
+    *background_transcription_gate().borrow()
+}
+
+pub fn background_capture_epoch() -> u64 {
+    BACKGROUND_CAPTURE_EPOCH.load(Ordering::SeqCst)
 }
 
 pub async fn wait_for_background_transcription() {
@@ -25,10 +38,8 @@ pub async fn wait_for_background_transcription() {
 
 /// Single-mic policy: one capture owner, shared clock, foreground priority.
 ///
-/// Background transcription yields while a Right Option session is active;
-/// chunks captured during the session buffer and resume afterwards. The
-/// foreground transcript becomes the timeline entry for that span — the
-/// same speech is never transcribed twice.
+/// Background work yields while a Right Option session is active. The
+/// foreground transcript becomes the timeline entry for that span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CaptureMode {
     Background,

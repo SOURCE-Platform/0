@@ -33,6 +33,7 @@ pub fn run() {
             get_recording_status,
             start_desktop_capture,
             stop_desktop_capture,
+            restart_multimodal_capture,
             get_desktop_capture_status,
             get_channel_statuses,
             get_capture_data_overview,

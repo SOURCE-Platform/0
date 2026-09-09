@@ -9,6 +9,7 @@ const ATTACK = 0.62;
 const RELEASE = 0.24;
 
 interface AudioSourceMeterProps {
+  className?: string;
   enabled: boolean;
   selectedAudioInputId?: string | null;
   desktopAudioEnabled: boolean;
@@ -18,6 +19,7 @@ interface AudioSourceMeterProps {
 }
 
 export function AudioSourceMeter({
+  className,
   enabled,
   selectedAudioInputId,
   desktopAudioEnabled,
@@ -60,6 +62,8 @@ export function AudioSourceMeter({
     let unlisten: (() => void) | undefined;
     const connect = async () => {
       try {
+        setMeters(null);
+        setDisplayLevel(0);
         unlisten = await listen<AudioSourceMeters>("audio-meter-frame", (event) => {
           if (cancelled) return;
           setMeters(event.payload);
@@ -90,7 +94,10 @@ export function AudioSourceMeter({
 
   return (
     <div
-      className="min-w-[11rem] rounded-lg border border-border/60 bg-background/35 px-3 py-2"
+      className={cn(
+        "min-w-[11rem] rounded-lg border border-border/60 bg-background/35 px-3 py-2",
+        className,
+      )}
       title={meter?.message ?? `${source} signal level`}
     >
       <div className="flex items-center justify-between gap-3 text-xs">

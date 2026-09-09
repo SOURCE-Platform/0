@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { addDays, startOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { TimelineRailTree } from "@/components/desktop-context-workspace/TimelineRailTree";
+import { TimelineMicrophoneSelect } from "@/components/desktop-context-workspace/TimelineMicrophoneSelect";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TimelineRuler } from "@/components/desktop-context-workspace/TimelineRuler";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
@@ -51,10 +51,6 @@ export function DeviceContextTimelineSection({
         <Button variant="outline" size="sm" onClick={() => controller.setDayStart(addDays(controller.dayStart, 1).getTime())}>
           Next day
         </Button>
-        <Badge variant="outline" className="text-xs">
-          {safeFormatDate(controller.dayStart, "EEEE, MMMM d", "Selected day unavailable")}
-        </Badge>
-
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => controller.shiftWindow(-1)} className="gap-2">
             <ChevronLeft className="h-3.5 w-3.5" />
@@ -92,16 +88,14 @@ export function DeviceContextTimelineSection({
           >
             <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
               <div className="text-sm text-muted-foreground">
-                Showing {safeFormatDate(controller.effectiveWindowStart, "p")} to{" "}
+                {safeFormatDate(controller.dayStart, "EEEE, MMMM d", "Selected day unavailable")}
+                {" · "}
+                {safeFormatDate(controller.effectiveWindowStart, "p")} to{" "}
                 {safeFormatDate(controller.effectiveWindowEnd, "p")}
               </div>
-              <div className="text-sm text-muted-foreground">
-                {controller.status?.audioSourceName
-                  ? `Audio input: ${controller.status.audioSourceName}`
-                  : controller.status?.isActive
-                    ? "Audio input starting…"
-                    : "Capture stopped"}
-              </div>
+              <TimelineMicrophoneSelect
+                currentSourceName={controller.status?.audioSourceName ?? null}
+              />
             </div>
             <div className="pt-3">
               <TimelineRuler

@@ -102,6 +102,11 @@ pub(crate) fn choose_audio_source(
     default_source_name: Option<&str>,
 ) -> Option<AvFoundationSource> {
     if let Some(source_id) = preferred_source_id {
+        if let Some(name) = source_id.strip_prefix("microphone-name:") {
+            if let Some(source) = sources.iter().find(|source| source.name == name) {
+                return Some(source.clone());
+            }
+        }
         if let Some(index) = source_id
             .strip_prefix("microphone:")
             .and_then(|value| value.parse::<i32>().ok())
@@ -153,5 +158,29 @@ mod tests {
         .expect("a default source should be selected");
 
         assert_eq!(selected.index, 1);
+    }
+
+    #[test]
+    fn name_selection_survives_avfoundation_reindexing() {
+        let sources = vec![
+            AvFoundationSource {
+                index: 0,
+                name: "MacBook Air Microphone".to_string(),
+            },
+            AvFoundationSource {
+                index: 1,
+                name: "Camo Microphone".to_string(),
+            },
+        ];
+
+        let selected = choose_audio_source(
+            &sources,
+            Some("microphone-name:Camo Microphone"),
+            Some("MacBook Air Microphone"),
+        )
+        .expect("the named source should be selected");
+
+        assert_eq!(selected.index, 1);
+        assert_eq!(selected.name, "Camo Microphone");
     }
 }
