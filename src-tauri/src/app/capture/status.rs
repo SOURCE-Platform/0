@@ -82,6 +82,7 @@ pub async fn build_desktop_capture_status(
         started_at: runtime.started_at,
         display_id: runtime.display_id,
         display_name: runtime.display_name,
+        audio_source_name: runtime.audio_source_name,
         channels_enabled: enabled_channels,
         warnings: runtime.warnings,
         missing_permissions,

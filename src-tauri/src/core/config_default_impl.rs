@@ -17,7 +17,7 @@ impl Default for Config {
             recording_quality: "Medium".to_string(),
             auto_start: false,
             motion_detection_threshold: 0.05,
-            ocr_enabled: true,
+            ocr_enabled: false,
             ocr_languages: vec!["eng".to_string()],
             ocr_confidence_threshold: 0.7,
             ocr_interval_seconds: 60,

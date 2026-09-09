@@ -1,15 +1,14 @@
-use super::audio_capture_support::{
-    analyze_audio_chunk, classify_audio_trigger_reason, persist_sound_events,
-    persist_speech_emotion, transcribe_audio_chunk,
+use super::audio_analysis_tasks::{
+    cleanup_stale_audio_inputs, spawn_sound_analysis_task, spawn_speech_analysis_task,
+    try_reserve_sound_analysis, try_reserve_speech_analysis,
 };
-use super::audio_intelligence_indexing::reindex_sound_event_spans;
+use super::audio_capture_support::{analyze_audio_chunk, classify_audio_trigger_reason};
 use super::audio_transcripts::TranscriptAccumulator;
-use super::constants::{
-    AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS,
-};
+use super::constants::{AUDIO_CHUNK_DURATION_MS, AUDIO_CHUNK_DURATION_SECS};
 use super::desktop_audio_runtime::capture_desktop_audio_chunk;
 use super::indexing::reindex_audio_state_spans;
-use super::media_io::{capture_audio_chunk, save_audio_evidence_chunk};
+use super::media_io::save_audio_evidence_chunk;
+use super::mic_capture::capture_microphone_chunk;
 use super::types::AudioAnalysisOptions;
 use crate::core::database::Database;
 use crate::core::storage::RecordingStorage;
@@ -22,7 +21,7 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub(super) enum AudioCaptureSource {
-    Microphone { audio_index: i32 },
+    Microphone { source_name: String },
     DesktopOutput { gain_db: f32 },
 }
 
@@ -45,9 +44,15 @@ pub(super) async fn run_audio_loop(
     };
     let mut previous_speech_detected = false;
     let transcripts = TranscriptAccumulator::new(db.clone(), session_id.clone(), source_id.clone());
+    cleanup_stale_audio_inputs(&db).await;
+    let mut last_cleanup_at = chrono::Utc::now().timestamp_millis();
 
     while generation_ref.load(Ordering::SeqCst) == generation {
         let started_at = chrono::Utc::now().timestamp_millis();
+        if started_at - last_cleanup_at >= 60_000 {
+            cleanup_stale_audio_inputs(&db).await;
+            last_cleanup_at = started_at;
+        }
         let temp_dir = std::env::temp_dir().join("source_audio_samples");
         let _ = fs::create_dir_all(&temp_dir);
         let temp_path = temp_dir.join(format!("audio-{}.wav", Uuid::new_v4()));
@@ -83,9 +88,11 @@ pub(super) async fn run_audio_loop(
         // task will consume, and deleted the moment it is done (see the
         // cleanup at the end of the spawned task). Waveforms, transcripts,
         // and sound labels — all derived, none replayable — are what persist.
-        let retain_evidence = analysis.speech_detected
-            && (analysis_options.transcription_enabled
-                || analysis_options.speech_emotion_enabled);
+        let speech_permit = (analysis.speech_detected
+            && (analysis_options.transcription_enabled || analysis_options.speech_emotion_enabled))
+            .then(try_reserve_speech_analysis)
+            .flatten();
+        let retain_evidence = speech_permit.is_some();
         let retained_path = if retain_evidence {
             save_audio_evidence_chunk(&storage, session_uuid, &temp_path)
                 .await
@@ -117,7 +124,7 @@ pub(super) async fn run_audio_loop(
         .await;
 
         let active_utterance_id =
-            if analysis.speech_detected && analysis_options.transcription_enabled {
+            if speech_permit.is_some() && analysis_options.transcription_enabled {
                 Some(
                     transcripts
                         .begin_chunk(audio_chunk_id.clone(), capture_started, capture_ended)
@@ -130,44 +137,44 @@ pub(super) async fn run_audio_loop(
                 None
             };
 
-        if analysis.speech_detected
-            && (analysis_options.transcription_enabled || analysis_options.speech_emotion_enabled)
-        {
-            if let Some(transcript_source) = retained_path.clone() {
-                spawn_speech_analysis_task(
+        if let (Some(permit), Some(transcript_source)) = (speech_permit, retained_path.clone()) {
+            spawn_speech_analysis_task(
+                db.clone(),
+                session_id.clone(),
+                source_id.clone(),
+                audio_chunk_id.clone(),
+                capture_started,
+                capture_ended,
+                transcript_source,
+                transcripts.clone(),
+                active_utterance_id,
+                analysis_options,
+                permit,
+            );
+        }
+
+        let sound_task_started = analysis_options.sound_events_enabled
+            && try_reserve_sound_analysis().is_some_and(|permit| {
+                spawn_sound_analysis_task(
                     db.clone(),
                     session_id.clone(),
                     source_id.clone(),
                     audio_chunk_id.clone(),
                     capture_started,
                     capture_ended,
-                    transcript_source,
-                    transcripts.clone(),
-                    active_utterance_id,
-                    analysis_options,
+                    analysis.speech_detected,
+                    temp_path.clone(),
+                    permit,
                 );
-            }
-        }
-
-        if analysis_options.sound_events_enabled {
-            let _ = persist_sound_events(
-                &db,
-                &temp_path,
-                &session_id,
-                &source_id,
-                &audio_chunk_id,
-                capture_started,
-                capture_ended,
-                analysis.speech_detected,
-            )
-            .await;
-        }
+                true
+            });
 
         let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
-        let _ = reindex_sound_event_spans(&db, &session_id, &source_id).await;
         previous_speech_detected = analysis.speech_detected;
 
-        let _ = fs::remove_file(&temp_path);
+        if !sound_task_started {
+            let _ = fs::remove_file(&temp_path);
+        }
         let elapsed = chrono::Utc::now().timestamp_millis() - started_at;
         if elapsed < AUDIO_CHUNK_DURATION_MS {
             sleep(Duration::from_millis(
@@ -182,60 +189,6 @@ pub(super) async fn run_audio_loop(
     }
 }
 
-fn spawn_speech_analysis_task(
-    db: Arc<Database>,
-    session_id: String,
-    source_id: String,
-    audio_chunk_id: String,
-    start_timestamp: i64,
-    end_timestamp: i64,
-    audio_path: String,
-    transcripts: TranscriptAccumulator,
-    utterance_id: Option<String>,
-    analysis_options: AudioAnalysisOptions,
-) {
-    tokio::spawn(async move {
-        let path = std::path::Path::new(&audio_path);
-        let mut linked_asr_id = None;
-        if analysis_options.transcription_enabled {
-            let Some(transcription) = transcribe_audio_chunk(path).await else {
-                return;
-            };
-            if let Some(utterance_id) = utterance_id.as_deref() {
-                let _ = transcripts
-                    .append(utterance_id, start_timestamp, transcription)
-                    .await;
-                linked_asr_id = Some(utterance_id.to_string());
-            }
-        }
-        if analysis_options.speech_emotion_enabled {
-            let _ = persist_speech_emotion(
-                &db,
-                path,
-                &session_id,
-                &source_id,
-                &audio_chunk_id,
-                linked_asr_id,
-                start_timestamp,
-                end_timestamp,
-            )
-            .await;
-        }
-        let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
-        // Transcripts-only: the evidence file has served its purpose as
-        // transcription input. Remove it and clear the row's pointer so
-        // nothing dangles at a deleted file.
-        let _ = std::fs::remove_file(&audio_path);
-        let _ = sqlx::query(
-            "UPDATE audio_chunks SET audio_path = NULL, retained_as_evidence = 0
-             WHERE audio_chunk_id = ?",
-        )
-        .bind(&audio_chunk_id)
-        .execute(db.pool())
-        .await;
-    });
-}
-
 impl AudioCaptureSource {
     async fn capture_chunk(
         &self,
@@ -243,8 +196,8 @@ impl AudioCaptureSource {
         output_path: &std::path::Path,
     ) -> Result<(), String> {
         match self {
-            Self::Microphone { audio_index } => {
-                capture_audio_chunk(*audio_index, duration_secs, output_path).await
+            Self::Microphone { source_name } => {
+                capture_microphone_chunk(source_name, duration_secs, output_path).await
             }
             Self::DesktopOutput { gain_db } => {
                 capture_desktop_audio_chunk(duration_secs, *gain_db, output_path).await

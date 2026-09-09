@@ -15,7 +15,6 @@ const MEDIAPIPE_PACKAGES: &[&str] = &[
     "onnxruntime==1.18.1",
     "numpy==1.26.4",
 ];
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct MediaPipeGazeOutput {
@@ -82,42 +81,6 @@ pub(super) async fn capture_camera_frame(
         Ok(())
     } else {
         Err("ffmpeg camera capture exited unsuccessfully".to_string())
-    }
-}
-
-pub(crate) async fn capture_audio_chunk(
-    audio_index: i32,
-    duration_secs: f32,
-    output_path: &Path,
-) -> Result<(), String> {
-    let input = format!(":{audio_index}");
-    let duration = format!("{duration_secs}");
-    let status = Command::new("ffmpeg")
-        .args([
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-f",
-            "avfoundation",
-            "-i",
-            &input,
-            "-t",
-            &duration,
-            "-ac",
-            "1",
-            "-ar",
-            "16000",
-            "-y",
-        ])
-        .arg(output_path)
-        .status()
-        .await
-        .map_err(|e| format!("Failed to launch ffmpeg for audio capture: {e}"))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err("ffmpeg audio capture exited unsuccessfully".to_string())
     }
 }
 

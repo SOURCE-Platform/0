@@ -71,30 +71,33 @@ export function getSnappedTicks(windowStart: number, windowEnd: number, tickMs: 
 }
 
 export function railTone(railId: string, interactionState?: string | null) {
-  if (railId === "system") return "from-slate-500/85 to-slate-400/80";
-  if (railId === "focus") return "from-blue-500/85 to-sky-400/80";
-  if (railId === "visible_windows") return "from-cyan-500/80 to-cyan-300/70";
-  if (railId === "ocr") return "from-amber-500/85 to-orange-400/80";
-  if (railId === "attention") return "from-indigo-500/85 to-fuchsia-400/80";
-  if (railId === "vision") return "from-rose-500/85 to-pink-400/80";
-  if (railId === "audio" || railId === "audio_speech") return "from-emerald-500/85 to-lime-400/75";
-  if (railId === "audio_sound_events" || railId === "sound_events") return "from-teal-500/85 to-emerald-300/75";
-  if (railId === "audio_emotion_summary" || railId === "audio_emotion_summary_lane") {
-    return "from-violet-500/85 to-pink-400/75";
+  if (railId === "system") return "bg-slate-500/85";
+  if (railId === "focus") return "bg-blue-500/85";
+  if (railId === "visible_windows") return "bg-cyan-500/80";
+  if (railId === "ocr") return "bg-amber-500/85";
+  if (railId === "attention") return "bg-indigo-500/85";
+  if (railId === "vision") return "bg-rose-500/85";
+  if (railId === "audio_dictation") return "bg-violet-500/85";
+  if (railId === "audio" || railId === "audio_speech" || railId === "audio_ambient_speech") {
+    return "bg-emerald-500/85";
   }
-  if (railId === "audio_emotion_happy") return "from-yellow-400/90 to-amber-300/80";
-  if (railId === "audio_emotion_sad") return "from-blue-600/85 to-blue-400/80";
-  if (railId === "audio_emotion_angry") return "from-red-500/90 to-orange-400/80";
-  if (railId === "audio_emotion_fearful") return "from-purple-600/85 to-fuchsia-400/75";
-  if (railId === "audio_emotion_surprised") return "from-cyan-400/90 to-sky-300/80";
-  if (railId === "audio_emotion_neutral") return "from-slate-400/80 to-slate-300/70";
-  if (railId === "audio_emotion_uncertain") return "from-zinc-500/70 to-zinc-300/55";
-  if (railId === "evidence") return "from-violet-500/85 to-fuchsia-400/75";
-  if (interactionState === "active_typing") return "from-emerald-500/85 to-emerald-300/75";
-  if (interactionState === "active_pointer") return "from-sky-500/85 to-blue-300/75";
-  if (interactionState === "voice_input_inferred") return "from-orange-500/85 to-orange-300/80";
-  if (interactionState === "mixed") return "from-fuchsia-500/85 to-pink-300/80";
-  return "from-zinc-500/85 to-zinc-300/75";
+  if (railId === "audio_sound_events" || railId === "sound_events") return "bg-teal-500/85";
+  if (railId === "audio_emotion_summary" || railId === "audio_emotion_summary_lane") {
+    return "bg-violet-500/85";
+  }
+  if (railId === "audio_emotion_happy") return "bg-yellow-400/90";
+  if (railId === "audio_emotion_sad") return "bg-blue-600/85";
+  if (railId === "audio_emotion_angry") return "bg-red-500/90";
+  if (railId === "audio_emotion_fearful") return "bg-purple-600/85";
+  if (railId === "audio_emotion_surprised") return "bg-cyan-400/90";
+  if (railId === "audio_emotion_neutral") return "bg-slate-400/80";
+  if (railId === "audio_emotion_uncertain") return "bg-zinc-500/70";
+  if (railId === "evidence") return "bg-violet-500/85";
+  if (interactionState === "active_typing") return "bg-emerald-500/85";
+  if (interactionState === "active_pointer") return "bg-sky-500/85";
+  if (interactionState === "voice_input_inferred") return "bg-orange-500/85";
+  if (interactionState === "mixed") return "bg-fuchsia-500/85";
+  return "bg-zinc-500/85";
 }
 
 export function getDescendantSliceCount(rail: TimelineRail): number {

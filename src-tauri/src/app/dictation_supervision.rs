@@ -1,10 +1,11 @@
 use crate::core::config::Config;
 use crate::core::database::Database;
+use crate::core::multimodal::foreground_coordinator::set_background_transcription_paused;
+use crate::core::multimodal::speech_provider::DictionaryEntry;
 use crate::core::multimodal::{
     persist_foreground_transcript, DictationHelper, DictationSupervisor, PipelineAction,
     SupervisorCommand,
 };
-use crate::core::multimodal::speech_provider::DictionaryEntry;
 use crate::core::session_manager::SessionManager;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
@@ -66,10 +67,8 @@ pub fn initialize_dictation_supervisor(
                             )
                             .await;
                         }
-                        if let PipelineAction::InsertIntoFocusedField { id, text } = &action
-                        {
-                            let command =
-                                SupervisorCommand::Insert(id.clone(), text.clone());
+                        if let PipelineAction::InsertIntoFocusedField { id, text } = &action {
+                            let command = SupervisorCommand::Insert(id.clone(), text.clone());
                             if commands.send(command).await.is_err() {
                                 break;
                             }
@@ -78,9 +77,11 @@ pub fn initialize_dictation_supervisor(
                             open_dictation_settings(&app_handle);
                         }
                     }
+                    set_background_transcription_paused(false);
                     eprintln!("Dictation helper exited; restarting soon");
                 }
                 Err(error) => {
+                    set_background_transcription_paused(false);
                     eprintln!("Dictation helper failed to start ({error}); retrying soon");
                 }
             }

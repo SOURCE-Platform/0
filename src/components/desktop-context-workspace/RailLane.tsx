@@ -1,7 +1,4 @@
 import { useState } from "react";
-import { CircleHelp } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
 import {
   formatBytes,
@@ -55,36 +52,15 @@ export function RailLane({
   const railPadding = depth * 16;
 
   return (
-    <div className="grid gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
+    <div className="grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
       <div
-        className="sticky left-0 z-10 flex items-center gap-2 bg-muted/10 py-1 backdrop-blur-sm"
+        className="flex min-w-0 items-center py-1 pr-3"
         style={{ paddingLeft: railPadding }}
       >
-        <div className="min-w-0">
-          <span className="text-sm font-semibold text-foreground">{rail.label}</span>
-        </div>
-        <Badge variant="outline" className="text-[10px] uppercase tracking-wide">
-          {slices.length}
-        </Badge>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground"
-            >
-              <CircleHelp className="h-4 w-4" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right" className="max-w-[32ch] text-left leading-6">
-            <div className="space-y-2">
-              <p>{rail.description}</p>
-              <p>{rail.confidenceNote}</p>
-            </div>
-          </TooltipContent>
-        </Tooltip>
+        <span className="text-xs font-normal leading-5 text-muted-foreground">{rail.label}</span>
       </div>
 
-      <div className="relative h-16 rounded-2xl border border-border/70 bg-background/65">
+      <div className="relative h-16 border border-border/70 bg-background/65">
         <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-px bg-blue-400/90 shadow-[0_0_18px_rgba(59,130,246,0.45)]" />
         <div
           className="relative h-full w-full"
@@ -130,11 +106,11 @@ export function RailLane({
                     onClick={() => onSelect(slice)}
                     onMouseEnter={() => setHoveredId(slice.id)}
                     onMouseLeave={() => setHoveredId((current) => (current === slice.id ? null : current))}
-                    className={`group absolute top-2 h-12 cursor-pointer overflow-hidden rounded-xl border text-left shadow-sm transition ${
+                    className={`group absolute top-2 h-12 cursor-pointer overflow-hidden border text-left shadow-sm transition ${
                       isSelected
                         ? "border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
-                    } bg-gradient-to-r ${railTone(rail.id, slice.interactionState)}`}
+                    } ${railTone(rail.id, slice.interactionState)}`}
                     style={{
                       left: `${left}%`,
                       width: `${width}%`,
@@ -198,7 +174,7 @@ function ContinuousWaveform({
   const step = Math.max(1, Math.ceil(samples.length / maxPoints));
   const bars = samples.filter((_, index) => index % step === 0);
   return (
-    <div className="pointer-events-none absolute inset-x-1 inset-y-2 z-[1] overflow-hidden rounded-xl bg-emerald-400/[0.03]">
+    <div className="pointer-events-none absolute inset-x-1 inset-y-2 z-[1] overflow-hidden bg-emerald-400/[0.03]">
       <svg className="h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100">
         {bars.map((sample, index) => {
           const x = ((sample.timestamp - windowStart) / range) * 100;
@@ -263,6 +239,7 @@ function getSliceLayout(rail: TimelineRail, slice: ContextSlice) {
 
 function getAudioSourceLabel(slice: ContextSlice): string | null {
   if (!slice.tags.includes("audio")) return null;
+  if (slice.tags.includes("dictation")) return "Right Option";
   if (slice.source.startsWith("desktop_output:")) return "Desktop";
   if (slice.source.startsWith("microphone:")) return "Mic";
   return "Audio";

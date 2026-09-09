@@ -36,10 +36,10 @@ impl Default for CaptureChannels {
             system: true,
             focus: true,
             visible_windows: true,
-            ocr: true,
+            ocr: false,
             keyboard: true,
             mouse: true,
-            screen_frames: true,
+            screen_frames: false,
             audio_future: false,
             camera_future: false,
             sensor_future: false,
@@ -259,7 +259,9 @@ mod tests {
         assert_eq!(config.recording_quality, "Medium");
         assert_eq!(config.auto_start, false);
         assert_eq!(config.motion_detection_threshold, 0.05);
-        assert_eq!(config.ocr_enabled, true);
+        assert!(!config.ocr_enabled);
+        assert!(!config.capture_channels.ocr);
+        assert!(!config.capture_channels.screen_frames);
         assert_eq!(config.default_recording_fps, 15);
         assert_eq!(config.video_codec, "h264");
         assert_eq!(config.video_quality, "Medium");

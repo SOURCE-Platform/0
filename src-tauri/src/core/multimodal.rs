@@ -1,3 +1,5 @@
+mod asr_queries;
+mod audio_analysis_tasks;
 mod audio_capture;
 mod audio_capture_support;
 mod audio_intelligence_indexing;
@@ -15,21 +17,23 @@ pub(crate) mod dictation_helper;
 mod dictation_pipeline;
 mod dictation_store;
 pub(crate) mod dictation_supervisor;
-mod foreground_coordinator;
-mod speech_model;
+pub(crate) mod foreground_coordinator;
 mod indexing;
 mod mappers;
 mod media_io;
+mod mic_capture;
 mod parakeet_worker;
 mod queries;
 mod retention;
 pub(crate) mod service;
+mod speech_model;
 pub(crate) mod speech_provider;
 mod types;
 mod visual_capture;
 mod visual_detections;
 mod visual_loop_state;
 
+pub use asr_queries::get_asr_segment;
 pub use audio_intelligence_queries::{
     get_sound_event_detections, get_sound_event_spans, get_speech_emotion_segments,
 };

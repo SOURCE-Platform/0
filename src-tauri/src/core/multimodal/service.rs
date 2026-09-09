@@ -13,7 +13,6 @@ use crate::core::database::Database;
 use crate::core::storage::RecordingStorage;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::process::Command;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -198,10 +197,6 @@ async fn start_audio_channel(
             report
                 .warnings
                 .push("Microphone audio is on, but microphone consent is not granted.".to_string());
-        } else if !command_available("ffmpeg").await {
-            report.warnings.push(
-                "Microphone audio could not start because ffmpeg is unavailable.".to_string(),
-            );
         } else if let Some(source) =
             choose_audio_source(&sources.audio, preferred_source_id, default_source_name)
         {
@@ -214,7 +209,7 @@ async fn start_audio_channel(
                 session_id.to_string(),
                 format!("microphone:{}", source.index),
                 AudioCaptureSource::Microphone {
-                    audio_index: source.index,
+                    source_name: source.name.clone(),
                 },
                 analysis_options,
             )));
@@ -258,13 +253,4 @@ async fn start_audio_channel(
         service.runtime.lock().await.audio_handles.extend(handles);
     }
     Ok(())
-}
-
-pub(crate) async fn command_available(command: &str) -> bool {
-    Command::new("which")
-        .arg(command)
-        .output()
-        .await
-        .map(|output| output.status.success())
-        .unwrap_or(false)
 }

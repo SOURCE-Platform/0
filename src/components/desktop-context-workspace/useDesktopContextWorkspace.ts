@@ -13,6 +13,10 @@ import {
   TimelineRail,
 } from "@/types/contextTimeline";
 import { useTimelineInteraction } from "@/components/desktop-context-workspace/useTimelineInteraction";
+import {
+  immediateSliceDetail,
+  useLiveTranscript,
+} from "@/components/desktop-context-workspace/useLiveTranscript";
 
 function walkRails(rails: TimelineRail[], visit: (rail: TimelineRail) => void) {
   rails.forEach((rail) => {
@@ -166,6 +170,8 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     return () => clearInterval(interval);
   }, [status?.isActive, isToday, dateRange.start]);
 
+  useLiveTranscript({ timeline, selectedSlice, setSelectedSlice, setSliceDetail });
+
   const { isPanning, timelineSurfaceRef } = useTimelineInteraction({
     dateRange,
     effectiveWindowEnd,
@@ -205,14 +211,22 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     }
   }
 
-  async function handleSelectSlice(slice: ContextSlice) {    setSelectedSlice(slice);
+  async function handleSelectSlice(slice: ContextSlice) {
+    setSelectedSlice(slice);
+    setSliceDetail(immediateSliceDetail(slice));
     setLoadingDetail(true);
     setActionError(null);
     setDetailTab(
       slice.rail === "ocr" || slice.rail === "vision" || slice.rail === "attention"
         ? "visual"
-        : "metadata",
+        : slice.tags.includes("asr")
+          ? "transcript"
+          : "metadata",
     );
+    if (slice.tags.includes("asr")) {
+      setLoadingDetail(false);
+      return;
+    }
     try {
       const details = await invoke<ContextSliceDetail>("get_context_slice_detail", {
         sliceId: slice.id,
@@ -275,7 +289,9 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     effectiveWindowEnd,
     effectiveWindowStart,
     appOptions,
-    canStartCapture: displayId != null,
+    // Audio capture does not require a display. The backend only requires one
+    // when the explicitly enabled screen channel needs it.
+    canStartCapture: true,
     setActiveView,
     setAppFilter,
     setInteractionFilter,

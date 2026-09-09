@@ -295,10 +295,9 @@ fn update_multimodal_runtime(
     }
     if let Some(source_name) = audio_source_name {
         runtime.channel_errors.remove("audio_future");
-        runtime
-            .warnings
-            .push(format!("Audio capture is sampling from {}.", source_name));
+        runtime.audio_source_name = Some(source_name);
     } else if config.capture_channels.audio_future {
+        runtime.audio_source_name = None;
         runtime.channel_errors.insert(
             "audio_future".to_string(),
             "Audio capture could not start with the current device state.".to_string(),

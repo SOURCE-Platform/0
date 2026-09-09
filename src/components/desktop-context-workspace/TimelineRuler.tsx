@@ -11,12 +11,12 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
   const ticks = getSnappedTicks(startTimestamp, endTimestamp, tickMs);
 
   return (
-    <div className="relative h-10 border-b border-border/70 bg-background/60">
+    <div className="relative h-10">
       {/* Same grid as the lanes below (label column + track) so ticks
           line up exactly with lane subdivisions. */}
-      <div className="grid h-full gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
+      <div className="grid h-full gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
         <div className="hidden md:block" />
-        <div className="relative h-full w-full">
+        <div className="relative h-full w-full bg-background/60">
           {ticks.map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;
             const isLastTick = timestamp + tickMs > endTimestamp;

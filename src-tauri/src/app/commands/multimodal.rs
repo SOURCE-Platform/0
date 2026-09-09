@@ -95,6 +95,16 @@ pub async fn get_asr_segments(
 }
 
 #[tauri::command]
+pub async fn get_asr_segment(
+    asr_segment_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<AsrSegmentDto>, String> {
+    multimodal::get_asr_segment(&state.db, &asr_segment_id)
+        .await
+        .map_err(|e| format!("Failed to get ASR segment: {e}"))
+}
+
+#[tauri::command]
 pub async fn get_speech_emotion_segments(
     start_timestamp: i64,
     end_timestamp: i64,

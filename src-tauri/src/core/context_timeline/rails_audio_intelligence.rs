@@ -1,152 +1,112 @@
-fn build_audio_group_rail(
-    audio_chunks: &[multimodal::AudioChunkDto],
-    audio_spans: &[AudioStateSpanDto],
+fn build_audio_rails(
     asr_segments: &[AsrSegmentDto],
     speech_emotion_segments: &[SpeechEmotionSegmentDto],
     sound_event_spans: &[SoundEventSpanDto],
     sound_event_detections: &[SoundEventDetectionDto],
-) -> TimelineRailDto {
+) -> Vec<TimelineRailDto> {
     // Audio-only focus: speech transcripts (including dictation) plus
     // environmental sound labels. Emotion rails are parked, not deleted —
     // their builders below stay for the future emotion pass — but they no
     // longer ship in the tree. The models still run at capture time.
-    let speech_rail = build_audio_speech_rail(audio_chunks, audio_spans, asr_segments);
+    let (dictation_rail, ambient_speech_rail) = build_audio_transcript_rails(asr_segments);
     let _emotion_summary_rail = build_audio_emotion_summary_rail(speech_emotion_segments);
     let _emotion_detail_rails = build_audio_emotion_detail_rails(speech_emotion_segments);
-    let sound_events_rail = build_audio_sound_events_rail(sound_event_spans, sound_event_detections);
+    let sound_events_rail =
+        build_audio_sound_events_rail(sound_event_spans, sound_event_detections);
 
-    let mut children = Vec::with_capacity(2);
-    children.push(speech_rail);
-    children.push(sound_events_rail);
-
-    TimelineRailDto::group(
-        "audio",
-        "Audio",
-        "Speech transcripts and sound-event labels grouped under one audio hierarchy for easier review.",
-        "Audio keeps the current local speech and transcript models; emotion rails are parked for a later pass.",
-        false,
-        children,
-    )
+    vec![dictation_rail, ambient_speech_rail, sound_events_rail]
 }
 
-fn build_audio_speech_rail(
-    audio_chunks: &[multimodal::AudioChunkDto],
-    audio_spans: &[AudioStateSpanDto],
-    asr_segments: &[AsrSegmentDto],
-) -> TimelineRailDto {
-    let mut slices = Vec::new();
-    slices.extend(audio_spans
-        .iter()
-        .map(|span| ContextSlice {
-            id: span.audio_state_span_id.clone(),
-            rail: "audio_speech".to_string(),
-            slice_kind: "span".to_string(),
-            start_timestamp: span.first_seen_at,
-            end_timestamp: span.last_seen_at.max(span.first_seen_at + 1),
-            title: audio_span_title(&span.label),
-            subtitle: Some(audio_span_subtitle(span)),
-            source: span.source_id.clone(),
-            confidence: span.avg_confidence,
-            session_id: Some(span.session_id.clone()),
-            app_name: None,
-            window_title: None,
-            interaction_state: None,
-            reasons: vec![audio_span_reason(&span.label)],
-            visible_windows: Vec::new(),
-            ocr_preview: None,
-            pii_count: 0,
-            evidence_frame_path: None,
-            storage_bytes: estimate_audio_span_storage_bytes(span),
-            storage_exact: false,
-            row_count: span.supporting_audio_chunk_ids.len() as u64,
-            file_count: 0,
-            has_detail_view: true,
-            tags: vec!["audio".to_string(), "speech".to_string(), span.label.clone()],
-        })
-        .collect::<Vec<_>>());
-
-    for segment in asr_segments {
-        // Foreground Right Option dictations read differently from overheard
-        // speech: they were deliberately spoken to be typed somewhere.
-        let dictated = segment.source_id == DICTATION_SOURCE_ID;
-        let mut tags = vec![
-            "audio".to_string(),
-            "speech".to_string(),
-            "asr".to_string(),
-            if segment.is_final {
-                "final".to_string()
+/// One transcript segment rendered as a timeline slice on the given rail.
+fn transcript_slice(rail: &str, segment: &AsrSegmentDto, dictated: bool) -> ContextSlice {
+    let mut tags = vec![
+        "audio".to_string(),
+        "speech".to_string(),
+        "asr".to_string(),
+        if segment.is_final {
+            "final".to_string()
+        } else {
+            "live".to_string()
+        },
+    ];
+    if dictated {
+        tags.push("dictation".to_string());
+    }
+    ContextSlice {
+        id: segment.asr_segment_id.clone(),
+        rail: rail.to_string(),
+        slice_kind: "event".to_string(),
+        start_timestamp: segment.start_timestamp,
+        end_timestamp: segment.end_timestamp.max(segment.start_timestamp + 1),
+        title: preview_text(&segment.transcript),
+        subtitle: Some(
+            if dictated {
+                "Right Option dictation"
+            } else if segment.is_final {
+                "Ambient transcript"
             } else {
-                "live".to_string()
-            },
-        ];
-        if dictated {
-            tags.push("dictation".to_string());
+                "Ambient transcript in progress"
+            }
+            .to_string(),
+        ),
+        source: segment.source_id.clone(),
+        confidence: segment.confidence.unwrap_or(0.72),
+        session_id: Some(segment.session_id.clone()),
+        app_name: None,
+        window_title: None,
+        interaction_state: None,
+        reasons: vec![if dictated {
+            "Initiated with Right Option and transcribed before insertion."
+        } else if segment.is_final {
+            "Finalized locally after ambient speech ended."
+        } else {
+            "Local ambient transcript while speech continues."
         }
-        slices.push(ContextSlice {
-            id: segment.asr_segment_id.clone(),
-            rail: "audio_speech".to_string(),
-            slice_kind: "event".to_string(),
-            start_timestamp: segment.start_timestamp,
-            end_timestamp: segment.end_timestamp.max(segment.start_timestamp + 1),
-            title: preview_text(&segment.transcript),
-            subtitle: Some(
-                if dictated {
-                    "Dictated prompt"
-                } else if segment.is_final {
-                    "Final transcript"
-                } else {
-                    "Live transcript"
-                }
-                .to_string(),
-            ),
-            source: segment.source_id.clone(),
-            confidence: segment.confidence.unwrap_or(0.72),
-            session_id: Some(segment.session_id.clone()),
-            app_name: None,
-            window_title: None,
-            interaction_state: None,
-            reasons: vec![
-                if segment.is_final {
-                    "Finalized by local Parakeet after speech ended."
-                } else {
-                    "Live local Parakeet transcript while speech continues."
-                }
-                .to_string(),
-            ],
-            visible_windows: Vec::new(),
-            ocr_preview: Some(segment.transcript.clone()),
-            pii_count: 0,
-            evidence_frame_path: None,
-            storage_bytes: estimate_asr_segment_storage_bytes(segment),
-            storage_exact: true,
-            row_count: 1,
-            file_count: 0,
-            has_detail_view: true,
-            tags,
-        });
+        .to_string()],
+        visible_windows: Vec::new(),
+        ocr_preview: Some(segment.transcript.clone()),
+        pii_count: 0,
+        evidence_frame_path: None,
+        storage_bytes: estimate_asr_segment_storage_bytes(segment),
+        storage_exact: true,
+        row_count: 1,
+        file_count: 0,
+        has_detail_view: true,
+        tags,
     }
+}
 
-    slices.sort_by_key(|slice| slice.start_timestamp);
-
-    let waveform = build_audio_waveform("microphone:0", audio_chunks)
-        .or_else(|| audio_chunks.first().and_then(|chunk| build_audio_waveform(&chunk.source_id, audio_chunks)));
-    match waveform {
-        Some(waveform) => TimelineRailDto::lane_with_waveform(
-            "audio_speech",
-            "Speech",
-            "Continuous audio envelope with durable speaking spans and transcript markers.",
-            "The waveform is stitched from stored samples. Speech state and transcription remain separate overlay data.",
-            waveform,
-            slices,
-        ),
-        None => TimelineRailDto::lane(
-            "audio_speech",
-            "Speech",
-            "Continuous audio envelope with durable speaking spans and transcript markers.",
-            "Speech state works without transcription. ASR is additive and may be missing while speaking spans still record normally.",
-            slices,
-        ),
+fn build_audio_transcript_rails(
+    asr_segments: &[AsrSegmentDto],
+) -> (TimelineRailDto, TimelineRailDto) {
+    let mut dictations = Vec::new();
+    let mut ambient = Vec::new();
+    for segment in asr_segments {
+        if segment.source_id == DICTATION_SOURCE_ID {
+            dictations.push(transcript_slice("audio_dictation", segment, true));
+        } else {
+            ambient.push(transcript_slice("audio_ambient_speech", segment, false));
+        }
     }
+    dictations.sort_by_key(|slice| slice.start_timestamp);
+    ambient.sort_by_key(|slice| slice.start_timestamp);
+
+    (
+        TimelineRailDto::lane(
+            "audio_dictation",
+            "Right Option Dictation",
+            "Speech deliberately initiated with the Right Option shortcut.",
+            "Each block is one finalized dictation that was sent to the focused text field.",
+            dictations,
+        ),
+        TimelineRailDto::lane(
+            "audio_ambient_speech",
+            "Ambient Speech",
+            "Always-on local transcription from enabled microphone and desktop-audio sources.",
+            "Ambient work yields while Right Option dictation finishes, then resumes automatically.",
+            ambient,
+        ),
+    )
 }
 
 fn build_audio_emotion_summary_rail(
@@ -321,5 +281,47 @@ fn build_emotion_slice(rail_id: &str, segment: &SpeechEmotionSegmentDto) -> Cont
             segment.canonical_label.clone(),
             polarity_label(polarity).to_lowercase(),
         ],
+    }
+}
+
+#[cfg(test)]
+mod audio_transcript_rail_tests {
+    use super::*;
+
+    fn segment(id: &str, source_id: &str) -> AsrSegmentDto {
+        AsrSegmentDto {
+            asr_segment_id: id.to_string(),
+            session_id: "session".to_string(),
+            source_id: source_id.to_string(),
+            start_timestamp: 1_000,
+            end_timestamp: 2_000,
+            language: Some("en".to_string()),
+            transcript: format!("transcript {id}"),
+            confidence: Some(0.9),
+            model_name: "parakeet".to_string(),
+            model_version: "test".to_string(),
+            audio_chunk_ids: Vec::new(),
+            is_final: true,
+        }
+    }
+
+    #[test]
+    fn exposes_three_independent_audio_lanes_without_waveforms() {
+        let segments = vec![
+            segment("dictated", DICTATION_SOURCE_ID),
+            segment("ambient", "microphone:0"),
+        ];
+        let rails = build_audio_rails(&segments, &[], &[], &[]);
+        let dictation = &rails[0];
+        let ambient = &rails[1];
+
+        assert_eq!(rails.len(), 3);
+        assert_eq!(dictation.id, "audio_dictation");
+        assert_eq!(ambient.id, "audio_ambient_speech");
+        assert_eq!(rails[2].id, "audio_sound_events");
+        assert_eq!(dictation.slices[0].id, "dictated");
+        assert_eq!(ambient.slices[0].id, "ambient");
+        assert!(dictation.waveform.is_none());
+        assert!(ambient.waveform.is_none());
     }
 }

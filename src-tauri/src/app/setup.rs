@@ -4,13 +4,13 @@ use crate::core::config::Config;
 use crate::core::consent::ConsentManager;
 use crate::core::context_timeline;
 use crate::core::database::Database;
+use crate::core::input_recorder::InputRecorder;
+use crate::core::keyboard_recorder::KeyboardRecorder;
+use crate::core::multimodal::MultimodalService;
 use crate::core::multimodal::{
     persist_foreground_transcript, DictationHelper, DictationSupervisor, PipelineAction,
     SupervisorCommand,
 };
-use crate::core::input_recorder::InputRecorder;
-use crate::core::keyboard_recorder::KeyboardRecorder;
-use crate::core::multimodal::MultimodalService;
 use crate::core::ocr_engine::{OcrConfig, OcrEngine};
 use crate::core::ocr_processor::{OcrProcessor, OcrProcessorConfig};
 use crate::core::ocr_storage::OcrStorage;
@@ -56,15 +56,25 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 .expect("Failed to initialize recording storage"),
         );
 
-        let ocr_processor = initialize_ocr_processor(&db, &config).await;
+        let ocr_processor = if config.ocr_enabled && config.capture_channels.ocr {
+            initialize_ocr_processor(&db, &config).await
+        } else {
+            println!("OCR processor disabled by configuration");
+            None
+        };
         let ocr_trigger_signals = Arc::new(OcrTriggerSignals::new());
-        let screen_recorder = initialize_screen_recorder(
-            consent_manager.clone(),
-            storage.clone(),
-            ocr_trigger_signals.clone(),
-            ocr_processor.clone(),
-        )
-        .await;
+        let screen_recorder = if config.capture_channels.screen_frames {
+            initialize_screen_recorder(
+                consent_manager.clone(),
+                storage.clone(),
+                ocr_trigger_signals.clone(),
+                ocr_processor.clone(),
+            )
+            .await
+        } else {
+            println!("Screen recorder disabled by configuration");
+            None
+        };
         let os_activity_recorder =
             initialize_os_activity_recorder(consent_manager.clone(), db.clone()).await;
 

@@ -1,3 +1,28 @@
+use std::sync::OnceLock;
+use tokio::sync::watch;
+
+static BACKGROUND_TRANSCRIPTION_PAUSED: OnceLock<watch::Sender<bool>> = OnceLock::new();
+
+fn background_transcription_gate() -> &'static watch::Sender<bool> {
+    BACKGROUND_TRANSCRIPTION_PAUSED.get_or_init(|| watch::channel(false).0)
+}
+
+/// Share Right Option state with background capture tasks. Dictation runs in
+/// a separate helper process, so this small gate is the cross-process policy
+/// point that prevents ambient inference from competing with it.
+pub fn set_background_transcription_paused(paused: bool) {
+    background_transcription_gate().send_replace(paused);
+}
+
+pub async fn wait_for_background_transcription() {
+    let mut paused = background_transcription_gate().subscribe();
+    while *paused.borrow() {
+        if paused.changed().await.is_err() {
+            return;
+        }
+    }
+}
+
 /// Single-mic policy: one capture owner, shared clock, foreground priority.
 ///
 /// Background transcription yields while a Right Option session is active;
@@ -114,14 +139,26 @@ mod tests {
         let mut coordinator = ForegroundCoordinator::new();
         coordinator.on_session_started("sess-1", 1000);
         assert_eq!(coordinator.on_session_stopped("sess-2"), None);
-        assert!(matches!(
-            coordinator.mode(),
-            CaptureMode::Foreground { .. }
-        ));
+        assert!(matches!(coordinator.mode(), CaptureMode::Foreground { .. }));
     }
 
     #[test]
     fn timestamps_are_monotonic() {
         assert!(capture_timestamp_ms() <= capture_timestamp_ms());
+    }
+
+    #[tokio::test]
+    async fn background_gate_waits_for_foreground_release() {
+        use tokio::time::{timeout, Duration};
+
+        set_background_transcription_paused(true);
+        let mut waiter = tokio::spawn(wait_for_background_transcription());
+        let stayed_paused = timeout(Duration::from_millis(20), &mut waiter)
+            .await
+            .is_err();
+        set_background_transcription_paused(false);
+
+        assert!(stayed_paused);
+        assert!(timeout(Duration::from_millis(200), waiter).await.is_ok());
     }
 }

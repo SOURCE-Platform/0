@@ -4,6 +4,7 @@ export interface DesktopCaptureStatus {
   startedAt: number | null;
   displayId: number | null;
   displayName: string | null;
+  audioSourceName: string | null;
   channelsEnabled: string[];
   warnings: string[];
   missingPermissions: string[];
@@ -56,6 +57,21 @@ export interface ContextSlice {
   fileCount: number;
   hasDetailView: boolean;
   tags: string[];
+}
+
+export interface AsrSegment {
+  asrSegmentId: string;
+  sessionId: string;
+  sourceId: string;
+  startTimestamp: number;
+  endTimestamp: number;
+  language: string | null;
+  transcript: string;
+  confidence: number | null;
+  modelName: string;
+  modelVersion: string;
+  audioChunkIds: string[];
+  isFinal: boolean;
 }
 
 export interface TimelineRail {

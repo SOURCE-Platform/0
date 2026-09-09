@@ -24,6 +24,7 @@ final class DictationRuntime: @unchecked Sendable {
     private var engine: TranscriptionEngine = makeDefaultEngine()
     private var activeSessionID: String?
     private var sessionAudioPath: String?
+    private var sessionStartedAtMs: Int64?
     private var focusTarget: CapturedFocusTarget?
     private let inserter = TextInserter()
     private let mic = MicSessionRecorder()
@@ -62,6 +63,7 @@ final class DictationRuntime: @unchecked Sendable {
             let id = UUID().uuidString
             activeSessionID = id
             sessionAudioPath = nil
+            sessionStartedAtMs = Int64(Date().timeIntervalSince1970 * 1000)
             focusTarget = captureFocusedTarget()
             if mic.beginSession() {
                 sessionAudioPath = mic.activeSessionPath
@@ -108,17 +110,19 @@ final class DictationRuntime: @unchecked Sendable {
         ListeningIndicator.shared.hide()
         mic.endSessionFile()
         sessionAudioPath = mic.activeSessionPath
+        let startedAtMs = sessionStartedAtMs
+        sessionStartedAtMs = nil
         writeDictationLine("SESSION_STOPPED \(id)")
         if let path = sessionAudioPath {
             sessionAudioPath = nil
-            transcribeSessionAudio(id: id, path: path)
+            transcribeSessionAudio(id: id, path: path, startedAtMs: startedAtMs)
         }
     }
 
-    private func transcribeSessionAudio(id: String, path: String) {
-        let startedMs = Int64(Date().timeIntervalSince1970 * 1000)
+    private func transcribeSessionAudio(id: String, path: String, startedAtMs: Int64? = nil) {
+        let startedMs = startedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
+        let endedMs = Int64(Date().timeIntervalSince1970 * 1000)
         engine.transcribe(audioPath: path) { result in
-            let endedMs = Int64(Date().timeIntervalSince1970 * 1000)
             let payload: [String: Any] = [
                 "id": id,
                 "text": result.text,

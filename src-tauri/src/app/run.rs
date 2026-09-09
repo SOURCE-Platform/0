@@ -79,6 +79,7 @@ pub fn run() {
             get_visual_scene_snapshots,
             get_visual_state_spans,
             get_audio_state_spans,
+            get_asr_segment,
             get_asr_segments,
             get_speech_emotion_segments,
             get_sound_event_detections,

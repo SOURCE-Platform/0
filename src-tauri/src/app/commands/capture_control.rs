@@ -6,7 +6,7 @@ use tauri::State;
 
 #[tauri::command]
 pub async fn start_desktop_capture(
-    display_id: u32,
+    display_id: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<DesktopCaptureStatusDto, String> {
     let session_manager = state
@@ -36,13 +36,17 @@ pub async fn start_desktop_capture(
         runtime.is_active = true;
         runtime.session_id = Some(session_id.clone());
         runtime.started_at = Some(started_at);
-        runtime.display_id = Some(display_id);
+        runtime.display_id = display_id;
         runtime.display_name = None;
+        runtime.audio_source_name = None;
         runtime.warnings.clear();
         runtime.channel_errors.clear();
     }
 
     if config.capture_channels.screen_frames {
+        let display_id = display_id.ok_or(
+            "Screen capture is enabled, but no display is selected. Disable screen capture or select a display.",
+        )?;
         if let Some(recorder) = state.screen_recorder.as_ref() {
             recorder
                 .start_recording(display_id)
@@ -122,6 +126,7 @@ async fn finalize_capture_start(
             runtime.started_at = None;
             runtime.display_id = None;
             runtime.display_name = None;
+            runtime.audio_source_name = None;
             if runtime.warnings.is_empty() {
                 runtime.warnings.push(
                     "No capture channels could start with the current configuration.".to_string(),
@@ -208,6 +213,7 @@ pub async fn stop_desktop_capture(
         runtime.is_active = false;
         runtime.session_id = None;
         runtime.started_at = None;
+        runtime.audio_source_name = None;
         runtime.sampler_generation += 1;
     }
     build_desktop_capture_status(&state).await

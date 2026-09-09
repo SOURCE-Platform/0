@@ -1,6 +1,6 @@
 use super::dictation_helper::{DictationEvent, DictationHelper};
 use super::dictation_pipeline::{DictationPipeline, PipelineAction};
-use super::foreground_coordinator::capture_timestamp_ms;
+use super::foreground_coordinator::{capture_timestamp_ms, set_background_transcription_paused};
 use super::speech_provider::DictionaryEntry;
 use tokio::sync::{broadcast, mpsc};
 
@@ -61,6 +61,7 @@ impl DictationSupervisor {
                             Ok(event) => event,
                             Err(_) => break,
                         };
+                        update_background_priority(&event);
                         log_helper_event(&event);
                         let done = matches!(event, DictationEvent::Exited);
                         let action = self
@@ -142,6 +143,17 @@ impl DictationSupervisor {
             eprintln!("Dictation command failed: {error}");
         }
         true
+    }
+}
+
+fn update_background_priority(event: &DictationEvent) {
+    match event {
+        DictationEvent::SessionStarted { .. } => set_background_transcription_paused(true),
+        DictationEvent::Transcript(_)
+        | DictationEvent::EngineError(_)
+        | DictationEvent::Exited
+        | DictationEvent::Ready => set_background_transcription_paused(false),
+        _ => {}
     }
 }
 

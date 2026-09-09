@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { addDays, startOfDay } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -23,16 +23,11 @@ export function DeviceContextTimelineSection({
 }: {
   controller: ReturnType<typeof useDesktopContextWorkspace>;
 }) {
-  const [expandedRails, setExpandedRails] = useState<Record<string, boolean>>({
-    audio: true,
-    audio_speech: true,
-    audio_sound_events: true,
-  });
   const selectedRailId = controller.selectedSlice?.rail ?? null;
   const autoStartedRef = useRef(false);
 
-  // Always-on vision: capture starts with the workspace (consent gates
-  // the microphones underneath). No start/stop buttons by design.
+  // Always-on audio: capture starts with the workspace. Screen recording and
+  // OCR stay disabled during the audio-timeline phase.
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (controller.loading || !controller.canStartCapture) return;
@@ -43,13 +38,6 @@ export function DeviceContextTimelineSection({
     autoStartedRef.current = true;
     void controller.handleStartCapture();
   }, [controller.loading, controller.canStartCapture, controller.status?.isActive]);
-
-  function handleToggleRail(railId: string, nextExpanded: boolean) {
-    setExpandedRails((current) => ({
-      ...current,
-      [railId]: nextExpanded,
-    }));
-  }
 
   return (
     <section className="space-y-5">
@@ -98,19 +86,21 @@ export function DeviceContextTimelineSection({
         <TooltipProvider>
           <div
             ref={controller.timelineSurfaceRef}
-            className={`border-y border-border/70 bg-transparent px-1 py-4 ${
+            className={`bg-transparent px-1 py-4 ${
               controller.isPanning ? "cursor-grabbing select-none" : "cursor-default"
             }`}
           >
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3">
               <div className="text-sm text-muted-foreground">
                 Showing {safeFormatDate(controller.effectiveWindowStart, "p")} to{" "}
                 {safeFormatDate(controller.effectiveWindowEnd, "p")}
               </div>
               <div className="text-sm text-muted-foreground">
-                {controller.status?.isActive
-                  ? "Hold Command and scroll to zoom all tracks."
-                  : "Capture is stopped. You are reviewing previously recorded data for this day."}
+                {controller.status?.audioSourceName
+                  ? `Audio input: ${controller.status.audioSourceName}`
+                  : controller.status?.isActive
+                    ? "Audio input starting…"
+                    : "Capture stopped"}
               </div>
             </div>
             <div className="pt-3">
@@ -126,8 +116,8 @@ export function DeviceContextTimelineSection({
                     key={rail.id}
                     rail={rail}
                     depth={0}
-                    expandedRails={expandedRails}
-                    onToggleRail={handleToggleRail}
+                    expandedRails={{}}
+                    onToggleRail={() => {}}
                     windowStart={controller.effectiveWindowStart}
                     windowEnd={controller.effectiveWindowEnd}
                     selectedSliceId={controller.selectedSlice?.id ?? null}

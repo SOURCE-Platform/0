@@ -1,6 +1,7 @@
 use super::audio_runtime::{
     ensure_audio_python, helper_dir, write_helper_if_needed, ParakeetTranscription,
 };
+use super::foreground_coordinator::wait_for_background_transcription;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -16,8 +17,10 @@ struct ParakeetWorker {
 static WORKER: OnceLock<Mutex<Option<ParakeetWorker>>> = OnceLock::new();
 
 pub(super) async fn transcribe(audio_path: &Path) -> Result<ParakeetTranscription, String> {
+    wait_for_background_transcription().await;
     let worker = WORKER.get_or_init(|| Mutex::new(None));
     let mut guard = worker.lock().await;
+    wait_for_background_transcription().await;
     if guard.is_none() {
         *guard = Some(start_worker().await?);
     }

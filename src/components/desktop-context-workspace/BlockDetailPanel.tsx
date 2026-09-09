@@ -21,6 +21,7 @@ export function BlockDetailPanel({
     controller.sliceDetail?.linkedFilePaths[0] ?? controller.sliceDetail?.slice.evidenceFramePath ?? null;
   const selectedEvidenceSrc = linkedPath ? convertFileSrc(linkedPath) : null;
   const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!selectedEvidenceSrc;
+  const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
 
   return (
     <Card className="h-fit border-border/70 xl:sticky xl:top-20">
@@ -50,7 +51,7 @@ export function BlockDetailPanel({
           <div className="rounded-xl border border-dashed border-border/70 px-4 py-12 text-center text-sm text-muted-foreground">
             No timeline block selected yet.
           </div>
-        ) : controller.loadingDetail || !controller.sliceDetail ? (
+        ) : !controller.sliceDetail ? (
           <div className="rounded-xl border border-border/70 px-4 py-12 text-center text-sm text-muted-foreground">
             Loading block detail...
           </div>
@@ -94,10 +95,30 @@ export function BlockDetailPanel({
 
             <Tabs value={controller.detailTab} onValueChange={controller.setDetailTab}>
               <TabsList variant="line">
+                {showTranscriptTab ? <TabsTrigger value="transcript">Transcript</TabsTrigger> : null}
                 {showVisualTab ? <TabsTrigger value="visual">Visual</TabsTrigger> : null}
                 <TabsTrigger value="metadata">Metadata</TabsTrigger>
                 <TabsTrigger value="json">Raw JSON</TabsTrigger>
               </TabsList>
+
+              {showTranscriptTab ? (
+                <TabsContent value="transcript" className="pt-4">
+                  <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+                      <span className="relative flex h-2 w-2">
+                        {!controller.sliceDetail.slice.tags.includes("final") ? (
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                        ) : null}
+                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+                      </span>
+                      {controller.sliceDetail.slice.tags.includes("final") ? "Final transcript" : "Live transcript"}
+                    </div>
+                    <p className="max-w-[60ch] whitespace-pre-wrap text-base leading-7 text-foreground">
+                      {controller.sliceDetail.slice.ocrPreview?.trim() || "Listening for words…"}
+                    </p>
+                  </div>
+                </TabsContent>
+              ) : null}
 
               {showVisualTab ? (
                 <TabsContent value="visual" className="space-y-4 pt-4">

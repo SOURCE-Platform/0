@@ -1,6 +1,6 @@
 pub(super) const VISUAL_CAPTURE_INTERVAL_MS: i64 = 3_000;
-pub(super) const AUDIO_CHUNK_DURATION_SECS: f32 = 1.0;
-pub(super) const AUDIO_CHUNK_DURATION_MS: i64 = 1_000;
+pub(super) const AUDIO_CHUNK_DURATION_SECS: f32 = 2.0;
+pub(super) const AUDIO_CHUNK_DURATION_MS: i64 = 2_000;
 pub(super) const AUDIO_VAD_WINDOW_MS: usize = 500;
 pub(super) const MOTION_HIGH_THRESHOLD: f32 = 0.25;
 pub(super) const MOTION_MOVING_THRESHOLD: f32 = 0.03;
