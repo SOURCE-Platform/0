@@ -220,3 +220,17 @@ mod tests {
         assert!(requests.device_for("nope").await.is_none());
     }
 }
+
+#[cfg(test)]
+mod cross_language_tests {
+    use super::*;
+
+    /// The phone derives this tag independently in Swift. If the two ever drift
+    /// the camera-free pairing path silently breaks, so pin the exact values.
+    #[test]
+    fn matches_the_swift_implementation() {
+        assert_eq!(short_auth_string("aabbcc"), "UAZY");
+        assert_eq!(short_auth_string(&"a".repeat(64)), "XRU9");
+        assert_eq!(short_auth_string("deadbeef"), "N3YN");
+    }
+}

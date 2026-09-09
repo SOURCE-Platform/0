@@ -1,6 +1,8 @@
 use super::dictation_helper::{DictationEvent, DictationHelper};
 use super::dictation_pipeline::{DictationPipeline, PipelineAction};
-use super::foreground_coordinator::{capture_timestamp_ms, set_background_transcription_paused};
+use super::foreground_coordinator::{
+    capture_timestamp_ms, is_background_transcription_paused, set_background_transcription_paused,
+};
 use super::speech_provider::DictionaryEntry;
 use tokio::sync::{broadcast, mpsc};
 
@@ -11,6 +13,10 @@ pub struct DictationSupervisor {
     pipeline: DictationPipeline,
     dictionary: Vec<DictionaryEntry>,
     helper: Option<DictationHelper>,
+    /// Remote clips that arrived while Right Option held the engine.
+    /// Held here rather than awaited inline: the loop that would release the
+    /// gate is the same one that would be blocked waiting for it.
+    deferred: Vec<SupervisorCommand>,
 }
 
 /// Commands into the running helper. Wired in Phase C (live loop).
@@ -35,6 +41,7 @@ impl DictationSupervisor {
             pipeline: DictationPipeline::new(),
             dictionary,
             helper: None,
+            deferred: Vec::new(),
         }
     }
 
@@ -70,6 +77,13 @@ impl DictationSupervisor {
                         };
                         update_background_priority(&event);
                         log_helper_event(&event);
+                        if !is_background_transcription_paused() && !self.deferred.is_empty() {
+                            for command in std::mem::take(&mut self.deferred) {
+                                if !Self::execute(command, &mut self.helper).await {
+                                    return;
+                                }
+                            }
+                        }
                         let done = matches!(event, DictationEvent::Exited);
                         let action = self
                             .pipeline
@@ -81,7 +95,13 @@ impl DictationSupervisor {
                     }
                     command = commands_rx.recv() => {
                         let Some(command) = command else { break };
-                        if !Self::execute(command, &mut self.helper).await {
+                        // Right Option wins. Park remote work rather than
+                        // awaiting here, which would wedge this whole loop.
+                        if matches!(command, SupervisorCommand::TranscribeFile { .. })
+                            && is_background_transcription_paused()
+                        {
+                            self.deferred.push(command);
+                        } else if !Self::execute(command, &mut self.helper).await {
                             break;
                         }
                     }
@@ -102,6 +122,7 @@ impl DictationSupervisor {
             PipelineAction::PersistForeground {
                 id,
                 text,
+                source,
                 started_at_ms,
                 ended_at_ms,
                 language,
@@ -113,6 +134,7 @@ impl DictationSupervisor {
                     .send(PipelineAction::PersistForeground {
                         id,
                         text: text.clone(),
+                        source,
                         started_at_ms,
                         ended_at_ms,
                         language,
@@ -151,10 +173,6 @@ impl DictationSupervisor {
                 started_at_ms,
                 ended_at_ms,
             } => {
-                // Right Option wins: drain any foreground session before
-                // dispatching mobile work behind it.
-                crate::core::multimodal::foreground_coordinator::wait_for_background_transcription()
-                    .await;
                 helper
                     .transcribe_file(crate::core::multimodal::dictation_helper::TranscribeFileRequest {
                         id,

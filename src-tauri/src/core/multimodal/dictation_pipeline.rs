@@ -18,6 +18,8 @@ pub enum PipelineAction {
     PersistForeground {
         id: String,
         text: String,
+        /// Which capture produced this — routes the write to the right lane.
+        source: String,
         started_at_ms: i64,
         ended_at_ms: i64,
         language: Option<String>,
@@ -112,6 +114,7 @@ impl DictationPipeline {
         PipelineAction::PersistForeground {
             id: transcript.id.clone(),
             text: text.clone(),
+            source: transcript.source.clone(),
             started_at_ms: transcript.started_at_ms,
             ended_at_ms: transcript.ended_at_ms,
             language: transcript.language.clone(),
@@ -229,9 +232,28 @@ mod tests {
         let mut remote = transcript("mobile-1", "hello from phone");
         remote.source = "source-mobile".to_string();
         match pipeline.on_event(&DictationEvent::Transcript(remote), &[], 1) {
-            PipelineAction::PersistForeground { id, .. } => assert_eq!(id, "mobile-1"),
+            PipelineAction::PersistForeground { id, source, .. } => {
+                assert_eq!(id, "mobile-1");
+                // Dropping the source here routed mobile transcripts into the
+                // dictation store, where they collided with their own
+                // placeholder row and vanished without a word in the log.
+                assert_eq!(source, "source-mobile");
+            }
             other => panic!("unexpected: {other:?}"),
         }
         assert!(pipeline.take_pending_insertion("hello from phone").is_none());
+    }
+
+    #[test]
+    fn right_option_transcripts_keep_their_own_source() {
+        let mut pipeline = DictationPipeline::new();
+        let local = transcript("local-1", "typed into the field");
+        match pipeline.on_event(&DictationEvent::Transcript(local), &[], 1) {
+            PipelineAction::PersistForeground { source, .. } => {
+                assert_eq!(source, DICTATION_SOURCE_ID);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(pipeline.take_pending_insertion("typed into the field").is_some());
     }
 }

@@ -4,5 +4,11 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>SOURCE uses the microphone only when you start dictation or enable microphone capture.</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>SOURCE listens on your local network so Source Mobile on your iPhone can send recordings to this Mac.</string>
+  <key>NSBonjourServices</key>
+  <array>
+    <string>_source-mobile._tcp</string>
+  </array>
 </dict>
 </plist>

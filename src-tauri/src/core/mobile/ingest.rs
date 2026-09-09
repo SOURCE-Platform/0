@@ -122,16 +122,27 @@ async fn dispatch_transcribe(
     started_at_ms: i64,
     ended_at_ms: i64,
 ) {
-    if let Some(sender) = commands {
-        let _ = sender
-            .send(SupervisorCommand::TranscribeFile {
-                id: clip_id.to_string(),
-                path: path.to_string(),
-                source: MOBILE_SOURCE_ID.to_string(),
-                started_at_ms,
-                ended_at_ms,
-            })
-            .await;
+    let Some(sender) = commands else {
+        // Silence here used to look identical to success: the clip landed on
+        // disk, the placeholder row stayed empty, and nothing said why.
+        eprintln!(
+            "Mobile clip {clip_id} stored but not transcribed: dictation helper is not running"
+        );
+        return;
+    };
+    if let Err(error) = sender
+        .send(SupervisorCommand::TranscribeFile {
+            id: clip_id.to_string(),
+            path: path.to_string(),
+            source: MOBILE_SOURCE_ID.to_string(),
+            started_at_ms,
+            ended_at_ms,
+        })
+        .await
+    {
+        eprintln!("Mobile clip {clip_id} could not be queued for transcription: {error}");
+    } else {
+        println!("Mobile clip {clip_id} queued for transcription");
     }
 }
 

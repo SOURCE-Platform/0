@@ -12,6 +12,14 @@ fn background_transcription_gate() -> &'static watch::Sender<bool> {
 /// Share Right Option state with background capture tasks. Dictation runs in
 /// a separate helper process, so this small gate is the cross-process policy
 /// point that prevents ambient inference from competing with it.
+/// Non-blocking read of the gate.
+///
+/// Callers driving an event loop must use this rather than awaiting the gate:
+/// awaiting inside the loop blocks the very branch that would later open it.
+pub fn is_background_transcription_paused() -> bool {
+    *background_transcription_gate().borrow()
+}
+
 pub fn set_background_transcription_paused(paused: bool) {
     let was_paused = background_transcription_gate().send_replace(paused);
     if paused && !was_paused {
@@ -171,5 +179,35 @@ mod tests {
 
         assert!(stayed_paused);
         assert!(timeout(Duration::from_millis(200), waiter).await.is_ok());
+    }
+}
+
+#[cfg(test)]
+mod gate_tests {
+    use super::*;
+
+    #[test]
+    fn gate_read_reflects_pause_state() {
+        set_background_transcription_paused(false);
+        assert!(!is_background_transcription_paused());
+        set_background_transcription_paused(true);
+        assert!(is_background_transcription_paused());
+        set_background_transcription_paused(false);
+        assert!(!is_background_transcription_paused());
+    }
+
+    #[tokio::test]
+    async fn gate_read_is_non_blocking_while_paused() {
+        // Awaiting the gate here is what deadlocked the supervisor loop:
+        // the read must return immediately even while dictation holds it.
+        set_background_transcription_paused(true);
+        let paused = tokio::time::timeout(
+            std::time::Duration::from_millis(50),
+            async { is_background_transcription_paused() },
+        )
+        .await
+        .expect("gate read must not block");
+        assert!(paused);
+        set_background_transcription_paused(false);
     }
 }

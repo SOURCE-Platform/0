@@ -50,6 +50,7 @@ pub fn initialize_dictation_supervisor(
                         if let PipelineAction::PersistForeground {
                             id,
                             text,
+                            source,
                             started_at_ms,
                             ended_at_ms,
                             language,
@@ -62,6 +63,7 @@ pub fn initialize_dictation_supervisor(
                                 &session_manager,
                                 id,
                                 text,
+                                source,
                                 *started_at_ms,
                                 *ended_at_ms,
                                 language.as_deref(),
@@ -111,6 +113,7 @@ async fn persist_action(
     session_manager: &Option<Arc<SessionManager>>,
     id: &str,
     text: &str,
+    source: &str,
     started_at_ms: i64,
     ended_at_ms: i64,
     language: Option<&str>,
@@ -125,22 +128,40 @@ async fn persist_action(
             Err(error) => eprintln!("Dictation session lookup failed: {error}"),
         }
     }
-    if let Err(error) = persist_foreground_transcript(
-        db,
-        &session_id,
-        id,
-        text,
-        started_at_ms,
-        ended_at_ms,
-        language,
-        confidence,
-        model,
-    )
-    .await
-    {
-        eprintln!("{error}");
+    // Remote captures own their own lane. Writing them through the dictation
+    // store would stamp them `fluid-voice-prompt` and collide with the
+    // placeholder row already holding this id, silently dropping the text.
+    let result = if source == crate::core::multimodal::MOBILE_SOURCE_ID {
+        crate::core::multimodal::persist_mobile_transcript(
+            db,
+            &session_id,
+            id,
+            text,
+            started_at_ms,
+            ended_at_ms,
+            language,
+            confidence,
+            model,
+            true,
+        )
+        .await
     } else {
-        println!("Dictation {id} saved to timeline");
+        persist_foreground_transcript(
+            db,
+            &session_id,
+            id,
+            text,
+            started_at_ms,
+            ended_at_ms,
+            language,
+            confidence,
+            model,
+        )
+        .await
+    };
+    match result {
+        Err(error) => eprintln!("Failed to save {source} transcript {id}: {error}"),
+        Ok(()) => println!("Transcript {id} ({source}) saved to timeline"),
     }
 }
 
