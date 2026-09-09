@@ -76,6 +76,7 @@ fn build_dictation_helper() {
         println!("cargo:rerun-if-changed={source}");
     }
     if let Some(binary) = build_spm_dictation_helper() {
+        sign_dictation_helper(&binary);
         println!("cargo:rustc-env=SOURCE_DICTATION_HELPER={}", binary.display());
         return;
     }
@@ -110,6 +111,7 @@ fn build_dictation_helper() {
         .status()
         .expect("Swift is required to build the macOS dictation helper");
     assert!(status.success(), "Failed to build the dictation helper");
+    sign_dictation_helper(&output);
     println!(
         "cargo:rustc-env=SOURCE_DICTATION_HELPER={}",
         output.display()
@@ -135,4 +137,55 @@ fn build_spm_dictation_helper() -> Option<std::path::PathBuf> {
         .join("release")
         .join("SourceDictation");
     binary.exists().then_some(binary)
+}
+
+/// Give the helper a stable code-signing requirement so macOS Accessibility
+/// approval survives rebuilds. Unsigned/ad-hoc helper builds are identified by
+/// their changing CDHash, which makes an existing permission row look enabled
+/// while AXIsProcessTrusted still returns false for the new binary.
+#[cfg(target_os = "macos")]
+fn sign_dictation_helper(binary: &std::path::Path) {
+    let identity = std::env::var("SOURCE_CODESIGN_IDENTITY")
+        .ok()
+        .or_else(|| std::env::var("APPLE_SIGNING_IDENTITY").ok())
+        .or_else(find_apple_development_identity);
+    let Some(identity) = identity else {
+        println!(
+            "cargo:warning=No Apple Development signing identity found; \
+             dictation Accessibility approval may not survive helper rebuilds"
+        );
+        return;
+    };
+
+    let status = std::process::Command::new("codesign")
+        .args([
+            "--force",
+            "--sign",
+            &identity,
+            "--identifier",
+            "com.racker.zero.dictation-helper",
+            "--timestamp=none",
+        ])
+        .arg(binary)
+        .status()
+        .expect("codesign is required to sign the macOS dictation helper");
+    assert!(
+        status.success(),
+        "Failed to sign the dictation helper with identity {identity}"
+    );
+    println!("cargo:warning=Signed dictation helper with {identity}");
+}
+
+#[cfg(target_os = "macos")]
+fn find_apple_development_identity() -> Option<String> {
+    let output = std::process::Command::new("security")
+        .args(["find-identity", "-v", "-p", "codesigning"])
+        .output()
+        .ok()?;
+    let text = String::from_utf8(output.stdout).ok()?;
+    text.lines().find_map(|line| {
+        let start = line.find("\"Apple Development:")? + 1;
+        let end = line[start..].find('"')? + start;
+        Some(line[start..end].to_string())
+    })
 }

@@ -97,5 +97,21 @@ pub(crate) fn validate_config(config: &Config) -> Result<(), Box<dyn std::error:
         .into());
     }
 
+    if config.mobile_port < 1024 {
+        return Err(format!(
+            "Invalid mobile port: {}. Must be >= 1024",
+            config.mobile_port
+        )
+        .into());
+    }
+
+    if config.mobile_clip_retention_days > 3650 {
+        return Err(format!(
+            "Invalid mobile retention: {}. Must be between 0 and 3650",
+            config.mobile_clip_retention_days
+        )
+        .into());
+    }
+
     Ok(())
 }

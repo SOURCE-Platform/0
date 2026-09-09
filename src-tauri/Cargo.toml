@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
+tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2.4.2"
 serde = { version = "1", features = ["derive"] }
@@ -43,6 +43,15 @@ cpal = "0.15"
 # Using ffmpeg-sys-next (low-level bindings) until ffmpeg-next 7.x is available
 # ffmpeg-next = "6.0"
 ffmpeg-sys-next = "8.0"
+axum = { version = "0.8.9", features = ["ws", "multipart", "macros"] }
+axum-server = { version = "0.8.0", features = ["tls-rustls"] }
+mdns-sd = "0.21.3"
+sha2 = "0.11.0"
+rand = "0.10.2"
+rcgen = "0.14.10"
+base64 = "0.23.1"
+futures = "0.3.34"
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 screencapturekit = "0.2"

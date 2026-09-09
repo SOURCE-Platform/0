@@ -257,7 +257,7 @@ impl DesktopAudioStream {
 
 fn convert_chunk(raw_path: &Path, gain_db: f32, output_path: &Path) -> Result<(), String> {
     let gain_db = gain_db.clamp(0.0, 24.0);
-    let mut command = Command::new("ffmpeg");
+    let mut command = Command::new(crate::core::ffmpeg_bin::ffmpeg_program());
     command.args([
         "-y",
         "-loglevel",

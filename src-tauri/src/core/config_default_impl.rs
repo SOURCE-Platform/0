@@ -40,6 +40,10 @@ impl Default for Config {
             resource_profile: ResourceProfile::Balanced,
             pii_settings: PiiDetectionSettings::default(),
             review_ui_defaults: ReviewUiDefaults::default(),
+            mobile_enabled: crate::core::config_defaults::default_mobile_enabled(),
+            mobile_port: crate::core::config_defaults::default_mobile_port(),
+            mobile_clip_retention_days:
+                crate::core::config_defaults::default_mobile_clip_retention_days(),
         }
     }
 }

@@ -30,12 +30,20 @@ final class DictationRuntime: @unchecked Sendable {
     private let mic = MicSessionRecorder()
     private var partialTimer: Timer?
     private var partialBusy = false
+    /// Held for the process lifetime: without it macOS App Nap suspends
+    /// this windowless helper, which stalls both the hotkey event tap
+    /// and mic capture (no pill, no signal level, no sessions).
+    private var napActivity: NSObjectProtocol?
 
     init(parentPID: pid_t) {
         self.parentPID = parentPID
     }
 
     func start() {
+        napActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Right Option dictation hotkey and microphone capture"
+        )
         setupPresentation()
         mic.onLevel = { level in ListeningIndicator.shared.setLevel(level) }
         ListeningIndicator.shared.onOpenSettings = {
@@ -119,9 +127,9 @@ final class DictationRuntime: @unchecked Sendable {
         }
     }
 
-    private func transcribeSessionAudio(id: String, path: String, startedAtMs: Int64? = nil) {
+    private func transcribeSessionAudio(id: String, path: String, startedAtMs: Int64? = nil, endedAtMs: Int64? = nil, source: String = "fluid-voice-prompt") {
         let startedMs = startedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
-        let endedMs = Int64(Date().timeIntervalSince1970 * 1000)
+        let endedMs = endedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
         engine.transcribe(audioPath: path) { result in
             let payload: [String: Any] = [
                 "id": id,
@@ -132,7 +140,7 @@ final class DictationRuntime: @unchecked Sendable {
                 "model": result.model,
                 "startedAtMs": startedMs,
                 "endedAtMs": endedMs,
-                "source": "fluid-voice-prompt",
+                "source": source,
                 "isFinal": true,
             ]
             if let data = try? JSONSerialization.data(withJSONObject: payload),
@@ -180,10 +188,21 @@ final class DictationRuntime: @unchecked Sendable {
             return
         }
         if command.hasPrefix("TRANSCRIBE_FILE ") {
-            let path = String(command.dropFirst("TRANSCRIBE_FILE ".count)).trimmingCharacters(in: .whitespaces)
-            if !path.isEmpty {
+            let payload = String(command.dropFirst("TRANSCRIBE_FILE ".count)).trimmingCharacters(in: .whitespaces)
+            if payload.hasPrefix("{") {
+                if let data = payload.data(using: .utf8),
+                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    let path = json["path"] as? String, !path.isEmpty
+                {
+                    let id = json["id"] as? String ?? UUID().uuidString
+                    let source = json["source"] as? String ?? "fluid-voice-prompt"
+                    let started = (json["startedAtMs"] as? NSNumber)?.int64Value
+                    let ended = (json["endedAtMs"] as? NSNumber)?.int64Value
+                    transcribeSessionAudio(id: id, path: path, startedAtMs: started, endedAtMs: ended, source: source)
+                }
+            } else if !payload.isEmpty {
                 let id = UUID().uuidString
-                transcribeSessionAudio(id: id, path: path)
+                transcribeSessionAudio(id: id, path: payload)
             }
             return
         }

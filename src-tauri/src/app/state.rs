@@ -156,6 +156,7 @@ pub struct AppState {
     pub ocr_processor: Option<Arc<OcrProcessor>>,
     pub multimodal_service: Option<Arc<MultimodalService>>,
     pub desktop_capture_runtime: Arc<RwLock<DesktopCaptureRuntime>>,
+    pub dictation_commands: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::Sender<crate::core::multimodal::SupervisorCommand>>>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, sqlx::FromRow)]

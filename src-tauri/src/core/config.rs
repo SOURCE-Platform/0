@@ -167,6 +167,15 @@ pub struct Config {
     /// UI defaults for review surfaces
     #[serde(default)]
     pub review_ui_defaults: ReviewUiDefaults,
+    /// Enable the Source Mobile HTTPS server (iPhone capture companion)
+    #[serde(default = "crate::core::config_defaults::default_mobile_enabled")]
+    pub mobile_enabled: bool,
+    /// Preferred port for the Source Mobile server (fallback scan +20)
+    #[serde(default = "crate::core::config_defaults::default_mobile_port")]
+    pub mobile_port: u16,
+    /// Retain mobile clips for this many days (0 = keep forever)
+    #[serde(default = "crate::core::config_defaults::default_mobile_clip_retention_days")]
+    pub mobile_clip_retention_days: u32,
 }
 
 include!("config_default_impl.rs");

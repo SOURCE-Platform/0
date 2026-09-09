@@ -8,6 +8,7 @@ import { DeleteCaptureDialog } from "@/components/settings/DeleteCaptureDialog";
 import { GeneralSettingsSection } from "@/components/settings/GeneralSettingsSection";
 import { HardwareSettingsSection } from "@/components/settings/HardwareSettingsSection";
 import { DictationSettingsSection } from "@/components/settings/DictationSettingsSection";
+import { MobileSettingsSection } from "@/components/settings/MobileSettingsSection";
 import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { StorageSettingsSection } from "@/components/settings/StorageSettingsSection";
 import { SettingsTab } from "@/components/settings/types";
@@ -63,6 +64,7 @@ export default function Settings() {
           { value: "storage", label: "Storage" },
           { value: "hardware", label: "Hardware" },
           { value: "dictation", label: "Dictation" },
+          { value: "mobile", label: "Mobile" },
         ]}
         value={controller.tab}
         onValueChange={(value) => controller.setTab(value as SettingsTab)}
@@ -79,6 +81,7 @@ export default function Settings() {
       {controller.tab === "storage" ? <StorageSettingsSection controller={controller} /> : null}
       {controller.tab === "hardware" ? <HardwareSettingsSection /> : null}
       {controller.tab === "dictation" ? <DictationSettingsSection /> : null}
+      {controller.tab === "mobile" ? <MobileSettingsSection controller={controller} /> : null}
 
       <Card>
         <CardHeader>

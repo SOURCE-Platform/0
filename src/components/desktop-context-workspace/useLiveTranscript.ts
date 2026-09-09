@@ -118,6 +118,7 @@ export function immediateSliceDetail(slice: ContextSlice): ContextSliceDetail {
     audio_dictation: "Right Option Dictation",
     audio_ambient_speech: "Ambient Audio",
     audio_sound_events: "Sound Events",
+    audio_mobile: "Source Mobile",
   }[slice.rail] ?? "Audio";
   return {
     slice,

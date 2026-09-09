@@ -22,6 +22,7 @@ mod indexing;
 mod mappers;
 mod media_io;
 mod mic_capture;
+mod mobile_store;
 mod parakeet_worker;
 mod queries;
 mod retention;
@@ -45,10 +46,14 @@ pub use audio_meter_types::{AudioMeterReadingDto, AudioMetersDto};
 pub(crate) use audio_sources::{
     choose_video_source, default_audio_input_name, list_avfoundation_sources,
 };
-pub(crate) use dictation_helper::DictationHelper;
+pub use dictation_helper::{DictationHelper, TranscribeFileRequest};
 pub(crate) use dictation_pipeline::PipelineAction;
 pub(crate) use dictation_store::{persist_foreground_transcript, DICTATION_SOURCE_ID};
-pub(crate) use dictation_supervisor::{DictationSupervisor, SupervisorCommand};
+pub use mobile_store::{
+    mark_mobile_clip_delivered, mobile_clip_audio_path, persist_mobile_transcript,
+    track_mobile_clip, MOBILE_SOURCE_ID,
+};
+pub use dictation_supervisor::{DictationSupervisor, SupervisorCommand};
 pub(crate) use media_io::{mediapipe_runtime_available, run_mediapipe_face_features};
 pub use queries::{
     delete_all_multimodal_derived, get_asr_segments, get_audio_chunks, get_audio_state_spans,

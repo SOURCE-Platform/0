@@ -50,7 +50,7 @@ fn coalesce_ambient_chunks(
 ) -> Vec<AmbientCaptureSpan> {
     let mut chunks = audio_chunks
         .iter()
-        .filter(|chunk| chunk.source_id != DICTATION_SOURCE_ID)
+        .filter(|chunk| chunk.source_id != DICTATION_SOURCE_ID && chunk.source_id != MOBILE_SOURCE_ID)
         .collect::<Vec<_>>();
     chunks.sort_by_key(|chunk| chunk.start_timestamp);
 

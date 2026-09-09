@@ -100,11 +100,25 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             consent_manager.clone(),
         ));
         let shared_config = Arc::new(Mutex::new(config));
+        let dictation_commands = Arc::new(tokio::sync::Mutex::new(None));
         initialize_dictation_supervisor(
             shared_config.clone(),
             db.clone(),
             session_manager.clone(),
             app.handle().clone(),
+            dictation_commands.clone(),
+        );
+        let (mobile_enabled, mobile_port) = shared_config
+            .lock()
+            .map(|config| (config.mobile_enabled, config.mobile_port))
+            .unwrap_or((true, 8787));
+        crate::core::mobile::spawn_mobile_server(
+            db.clone(),
+            dictation_commands.clone(),
+            session_manager.clone(),
+            Some(app.handle().clone()),
+            mobile_enabled,
+            mobile_port,
         );
 
         app.manage(AppState {
@@ -122,8 +136,18 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             ocr_processor,
             multimodal_service: Some(multimodal_service),
             desktop_capture_runtime: Arc::new(RwLock::new(DesktopCaptureRuntime::default())),
+            dictation_commands,
         });
     });
+
+    // Menu-bar app: no Dock icon. LSUIElement in tauri.conf.json covers
+    // the bundled .app; the runtime policy covers dev / fallback paths.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+    }
+
+    super::tray::build_tray(app)?;
 
     Ok(())
 }

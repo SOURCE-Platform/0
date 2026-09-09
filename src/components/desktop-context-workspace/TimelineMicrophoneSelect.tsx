@@ -26,6 +26,7 @@ export function TimelineMicrophoneSelect({
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const switchingRef = useRef(false);
+  const lastLoadErrorRef = useRef<string | null>(null);
 
   async function refreshSources(allowFallback = false) {
     setLoading(true);
@@ -45,6 +46,7 @@ export function TimelineMicrophoneSelect({
       const fallback =
         available.find((source) => source.isSystemDefault) ?? available[0];
       const resolved = selected ?? sameName ?? active ?? fallback;
+      lastLoadErrorRef.current = null;
       setSelectedId(resolved?.sourceId);
       setSelectedName(resolved?.name);
 
@@ -60,10 +62,13 @@ export function TimelineMicrophoneSelect({
         );
       }
     } catch (error) {
-      showSettingsToast({
-        type: "error",
-        text: `Could not load microphone inputs: ${error}`,
-      });
+      // The source list polls every few seconds; only toast when the
+      // failure message changes so a persistent error doesn't flicker.
+      const text = `Could not load microphone inputs: ${error}`;
+      if (lastLoadErrorRef.current !== text) {
+        lastLoadErrorRef.current = text;
+        showSettingsToast({ type: "error", text });
+      }
     } finally {
       setLoading(false);
     }

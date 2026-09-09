@@ -9,12 +9,14 @@ use crate::core::multimodal::{
 use crate::core::session_manager::SessionManager;
 use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
+use tokio::sync::mpsc;
 
 pub fn initialize_dictation_supervisor(
     config: Arc<Mutex<Config>>,
     db: Arc<Database>,
     session_manager: Option<Arc<SessionManager>>,
     app_handle: tauri::AppHandle,
+    commands_holder: Arc<tokio::sync::Mutex<Option<mpsc::Sender<SupervisorCommand>>>>,
 ) {
     tauri::async_runtime::spawn(async move {
         loop {
@@ -40,6 +42,7 @@ pub fn initialize_dictation_supervisor(
             match supervisor.run().await {
                 Ok((mut actions, _events, commands)) => {
                     println!("Dictation helper is ready");
+                    *commands_holder.lock().await = Some(commands.clone());
                     while let Some(action) = actions.recv().await {
                         log_dictation_action(&action);
                         // Timeline first, typing second: a typing failure

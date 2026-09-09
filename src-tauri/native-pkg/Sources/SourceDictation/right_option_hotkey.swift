@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
 
+@preconcurrency import ApplicationServices
+
 /// Modifier-only Right Option toggle via a CGEvent tap.
 /// keyCode 61 == Right Option. Fires on release after a clean press.
 final class RightOptionHotkey {
@@ -11,6 +13,7 @@ final class RightOptionHotkey {
     private var interrupted = false
     private var retryTimer: Timer?
     private var reportedUnavailable = false
+    private var promptedForAccess = false
 
     init(onToggle: @escaping () -> Void) {
         self.onToggle = onToggle
@@ -39,6 +42,9 @@ final class RightOptionHotkey {
             | (1 << CGEventType.tapDisabledByUserInput.rawValue)
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
+            // Use the Accessibility-authorized event-tap path. A listen-only
+            // tap can be governed by the separate Input Monitoring service,
+            // leaving Accessibility enabled while the tap stays disabled.
             place: .headInsertEventTap,
             options: .defaultTap,
             eventsOfInterest: CGEventMask(mask),
@@ -52,6 +58,7 @@ final class RightOptionHotkey {
         ) else {
             if !reportedUnavailable {
                 reportedUnavailable = true
+                promptForAccessibility()
                 writeDictationLine(
                     "ERROR {\"message\":\"event tap unavailable; grant Accessibility permission\", \"trusted\":\(AXIsProcessTrusted())}"
                 )
@@ -65,7 +72,29 @@ final class RightOptionHotkey {
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
         }
         CGEvent.tapEnable(tap: tap, enable: true)
-        writeDictationLine("DEBUG tap installed")
+        let trusted = AXIsProcessTrusted()
+        writeDictationLine(
+            "DEBUG tap installed trusted=\(trusted) enabled=\(CGEvent.tapIsEnabled(tap: tap))"
+        )
+        // A tap can be created yet born disabled when the current binary
+        // is untrusted (ad-hoc signatures change every build, so a prior
+        // approval may not cover this binary). Guide approval once; the
+        // retry timer re-enables the tap after access is granted.
+        if !trusted && !promptedForAccess {
+            promptedForAccess = true
+            promptForAccessibility()
+        }
+    }
+
+    /// Brings up the system Accessibility approval dialog once so the
+    /// fresh binary gets trusted (ad-hoc signatures change every build,
+    /// so a prior approval may not cover this binary). If the user
+    /// enables access, the retry timer installs the tap within seconds.
+    private func promptForAccessibility() {
+        let options = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true
+        ] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
     }
 
     private func handle(event: CGEvent) {

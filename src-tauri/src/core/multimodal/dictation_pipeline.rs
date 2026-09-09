@@ -1,4 +1,5 @@
 use super::dictation_helper::{DictationEvent, DictationTranscript};
+use super::dictation_store::DICTATION_SOURCE_ID;
 use super::foreground_coordinator::ForegroundCoordinator;
 use super::speech_provider::{apply_dictionary_entries, DictionaryEntry};
 use std::collections::HashSet;
@@ -98,7 +99,14 @@ impl DictationPipeline {
                 id: transcript.id.clone(),
             };
         }
-        self.pending_insertion = Some(transcript.id.clone());
+        // Only Right Option dictation types into the focused field.
+        // Remote sources (e.g. Source Mobile) persist to the timeline
+        // but must never drive insertion.
+        if transcript.source == DICTATION_SOURCE_ID {
+            self.pending_insertion = Some(transcript.id.clone());
+        } else {
+            self.pending_insertion = None;
+        }
         // Persist first; the caller issues insertion next so a typing
         // failure never loses the captured audio/text.
         PipelineAction::PersistForeground {
@@ -213,5 +221,17 @@ mod tests {
             PipelineAction::DuplicateIgnored { .. } => {}
             other => panic!("unexpected: {other:?}"),
         }
+    }
+
+    #[test]
+    fn remote_source_persists_without_insertion() {
+        let mut pipeline = DictationPipeline::new();
+        let mut remote = transcript("mobile-1", "hello from phone");
+        remote.source = "source-mobile".to_string();
+        match pipeline.on_event(&DictationEvent::Transcript(remote), &[], 1) {
+            PipelineAction::PersistForeground { id, .. } => assert_eq!(id, "mobile-1"),
+            other => panic!("unexpected: {other:?}"),
+        }
+        assert!(pipeline.take_pending_insertion("hello from phone").is_none());
     }
 }

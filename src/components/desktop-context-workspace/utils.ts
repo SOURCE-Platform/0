@@ -70,6 +70,24 @@ export function getSnappedTicks(windowStart: number, windowEnd: number, tickMs: 
   return ticks;
 }
 
+/// Fraction of the visible window kept clear of round-tick labels at
+/// each edge. The ruler pins the live window start/end at the edges;
+/// a snapped tick sliding within this band loses its label (its
+/// gridline stays) so labels never stack on each other while dragging.
+export const RULER_EDGE_PAD_FRACTION = 0.045;
+
+export function getLabeledTicks(windowStart: number, windowEnd: number, tickMs: number): number[] {
+  const range = Math.max(1, windowEnd - windowStart);
+  const pad = range * RULER_EDGE_PAD_FRACTION;
+  return getSnappedTicks(windowStart, windowEnd, tickMs).filter(
+    (timestamp) =>
+      timestamp !== windowStart &&
+      timestamp !== windowEnd &&
+      timestamp - windowStart >= pad &&
+      windowEnd - timestamp >= pad,
+  );
+}
+
 export function railTone(railId: string, interactionState?: string | null) {
   if (railId === "system") return "bg-slate-500/85";
   if (railId === "focus") return "bg-blue-500/85";
@@ -78,6 +96,7 @@ export function railTone(railId: string, interactionState?: string | null) {
   if (railId === "attention") return "bg-indigo-500/85";
   if (railId === "vision") return "bg-rose-500/85";
   if (railId === "audio_dictation") return "bg-violet-500/85";
+  if (railId === "audio_mobile") return "bg-sky-500/85";
   if (railId === "audio" || railId === "audio_speech" || railId === "audio_ambient_speech") {
     return "bg-emerald-500/85";
   }

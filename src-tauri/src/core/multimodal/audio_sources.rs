@@ -4,7 +4,7 @@ use serde_json::Value;
 use tokio::process::Command;
 
 pub(crate) async fn list_avfoundation_sources() -> Result<AvFoundationSources, String> {
-    let output = Command::new("ffmpeg")
+    let output = Command::new(crate::core::ffmpeg_bin::ffmpeg_program())
         .args([
             "-hide_banner",
             "-f",

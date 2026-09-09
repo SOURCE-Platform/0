@@ -194,6 +194,13 @@ async fn collect_audio_detail_payloads(
             label: "ASR segment".to_string(),
             raw_json: pretty_json(serde_json::to_value(segment)?),
         });
+        if segment.source_id == MOBILE_SOURCE_ID {
+            if let Ok(Some(audio_path)) =
+                multimodal::mobile_clip_audio_path(db, &segment.asr_segment_id).await
+            {
+                state.linked_file_paths.push(audio_path);
+            }
+        }
     } else if let Some(segment) = speech_emotion_segments
         .iter()
         .find(|item| item.speech_emotion_segment_id == slice_id)

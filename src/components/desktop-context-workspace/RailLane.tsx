@@ -237,6 +237,7 @@ function getSliceLayout(rail: TimelineRail, slice: ContextSlice) {
 function getAudioSourceLabel(slice: ContextSlice): string | null {
   if (!slice.tags.includes("audio")) return null;
   if (slice.tags.includes("dictation")) return "Right Option";
+  if (slice.tags.includes("mobile") || slice.source === "source-mobile") return "Mobile";
   if (slice.source.startsWith("desktop_output:")) return "Desktop";
   if (slice.source.startsWith("microphone:")) return "Mic";
   return "Audio";

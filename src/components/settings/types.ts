@@ -46,6 +46,9 @@ export interface Config {
   custom_dictionary: DictionaryEntry[];
   capture_channels: CaptureChannels;
   resource_profile: "minimal" | "balanced" | "high_fidelity";
+  mobile_enabled: boolean;
+  mobile_port: number;
+  mobile_clip_retention_days: number;
   pii_settings: {
     detect_only: boolean;
     enabled: boolean;
@@ -114,4 +117,4 @@ export interface AudioSourceMeters {
   desktop: AudioMeterReading;
 }
 
-export type SettingsTab = "general" | "capture" | "privacy" | "storage" | "hardware" | "dictation";
+export type SettingsTab = "general" | "capture" | "privacy" | "storage" | "hardware" | "dictation" | "mobile";

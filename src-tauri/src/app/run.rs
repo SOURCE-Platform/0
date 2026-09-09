@@ -1,16 +1,13 @@
 use crate::app::commands::*;
 use crate::app::setup::setup_app;
+use crate::app::tray;
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
+            tray::show_main_window(app);
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -111,8 +108,28 @@ pub fn run() {
             seek_to_timestamp,
             get_frame_at_timestamp,
             get_recordings,
-            delete_recording
+            delete_recording,
+            mobile_pairing_qr,
+            mobile_clear_pairing_qr,
+            mobile_pending_pair_requests,
+            mobile_approve_pair,
+            mobile_deny_pair,
+            mobile_tls_fingerprint,
+            mobile_server_port,
+            mobile_list_devices,
+            mobile_unpair_device,
+            debug_mobile_transcribe
         ])
+        .on_window_event(|window, event| {
+            // Standard tray behavior: closing the window hides it to the
+            // menu bar instead of quitting. Tray -> Quit is the real exit.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    tray::hide_main_window(&window.app_handle().clone());
+                }
+            }
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

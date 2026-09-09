@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "SOURCE",
@@ -33,6 +34,10 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "signingIdentity": "Apple Development",
+      "hardenedRuntime": false
+    },
     "resources": {
       "native-pkg/.build/release/SourceDictation": "helpers/source-dictation"
     },

@@ -21,6 +21,16 @@ pub struct DictationTranscript {
     pub is_final: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscribeFileRequest {
+    pub id: String,
+    pub path: String,
+    pub source: String,
+    pub started_at_ms: i64,
+    pub ended_at_ms: i64,
+}
+
 #[derive(Debug, Clone)]
 pub enum DictationEvent {
     Ready,
@@ -41,9 +51,11 @@ pub struct DictationHelper {
 }
 
 impl DictationHelper {
-    /// Dev builds: absolute OUT_DIR path baked in at compile time.
     /// Packaged app: `Contents/Resources/helpers/source-dictation`
     /// next to the bundle (resolved from the running executable).
+    /// The bundled copy wins over the baked dev path so the running
+    /// identity is stable: macOS TCC approvals (Microphone,
+    /// Accessibility) are granted per binary location.
     pub fn helper_path() -> Option<PathBuf> {
         // Local override for live testing (e.g. point dev at the full
         // SwiftPM engine build instead of the swiftc stub).
@@ -53,12 +65,15 @@ impl DictationHelper {
                 return Some(path);
             }
         }
+        if let Some(path) = bundled_helper_path() {
+            return Some(path);
+        }
         if let Some(path) = option_env!("SOURCE_DICTATION_HELPER").map(PathBuf::from) {
             if path.exists() {
                 return Some(path);
             }
         }
-        bundled_helper_path()
+        None
     }
 
     pub fn available() -> bool {
@@ -96,11 +111,13 @@ impl DictationHelper {
             .ok_or("Dictation helper has no stdout.")?;
         let (events, receiver) = broadcast::channel(64);
         let reader_events = events.clone();
+        let protocol_log = open_protocol_log();
         tokio::spawn(async move {
             let mut lines = BufReader::new(stdout).lines();
             loop {
                 match lines.next_line().await {
                     Ok(Some(line)) => {
+                        append_protocol_line(&protocol_log, &line);
                         let event = parse_helper_line(&line);
                         let _ = reader_events.send(event.clone());
                         if matches!(event, DictationEvent::Exited) {
@@ -142,6 +159,16 @@ impl DictationHelper {
         self.send_line(format!("INSERT {payload}")).await
     }
 
+    /// Ask the helper to transcribe an audio file on disk (e.g. a mobile
+    /// clip spooled by the Source Mobile transport). The Swift side accepts
+    /// either a bare path (legacy, keeps the verified path unchanged) or a
+    /// JSON payload carrying id/source/timestamps.
+    pub async fn transcribe_file(&mut self, req: TranscribeFileRequest) -> Result<(), String> {
+        let payload = serde_json::to_string(&req)
+            .map_err(|error| format!("Failed to encode transcribe request: {error}"))?;
+        self.send_line(format!("TRANSCRIBE_FILE {payload}")).await
+    }
+
     pub async fn shutdown(&mut self) -> Result<(), String> {
         let _ = self.send_line("SHUTDOWN".to_string()).await;
         self.child
@@ -170,6 +197,35 @@ fn bundled_helper_path() -> Option<PathBuf> {
     let resources = exe.parent()?.join("../Resources").canonicalize().ok()?;
     let candidate = resources.join("helpers").join("source-dictation");
     candidate.exists().then_some(candidate)
+}
+
+/// Mirror of the helper line protocol at
+/// `~/.observer_data/helpers/dictation-helper.log` (truncated past
+/// 512 KiB). The bundled app's stderr is otherwise invisible, which
+/// makes hotkey/transcription failures undiagnosable in the field.
+fn open_protocol_log() -> Option<PathBuf> {
+    let home = std::env::var("HOME").ok()?;
+    let dir = PathBuf::from(home).join(".observer_data").join("helpers");
+    let _ = std::fs::create_dir_all(&dir);
+    let path = dir.join("dictation-helper.log");
+    if let Ok(metadata) = std::fs::metadata(&path) {
+        if metadata.len() > 512 * 1024 {
+            let _ = std::fs::write(&path, "");
+        }
+    }
+    Some(path)
+}
+
+fn append_protocol_line(path: &Option<PathBuf>, line: &str) {
+    let Some(path) = path else { return };
+    use std::io::Write;
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(file, "{line}");
+    }
 }
 
 fn parse_helper_line(line: &str) -> DictationEvent {

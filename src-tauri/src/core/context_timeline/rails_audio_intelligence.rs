@@ -13,8 +13,9 @@ fn build_audio_rails(
     let _emotion_detail_rails = build_audio_emotion_detail_rails(speech_emotion_segments);
     let sound_events_rail =
         build_audio_sound_events_rail(sound_event_spans, sound_event_detections);
+    let mobile_rail = build_mobile_rail(asr_segments);
 
-    vec![dictation_rail, ambient_audio_rail, sound_events_rail]
+    vec![dictation_rail, ambient_audio_rail, sound_events_rail, mobile_rail]
 }
 
 fn dictation_slice(segment: &AsrSegmentDto) -> ContextSlice {
@@ -277,6 +278,7 @@ mod audio_transcript_rail_tests {
         let segments = vec![
             segment("dictated", DICTATION_SOURCE_ID),
             segment("ambient", "microphone:0"),
+            segment("mobile", MOBILE_SOURCE_ID),
         ];
         let chunks = vec![AmbientCaptureChunk {
             session_id: "session".to_string(),
@@ -288,11 +290,13 @@ mod audio_transcript_rail_tests {
         let dictation = &rails[0];
         let ambient = &rails[1];
 
-        assert_eq!(rails.len(), 3);
+        assert_eq!(rails.len(), 4);
         assert_eq!(dictation.id, "audio_dictation");
         assert_eq!(ambient.id, "audio_ambient_speech");
         assert_eq!(rails[2].id, "audio_sound_events");
+        assert_eq!(rails[3].id, "audio_mobile");
         assert_eq!(dictation.slices[0].id, "dictated");
+        assert_eq!(rails[3].slices[0].id, "mobile");
         assert!(ambient.slices[0].id.starts_with("ambient-capture-session-"));
         assert!(dictation.waveform.is_none());
         assert!(ambient.waveform.is_none());

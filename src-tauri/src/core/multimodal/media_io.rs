@@ -55,7 +55,7 @@ pub(super) async fn capture_camera_frame(
     output_path: &Path,
 ) -> Result<(), String> {
     let input = format!("{video_index}:none");
-    let status = Command::new("ffmpeg")
+    let status = Command::new(crate::core::ffmpeg_bin::ffmpeg_program())
         .args([
             "-hide_banner",
             "-loglevel",

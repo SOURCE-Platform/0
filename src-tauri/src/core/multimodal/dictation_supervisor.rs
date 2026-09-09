@@ -14,11 +14,18 @@ pub struct DictationSupervisor {
 }
 
 /// Commands into the running helper. Wired in Phase C (live loop).
-#[allow(dead_code)]
+#[derive(Debug, Clone)]
 pub enum SupervisorCommand {
     StartSession(String),
     StopSession,
     Insert(String, String),
+    TranscribeFile {
+        id: String,
+        path: String,
+        source: String,
+        started_at_ms: i64,
+        ended_at_ms: i64,
+    },
     Shutdown,
 }
 
@@ -137,6 +144,27 @@ impl DictationSupervisor {
             SupervisorCommand::StartSession(id) => helper.start_session(&id).await,
             SupervisorCommand::StopSession => helper.stop_session().await,
             SupervisorCommand::Insert(id, text) => helper.request_insertion(&id, &text).await,
+            SupervisorCommand::TranscribeFile {
+                id,
+                path,
+                source,
+                started_at_ms,
+                ended_at_ms,
+            } => {
+                // Right Option wins: drain any foreground session before
+                // dispatching mobile work behind it.
+                crate::core::multimodal::foreground_coordinator::wait_for_background_transcription()
+                    .await;
+                helper
+                    .transcribe_file(crate::core::multimodal::dictation_helper::TranscribeFileRequest {
+                        id,
+                        path,
+                        source,
+                        started_at_ms,
+                        ended_at_ms,
+                    })
+                    .await
+            }
             SupervisorCommand::Shutdown => return false,
         };
         if let Err(error) = result {

@@ -42,7 +42,7 @@ pub(crate) async fn capture_face_features_from_camera(
 
 async fn capture_camera_frame(video_index: i32, output_path: &Path) -> Result<(), String> {
     let input = format!("{video_index}:none");
-    let status = Command::new("ffmpeg")
+    let status = Command::new(crate::core::ffmpeg_bin::ffmpeg_program())
         .args([
             "-hide_banner",
             "-loglevel",

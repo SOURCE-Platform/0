@@ -37,3 +37,15 @@ pub(crate) fn default_pii_categories() -> Vec<String> {
 pub(crate) fn default_pii_review_threshold() -> f32 {
     0.6
 }
+
+pub(crate) fn default_mobile_enabled() -> bool {
+    true
+}
+
+pub(crate) fn default_mobile_port() -> u16 {
+    8787
+}
+
+pub(crate) fn default_mobile_clip_retention_days() -> u32 {
+    90
+}
