@@ -1,13 +1,13 @@
-use super::ingest::{append_stream_pcm, finish_stream_clip, ingest_clip_file};
+use super::ingest::{append_stream_pcm, finish_stream_clip};
 use super::enrollment::Enrollment;
 use super::pair_requests::PairRequests;
 use super::pairing::PairingManager;
 use super::tls::ensure_mobile_cert;
-use super::types::{AuthDevice, ClipUploadMeta, HealthResponse};
+use super::types::{AuthDevice, HealthResponse};
 use crate::core::database::Database;
 use crate::core::multimodal::SupervisorCommand;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
-use axum::extract::{Multipart, Query, State};
+use axum::extract::{DefaultBodyLimit, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Json;
 use axum::routing::{get, post};
@@ -72,7 +72,11 @@ pub async fn serve_mobile(
         .route("/v1/health", get(health))
         .route("/v1/pair/start", post(super::routes_pair::pair_start))
         .route("/v1/pair/poll", get(super::routes_pair::pair_poll))
-        .route("/v1/clips", post(upload_clip))
+        .route(
+            "/v1/clips",
+            post(super::routes_clips::upload_clip)
+                .layer(DefaultBodyLimit::max(super::routes_clips::MAX_CLIP_BYTES)),
+        )
         .route("/v1/stream", get(stream_ws))
         .with_state(state.clone());
 
@@ -133,7 +137,7 @@ async fn health(State(state): State<MobileState>) -> Json<HealthResponse> {
     })
 }
 
-async fn bearer_device(
+pub(super) async fn bearer_device(
     state: &MobileState,
     headers: &HeaderMap,
     query: &HashMap<String, String>,
@@ -151,59 +155,6 @@ async fn bearer_device(
         }
     }
     None
-}
-
-async fn upload_clip(
-    State(state): State<MobileState>,
-    headers: HeaderMap,
-    Query(query): Query<HashMap<String, String>>,
-    mut multipart: Multipart,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let Some(device) = bearer_device(&state, &headers, &query).await else {
-        return Err((StatusCode::UNAUTHORIZED, "Unauthorized.".to_string()));
-    };
-    state.pairing.touch(&device.device_id).await;
-    let mut meta: Option<ClipUploadMeta> = None;
-    let mut audio: Option<Vec<u8>> = None;
-    while let Ok(Some(field)) = multipart.next_field().await {
-        let name = field.name().unwrap_or("").to_string();
-        match name.as_str() {
-            "meta" => {
-                if let Ok(text) = field.text().await {
-                    meta = serde_json::from_str(&text).ok();
-                }
-            }
-            "file" | "audio" => {
-                if let Ok(bytes) = field.bytes().await {
-                    audio = Some(bytes.to_vec());
-                }
-            }
-            _ => {}
-        }
-    }
-    let (Some(meta), Some(audio)) = (meta, audio) else {
-        return Err((StatusCode::BAD_REQUEST, "Missing meta or file.".to_string()));
-    };
-    if meta.clip_id.len() > 128 {
-        return Err((StatusCode::BAD_REQUEST, "clipId too long.".to_string()));
-    }
-    let session_id = current_session_id(&state).await;
-    let commands = state.commands.lock().await.clone();
-    match ingest_clip_file(
-        &state.db,
-        &commands,
-        &session_id,
-        &device,
-        &meta.clip_id,
-        meta.started_at_ms,
-        meta.ended_at_ms,
-        &audio,
-    )
-    .await
-    {
-        Ok(_) => Ok(StatusCode::CREATED),
-        Err(error) => Err((StatusCode::UNPROCESSABLE_ENTITY, error)),
-    }
 }
 
 async fn stream_ws(
@@ -300,7 +251,7 @@ async fn handle_stream(mut socket: WebSocket, state: MobileState, device: AuthDe
     emit_status(&state, false);
 }
 
-async fn current_session_id(state: &MobileState) -> String {
+pub(super) async fn current_session_id(state: &MobileState) -> String {
     if let Some(manager) = &state.session {
         if let Ok(Some(session)) = manager.get_current_session().await {
             return session.id;

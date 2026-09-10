@@ -4,6 +4,7 @@ mod ingest;
 mod pair_requests;
 mod pairing;
 mod qr;
+mod routes_clips;
 mod routes_pair;
 mod server;
 mod tls;

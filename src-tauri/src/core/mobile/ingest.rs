@@ -4,13 +4,16 @@ use crate::core::multimodal::{
     mark_mobile_clip_delivered, persist_mobile_transcript, track_mobile_clip, SupervisorCommand,
     MOBILE_SOURCE_ID,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
-/// Spool an uploaded WAV to disk, track it, and dispatch transcription.
-/// `clip_id` doubles as `asr_segment_id` so retries replace, not duplicate.
-pub async fn ingest_clip_file(
+/// Take an upload already streamed to `spooled`, move it into place, track it,
+/// and dispatch transcription.
+///
+/// `clip_id` doubles as `asr_segment_id`, so a retried upload replaces its row
+/// rather than duplicating it.
+pub async fn ingest_clip_spooled(
     db: &Arc<Database>,
     commands: &Option<mpsc::Sender<SupervisorCommand>>,
     session_id: &str,
@@ -18,16 +21,26 @@ pub async fn ingest_clip_file(
     clip_id: &str,
     started_at_ms: i64,
     ended_at_ms: i64,
-    bytes: &[u8],
+    spooled: &Path,
+    bytes_len: u64,
 ) -> Result<PathBuf, String> {
-    validate_wav(bytes)?;
+    validate_wav(&read_header(spooled)?)?;
     let audio_path = mobile_clip_path(clip_id)?;
+
+    // The phone re-sends anything it never saw acknowledged. If this clip is
+    // already transcribed, accept it without redoing the work: a long
+    // recording would otherwise re-run through Parakeet on every retry.
+    if already_transcribed(db, clip_id).await {
+        discard_spool(spooled);
+        return Ok(audio_path);
+    }
+
     if let Some(parent) = audio_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Failed to create mobile spool dir: {error}"))?;
     }
-    std::fs::write(&audio_path, bytes)
-        .map_err(|error| format!("Failed to spool mobile clip: {error}"))?;
+    std::fs::rename(spooled, &audio_path)
+        .map_err(|error| format!("Failed to move mobile clip into place: {error}"))?;
     let path_str = audio_path.to_string_lossy().to_string();
     track_mobile_clip(
         db,
@@ -36,18 +49,11 @@ pub async fn ingest_clip_file(
         started_at_ms,
         ended_at_ms,
         &path_str,
-        bytes.len() as i64,
+        bytes_len as i64,
     )
     .await?;
-    dispatch_transcribe(
-        commands,
-        clip_id,
-        &path_str,
-        started_at_ms,
-        ended_at_ms,
-    )
-    .await;
-    // Optimistic partial row so the lane shows a live block immediately.
+    // Placeholder before transcription, not after. In the other order a short
+    // clip's transcript can land first and the placeholder then blanks it.
     let _ = persist_mobile_transcript(
         db,
         session_id,
@@ -61,6 +67,7 @@ pub async fn ingest_clip_file(
         false,
     )
     .await;
+    dispatch_transcribe(commands, clip_id, &path_str, started_at_ms, ended_at_ms).await;
     Ok(audio_path)
 }
 
@@ -158,6 +165,34 @@ pub fn mobile_clip_path(clip_id: &str) -> Result<PathBuf, String> {
         .get_data_directory()
         .map_err(|_| "No data directory.".to_string())?;
     Ok(base.join("recordings").join("mobile").join(format!("{safe}.wav")))
+}
+
+/// Remove a spool file. A missing file is fine: it may already be moved.
+pub fn discard_spool(path: &Path) {
+    let _ = std::fs::remove_file(path);
+}
+
+fn read_header(path: &Path) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let file = std::fs::File::open(path)
+        .map_err(|error| format!("Failed to read uploaded clip: {error}"))?;
+    let mut header = Vec::with_capacity(44);
+    file.take(44)
+        .read_to_end(&mut header)
+        .map_err(|error| format!("Failed to read uploaded clip: {error}"))?;
+    Ok(header)
+}
+
+async fn already_transcribed(db: &Arc<Database>, clip_id: &str) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM asr_segments
+         WHERE asr_segment_id = ? AND is_final = 1 AND length(trim(transcript)) > 0",
+    )
+    .bind(clip_id)
+    .fetch_one(db.pool())
+    .await
+    .map(|count| count > 0)
+    .unwrap_or(false)
 }
 
 fn validate_wav(bytes: &[u8]) -> Result<(), String> {
