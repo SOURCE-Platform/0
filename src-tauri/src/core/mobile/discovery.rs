@@ -12,6 +12,11 @@ impl MobileAdvertiser {
     pub fn new() -> Result<Self, String> {
         let daemon =
             ServiceDaemon::new().map_err(|error| format!("Failed to start mDNS: {error}"))?;
+        // The daemon rescans every network interface every 5 s by default to
+        // notice IP changes. With a phone plugged in there are ~20 interfaces,
+        // and that scan showed up in Source's CPU profile. Checking once a
+        // minute is plenty for noticing the Mac has moved networks.
+        let _ = daemon.set_ip_check_interval(60);
         Ok(Self {
             daemon,
             service_fullname: None,

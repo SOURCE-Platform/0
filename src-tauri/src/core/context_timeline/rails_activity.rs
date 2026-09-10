@@ -5,6 +5,7 @@ fn build_focus_rail(
 ) -> TimelineRailDto {
     let mut slices = Vec::new();
     let mut current: Option<ContextSlice> = None;
+    let mut current_last: Option<&WindowSnapshotRow> = None;
     let session_ends = session_end_lookup(sessions);
 
     for (index, snapshot) in snapshots.iter().enumerate() {
@@ -17,14 +18,15 @@ fn build_focus_rail(
         match current.as_mut() {
             Some(active) if active.app_name.as_ref() == Some(&app_name) => {
                 active.end_timestamp = span_end;
-                active.visible_windows = parse_visible_windows(snapshot).unwrap_or_default();
                 active.storage_bytes += window_snapshot_storage_bytes(snapshot);
                 active.row_count += 1;
+                current_last = Some(snapshot);
             }
             _ => {
                 if let Some(previous) = current.take() {
-                    slices.push(previous);
+                    slices.push(with_last_visible_windows(previous, current_last));
                 }
+                current_last = Some(snapshot);
                 current = Some(ContextSlice {
                     id: format!("focus-{}", snapshot.id),
                     rail: "focus".to_string(),
@@ -45,7 +47,7 @@ fn build_focus_rail(
                     window_title: None,
                     interaction_state: None,
                     reasons: vec!["Derived from periodic frontmost-app snapshots.".to_string()],
-                    visible_windows: parse_visible_windows(snapshot).unwrap_or_default(),
+                    visible_windows: Vec::new(),
                     ocr_preview: None,
                     pii_count: 0,
                     evidence_frame_path: None,
@@ -61,7 +63,7 @@ fn build_focus_rail(
     }
 
     if let Some(active) = current {
-        slices.push(active);
+        slices.push(with_last_visible_windows(active, current_last));
     }
 
     TimelineRailDto::lane(
@@ -71,6 +73,19 @@ fn build_focus_rail(
         "Focus is based on OS snapshots taken during active capture. Historical gaps are left visible instead of backfilled.",
         slices,
     )
+}
+
+/// A focus span shows the windows from its most recent snapshot, so parse that
+/// one only. Parsing every snapshot to overwrite the same field re-read the whole
+/// day's window lists on every timeline refresh.
+fn with_last_visible_windows(
+    mut slice: ContextSlice,
+    last: Option<&WindowSnapshotRow>,
+) -> ContextSlice {
+    if let Some(snapshot) = last {
+        slice.visible_windows = parse_visible_windows(snapshot).unwrap_or_default();
+    }
+    slice
 }
 
 fn build_visible_windows_rail(

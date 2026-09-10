@@ -12,6 +12,9 @@ import {
   PiiEntity,
   TimelineRail,
 } from "@/types/contextTimeline";
+
+/** Whole-day aggregates refresh at most this often while polling. */
+const SLOW_REFRESH_MS = 30_000;
 import { useTimelineInteraction } from "@/components/desktop-context-workspace/useTimelineInteraction";
 import {
   immediateSliceDetail,
@@ -49,6 +52,11 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   const [windowEndTimestamp, setWindowEndTimestamp] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const dateRangeRef = useRef<{ start: number; end: number }>({ start: dayStart, end: Date.now() });
+  // One refresh at a time. The poll fires every 2 s; when a round took longer
+  // than that, rounds overlapped until every database connection was taken and
+  // requests failed with "pool timed out while waiting for an open connection".
+  const loadInFlightRef = useRef(false);
+  const slowRefreshAtRef = useRef(0);
 
   const isToday = useMemo(() => startOfDay(new Date()).getTime() === dayStart, [dayStart]);
   const dateRange = useMemo(
@@ -89,28 +97,38 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   }, [timeline, appUsage]);
 
   async function loadWorkspace(silent = false) {
+    if (silent && loadInFlightRef.current) return;
+    loadInFlightRef.current = true;
     if (!silent) setLoading(true);
     const currentRange = dateRangeRef.current;
+    // Channel counts and app usage scan the whole day and barely change between
+    // polls, so they refresh on a slower cadence than the timeline itself.
+    const now = Date.now();
+    const refreshSlow = !silent || now - slowRefreshAtRef.current >= SLOW_REFRESH_MS;
     try {
-      const [captureStatus, channels, timelineData, appOverview] = await Promise.all([
+      const [captureStatus, timelineData, channels, appOverview] = await Promise.all([
         invoke<DesktopCaptureStatus>("get_desktop_capture_status"),
-        invoke<ChannelStatus[]>("get_channel_statuses"),
         invoke<ContextTimelineData>("get_context_timeline", {
           startTimestamp: currentRange.start,
           endTimestamp: currentRange.end,
         }),
-        invoke<AppUsageOverview>("get_app_usage_overview", {
-          startTimestamp: currentRange.start,
-          endTimestamp: currentRange.end,
-        }),
+        refreshSlow ? invoke<ChannelStatus[]>("get_channel_statuses") : Promise.resolve(null),
+        refreshSlow
+          ? invoke<AppUsageOverview>("get_app_usage_overview", {
+              startTimestamp: currentRange.start,
+              endTimestamp: currentRange.end,
+            })
+          : Promise.resolve(null),
       ]);
       setStatus(captureStatus);
-      setChannelStatuses(channels);
       setTimeline(timelineData);
-      setAppUsage(appOverview);
+      if (channels) setChannelStatuses(channels);
+      if (appOverview) setAppUsage(appOverview);
+      if (refreshSlow) slowRefreshAtRef.current = now;
     } catch (error) {
       setActionError(`Failed to load device context timeline: ${error}`);
     } finally {
+      loadInFlightRef.current = false;
       if (!silent) setLoading(false);
     }
   }

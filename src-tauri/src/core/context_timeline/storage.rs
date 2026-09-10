@@ -29,17 +29,40 @@ fn session_storage_bytes(row: &SessionRow) -> u64 {
     }))
 }
 
+/// Approximate JSON size of a window snapshot, without building it.
+///
+/// This used to serialize a full copy of the row, embedded window list and
+/// all, just to read back the byte count. It ran for every snapshot of the day
+/// on every two-second refresh and dominated Source's CPU. Summing the field
+/// lengths gives the same figure with no copying or escaping.
 fn window_snapshot_storage_bytes(row: &WindowSnapshotRow) -> u64 {
-    serialized_len(&serde_json::json!({
-        "id": row.id,
-        "session_id": row.session_id,
-        "timestamp": row.timestamp,
-        "frontmost_app_name": row.frontmost_app_name,
-        "frontmost_bundle_id": row.frontmost_bundle_id,
-        "visible_windows_json": row.visible_windows_json,
-        "confidence": row.confidence,
-        "source": row.source,
-    }))
+    // Eight quoted keys with colons, seven commas, and the braces.
+    const KEYS_AND_PUNCTUATION: u64 = 127;
+    // Timestamp digits plus a typical confidence such as `0.85`.
+    const NUMBERS: u64 = 17;
+    KEYS_AND_PUNCTUATION
+        + NUMBERS
+        + snapshot_json_str_len(&row.id)
+        + snapshot_json_opt_str_len(row.session_id.as_deref())
+        + snapshot_json_opt_str_len(row.frontmost_app_name.as_deref())
+        + snapshot_json_opt_str_len(row.frontmost_bundle_id.as_deref())
+        + snapshot_json_str_len(&row.visible_windows_json)
+        + snapshot_json_str_len(&row.source)
+}
+
+/// Length of `value` as a JSON string literal: quotes plus escaped contents.
+/// Control characters are counted as one extra byte, which slightly
+/// undercounts the rare `\u00XX` form; the figure is marked approximate.
+fn snapshot_json_str_len(value: &str) -> u64 {
+    let escapes = value
+        .bytes()
+        .filter(|&byte| byte == b'"' || byte == b'\\' || byte < 0x20)
+        .count();
+    (value.len() + escapes + 2) as u64
+}
+
+fn snapshot_json_opt_str_len(value: Option<&str>) -> u64 {
+    value.map(snapshot_json_str_len).unwrap_or(4)
 }
 
 fn keyboard_event_storage_bytes(row: &KeyboardEventSummaryRow) -> u64 {

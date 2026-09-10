@@ -45,3 +45,4 @@ include!("rails_audio_intelligence.rs");
 include!("rails_audio_mobile.rs");
 include!("rails_attention.rs");
 include!("fetch.rs");
+include!("snapshot_cost_tests.rs");
