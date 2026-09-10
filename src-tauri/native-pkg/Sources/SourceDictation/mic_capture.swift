@@ -5,11 +5,24 @@ import Foundation
 /// Records the default input at 16 kHz mono into per-session WAV files
 /// the transcription engine can read directly. Best-effort: emits ERROR
 /// lines instead of crashing when permission or devices fail.
-final class MicSessionRecorder {
+///
+/// Survives the input device being reconfigured mid-session. Another client
+/// opening or closing the same microphone — Source's own ambient capture does
+/// this every two seconds — makes AVAudioEngine stop delivering audio. Without
+/// reconnecting, everything after that point was silently lost.
+final class MicSessionRecorder: @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var sessionFile: AVAudioFile?
     private var converter: AVAudioConverter?
     private var sessionURL: URL?
+    private var configObserver: NSObjectProtocol?
+
+    /// Serialises engine start, stop, and reconnect, so a device change that
+    /// lands mid-teardown can't race a session ending.
+    private let lifecycleQueue = DispatchQueue(label: "source-dictation.mic-lifecycle")
+    /// Guards the converter and file: the realtime tap uses them while a
+    /// reconnect or a session end may be swapping them out.
+    private let ioLock = NSLock()
 
     var activeSessionPath: String? { sessionURL?.path }
 
@@ -47,42 +60,27 @@ final class MicSessionRecorder {
         guard let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false) else {
             return false
         }
+        let file: AVAudioFile
         do {
-            sessionFile = try AVAudioFile(forWriting: url, settings: format.settings)
+            file = try AVAudioFile(forWriting: url, settings: format.settings)
         } catch {
             writeDictationLine("ERROR {\"message\":\"mic file failed\"}")
             return false
         }
+        ioLock.lock()
+        sessionFile = file
+        ioLock.unlock()
         sessionURL = url
-
-        let audioEngine = AVAudioEngine()
-        let input = audioEngine.inputNode
-        guard input.inputFormat(forBus: 0).channelCount > 0 else {
-            writeDictationLine("ERROR {\"message\":\"no mic input\"}")
-            return false
-        }
-        converter = AVAudioConverter(from: input.outputFormat(forBus: 0), to: format)
-        input.installTap(onBus: 0, bufferSize: 4096, format: input.outputFormat(forBus: 0)) {
-            [weak self] buffer, _ in
-            self?.append(buffer: buffer, target: format)
-        }
-        do {
-            try audioEngine.start()
-        } catch {
-            writeDictationLine("ERROR {\"message\":\"mic start failed\"}")
-            return false
-        }
-        engine = audioEngine
-        return true
+        return lifecycleQueue.sync { startEngine(target: format) }
     }
 
     /// Stop recording; the finished WAV path stays available for transcription.
     func endSessionFile() {
-        engine?.inputNode.removeTap(onBus: 0)
-        engine?.stop()
-        engine = nil
+        lifecycleQueue.sync { teardownEngine(engine) }
+        ioLock.lock()
         sessionFile = nil
         converter = nil
+        ioLock.unlock()
     }
 
     func discardSession() {
@@ -91,6 +89,77 @@ final class MicSessionRecorder {
             try? FileManager.default.removeItem(at: url)
         }
         sessionURL = nil
+    }
+
+    /// Open the current default input and feed the session file.
+    /// Must run on `lifecycleQueue`.
+    private func startEngine(target: AVAudioFormat) -> Bool {
+        let audioEngine = AVAudioEngine()
+        let input = audioEngine.inputNode
+        let inputFormat = input.outputFormat(forBus: 0)
+        guard input.inputFormat(forBus: 0).channelCount > 0, inputFormat.sampleRate > 0 else {
+            writeDictationLine("ERROR {\"message\":\"no mic input\"}")
+            return false
+        }
+        guard let newConverter = AVAudioConverter(from: inputFormat, to: target) else {
+            writeDictationLine("ERROR {\"message\":\"mic format unsupported\"}")
+            return false
+        }
+        ioLock.lock()
+        converter = newConverter
+        ioLock.unlock()
+        input.installTap(onBus: 0, bufferSize: 4096, format: inputFormat) {
+            [weak self] buffer, _ in
+            self?.append(buffer: buffer, target: target)
+        }
+        configObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audioEngine,
+            queue: nil
+        ) { [weak self] _ in
+            self?.reconnectAfterConfigurationChange(target: target)
+        }
+        do {
+            try audioEngine.start()
+        } catch {
+            teardownEngine(audioEngine)
+            writeDictationLine("ERROR {\"message\":\"mic start failed\"}")
+            return false
+        }
+        engine = audioEngine
+        return true
+    }
+
+    /// Must run on `lifecycleQueue`.
+    private func teardownEngine(_ audioEngine: AVAudioEngine?) {
+        if let observer = configObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configObserver = nil
+        }
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine?.stop()
+        if engine === audioEngine {
+            engine = nil
+        }
+    }
+
+    /// The device was reconfigured and the engine has stopped. Rebuild it on
+    /// the new configuration and keep writing to the same session file.
+    private func reconnectAfterConfigurationChange(target: AVAudioFormat) {
+        lifecycleQueue.async { [weak self] in
+            guard let self else { return }
+            self.ioLock.lock()
+            let sessionActive = self.sessionFile != nil
+            self.ioLock.unlock()
+            // A change can land just after the session ended: nothing to resume.
+            guard sessionActive, let stale = self.engine else { return }
+            self.teardownEngine(stale)
+            if self.startEngine(target: target) {
+                writeDictationLine("DEBUG mic reconfigured mid-session; reconnected")
+            } else {
+                writeDictationLine("ERROR {\"message\":\"mic lost mid-session; keeping what was recorded\"}")
+            }
+        }
     }
 
     private func reportLevel(buffer: AVAudioPCMBuffer) {
@@ -165,6 +234,8 @@ final class MicSessionRecorder {
 
     private func append(buffer: AVAudioPCMBuffer, target: AVAudioFormat) {
         reportLevel(buffer: buffer)
+        ioLock.lock()
+        defer { ioLock.unlock() }
         guard let converter, let file = sessionFile else { return }
         let ratio = target.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
@@ -172,7 +243,15 @@ final class MicSessionRecorder {
             return
         }
         var error: NSError?
+        // Hand the buffer over exactly once. Returning it on every callback made
+        // the converter re-read it whenever it wanted more input, duplicating audio.
+        var supplied = false
         converter.convert(to: output, error: &error) { _, outStatus in
+            if supplied {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
             outStatus.pointee = .haveData
             return buffer
         }
