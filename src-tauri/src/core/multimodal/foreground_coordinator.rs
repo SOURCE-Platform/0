@@ -126,6 +126,15 @@ pub fn capture_timestamp_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Tests that flip the process-wide gate must take turns. The test runner uses
+/// parallel threads, and one test clearing the gate in the middle of another's
+/// assertion made that test fail at random.
+#[cfg(test)]
+pub(crate) fn lock_gate_for_test() -> std::sync::MutexGuard<'static, ()> {
+    static GATE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GATE_TEST_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +178,7 @@ mod tests {
     #[tokio::test]
     async fn background_gate_waits_for_foreground_release() {
         use tokio::time::{timeout, Duration};
+        let _gate = lock_gate_for_test();
 
         set_background_transcription_paused(true);
         let mut waiter = tokio::spawn(wait_for_background_transcription());
@@ -188,6 +198,7 @@ mod gate_tests {
 
     #[test]
     fn gate_read_reflects_pause_state() {
+        let _gate = lock_gate_for_test();
         set_background_transcription_paused(false);
         assert!(!is_background_transcription_paused());
         set_background_transcription_paused(true);
@@ -198,6 +209,7 @@ mod gate_tests {
 
     #[tokio::test]
     async fn gate_read_is_non_blocking_while_paused() {
+        let _gate = lock_gate_for_test();
         // Awaiting the gate here is what deadlocked the supervisor loop:
         // the read must return immediately even while dictation holds it.
         set_background_transcription_paused(true);
