@@ -77,6 +77,7 @@ pub async fn serve_mobile(
             post(super::routes_clips::upload_clip)
                 .layer(DefaultBodyLimit::max(super::routes_clips::MAX_CLIP_BYTES)),
         )
+        .route("/v1/clips/status", get(super::routes_clips::clip_status))
         .route("/v1/stream", get(stream_ws))
         .with_state(state.clone());
 

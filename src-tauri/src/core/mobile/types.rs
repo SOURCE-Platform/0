@@ -74,3 +74,20 @@ pub struct AuthDevice {
     pub device_id: String,
     pub device_name: String,
 }
+
+/// What the phone's Recordings list asks for each of its recordings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClipStatusResponse {
+    pub clips: Vec<ClipStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClipStatus {
+    pub clip_id: String,
+    /// Source has the audio.
+    pub received: bool,
+    /// Source has finished transcribing it.
+    pub transcribed: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
+}

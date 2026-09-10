@@ -1,9 +1,11 @@
 use super::ingest::{discard_spool, ingest_clip_spooled, mobile_clip_path};
 use super::server::{bearer_device, current_session_id, MobileState};
-use super::types::ClipUploadMeta;
+use super::types::{ClipStatus, ClipStatusResponse, ClipUploadMeta};
+use crate::core::multimodal::MOBILE_SOURCE_ID;
 use axum::extract::multipart::{Field, MultipartError};
 use axum::extract::{Multipart, Query, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::response::Json;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
@@ -15,6 +17,89 @@ use tokio::io::AsyncWriteExt;
 pub const MAX_CLIP_BYTES: usize = 1024 * 1024 * 1024;
 
 type Rejection = (StatusCode, String);
+
+/// Characters of transcript shown under a recording on the phone.
+const PREVIEW_CHARS: usize = 160;
+/// Most recordings a single status request may ask about.
+const MAX_STATUS_IDS: usize = 50;
+
+/// Tell the phone which of its recordings Source has, and which are transcribed.
+pub async fn clip_status(
+    State(state): State<MobileState>,
+    headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Json<ClipStatusResponse>, Rejection> {
+    let Some(device) = bearer_device(&state, &headers, &query).await else {
+        return Err((StatusCode::UNAUTHORIZED, "Unauthorized.".to_string()));
+    };
+    state.pairing.touch(&device.device_id).await;
+    let ids = parse_clip_ids(query.get("ids").map(String::as_str).unwrap_or(""));
+    let mut clips = Vec::with_capacity(ids.len());
+    for clip_id in ids {
+        clips.push(status_for(&state, &clip_id).await?);
+    }
+    Ok(Json(ClipStatusResponse { clips }))
+}
+
+async fn status_for(state: &MobileState, clip_id: &str) -> Result<ClipStatus, Rejection> {
+    let received = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM mobile_clips WHERE clip_id = ?")
+        .bind(clip_id)
+        .fetch_one(state.db.pool())
+        .await
+        .map_err(database_error)?
+        > 0;
+    let row: Option<(Option<String>, i64)> = sqlx::query_as(
+        "SELECT transcript, is_final FROM asr_segments WHERE asr_segment_id = ? AND source_id = ?",
+    )
+    .bind(clip_id)
+    .bind(MOBILE_SOURCE_ID)
+    .fetch_optional(state.db.pool())
+    .await
+    .map_err(database_error)?;
+    let finished = row
+        .and_then(|(text, is_final)| text.filter(|text| is_final == 1 && !text.trim().is_empty()));
+    Ok(ClipStatus {
+        clip_id: clip_id.to_string(),
+        received,
+        transcribed: finished.is_some(),
+        preview: finished.map(|text| preview_of(&text, PREVIEW_CHARS)),
+    })
+}
+
+/// Clip ids from `?ids=a,b,c`: trimmed, de-duplicated, capped in number, and
+/// limited to the characters clip ids are made of.
+fn parse_clip_ids(raw: &str) -> Vec<String> {
+    let mut ids: Vec<String> = Vec::new();
+    for id in raw.split(',').map(str::trim) {
+        let valid = !id.is_empty()
+            && id.len() <= 128
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+        if valid && !ids.iter().any(|seen| seen == id) {
+            ids.push(id.to_string());
+        }
+        if ids.len() == MAX_STATUS_IDS {
+            break;
+        }
+    }
+    ids
+}
+
+/// The first `limit` characters of a transcript, cut on a character boundary.
+/// Cutting by bytes would panic partway through a multi-byte character.
+fn preview_of(text: &str, limit: usize) -> String {
+    let trimmed = text.trim();
+    match trimmed.char_indices().nth(limit) {
+        Some((cut, _)) => format!("{}…", trimmed[..cut].trim_end()),
+        None => trimmed.to_string(),
+    }
+}
+
+fn database_error(error: sqlx::Error) -> Rejection {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("Couldn't read clip status: {error}"),
+    )
+}
 
 /// Accept a recorded clip from the phone.
 ///
@@ -149,4 +234,32 @@ fn disk_error(error: std::io::Error) -> Rejection {
         StatusCode::INTERNAL_SERVER_ERROR,
         format!("Couldn't write the clip to disk: {error}"),
     )
+}
+
+#[cfg(test)]
+mod clip_status_tests {
+    use super::*;
+
+    #[test]
+    fn clip_ids_are_trimmed_deduplicated_and_validated() {
+        assert_eq!(
+            parse_clip_ids(" a-1 ,b_2,a-1,,bad id,../etc,"),
+            vec!["a-1".to_string(), "b_2".to_string()]
+        );
+    }
+
+    #[test]
+    fn clip_id_list_is_capped() {
+        let raw = (0..80).map(|n| format!("clip-{n}")).collect::<Vec<_>>().join(",");
+        assert_eq!(parse_clip_ids(&raw).len(), MAX_STATUS_IDS);
+    }
+
+    #[test]
+    fn preview_cuts_on_a_character_boundary() {
+        let text = "é".repeat(200);
+        let preview = preview_of(&text, 160);
+        assert_eq!(preview.chars().count(), 161, "160 characters plus the ellipsis");
+        assert!(preview.ends_with('…'));
+        assert_eq!(preview_of("  short  ", 160), "short");
+    }
 }
