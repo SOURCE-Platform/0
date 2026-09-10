@@ -53,6 +53,10 @@ final class DictationRuntime: @unchecked Sendable {
         hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
         watchStdin()
+        // Load the speech model now rather than on the first Right Option press.
+        // Loading takes around 20 seconds, and that delay used to land on the
+        // first dictation after every Source launch.
+        engine.warmUp()
     }
 
     /// Stay out of the Dock while allowing AppKit to deliver mouse events
@@ -239,4 +243,11 @@ struct EngineTranscription {
 
 protocol TranscriptionEngine {
     func transcribe(audioPath: String, completion: @escaping @Sendable (EngineTranscription) -> Void)
+    /// Load the model ahead of the first request. Engines without a model to
+    /// load can rely on the default, which does nothing.
+    func warmUp()
+}
+
+extension TranscriptionEngine {
+    func warmUp() {}
 }

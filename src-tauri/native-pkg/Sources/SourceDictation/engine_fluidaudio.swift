@@ -37,6 +37,22 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
         }
     }
 
+    /// Load Parakeet in the background at startup. A dictation that arrives
+    /// while this is still running waits on the same load rather than
+    /// starting another one.
+    func warmUp() {
+        Task {
+            let started = Date()
+            do {
+                _ = try await setupManager()
+                let seconds = String(format: "%.1f", Date().timeIntervalSince(started))
+                writeDictationLine("DEBUG speech model ready in \(seconds)s")
+            } catch {
+                writeDictationLine("DEBUG speech model warm-up failed; it will load on first use")
+            }
+        }
+    }
+
     private func setupManager() async throws -> AsrManager {
         if let manager {
             return manager
@@ -51,20 +67,31 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
     }
 }
 
-/// Runs the loader once even under concurrent transcribe calls.
+/// Runs the loader once, however many callers arrive at the same time.
+/// Startup warm-up and an early dictation can both ask for the model, so the
+/// check-and-start is locked: without it both could start their own load.
 private final class SetupOnce: @unchecked Sendable {
+    private let lock = NSLock()
     private var task: Task<AsrManager, Error>?
 
     func run(_ loader: @escaping @Sendable () async throws -> AsrManager) async throws -> AsrManager {
-        if let task {
-            return try await task.value
+        let current: Task<AsrManager, Error> = lock.withLock {
+            if let task {
+                return task
+            }
+            let started = Task { try await loader() }
+            task = started
+            return started
         }
-        let task = Task { try await loader() }
-        self.task = task
         do {
-            return try await task.value
+            return try await current.value
         } catch {
-            self.task = nil
+            // Let a later call retry, unless another caller already replaced it.
+            lock.withLock {
+                if task == current {
+                    task = nil
+                }
+            }
             throw error
         }
     }
