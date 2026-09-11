@@ -19,7 +19,7 @@ func writeDictationLine(_ line: String) {
 /// timers already run there, and stdin commands hop there explicitly.
 final class DictationRuntime: @unchecked Sendable {
     private let parentPID: pid_t
-    private var parentTimer: Timer?
+    private var parentTimer: DispatchSourceTimer?
     private var hotkey: RightOptionHotkey?
     private var engine: TranscriptionEngine = makeDefaultEngine()
     private var activeSessionID: String?
@@ -155,19 +155,31 @@ final class DictationRuntime: @unchecked Sendable {
         }
     }
 
+    /// Exit when Source goes away. Checked off the main thread: a helper whose
+    /// main thread was blocked never ran the old main-thread timer, and kept
+    /// running for 20 minutes after Source had quit.
     private func watchParent() {
-        parentTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            if kill(self.parentPID, 0) != 0 {
+        let parent = parentPID
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+        timer.schedule(deadline: .now() + 2, repeating: 2)
+        timer.setEventHandler {
+            if kill(parent, 0) != 0 {
                 exit(0)
             }
         }
+        timer.resume()
+        parentTimer = timer
     }
 
     private func watchStdin() {
         FileHandle.standardInput.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
-            guard !data.isEmpty, let line = String(data: data, encoding: .utf8) else { return }
+            // Empty means Source closed the pipe because it quit. Just returning
+            // made this handler fire again straight away, burning a CPU core.
+            if data.isEmpty {
+                exit(0)
+            }
+            guard let line = String(data: data, encoding: .utf8) else { return }
             let commands = line.components(separatedBy: .newlines)
             DispatchQueue.main.async {
                 for command in commands {
