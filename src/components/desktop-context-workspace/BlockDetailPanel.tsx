@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Layers3, PanelRightOpen, X } from "lucide-react";
+import { Check, Copy, Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -25,9 +26,26 @@ export function BlockDetailPanel({
   const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
   const showRawJsonTab = (controller.sliceDetail?.rawPayloads.length ?? 0) > 0;
   const isAudioBlock = controller.sliceDetail?.slice.tags.includes("audio") ?? false;
+  const [copiedSliceId, setCopiedSliceId] = useState<string | null>(null);
+  const transcriptText = controller.sliceDetail?.slice.ocrPreview?.trim() ?? "";
+  const transcriptCopied = copiedSliceId === controller.sliceDetail?.slice.id;
+
+  async function handleCopyTranscript() {
+    const sliceId = controller.sliceDetail?.slice.id;
+    if (!sliceId || !transcriptText) return;
+    try {
+      await navigator.clipboard.writeText(transcriptText);
+      setCopiedSliceId(sliceId);
+      setTimeout(() => {
+        setCopiedSliceId((current) => (current === sliceId ? null : current));
+      }, 1500);
+    } catch {
+      // Clipboard unavailable: leave the button unchanged.
+    }
+  }
 
   return (
-    <Card className="@container h-fit border-border/70 xl:sticky xl:top-20">
+    <Card className="h-fit border-border/70 xl:sticky xl:top-20">
       <CardHeader>
         <div className="flex items-center gap-2">
           <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
@@ -65,7 +83,7 @@ export function BlockDetailPanel({
                 </p>
               </div>
 
-              <div className="grid min-w-60 flex-[2] grid-cols-1 gap-3 @min-[430px]:grid-cols-2">
+              <div className="grid min-w-60 flex-[2] grid-cols-2 gap-3">
                 <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
                   <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">
@@ -106,6 +124,21 @@ export function BlockDetailPanel({
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
                       </span>
                       {controller.sliceDetail.slice.tags.includes("final") ? "Final transcript" : "Live transcript"}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-7 cursor-pointer gap-1.5 px-2 text-xs normal-case tracking-normal"
+                        onClick={() => void handleCopyTranscript()}
+                        aria-label="Copy transcript"
+                      >
+                        {transcriptCopied ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                        {transcriptCopied ? "Copied" : "Copy"}
+                      </Button>
                     </div>
                     <p className="max-w-[60ch] whitespace-pre-wrap text-base leading-7 text-foreground">
                       {controller.sliceDetail.slice.ocrPreview?.trim() || "Listening for words…"}
