@@ -303,12 +303,14 @@ final class PillBackgroundView: NSVisualEffectView {
         _ = event
         writeDictationLine("DEBUG pill hover entered")
         NSCursor.openHand.set()
+        layer?.borderColor = NSColor.white.cgColor
     }
 
     override func mouseExited(with event: NSEvent) {
         _ = event
         writeDictationLine("DEBUG pill hover exited")
         NSCursor.arrow.set()
+        layer?.borderColor = NSColor.systemGray.cgColor
     }
 
     override func mouseDown(with event: NSEvent) {
