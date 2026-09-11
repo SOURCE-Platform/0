@@ -176,3 +176,22 @@ export function healthTone(health: ChannelStatus["health"]) {
   if (health === "warming_up") return "outline";
   return "destructive";
 }
+
+/// Raw timeline `source` values are storage IDs (e.g. `microphone:0`,
+/// `fluid-voice-prompt`). Display a human label instead so Block Detail
+/// doesn't read like a device index.
+export function formatAudioSource(source: string | null | undefined) {
+  if (!source) return "Unknown";
+  if (source.startsWith("microphone:")) return "Microphone";
+  if (source.startsWith("microphone-name:")) {
+    const name = source.slice("microphone-name:".length).trim();
+    return name || "Microphone";
+  }
+  if (source === "fluid-voice-prompt") return "Right Option dictation";
+  if (source === "source-mobile") return "Source Mobile";
+  if (source === "desktop_output:system" || source === "desktop-output:system") {
+    return "Desktop audio";
+  }
+  if (source === "ambient_audio") return "Microphone";
+  return source;
+}

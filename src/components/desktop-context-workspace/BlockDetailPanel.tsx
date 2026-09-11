@@ -8,6 +8,7 @@ import { OcrReconstructionView } from "@/components/desktop-context-workspace/Oc
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
   formatBytes,
+  formatAudioSource,
   formatDuration,
   safeFormatDate,
 } from "@/components/desktop-context-workspace/utils";
@@ -144,7 +145,7 @@ export function BlockDetailPanel({
               <TabsContent value="metadata" className="space-y-4 pt-4">
                 <div className="space-y-3">
                   <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />
-                  <MetadataRow label="Source" value={controller.sliceDetail.slice.source} />
+                  <MetadataRow label="Source" value={formatAudioSource(controller.sliceDetail.slice.source)} />
 
                   <div>
                     <div className="flex items-center justify-between gap-2">

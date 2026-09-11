@@ -23,6 +23,7 @@ async fn populate_slice_detail_payloads(
         "vision" => collect_vision_detail_payloads(db, slice, slice_id, state).await?,
         "audio"
         | "audio_speech"
+        | "audio_ambient_speech"
         | "audio_dictation"
         | "audio_mobile"
         | "audio_emotion_summary"

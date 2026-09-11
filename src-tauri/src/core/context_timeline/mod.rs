@@ -31,6 +31,7 @@ include!("inspector.rs");
 include!("detail.rs");
 include!("detail_payloads_context.rs");
 include!("detail_payloads_media.rs");
+include!("detail_payloads_ambient.rs");
 include!("detail_payloads_attention.rs");
 include!("reviews.rs");
 include!("rails_system.rs");

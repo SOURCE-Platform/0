@@ -60,12 +60,19 @@ pub(super) fn spawn_speech_analysis_task(
         let path = Path::new(&audio_path);
         let mut linked_asr_id = None;
         if analysis_options.transcription_enabled {
-            if let Some(transcription) = transcribe_audio_chunk(path).await {
-                if let Some(utterance_id) = utterance_id.as_deref() {
-                    let _ = transcripts
-                        .append(utterance_id, start_timestamp, transcription)
-                        .await;
-                    linked_asr_id = Some(utterance_id.to_string());
+            match transcribe_audio_chunk(path).await {
+                Some(transcription) => {
+                    if let Some(utterance_id) = utterance_id.as_deref() {
+                        let _ = transcripts
+                            .append(utterance_id, start_timestamp, transcription)
+                            .await;
+                        linked_asr_id = Some(utterance_id.to_string());
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "ambient transcription returned no text (silent chunk or Parakeet failure): session {session_id} source {source_id} chunk {audio_chunk_id}"
+                    );
                 }
             }
         }

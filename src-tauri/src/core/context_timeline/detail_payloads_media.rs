@@ -175,6 +175,12 @@ async fn collect_audio_detail_payloads(
     slice_id: &str,
     state: &mut SliceDetailPayloadState,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Ambient spans use synthetic IDs (`ambient-capture-{session}-{start}`)
+    // that match no single DB row. Resolve them back to the chunks and
+    // transcripts they were coalesced from so the panel shows real data.
+    if slice_id.starts_with("ambient-capture-") {
+        return collect_ambient_capture_detail_payloads(db, slice, state).await;
+    }
     let asr_segments = multimodal::get_asr_segments(
         db,
         slice.start_timestamp.saturating_sub(60_000),
