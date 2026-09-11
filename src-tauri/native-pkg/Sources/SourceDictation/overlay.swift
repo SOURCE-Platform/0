@@ -45,6 +45,9 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             self.elapsedTimer?.invalidate()
             self.elapsedTimer = nil
             self.sessionStart = nil
+            if let pillBackground = self.panel?.contentView as? PillBackgroundView {
+                pillBackground.stopCursorForcing()
+            }
             if let origin = self.panel?.frame.origin {
                 Self.savePanelOrigin(origin)
             }
@@ -283,6 +286,7 @@ final class PillBackgroundView: NSVisualEffectView {
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
     private var trackingAreaRef: NSTrackingArea?
+    private var cursorTimer: Timer?
 
     override func updateTrackingAreas() {
         if let trackingAreaRef {
@@ -302,21 +306,47 @@ final class PillBackgroundView: NSVisualEffectView {
     override func mouseEntered(with event: NSEvent) {
         _ = event
         writeDictationLine("DEBUG pill hover entered")
-        NSCursor.openHand.set()
+        startCursorForcing(.openHand)
         layer?.borderColor = NSColor.white.cgColor
     }
 
     override func mouseExited(with event: NSEvent) {
         _ = event
         writeDictationLine("DEBUG pill hover exited")
+        stopCursorForcing()
         NSCursor.arrow.set()
         layer?.borderColor = NSColor.systemGray.cgColor
+    }
+
+    /// Something on this panel reverts explicitly-set cursors (the border
+    /// reacts to hover, so events arrive — the change just won't stick).
+    /// Re-assert on every move plus a backstop timer while held/hovering.
+    private func startCursorForcing(_ cursor: NSCursor) {
+        stopCursorForcing()
+        cursor.set()
+        cursorTimer = Timer.scheduledTimer(withTimeInterval: 0.12, repeats: true) { _ in
+            cursor.set()
+        }
+    }
+
+    func stopCursorForcing() {
+        cursorTimer?.invalidate()
+        cursorTimer = nil
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        _ = event
+        if dragStartMouse != nil {
+            NSCursor.closedHand.set()
+        } else {
+            NSCursor.openHand.set()
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         _ = event
         writeDictationLine("DEBUG pill drag started")
-        NSCursor.closedHand.set()
+        startCursorForcing(.closedHand)
         dragStartMouse = NSEvent.mouseLocation
         dragStartOrigin = window?.frame.origin
     }
@@ -334,6 +364,7 @@ final class PillBackgroundView: NSVisualEffectView {
     override func mouseUp(with event: NSEvent) {
         dragStartMouse = nil
         dragStartOrigin = nil
+        stopCursorForcing()
         let point = convert(event.locationInWindow, from: nil)
         NSCursor.openHand.set()
         if !bounds.contains(point) {
