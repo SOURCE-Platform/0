@@ -112,11 +112,13 @@ export function RailLane({
               if (width <= 0) return null;
               const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
               // Tooltips center over their block. Only when centering would
-              // push past the lane's right edge does the tooltip pin its
-              // right edge to the block's right edge instead.
+              // push past a lane edge does the tooltip pin that same edge
+              // to the block's edge instead.
               const tipHalfPx = 128;
               const tipOverflowsRight =
                 trackWidth > 0 && (anchor / 100) * trackWidth + tipHalfPx > trackWidth;
+              const tipOverflowsLeft =
+                trackWidth > 0 && (anchor / 100) * trackWidth - tipHalfPx < 0;
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -155,12 +157,14 @@ export function RailLane({
                   {hoveredId === slice.id ? (
                     <div
                       className={`pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur ${
-                        tipOverflowsRight ? "" : "-translate-x-1/2"
+                        tipOverflowsRight || tipOverflowsLeft ? "" : "-translate-x-1/2"
                       }`}
                       style={
                         tipOverflowsRight
                           ? { right: `${100 - (clampedLeft + width)}%` }
-                          : { left: `${anchor}%` }
+                          : tipOverflowsLeft
+                            ? { left: `${clampedLeft}%` }
+                            : { left: `${anchor}%` }
                       }
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
