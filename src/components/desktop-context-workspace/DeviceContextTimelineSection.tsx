@@ -97,12 +97,12 @@ export function DeviceContextTimelineSection({
                 currentSourceName={controller.status?.audioSourceName ?? null}
               />
             </div>
-            <div className="pt-3">
+            <div className="pt-2">
               <TimelineRuler
                 startTimestamp={controller.effectiveWindowStart}
                 endTimestamp={controller.effectiveWindowEnd}
               />
-              <div className="space-y-2 pt-2">
+              <div className="space-y-0">
                 {controller.timeline.rails
                   .filter((rail) => isAudioRail(rail.id))
                   .map((rail) => (

@@ -52,7 +52,7 @@ export function RailLane({
   const railPadding = depth * 16;
 
   return (
-    <div className="grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
+    <div className="-mb-px grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
       <div
         className="flex min-w-0 items-center py-1 pr-3"
         style={{ paddingLeft: railPadding }}
@@ -61,7 +61,6 @@ export function RailLane({
       </div>
 
       <div className="relative h-16 border border-border/70 bg-background/65">
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-px bg-blue-400/90 shadow-[0_0_18px_rgba(59,130,246,0.45)]" />
         <div
           className="relative h-full w-full"
           onClick={(event) => {
@@ -111,7 +110,7 @@ export function RailLane({
                     onMouseLeave={() => setHoveredId((current) => (current === slice.id ? null : current))}
                     className={`group absolute top-2 h-12 cursor-pointer overflow-hidden border text-left shadow-sm transition ${
                       isSelected
-                        ? "border-white/70 ring-1 ring-white/30"
+                        ? "z-10 border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
                     } ${railTone(rail.id, slice.interactionState)}`}
                     style={{

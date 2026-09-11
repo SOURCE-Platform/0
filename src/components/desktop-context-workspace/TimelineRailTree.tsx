@@ -55,8 +55,8 @@ export function TimelineRailTree({
   const railPadding = depth * 16;
 
   return (
-    <div className="space-y-2">
-      <div className="grid gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
+    <div className="-mb-px space-y-0">
+      <div className="-mb-px grid gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
         <div
           className="sticky left-0 z-10 flex items-center gap-2 bg-muted/10 py-1 backdrop-blur-sm"
           style={{ paddingLeft: railPadding }}
@@ -102,7 +102,7 @@ export function TimelineRailTree({
       </div>
 
       {isExpanded ? (
-        <div className="space-y-2">
+        <div className="space-y-0">
           {rail.children.map((child) => (
             <TimelineRailTree
               key={child.id}
