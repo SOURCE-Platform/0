@@ -168,12 +168,13 @@ body {
 }
 
 /* Main app scroller: thin thumb floating centered in its lane (equal
-   transparent gutters on both sides), nudged off the window edge, and
-   lit only while the pointer is inside the scrollable region. Hovering
-   the fixed sidebar or header leaves it dark. */
+   transparent gutters on both sides), nudged off the window edge. It
+   rests as a faint ghost so it can always be found, and lights up while
+   the pointer is inside the scrollable region. Hovering the fixed
+   sidebar or header leaves it dim. */
 .app-scroll-region {
   scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
   border-right: 4px solid transparent;
 }
 
@@ -187,7 +188,7 @@ body {
 }
 
 .app-scroll-region::-webkit-scrollbar-thumb {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.18);
   border-radius: 10px;
   border: 3px solid transparent;
   background-clip: content-box;
@@ -206,6 +207,16 @@ body {
 
 .app-scroll-region:hover::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.6);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.dark .app-scroll-region {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.dark .app-scroll-region::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
   border: 3px solid transparent;
   background-clip: content-box;
 }
