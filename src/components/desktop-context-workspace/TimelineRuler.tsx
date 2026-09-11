@@ -35,7 +35,14 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
               />
             );
           })}
-          {labeledTicks.map((timestamp) => {
+          {/* Pinned viewport edges own the margins: skip labeled ticks
+              hugging either edge so times never print on top of each other. */}
+          {labeledTicks
+            .filter((timestamp) => {
+              const pct = ((timestamp - startTimestamp) / range) * 100;
+              return pct >= 6 && pct <= 92;
+            })
+            .map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;
             return (
               <div

@@ -91,8 +91,14 @@ export function RailLane({
               const clippedEnd = Math.min(Math.max(slice.endTimestamp, slice.startTimestamp + 1), windowEnd);
               const left = ((clippedStart - windowStart) / range) * 100;
               const rawWidth = ((Math.max(clippedEnd, clippedStart + 1) - clippedStart) / range) * 100;
-              const width = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
-              const anchor = Math.min(92, Math.max(8, left + width / 2));
+              const fullWidth = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
+              // Minimum widths keep slivers clickable, but a block must never
+              // draw past the lane edge: clamp the stub inside the boundary
+              // and drop slices that sit entirely outside it.
+              const clampedLeft = Math.min(Math.max(left, 0), 100);
+              const width = Math.min(fullWidth, 100 - clampedLeft);
+              if (width <= 0) return null;
+              const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -114,7 +120,7 @@ export function RailLane({
                         : "border-white/10 hover:border-white/35"
                     } ${railTone(rail.id, slice.interactionState)}`}
                     style={{
-                      left: `${left}%`,
+                      left: `${clampedLeft}%`,
                       width: `${width}%`,
                       top: `${layout.topPx}px`,
                       height: `${layout.heightPx}px`,
