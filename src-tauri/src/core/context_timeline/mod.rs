@@ -42,6 +42,7 @@ include!("rails_audio_labels.rs");
 include!("rails_audio_waveforms.rs");
 include!("rails_audio_emotions.rs");
 include!("rails_audio_capture.rs");
+include!("rails_audio_capture_slices.rs");
 include!("rails_audio_intelligence.rs");
 include!("rails_audio_mobile.rs");
 include!("rails_attention.rs");

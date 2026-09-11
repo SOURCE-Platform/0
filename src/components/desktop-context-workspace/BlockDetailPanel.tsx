@@ -23,6 +23,7 @@ export function BlockDetailPanel({
   const selectedEvidenceSrc = linkedPath ? convertFileSrc(linkedPath) : null;
   const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!selectedEvidenceSrc;
   const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
+  const isAudioBlock = controller.sliceDetail?.slice.tags.includes("audio") ?? false;
 
   return (
     <Card className="h-fit border-border/70 xl:sticky xl:top-20">
@@ -144,9 +145,12 @@ export function BlockDetailPanel({
 
               <TabsContent value="metadata" className="space-y-4 pt-4">
                 <div className="space-y-3">
-                  <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />
-                  <MetadataRow label="Source" value={formatAudioSource(controller.sliceDetail.slice.source)} />
+                  {!isAudioBlock ? (
+                    <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />
+                  ) : null}
+                  <MetadataRow label={isAudioBlock ? "Audio source" : "Source"} value={formatAudioSource(controller.sliceDetail.slice.source)} />
 
+                  {!isAudioBlock ? (
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">Visible windows</div>
@@ -185,9 +189,10 @@ export function BlockDetailPanel({
                       </div>
                     )}
                   </div>
+                ) : null}
 
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Reasons</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Why this block exists</div>
                     <ul className="mt-2 space-y-1 text-sm text-foreground">
                       {controller.sliceDetail.interactionReasons.map((reason) => (
                         <li key={reason}>{reason}</li>
