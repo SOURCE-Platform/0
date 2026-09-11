@@ -138,6 +138,9 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         gearView?.frame = NSRect(x: 14, y: 8, width: 24, height: 24)
         appIconView?.frame = NSRect(x: (width - 24) / 2, y: 8, width: 24, height: 24)
         elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
+        if let pillBackground = pill as? PillBackgroundView {
+            panel.invalidateCursorRects(for: pillBackground)
+        }
     }
 
     private var gearView: GearControl?
@@ -168,7 +171,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let pill = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: 88))
+        let pill = PillBackgroundView(frame: NSRect(x: 0, y: 0, width: width, height: 88))
         pill.material = .hudWindow
         pill.state = .active
         pill.wantsLayer = true
@@ -269,6 +272,44 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
     private static func originIsOnScreen(_ origin: NSPoint, size: NSSize) -> Bool {
         let rect = NSRect(origin: origin, size: size)
         return NSScreen.screens.contains { $0.frame.intersects(rect) }
+    }
+}
+
+/// Pill surface: open-hand cursor on hover to signal draggability,
+/// closed-hand cursor for the drag itself. Dragging moves the panel by
+/// mouse delta, so grabs work from any empty area (waveform, words,
+/// background) while subviews like the gear keep their own clicks.
+final class PillBackgroundView: NSVisualEffectView {
+    private var dragStartMouse: NSPoint?
+    private var dragStartOrigin: NSPoint?
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        _ = event
+        NSCursor.closedHand.push()
+        dragStartMouse = NSEvent.mouseLocation
+        dragStartOrigin = window?.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        _ = event
+        guard let startMouse = dragStartMouse, let startOrigin = dragStartOrigin else { return }
+        let current = NSEvent.mouseLocation
+        window?.setFrameOrigin(NSPoint(
+            x: startOrigin.x + current.x - startMouse.x,
+            y: startOrigin.y + current.y - startMouse.y
+        ))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        _ = event
+        dragStartMouse = nil
+        dragStartOrigin = nil
+        NSCursor.pop()
     }
 }
 
