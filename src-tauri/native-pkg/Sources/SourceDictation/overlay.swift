@@ -69,14 +69,25 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
     /// The app that owned the text field when dictation began — the same
     /// target insertion restores. Its icon sits center-bottom so a mid-
     /// dictation app switch never leaves doubt about where words land.
+    /// Falls back to the frontmost app when AX capture found nothing, so
+    /// a missing accessibility grant hides information instead of the icon.
     private func setTargetApp(_ target: CapturedFocusTarget?) {
-        guard let target,
-            let app = NSRunningApplication(processIdentifier: target.pid),
-            let icon = app.icon
-        else {
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        let captured = target.flatMap { NSRunningApplication(processIdentifier: $0.pid) }
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        let app = (captured ?? frontmost).flatMap {
+            $0.processIdentifier == selfPID ? nil : $0
+        }
+        guard let app, let icon = app.icon else {
+            writeDictationLine(
+                "DEBUG pill target icon unavailable (captured pid: \(target.map(String.init(describing:)) ?? "none"))"
+            )
             appIconView?.isHidden = true
             return
         }
+        writeDictationLine(
+            "DEBUG pill target icon: \(app.localizedName ?? "?") pid \(app.processIdentifier) bundle \(app.bundleIdentifier ?? "?")"
+        )
         appIconView?.image = icon
         appIconView?.toolTip = app.localizedName.map { "Dictating into \($0)" }
         appIconView?.isHidden = false
