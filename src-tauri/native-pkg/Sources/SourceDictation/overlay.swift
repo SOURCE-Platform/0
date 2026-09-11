@@ -14,6 +14,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
     private var waveform: WaveformView?
     private var wordsLabel: NSTextField?
     private var elapsedLabel: NSTextField?
+    private var appIconView: NSImageView?
     private var elapsedTimer: Timer?
     private var sessionStart: Date?
     private var wordsVisible = true
@@ -24,7 +25,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
 
     // MARK: - Session lifecycle
 
-    func show() {
+    func show(focusTarget: CapturedFocusTarget? = nil) {
         wordsVisible = Self.loadWordsVisible()
         sessionStart = Date()
         DispatchQueue.main.async {
@@ -32,6 +33,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
                 self.build()
             }
             self.setTranscript("")
+            self.setTargetApp(focusTarget)
             self.updateElapsed()
             self.startTicker()
             self.panel?.orderFrontRegardless()
@@ -43,6 +45,9 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             self.elapsedTimer?.invalidate()
             self.elapsedTimer = nil
             self.sessionStart = nil
+            if let origin = self.panel?.frame.origin {
+                Self.savePanelOrigin(origin)
+            }
             self.panel?.orderOut(nil)
         }
     }
@@ -59,6 +64,22 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             guard self.wordsVisible else { return }
             self.wordsLabel?.stringValue = text
         }
+    }
+
+    /// The app that owned the text field when dictation began — the same
+    /// target insertion restores. Its icon sits center-bottom so a mid-
+    /// dictation app switch never leaves doubt about where words land.
+    private func setTargetApp(_ target: CapturedFocusTarget?) {
+        guard let target,
+            let app = NSRunningApplication(processIdentifier: target.pid),
+            let icon = app.icon
+        else {
+            appIconView?.isHidden = true
+            return
+        }
+        appIconView?.image = icon
+        appIconView?.toolTip = app.localizedName.map { "Dictating into \($0)" }
+        appIconView?.isHidden = false
     }
 
     // MARK: - Ticker
@@ -104,6 +125,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             wordsLabel?.isHidden = true
         }
         gearView?.frame = NSRect(x: 14, y: 8, width: 24, height: 24)
+        appIconView?.frame = NSRect(x: (width - 24) / 2, y: 8, width: 24, height: 24)
         elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
     }
 
@@ -114,8 +136,13 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
     private func build() {
         let width: CGFloat = 340
         guard let screen = NSScreen.main else { return }
+        let defaultOrigin = NSPoint(x: screen.frame.midX - width / 2, y: screen.frame.maxY - 220)
+        var origin = defaultOrigin
+        if let saved = Self.loadPanelOrigin(), Self.originIsOnScreen(saved, size: NSSize(width: width, height: 88)) {
+            origin = saved
+        }
         let panel = NSPanel(
-            contentRect: NSRect(x: screen.frame.midX - width / 2, y: screen.frame.maxY - 220, width: width, height: 88),
+            contentRect: NSRect(origin: origin, size: NSSize(width: width, height: 88)),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -126,6 +153,8 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.ignoresMouseEvents = false
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
         let pill = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: width, height: 88))
@@ -163,9 +192,15 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         elapsed.isBordered = false
         self.elapsedLabel = elapsed
 
+        let appIcon = NSImageView(frame: .zero)
+        appIcon.imageScaling = .scaleProportionallyDown
+        appIcon.isHidden = true
+        self.appIconView = appIcon
+
         pill.addSubview(waveform)
         pill.addSubview(words)
         pill.addSubview(gear)
+        pill.addSubview(appIcon)
         pill.addSubview(elapsed)
         panel.contentView = pill
         self.panel = panel
@@ -194,6 +229,35 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             return true
         }
         return value
+    }
+
+    /// Pill position persists across helper restarts in the same prefs file
+    /// O's settings already merges keys into (never overwrites it).
+    private static func loadPanelOrigin() -> NSPoint? {
+        guard let data = try? Data(contentsOf: prefsURL()),
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            let x = json["originX"] as? NSNumber,
+            let y = json["originY"] as? NSNumber
+        else {
+            return nil
+        }
+        return NSPoint(x: x.doubleValue, y: y.doubleValue)
+    }
+
+    private static func savePanelOrigin(_ origin: NSPoint) {
+        var json: [String: Any] =
+            (try? Data(contentsOf: prefsURL()))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        json["originX"] = origin.x
+        json["originY"] = origin.y
+        if let data = try? JSONSerialization.data(withJSONObject: json) {
+            try? data.write(to: prefsURL())
+        }
+    }
+
+    private static func originIsOnScreen(_ origin: NSPoint, size: NSSize) -> Bool {
+        let rect = NSRect(origin: origin, size: size)
+        return NSScreen.screens.contains { $0.frame.intersects(rect) }
     }
 }
 
