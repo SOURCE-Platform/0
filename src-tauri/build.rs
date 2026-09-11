@@ -71,11 +71,15 @@ fn build_dictation_helper() {
         "native-pkg/Sources/SourceDictation/text_insertion.swift",
         "native-pkg/Sources/SourceDictation/mic_capture.swift",
         "native-pkg/Sources/SourceDictation/input_device.swift",
+        "native-pkg/Sources/SourceDictation/overlay.swift",
         "native-pkg/Sources/SourceDictation/engine_fluidaudio.swift",
         "native-pkg/Sources/SourceDictation/engine_stub.swift",
     ] {
         println!("cargo:rerun-if-changed={source}");
     }
+    // Catch-all so a newly added helper file can never again silently
+    // skip the rebuild the way overlay.swift did.
+    println!("cargo:rerun-if-changed=native-pkg/Sources/SourceDictation");
     if let Some(binary) = build_spm_dictation_helper() {
         sign_dictation_helper(&binary);
         println!("cargo:rustc-env=SOURCE_DICTATION_HELPER={}", binary.display());
