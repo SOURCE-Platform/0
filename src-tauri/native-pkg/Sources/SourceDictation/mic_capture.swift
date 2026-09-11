@@ -23,6 +23,10 @@ final class MicSessionRecorder: @unchecked Sendable {
     /// Guards the converter and file: the realtime tap uses them while a
     /// reconnect or a session end may be swapping them out.
     private let ioLock = NSLock()
+    /// When the tap last delivered audio. Guarded by `ioLock`.
+    private var lastBufferAt = DispatchTime(uptimeNanoseconds: 0)
+    /// When the current engine picked its microphone. `lifecycleQueue` only.
+    private var engineStartedAt = DispatchTime(uptimeNanoseconds: 0)
 
     var activeSessionPath: String? { sessionURL?.path }
 
@@ -95,6 +99,10 @@ final class MicSessionRecorder: @unchecked Sendable {
     /// Must run on `lifecycleQueue`.
     private func startEngine(target: AVAudioFormat) -> Bool {
         let audioEngine = AVAudioEngine()
+        // Record from the microphone chosen in Source, not just the macOS default.
+        // Chosen before any format is read, since formats follow the device.
+        let source = DictationInput.apply(to: audioEngine)
+        engineStartedAt = .now()
         let input = audioEngine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         guard input.inputFormat(forBus: 0).channelCount > 0, inputFormat.sampleRate > 0 else {
@@ -127,6 +135,7 @@ final class MicSessionRecorder: @unchecked Sendable {
             return false
         }
         engine = audioEngine
+        writeDictationLine("DEBUG dictation mic: \(source)")
         return true
     }
 
@@ -145,20 +154,43 @@ final class MicSessionRecorder: @unchecked Sendable {
 
     /// The device was reconfigured and the engine has stopped. Rebuild it on
     /// the new configuration and keep writing to the same session file.
+    ///
+    /// Selecting the chosen microphone posts this notification too, just after
+    /// an engine starts. Rebuilding for that selects the microphone again, which
+    /// posts another one: a loop. So a notification that close to a start only
+    /// rebuilds if audio then stops arriving.
     private func reconnectAfterConfigurationChange(target: AVAudioFormat) {
+        let noticedAt = DispatchTime.now()
         lifecycleQueue.async { [weak self] in
             guard let self else { return }
-            self.ioLock.lock()
-            let sessionActive = self.sessionFile != nil
-            self.ioLock.unlock()
-            // A change can land just after the session ended: nothing to resume.
-            guard sessionActive, let stale = self.engine else { return }
-            self.teardownEngine(stale)
-            if self.startEngine(target: target) {
-                writeDictationLine("DEBUG mic reconfigured mid-session; reconnected")
-            } else {
-                writeDictationLine("ERROR {\"message\":\"mic lost mid-session; keeping what was recorded\"}")
+            guard noticedAt < self.engineStartedAt + .milliseconds(500) else {
+                self.rebuildEngine(target: target)
+                return
             }
+            self.lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(400)) { [weak self] in
+                guard let self else { return }
+                self.ioLock.lock()
+                let flowing = self.lastBufferAt > noticedAt
+                self.ioLock.unlock()
+                if !flowing {
+                    self.rebuildEngine(target: target)
+                }
+            }
+        }
+    }
+
+    /// Must run on `lifecycleQueue`.
+    private func rebuildEngine(target: AVAudioFormat) {
+        ioLock.lock()
+        let sessionActive = sessionFile != nil
+        ioLock.unlock()
+        // A change can land just after the session ended: nothing to resume.
+        guard sessionActive, let stale = engine else { return }
+        teardownEngine(stale)
+        if startEngine(target: target) {
+            writeDictationLine("DEBUG mic reconfigured mid-session; reconnected")
+        } else {
+            writeDictationLine("ERROR {\"message\":\"mic lost mid-session; keeping what was recorded\"}")
         }
     }
 
@@ -237,6 +269,7 @@ final class MicSessionRecorder: @unchecked Sendable {
         ioLock.lock()
         defer { ioLock.unlock() }
         guard let converter, let file = sessionFile else { return }
+        lastBufferAt = .now()
         let ratio = target.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 16
         guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else {
