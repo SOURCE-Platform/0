@@ -138,9 +138,6 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         gearView?.frame = NSRect(x: 14, y: 8, width: 24, height: 24)
         appIconView?.frame = NSRect(x: (width - 24) / 2, y: 8, width: 24, height: 24)
         elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
-        if let pillBackground = pill as? PillBackgroundView {
-            panel.invalidateCursorRects(for: pillBackground)
-        }
     }
 
     private var gearView: GearControl?
@@ -167,6 +164,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         panel.isOpaque = false
         panel.hasShadow = true
         panel.ignoresMouseEvents = false
+        panel.acceptsMouseMovedEvents = true
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -279,18 +277,44 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
 /// closed-hand cursor for the drag itself. Dragging moves the panel by
 /// mouse delta, so grabs work from any empty area (waveform, words,
 /// background) while subviews like the gear keep their own clicks.
+/// Hover uses an explicit tracking area (same pattern as GearControl):
+/// cursor rects proved unreliable on this borderless panel.
 final class PillBackgroundView: NSVisualEffectView {
     private var dragStartMouse: NSPoint?
     private var dragStartOrigin: NSPoint?
+    private var trackingAreaRef: NSTrackingArea?
 
-    override func resetCursorRects() {
-        super.resetCursorRects()
-        addCursorRect(bounds, cursor: .openHand)
+    override func updateTrackingAreas() {
+        if let trackingAreaRef {
+            removeTrackingArea(trackingAreaRef)
+        }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+        super.updateTrackingAreas()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        _ = event
+        writeDictationLine("DEBUG pill hover entered")
+        NSCursor.openHand.set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        _ = event
+        writeDictationLine("DEBUG pill hover exited")
+        NSCursor.arrow.set()
     }
 
     override func mouseDown(with event: NSEvent) {
         _ = event
-        NSCursor.closedHand.push()
+        writeDictationLine("DEBUG pill drag started")
+        NSCursor.closedHand.set()
         dragStartMouse = NSEvent.mouseLocation
         dragStartOrigin = window?.frame.origin
     }
@@ -306,10 +330,13 @@ final class PillBackgroundView: NSVisualEffectView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        _ = event
         dragStartMouse = nil
         dragStartOrigin = nil
-        NSCursor.pop()
+        let point = convert(event.locationInWindow, from: nil)
+        NSCursor.openHand.set()
+        if !bounds.contains(point) {
+            NSCursor.arrow.set()
+        }
     }
 }
 
