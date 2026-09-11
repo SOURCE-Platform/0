@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
 import {
   formatBytes,
@@ -38,6 +38,18 @@ export function RailLane({
   const tickMs = getTimelineTickMs(range);
   const ticks = getSnappedTicks(windowStart, windowEnd, tickMs);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackWidth, setTrackWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    setTrackWidth(el.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      setTrackWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
@@ -60,7 +72,7 @@ export function RailLane({
         <span className="text-xs font-normal leading-5 text-muted-foreground">{rail.label}</span>
       </div>
 
-      <div className="relative h-16 overflow-x-clip border border-border/70 bg-background/65">
+      <div ref={trackRef} className="relative h-16 overflow-x-clip border border-border/70 bg-background/65">
         <div
           className="relative h-full w-full"
           onClick={(event) => {
@@ -99,10 +111,12 @@ export function RailLane({
               const width = Math.min(fullWidth, 100 - clampedLeft);
               if (width <= 0) return null;
               const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
-              // Tooltips can't paint outside the app window. Centered ones
-              // float over the block middle; edge ones left-align with the
-              // block's left edge so they stay attached without spilling out.
-              const tooltipCentered = anchor > 25 && anchor < 75;
+              // Tooltips center over their block. Only when centering would
+              // push past the lane's right edge does the tooltip pin its
+              // right edge to the block's right edge instead.
+              const tipHalfPx = 128;
+              const tipOverflowsRight =
+                trackWidth > 0 && (anchor / 100) * trackWidth + tipHalfPx > trackWidth;
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -141,12 +155,12 @@ export function RailLane({
                   {hoveredId === slice.id ? (
                     <div
                       className={`pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur ${
-                        tooltipCentered ? "-translate-x-1/2" : ""
+                        tipOverflowsRight ? "" : "-translate-x-1/2"
                       }`}
                       style={
-                        tooltipCentered
-                          ? { left: `${anchor}%` }
-                          : { left: `${clampedLeft}%` }
+                        tipOverflowsRight
+                          ? { right: `${100 - (clampedLeft + width)}%` }
+                          : { left: `${anchor}%` }
                       }
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
