@@ -239,6 +239,10 @@ function getAudioSourceLabel(slice: ContextSlice): string | null {
   if (slice.tags.includes("dictation")) return "Right Option";
   if (slice.tags.includes("mobile") || slice.source === "source-mobile") return "Mobile";
   if (slice.source.startsWith("desktop_output:")) return "Desktop";
+  if (slice.source.startsWith("microphone-name:")) {
+    const name = slice.source.slice("microphone-name:".length).trim();
+    return name || "Mic";
+  }
   if (slice.source.startsWith("microphone:")) return "Mic";
   return "Audio";
 }

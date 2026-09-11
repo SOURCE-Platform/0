@@ -125,7 +125,7 @@ async fn sample_microphone_meter(preferred_source_id: Option<&str>) -> AudioMete
         );
     };
 
-    let source_id = format!("microphone:{}", source.index);
+    let source_id = format!("microphone-name:{}", source.name);
     match ensure_live_meter(&source_id, &source.name) {
         Ok(level) => AudioMeterReadingDto::active(source_id, source.name, level),
         Err(error) => AudioMeterReadingDto::unavailable(source_id, source.name, error),
