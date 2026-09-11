@@ -37,6 +37,20 @@ window.addEventListener("error", (event) => {
 });
 
 window.addEventListener("unhandledrejection", (event) => {
+  const reason = String(
+    (event.reason as Error)?.message ?? event.reason ?? "",
+  );
+  // Tauri's drag region calls `start_dragging` under the hood. If the
+  // window capability is missing (or the backend is unreachable), that
+  // rejection must not blank the whole app — dragging just won't work.
+  if (
+    reason.includes("start_dragging") ||
+    reason.includes("not allowed by ACL")
+  ) {
+    console.warn("Window drag unavailable:", event.reason);
+    event.preventDefault();
+    return;
+  }
   renderFatalError(event.reason);
 });
 

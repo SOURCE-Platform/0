@@ -107,6 +107,15 @@ pub(super) async fn run_audio_loop(
             && (analysis_options.transcription_enabled || analysis_options.speech_emotion_enabled))
             .then(try_reserve_speech_analysis)
             .flatten();
+        if analysis.speech_detected && speech_permit.is_none() {
+            // The single speech slot was busy (Parakeet is slower than the
+            // 2s chunk cadence), so this speech chunk is dropped without a
+            // transcript. Loud but empty timeline gaps point here.
+            eprintln!(
+                "ambient speech chunk dropped (transcriber busy): session {session_id} source {source_id} vad {:.4}",
+                analysis.vad_score
+            );
+        }
         let retain_evidence = speech_permit.is_some();
         let retained_path = if retain_evidence {
             save_audio_evidence_chunk(&storage, session_uuid, &temp_path)

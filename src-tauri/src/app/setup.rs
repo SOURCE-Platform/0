@@ -140,11 +140,11 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         });
     });
 
-    // Menu-bar app: no Dock icon. LSUIElement in tauri.conf.json covers
-    // the bundled .app; the runtime policy covers dev / fallback paths.
+    // Regular app: Dock icon and Cmd+Tab entry. The tray icon stays,
+    // but an accessory policy would hide SOURCE from the app switcher.
     #[cfg(target_os = "macos")]
     {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
     }
 
     super::tray::build_tray(app)?;

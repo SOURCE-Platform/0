@@ -231,6 +231,8 @@ export function useDesktopContextWorkspace(displayId: number | null) {
 
   async function handleSelectSlice(slice: ContextSlice) {
     setSelectedSlice(slice);
+    // Show the transcript instantly from the timeline slice, then fill in
+    // the full detail (raw payloads, enriched metadata) in the background.
     setSliceDetail(immediateSliceDetail(slice));
     setLoadingDetail(true);
     setActionError(null);
@@ -241,10 +243,6 @@ export function useDesktopContextWorkspace(displayId: number | null) {
           ? "transcript"
           : "metadata",
     );
-    if (slice.tags.includes("asr")) {
-      setLoadingDetail(false);
-      return;
-    }
     try {
       const details = await invoke<ContextSliceDetail>("get_context_slice_detail", {
         sliceId: slice.id,

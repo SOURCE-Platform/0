@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { Layers3, PanelRightOpen, X } from "lucide-react";
+import { Check, Copy, Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OcrReconstructionView } from "@/components/desktop-context-workspace/OcrReconstructionView";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
   formatBytes,
+  formatAudioSource,
   formatDuration,
   safeFormatDate,
 } from "@/components/desktop-context-workspace/utils";
@@ -22,6 +24,25 @@ export function BlockDetailPanel({
   const selectedEvidenceSrc = linkedPath ? convertFileSrc(linkedPath) : null;
   const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!selectedEvidenceSrc;
   const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
+  const showRawJsonTab = (controller.sliceDetail?.rawPayloads.length ?? 0) > 0;
+  const isAudioBlock = controller.sliceDetail?.slice.tags.includes("audio") ?? false;
+  const [copiedSliceId, setCopiedSliceId] = useState<string | null>(null);
+  const transcriptText = controller.sliceDetail?.slice.ocrPreview?.trim() ?? "";
+  const transcriptCopied = copiedSliceId === controller.sliceDetail?.slice.id;
+
+  async function handleCopyTranscript() {
+    const sliceId = controller.sliceDetail?.slice.id;
+    if (!sliceId || !transcriptText) return;
+    try {
+      await navigator.clipboard.writeText(transcriptText);
+      setCopiedSliceId(sliceId);
+      setTimeout(() => {
+        setCopiedSliceId((current) => (current === sliceId ? null : current));
+      }, 1500);
+    } catch {
+      // Clipboard unavailable: leave the button unchanged.
+    }
+  }
 
   return (
     <Card className="h-fit border-border/70 xl:sticky xl:top-20">
@@ -42,9 +63,6 @@ export function BlockDetailPanel({
             </Button>
           ) : null}
         </div>
-        <CardDescription className="max-w-[30ch]">
-          Click any timeline block to inspect what it captured, how large it is, and the exact stored payload.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         {!controller.selectedSlice ? (
@@ -57,39 +75,33 @@ export function BlockDetailPanel({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{controller.sliceDetail.railLabel}</Badge>
-                <Badge variant="outline">{controller.sliceDetail.slice.sliceKind}</Badge>
-                <Badge variant="outline">{controller.sliceDetail.storageExact ? "Exact" : "Estimated"}</Badge>
-                {controller.sliceDetail.slice.piiCount > 0 ? (
-                  <Badge variant="secondary">{controller.sliceDetail.slice.piiCount} PII matches</Badge>
-                ) : null}
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+              <div className="min-w-44 flex-1 space-y-2">
+                <h3 className="text-lg font-semibold">{controller.sliceDetail.slice.title}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {safeFormatDate(controller.sliceDetail.occurredAt, "PPpp")} • {formatDuration(controller.sliceDetail.durationMs)}
+                </p>
               </div>
-              <h3 className="text-lg font-semibold">{controller.sliceDetail.slice.title}</h3>
-              <p className="text-sm text-muted-foreground">
-                {safeFormatDate(controller.sliceDetail.occurredAt, "PPpp")} • {formatDuration(controller.sliceDetail.durationMs)}
-              </p>
-            </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">
-                  {formatBytes(controller.sliceDetail.storageBytes)}
+              <div className="grid min-w-60 flex-[2] grid-cols-2 gap-3">
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {formatBytes(controller.sliceDetail.storageBytes)}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">
-                  {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Source-backed storage accounting for this block.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Source-backed storage accounting for this block.
-                </p>
               </div>
             </div>
 
@@ -98,7 +110,7 @@ export function BlockDetailPanel({
                 {showTranscriptTab ? <TabsTrigger value="transcript">Transcript</TabsTrigger> : null}
                 {showVisualTab ? <TabsTrigger value="visual">Visual</TabsTrigger> : null}
                 <TabsTrigger value="metadata">Metadata</TabsTrigger>
-                <TabsTrigger value="json">Raw JSON</TabsTrigger>
+                {showRawJsonTab ? <TabsTrigger value="json">Raw JSON</TabsTrigger> : null}
               </TabsList>
 
               {showTranscriptTab ? (
@@ -112,6 +124,21 @@ export function BlockDetailPanel({
                         <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
                       </span>
                       {controller.sliceDetail.slice.tags.includes("final") ? "Final transcript" : "Live transcript"}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="ml-auto h-7 cursor-pointer gap-1.5 px-2 text-xs normal-case tracking-normal"
+                        onClick={() => void handleCopyTranscript()}
+                        aria-label="Copy transcript"
+                      >
+                        {transcriptCopied ? (
+                          <Check className="h-3.5 w-3.5" />
+                        ) : (
+                          <Copy className="h-3.5 w-3.5" />
+                        )}
+                        {transcriptCopied ? "Copied" : "Copy"}
+                      </Button>
                     </div>
                     <p className="max-w-[60ch] whitespace-pre-wrap text-base leading-7 text-foreground">
                       {controller.sliceDetail.slice.ocrPreview?.trim() || "Listening for words…"}
@@ -143,9 +170,12 @@ export function BlockDetailPanel({
 
               <TabsContent value="metadata" className="space-y-4 pt-4">
                 <div className="space-y-3">
-                  <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />
-                  <MetadataRow label="Source" value={controller.sliceDetail.slice.source} />
+                  {!isAudioBlock ? (
+                    <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />
+                  ) : null}
+                  <MetadataRow label={isAudioBlock ? "Audio source" : "Source"} value={formatAudioSource(controller.sliceDetail.slice.source)} />
 
+                  {!isAudioBlock ? (
                   <div>
                     <div className="flex items-center justify-between gap-2">
                       <div className="text-xs uppercase tracking-wide text-muted-foreground">Visible windows</div>
@@ -184,9 +214,10 @@ export function BlockDetailPanel({
                       </div>
                     )}
                   </div>
+                ) : null}
 
                   <div>
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Reasons</div>
+                    <div className="text-xs uppercase tracking-wide text-muted-foreground">Why this block exists</div>
                     <ul className="mt-2 space-y-1 text-sm text-foreground">
                       {controller.sliceDetail.interactionReasons.map((reason) => (
                         <li key={reason}>{reason}</li>
@@ -230,16 +261,18 @@ export function BlockDetailPanel({
                 </div>
               </TabsContent>
 
-              <TabsContent value="json" className="space-y-4 pt-4">
-                {controller.sliceDetail.rawPayloads.map((payload) => (
-                  <div key={payload.label} className="space-y-2">
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">{payload.label}</div>
-                    <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground">
+              {showRawJsonTab ? (
+                <TabsContent value="json" className="space-y-4 pt-4">
+                  {controller.sliceDetail.rawPayloads.map((payload) => (
+                    <div key={payload.label} className="space-y-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">{payload.label}</div>
+                      <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground">
 {payload.rawJson}
-                    </pre>
-                  </div>
-                ))}
-              </TabsContent>
+                      </pre>
+                    </div>
+                  ))}
+                </TabsContent>
+              ) : null}
             </Tabs>
           </div>
         )}

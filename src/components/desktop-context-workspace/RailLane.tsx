@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
 import {
   formatBytes,
@@ -38,6 +38,18 @@ export function RailLane({
   const tickMs = getTimelineTickMs(range);
   const ticks = getSnappedTicks(windowStart, windowEnd, tickMs);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackWidth, setTrackWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    setTrackWidth(el.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      setTrackWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
@@ -52,7 +64,7 @@ export function RailLane({
   const railPadding = depth * 16;
 
   return (
-    <div className="grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
+    <div className="-mb-px grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
       <div
         className="flex min-w-0 items-center py-1 pr-3"
         style={{ paddingLeft: railPadding }}
@@ -60,8 +72,7 @@ export function RailLane({
         <span className="text-xs font-normal leading-5 text-muted-foreground">{rail.label}</span>
       </div>
 
-      <div className="relative h-16 border border-border/70 bg-background/65">
-        <div className="pointer-events-none absolute inset-y-0 right-0 z-20 w-px bg-blue-400/90 shadow-[0_0_18px_rgba(59,130,246,0.45)]" />
+      <div ref={trackRef} className="relative h-16 overflow-x-clip border border-border/70 bg-background/65">
         <div
           className="relative h-full w-full"
           onClick={(event) => {
@@ -92,8 +103,22 @@ export function RailLane({
               const clippedEnd = Math.min(Math.max(slice.endTimestamp, slice.startTimestamp + 1), windowEnd);
               const left = ((clippedStart - windowStart) / range) * 100;
               const rawWidth = ((Math.max(clippedEnd, clippedStart + 1) - clippedStart) / range) * 100;
-              const width = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
-              const anchor = Math.min(92, Math.max(8, left + width / 2));
+              const fullWidth = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
+              // Minimum widths keep slivers clickable, but a block must never
+              // draw past the lane edge: clamp the stub inside the boundary
+              // and drop slices that sit entirely outside it.
+              const clampedLeft = Math.min(Math.max(left, 0), 100);
+              const width = Math.min(fullWidth, 100 - clampedLeft);
+              if (width <= 0) return null;
+              const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
+              // Tooltips center over their block. Only when centering would
+              // push past a lane edge does the tooltip pin that same edge
+              // to the block's edge instead.
+              const tipHalfPx = 128;
+              const tipOverflowsRight =
+                trackWidth > 0 && (anchor / 100) * trackWidth + tipHalfPx > trackWidth;
+              const tipOverflowsLeft =
+                trackWidth > 0 && (anchor / 100) * trackWidth - tipHalfPx < 0;
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -111,11 +136,11 @@ export function RailLane({
                     onMouseLeave={() => setHoveredId((current) => (current === slice.id ? null : current))}
                     className={`group absolute top-2 h-12 cursor-pointer overflow-hidden border text-left shadow-sm transition ${
                       isSelected
-                        ? "border-white/70 ring-1 ring-white/30"
+                        ? "z-10 border-white/70 ring-1 ring-white/30"
                         : "border-white/10 hover:border-white/35"
                     } ${railTone(rail.id, slice.interactionState)}`}
                     style={{
-                      left: `${left}%`,
+                      left: `${clampedLeft}%`,
                       width: `${width}%`,
                       top: `${layout.topPx}px`,
                       height: `${layout.heightPx}px`,
@@ -131,8 +156,16 @@ export function RailLane({
 
                   {hoveredId === slice.id ? (
                     <div
-                      className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] -translate-x-1/2 rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur"
-                      style={{ left: `${anchor}%` }}
+                      className={`pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur ${
+                        tipOverflowsRight || tipOverflowsLeft ? "" : "-translate-x-1/2"
+                      }`}
+                      style={
+                        tipOverflowsRight
+                          ? { right: `${100 - (clampedLeft + width)}%` }
+                          : tipOverflowsLeft
+                            ? { left: `${clampedLeft}%` }
+                            : { left: `${anchor}%` }
+                      }
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
                       {sourceLabel ? (
@@ -239,6 +272,10 @@ function getAudioSourceLabel(slice: ContextSlice): string | null {
   if (slice.tags.includes("dictation")) return "Right Option";
   if (slice.tags.includes("mobile") || slice.source === "source-mobile") return "Mobile";
   if (slice.source.startsWith("desktop_output:")) return "Desktop";
+  if (slice.source.startsWith("microphone-name:")) {
+    const name = slice.source.slice("microphone-name:".length).trim();
+    return name || "Mic";
+  }
   if (slice.source.startsWith("microphone:")) return "Mic";
   return "Audio";
 }

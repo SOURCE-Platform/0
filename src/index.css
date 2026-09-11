@@ -167,6 +167,76 @@ body {
   background-clip: content-box;
 }
 
+/* Main app scroller: thin thumb floating centered in its lane (equal
+   transparent gutters on both sides), nudged off the window edge. It
+   rests as a faint ghost so it can always be found, and lights up while
+   the pointer is inside the scrollable region. Hovering the fixed
+   sidebar or header leaves it dim. */
+.app-scroll-region {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  border-right: 4px solid transparent;
+}
+
+.app-scroll-region::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.app-scroll-region::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-scroll-region::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  min-height: 40px;
+}
+
+.app-scroll-region:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.4) transparent;
+}
+
+.app-scroll-region:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.app-scroll-region:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.6);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.dark .app-scroll-region {
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.dark .app-scroll-region::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.dark .app-scroll-region:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
+}
+
+.dark .app-scroll-region:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.4);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.dark .app-scroll-region:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.6);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
 @keyframes tab-underline-exit {
   from { transform: scaleX(1); }
   to   { transform: scaleX(0); }

@@ -30,6 +30,12 @@ fn build_audio_waveform(
 }
 
 fn audio_source_label(source_id: &str) -> String {
+    if let Some(name) = source_id.strip_prefix("microphone-name:") {
+        if !name.trim().is_empty() {
+            return name.to_string();
+        }
+        return "Microphone".to_string();
+    }
     if source_id.starts_with("microphone:") {
         "Microphone".to_string()
     } else if source_id.starts_with("desktop_app:") {

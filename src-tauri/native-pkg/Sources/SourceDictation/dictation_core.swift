@@ -80,7 +80,7 @@ final class DictationRuntime: @unchecked Sendable {
             if mic.beginSession() {
                 sessionAudioPath = mic.activeSessionPath
             }
-            ListeningIndicator.shared.show()
+            ListeningIndicator.shared.show(focusTarget: focusTarget)
             startPartialTimer(id: id)
             writeDictationLine("SESSION_STARTED \(id)")
         }

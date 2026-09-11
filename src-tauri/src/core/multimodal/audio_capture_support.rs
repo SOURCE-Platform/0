@@ -219,10 +219,14 @@ pub(super) async fn persist_sound_events(
 pub(super) async fn transcribe_audio_chunk(
     path: &Path,
 ) -> Option<super::audio_runtime::ParakeetTranscription> {
-    run_parakeet_transcription(path)
-        .await
-        .ok()
-        .filter(|result| !result.text.trim().is_empty())
+    match run_parakeet_transcription(path).await {
+        Ok(result) if !result.text.trim().is_empty() => Some(result),
+        Ok(_) => None,
+        Err(error) => {
+            eprintln!("ambient Parakeet transcription failed: {error}");
+            None
+        }
+    }
 }
 
 fn rms_window(samples: &[f32]) -> f32 {

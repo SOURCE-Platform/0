@@ -24,7 +24,7 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
           line up exactly with lane subdivisions. */}
       <div className="grid h-full gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
         <div className="hidden md:block" />
-        <div className="relative h-full w-full bg-background/60">
+        <div className="relative h-full w-full border border-b-0 border-border/70 bg-background/60">
           {gridTicks.map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;
             return (
@@ -35,7 +35,14 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
               />
             );
           })}
-          {labeledTicks.map((timestamp) => {
+          {/* Pinned viewport edges own the margins: skip labeled ticks
+              hugging either edge so times never print on top of each other. */}
+          {labeledTicks
+            .filter((timestamp) => {
+              const pct = ((timestamp - startTimestamp) / range) * 100;
+              return pct >= 6 && pct <= 92;
+            })
+            .map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;
             return (
               <div

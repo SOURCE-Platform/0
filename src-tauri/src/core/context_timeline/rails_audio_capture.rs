@@ -33,7 +33,10 @@ fn build_ambient_audio_rail(
     let slices = capture_spans
         .iter()
         .flat_map(|span| subtract_dictation_ranges(span, &dictation_ranges))
-        .map(ambient_capture_slice)
+        .map(|piece| {
+            let transcripts = ambient_transcripts_for_span(&piece, asr_segments);
+            ambient_capture_slice(piece, &transcripts)
+        })
         .collect();
 
     TimelineRailDto::lane(
@@ -170,45 +173,6 @@ fn subtract_dictation_ranges(
         pieces = next;
     }
     pieces
-}
-
-fn ambient_capture_slice(span: AmbientCaptureSpan) -> ContextSlice {
-    ContextSlice {
-        id: format!(
-            "ambient-capture-{}-{}",
-            span.session_id, span.start_timestamp
-        ),
-        rail: "audio_ambient_speech".to_string(),
-        slice_kind: "span".to_string(),
-        start_timestamp: span.start_timestamp,
-        end_timestamp: span.end_timestamp,
-        title: "Ambient audio".to_string(),
-        subtitle: Some("Microphone available".to_string()),
-        source: span.source_id,
-        confidence: 1.0,
-        session_id: Some(span.session_id),
-        app_name: None,
-        window_title: None,
-        interaction_state: None,
-        reasons: vec![
-            "Coalesced from consecutive ambient capture chunks; Right Option intervals are removed."
-                .to_string(),
-        ],
-        visible_windows: Vec::new(),
-        ocr_preview: None,
-        pii_count: 0,
-        evidence_frame_path: None,
-        storage_bytes: span.chunk_count * 256,
-        storage_exact: false,
-        row_count: span.chunk_count,
-        file_count: 0,
-        has_detail_view: true,
-        tags: vec![
-            "audio".to_string(),
-            "ambient".to_string(),
-            "capture".to_string(),
-        ],
-    }
 }
 
 #[cfg(test)]

@@ -207,7 +207,7 @@ async fn start_audio_channel(
                 service.generation.clone(),
                 generation,
                 session_id.to_string(),
-                format!("microphone:{}", source.index),
+                format!("microphone-name:{}", source.name),
                 AudioCaptureSource::Microphone {
                     source_name: source.name.clone(),
                 },
