@@ -60,7 +60,7 @@ export function RailLane({
         <span className="text-xs font-normal leading-5 text-muted-foreground">{rail.label}</span>
       </div>
 
-      <div className="relative h-16 border border-border/70 bg-background/65">
+      <div className="relative h-16 overflow-x-clip border border-border/70 bg-background/65">
         <div
           className="relative h-full w-full"
           onClick={(event) => {
@@ -99,6 +99,9 @@ export function RailLane({
               const width = Math.min(fullWidth, 100 - clampedLeft);
               if (width <= 0) return null;
               const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
+              // Tooltips can't paint outside the app window, so edge
+              // anchors flip inward instead of centering over the point.
+              const tooltipAlign = anchor >= 75 ? "right" : anchor <= 25 ? "left" : "center";
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -136,8 +139,14 @@ export function RailLane({
 
                   {hoveredId === slice.id ? (
                     <div
-                      className="pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] -translate-x-1/2 rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur"
-                      style={{ left: `${anchor}%` }}
+                      className={`pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur ${
+                        tooltipAlign === "center" ? "-translate-x-1/2" : ""
+                      }`}
+                      style={
+                        tooltipAlign === "right"
+                          ? { right: `${100 - anchor}%` }
+                          : { left: `${anchor}%` }
+                      }
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
                       {sourceLabel ? (
