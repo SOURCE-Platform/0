@@ -99,9 +99,10 @@ export function RailLane({
               const width = Math.min(fullWidth, 100 - clampedLeft);
               if (width <= 0) return null;
               const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
-              // Tooltips can't paint outside the app window, so edge
-              // anchors flip inward instead of centering over the point.
-              const tooltipAlign = anchor >= 75 ? "right" : anchor <= 25 ? "left" : "center";
+              // Tooltips can't paint outside the app window. Centered ones
+              // float over the block middle; edge ones left-align with the
+              // block's left edge so they stay attached without spilling out.
+              const tooltipCentered = anchor > 25 && anchor < 75;
               const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
@@ -140,12 +141,12 @@ export function RailLane({
                   {hoveredId === slice.id ? (
                     <div
                       className={`pointer-events-none absolute bottom-[calc(100%+0.4rem)] z-30 w-max max-w-[16rem] rounded-xl border border-white/15 bg-black/85 px-3 py-2 text-left shadow-2xl backdrop-blur ${
-                        tooltipAlign === "center" ? "-translate-x-1/2" : ""
+                        tooltipCentered ? "-translate-x-1/2" : ""
                       }`}
                       style={
-                        tooltipAlign === "right"
-                          ? { right: `${100 - anchor}%` }
-                          : { left: `${anchor}%` }
+                        tooltipCentered
+                          ? { left: `${anchor}%` }
+                          : { left: `${clampedLeft}%` }
                       }
                     >
                       <div className="truncate text-[11px] font-semibold text-white">{slice.title}</div>
