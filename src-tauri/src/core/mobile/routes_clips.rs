@@ -10,11 +10,13 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
-/// Largest clip accepted in one upload: 1 GiB, about 5.5 hours of 16 kHz mono.
+/// Largest clip accepted in one upload: 4 GiB. That is about 37 hours of a
+/// voice memo (16 kHz, 16-bit) or 8 hours at high quality (48 kHz, 24-bit).
 ///
 /// Left unset, axum caps request bodies at 2 MB — roughly one minute of audio —
 /// so every longer recording was refused and the phone retried it forever.
-pub const MAX_CLIP_BYTES: usize = 1024 * 1024 * 1024;
+/// Uploads stream to disk, so the size of this limit costs no memory.
+pub const MAX_CLIP_BYTES: usize = 4 * 1024 * 1024 * 1024;
 
 type Rejection = (StatusCode, String);
 

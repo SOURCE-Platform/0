@@ -24,8 +24,8 @@ pub async fn ingest_clip_spooled(
     spooled: &Path,
     bytes_len: u64,
 ) -> Result<PathBuf, String> {
-    validate_wav(&read_header(spooled)?)?;
-    let audio_path = mobile_clip_path(clip_id)?;
+    let kind = ClipKind::detect(&read_header(spooled)?)?;
+    let audio_path = stored_clip_path(clip_id, kind)?;
 
     // The phone re-sends anything it never saw acknowledged. If this clip is
     // already transcribed, accept it without redoing the work: a long
@@ -41,6 +41,11 @@ pub async fn ingest_clip_spooled(
     }
     std::fs::rename(spooled, &audio_path)
         .map_err(|error| format!("Failed to move mobile clip into place: {error}"))?;
+    // A compressed upload replaces the WAV the live stream wrote for the same
+    // recording. The clip's row is repointed at the new file just below.
+    if kind != ClipKind::Wav {
+        discard_spool(&mobile_clip_path(clip_id)?);
+    }
     let path_str = audio_path.to_string_lossy().to_string();
     track_mobile_clip(
         db,
@@ -153,6 +158,54 @@ async fn dispatch_transcribe(
     }
 }
 
+/// The audio formats the phone sends: WAV from older versions of the app, and
+/// compressed AAC, either as a raw ADTS stream or in an MP4 container.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipKind {
+    Wav,
+    Aac,
+    M4a,
+}
+
+impl ClipKind {
+    /// Recognise a clip by its first bytes rather than trusting its name.
+    pub fn detect(header: &[u8]) -> Result<Self, String> {
+        if header.len() < 12 {
+            return Err("Uploaded clip is too small.".to_string());
+        }
+        if &header[0..4] == b"RIFF" && &header[8..12] == b"WAVE" {
+            return if header.len() >= 44 {
+                Ok(Self::Wav)
+            } else {
+                Err("Uploaded clip is too small.".to_string())
+            };
+        }
+        if &header[4..8] == b"ftyp" {
+            return Ok(Self::M4a);
+        }
+        // ADTS frames open with a 12-bit sync word followed by a zero layer.
+        if header[0] == 0xFF && header[1] & 0xF6 == 0xF0 {
+            return Ok(Self::Aac);
+        }
+        Err("Uploaded clip must be WAV, AAC or M4A audio.".to_string())
+    }
+
+    fn extension(self) -> &'static str {
+        match self {
+            Self::Wav => "wav",
+            Self::Aac => "aac",
+            Self::M4a => "m4a",
+        }
+    }
+}
+
+/// Where a received clip is kept, named for its format so Parakeet and the
+/// timeline player both recognise it.
+fn stored_clip_path(clip_id: &str, kind: ClipKind) -> Result<PathBuf, String> {
+    Ok(mobile_clip_path(clip_id)?.with_extension(kind.extension()))
+}
+
+/// The live stream's spool file, and the name incoming uploads are spooled under.
 pub fn mobile_clip_path(clip_id: &str) -> Result<PathBuf, String> {
     let safe: String = clip_id
         .chars()
@@ -195,16 +248,6 @@ async fn already_transcribed(db: &Arc<Database>, clip_id: &str) -> bool {
     .unwrap_or(false)
 }
 
-fn validate_wav(bytes: &[u8]) -> Result<(), String> {
-    if bytes.len() < 44 {
-        return Err("Uploaded clip is too small.".to_string());
-    }
-    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err("Uploaded clip must be a WAV file.".to_string());
-    }
-    Ok(())
-}
-
 fn ensure_wav_header(path: &std::path::Path) -> Result<(), String> {
     let bytes = std::fs::read(path).map_err(|error| format!("Failed to read spool: {error}"))?;
     if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
@@ -234,4 +277,28 @@ fn wav_header(data_len: u32) -> Vec<u8> {
     header.extend_from_slice(b"data");
     header.extend_from_slice(&data_len.to_le_bytes());
     header
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ClipKind;
+
+    #[test]
+    fn recognises_each_format_the_phone_sends() {
+        let mut wav = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        wav.resize(44, 0);
+        assert_eq!(ClipKind::detect(&wav), Ok(ClipKind::Wav));
+        assert_eq!(ClipKind::detect(b"\0\0\0\x20ftypM4A \0\0\0\0"), Ok(ClipKind::M4a));
+        let adts = [0xFF, 0xF1, 0x60, 0x40, 0x2A, 0x3F, 0xFC, 0x21, 0, 0, 0, 0];
+        assert_eq!(ClipKind::detect(&adts), Ok(ClipKind::Aac));
+    }
+
+    #[test]
+    fn refuses_anything_else() {
+        assert!(ClipKind::detect(b"not audio at all").is_err());
+        assert!(ClipKind::detect(b"RIFF").is_err());
+        let mut short_wav = b"RIFF\0\0\0\0WAVEfmt ".to_vec();
+        short_wav.resize(20, 0);
+        assert!(ClipKind::detect(&short_wav).is_err());
+    }
 }
