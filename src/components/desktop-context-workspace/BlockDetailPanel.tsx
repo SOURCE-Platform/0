@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OcrReconstructionView } from "@/components/desktop-context-workspace/OcrReconstructionView";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
@@ -23,10 +23,11 @@ export function BlockDetailPanel({
   const selectedEvidenceSrc = linkedPath ? convertFileSrc(linkedPath) : null;
   const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!selectedEvidenceSrc;
   const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
+  const showRawJsonTab = (controller.sliceDetail?.rawPayloads.length ?? 0) > 0;
   const isAudioBlock = controller.sliceDetail?.slice.tags.includes("audio") ?? false;
 
   return (
-    <Card className="h-fit border-border/70 xl:sticky xl:top-20">
+    <Card className="@container h-fit border-border/70 xl:sticky xl:top-20">
       <CardHeader>
         <div className="flex items-center gap-2">
           <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
@@ -44,9 +45,6 @@ export function BlockDetailPanel({
             </Button>
           ) : null}
         </div>
-        <CardDescription className="max-w-[30ch]">
-          Click any timeline block to inspect what it captured, how large it is, and the exact stored payload.
-        </CardDescription>
       </CardHeader>
       <CardContent>
         {!controller.selectedSlice ? (
@@ -59,39 +57,33 @@ export function BlockDetailPanel({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">{controller.sliceDetail.railLabel}</Badge>
-                <Badge variant="outline">{controller.sliceDetail.slice.sliceKind}</Badge>
-                <Badge variant="outline">{controller.sliceDetail.storageExact ? "Exact" : "Estimated"}</Badge>
-                {controller.sliceDetail.slice.piiCount > 0 ? (
-                  <Badge variant="secondary">{controller.sliceDetail.slice.piiCount} PII matches</Badge>
-                ) : null}
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-4">
+              <div className="min-w-44 flex-1 space-y-2">
+                <h3 className="text-lg font-semibold">{controller.sliceDetail.slice.title}</h3>
+                <p className="text-sm text-muted-foreground">
+                  {safeFormatDate(controller.sliceDetail.occurredAt, "PPpp")} • {formatDuration(controller.sliceDetail.durationMs)}
+                </p>
               </div>
-              <h3 className="text-lg font-semibold">{controller.sliceDetail.slice.title}</h3>
-              <p className="text-sm text-muted-foreground">
-                {safeFormatDate(controller.sliceDetail.occurredAt, "PPpp")} • {formatDuration(controller.sliceDetail.durationMs)}
-              </p>
-            </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">
-                  {formatBytes(controller.sliceDetail.storageBytes)}
+              <div className="grid min-w-60 flex-[2] grid-cols-1 gap-3 @min-[430px]:grid-cols-2">
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {formatBytes(controller.sliceDetail.storageBytes)}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
-                </p>
-              </div>
-              <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
-                <div className="mt-1 text-lg font-semibold text-foreground">
-                  {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Source-backed storage accounting for this block.
+                  </p>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Source-backed storage accounting for this block.
-                </p>
               </div>
             </div>
 
@@ -100,7 +92,7 @@ export function BlockDetailPanel({
                 {showTranscriptTab ? <TabsTrigger value="transcript">Transcript</TabsTrigger> : null}
                 {showVisualTab ? <TabsTrigger value="visual">Visual</TabsTrigger> : null}
                 <TabsTrigger value="metadata">Metadata</TabsTrigger>
-                <TabsTrigger value="json">Raw JSON</TabsTrigger>
+                {showRawJsonTab ? <TabsTrigger value="json">Raw JSON</TabsTrigger> : null}
               </TabsList>
 
               {showTranscriptTab ? (
@@ -236,16 +228,18 @@ export function BlockDetailPanel({
                 </div>
               </TabsContent>
 
-              <TabsContent value="json" className="space-y-4 pt-4">
-                {controller.sliceDetail.rawPayloads.map((payload) => (
-                  <div key={payload.label} className="space-y-2">
-                    <div className="text-xs uppercase tracking-wide text-muted-foreground">{payload.label}</div>
-                    <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground">
+              {showRawJsonTab ? (
+                <TabsContent value="json" className="space-y-4 pt-4">
+                  {controller.sliceDetail.rawPayloads.map((payload) => (
+                    <div key={payload.label} className="space-y-2">
+                      <div className="text-xs uppercase tracking-wide text-muted-foreground">{payload.label}</div>
+                      <pre className="overflow-x-auto rounded-xl border border-border/70 bg-black/20 p-4 text-xs leading-6 text-foreground">
 {payload.rawJson}
-                    </pre>
-                  </div>
-                ))}
-              </TabsContent>
+                      </pre>
+                    </div>
+                  ))}
+                </TabsContent>
+              ) : null}
             </Tabs>
           </div>
         )}
