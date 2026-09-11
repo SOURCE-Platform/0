@@ -190,7 +190,7 @@ function App() {
           </div>
 
           <main
-            className="ml-14 mr-0 overflow-y-auto transition-opacity duration-200"
+            className="app-scroll-region ml-14 mr-0 overflow-y-auto transition-opacity duration-200"
             style={{
               height: `calc(100% - ${contentTop}px)`,
               marginTop: contentTop,
