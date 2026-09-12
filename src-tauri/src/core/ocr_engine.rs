@@ -1,6 +1,7 @@
 // OCR (Optical Character Recognition) engine using Tesseract
 
 use crate::models::capture::RawFrame;
+use crate::core::ocr_tsv::lines_from_tsv;
 use crate::models::ocr::{BoundingBox, OcrResult, TextBlock};
 use image::{GrayImage, RgbaImage};
 use std::path::PathBuf;
@@ -116,8 +117,14 @@ impl OcrEngine {
         // Crop frame to region
         let cropped = self.crop_frame(frame, region)?;
 
-        // Run OCR on cropped region
-        self.extract_text_from_frame(&cropped).await
+        // Boxes come back relative to the crop; move them into frame space so
+        // they line up with the full screenshot.
+        let mut result = self.extract_text_from_frame(&cropped).await?;
+        for block in &mut result.text_blocks {
+            block.bounding_box.x += region.x;
+            block.bounding_box.y += region.y;
+        }
+        Ok(result)
     }
 
     /// Convert a RawFrame to an RgbaImage
@@ -173,28 +180,16 @@ impl OcrEngine {
             .set_variable("user_defined_dpi", &self.config.dpi.to_string())
             .map_err(|e| OcrError::Processing(e.to_string()))?
             .set_image(image_path.to_str().unwrap())
+            .map_err(|e| OcrError::Processing(e.to_string()))?
+            .recognize()
             .map_err(|e| OcrError::Processing(e.to_string()))?;
 
-        // Get text
-        let text = tesseract
-            .get_text()
+        // TSV carries a pixel box and confidence per word; group them into lines.
+        let tsv = tesseract
+            .get_tsv_text(0)
             .map_err(|e| OcrError::Processing(e.to_string()))?;
 
-        // For now, create a single text block with the full text
-        // The tesseract crate v0.14 doesn't expose detailed bounding box API
-        // We'll return the entire text as one block
-        let text_blocks = if !text.trim().is_empty() {
-            vec![TextBlock::new(
-                text.trim().to_string(),
-                0.85, // Default confidence since we don't have per-word data
-                BoundingBox::new(0, 0, 100, 100), // Placeholder bounding box
-                self.config.languages[0].clone(),
-            )]
-        } else {
-            vec![]
-        };
-
-        Ok(text_blocks)
+        Ok(lines_from_tsv(&tsv, &self.config.languages[0]))
     }
 
     /// Crop a frame to a specific region

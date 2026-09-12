@@ -27,6 +27,7 @@ pub mod ocr_processor_types;
 pub mod ocr_storage;
 pub mod ocr_storage_models;
 pub mod ocr_trigger_signals;
+pub mod ocr_tsv;
 pub mod os_activity;
 pub mod os_activity_storage;
 pub mod playback_engine;
