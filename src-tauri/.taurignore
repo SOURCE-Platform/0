@@ -1,0 +1,5 @@
+# Tauri's dev watcher walks src-tauri/, and build.rs runs `swift build` into
+# native-pkg/.build on every compile. Watching that directory makes each build
+# trigger the next one: an endless rebuild loop that never reaches a window.
+native-pkg/.build/
+target/
