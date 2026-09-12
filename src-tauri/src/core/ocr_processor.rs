@@ -78,6 +78,10 @@ impl OcrProcessor {
 
                 // Process batch
                 for job in jobs {
+                    // Screenshots exist only to be read. Drop each one once its
+                    // text is stored (or reading failed): kept, 4K frames
+                    // piled up at ~1.4 GB an hour of use.
+                    let frame_path = job.frame_path.clone();
                     match Self::process_job(&ocr_engine, job).await {
                         Ok(result) => {
                             // Update metrics
@@ -98,6 +102,7 @@ impl OcrProcessor {
                             eprintln!("OCR processing error: {}", e);
                         }
                     }
+                    let _ = tokio::fs::remove_file(&frame_path).await;
                 }
 
                 // Small delay between batches
@@ -118,12 +123,10 @@ impl OcrProcessor {
         trigger_reason: String,
         motion_regions: Vec<BoundingBox>,
     ) -> Result<(), OcrError> {
-        if !self.config.enabled {
-            return Ok(());
-        }
-
-        // Skip static frames if configured
-        if self.config.skip_static_frames && motion_regions.is_empty() {
+        // A frame that won't be read is discarded here, like one that was.
+        let skip_static = self.config.skip_static_frames && motion_regions.is_empty();
+        if !self.config.enabled || skip_static {
+            let _ = tokio::fs::remove_file(&frame_path).await;
             return Ok(());
         }
 
@@ -131,8 +134,10 @@ impl OcrProcessor {
 
         // Check queue size limit
         if queue.len() >= self.config.max_queue_size {
-            // Drop oldest job
-            queue.pop_front();
+            // Drop oldest job, and its screenshot with it
+            if let Some(dropped) = queue.pop_front() {
+                let _ = tokio::fs::remove_file(&dropped.frame_path).await;
+            }
         }
 
         queue.push_back(OcrJob {
@@ -299,51 +304,5 @@ impl OcrProcessor {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_ocr_processor_config_default() {
-        let config = OcrProcessorConfig::default();
-        assert_eq!(config.enabled, true);
-        assert_eq!(config.interval_seconds, 60);
-        assert_eq!(config.batch_size, 5);
-        assert_eq!(config.skip_static_frames, true);
-        assert_eq!(config.max_queue_size, 100);
-    }
-
-    #[test]
-    fn test_should_use_regions() {
-        // Empty regions
-        assert!(!OcrProcessor::should_use_regions(&[]));
-
-        // Too many regions
-        let many_regions: Vec<BoundingBox> = (0..15)
-            .map(|i| BoundingBox::new(i * 10, i * 10, 50, 50))
-            .collect();
-        assert!(!OcrProcessor::should_use_regions(&many_regions));
-
-        // One very large region (likely video)
-        let large_region = vec![BoundingBox::new(0, 0, 1920, 1080)];
-        assert!(!OcrProcessor::should_use_regions(&large_region));
-
-        // Reasonable regions
-        let good_regions = vec![
-            BoundingBox::new(100, 100, 200, 100),
-            BoundingBox::new(400, 200, 300, 150),
-        ];
-        assert!(OcrProcessor::should_use_regions(&good_regions));
-    }
-
-    #[test]
-    fn test_merge_ocr_results() {
-        let result1 = OcrResult::new(0, vec![], 100);
-        let mut result2 = OcrResult::new(0, vec![], 150);
-        result2.total_text = "Hello".to_string();
-
-        let merged = OcrProcessor::merge_ocr_results(vec![result1, result2]);
-
-        assert_eq!(merged.processing_time_ms, 250);
-        assert_eq!(merged.total_text, "Hello");
-    }
-}
+#[path = "ocr_processor_tests.rs"]
+mod tests;

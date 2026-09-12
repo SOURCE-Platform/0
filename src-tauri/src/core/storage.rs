@@ -124,6 +124,28 @@ impl RecordingStorage {
         Ok(frame_path)
     }
 
+    /// Delete OCR source frames left behind by a previous run. Each frame is
+    /// removed once read, but frames still queued when SOURCE quit were never
+    /// read. Call before the OCR processor starts, while none are in flight.
+    /// Returns how many files were removed.
+    pub fn discard_leftover_ocr_frames(&self) -> usize {
+        let Ok(sessions) = std::fs::read_dir(&self.base_path) else {
+            return 0;
+        };
+        let mut removed = 0;
+        for session in sessions.flatten() {
+            let Ok(frames) = std::fs::read_dir(session.path().join("ocr_frames")) else {
+                continue;
+            };
+            for frame in frames.flatten() {
+                if std::fs::remove_file(frame.path()).is_ok() {
+                    removed += 1;
+                }
+            }
+        }
+        removed
+    }
+
     /// End a recording session
     pub async fn end_session(&self, session_id: Uuid) -> StorageResult<()> {
         let end_timestamp = chrono::Utc::now().timestamp();

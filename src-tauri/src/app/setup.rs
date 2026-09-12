@@ -56,6 +56,10 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
                 .expect("Failed to initialize recording storage"),
         );
 
+        let discarded = storage.discard_leftover_ocr_frames();
+        if discarded > 0 {
+            println!("Discarded {discarded} leftover OCR screenshots");
+        }
         let ocr_processor = if config.ocr_enabled && config.capture_channels.ocr {
             initialize_ocr_processor(&db, &config).await
         } else {
