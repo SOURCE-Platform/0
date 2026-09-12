@@ -43,6 +43,30 @@ pub async fn start_desktop_capture(
         runtime.channel_errors.clear();
     }
 
+    // The screen recorder's OCR switch defaults to off and is only ever turned
+    // on here. The June modularization dropped this call, which left OCR
+    // silently dead: frames were captured but never enqueued for recognition.
+    let ocr_requested = config.capture_channels.ocr && config.ocr_enabled;
+    if ocr_requested && state.ocr_processor.is_none() {
+        let mut runtime = state.desktop_capture_runtime.write().await;
+        runtime.channel_errors.insert(
+            "ocr".to_string(),
+            "OCR engine is not running. It starts at launch, so restart SOURCE after enabling OCR."
+                .to_string(),
+        );
+        runtime
+            .warnings
+            .push("OCR is enabled, but the OCR engine was not started.".to_string());
+    }
+    if let Some(recorder) = state.screen_recorder.as_ref() {
+        recorder
+            .configure_ocr_capture(
+                ocr_requested && state.ocr_processor.is_some(),
+                config.ocr_interval_seconds,
+            )
+            .await;
+    }
+
     if config.capture_channels.screen_frames {
         let display_id = display_id.ok_or(
             "Screen capture is enabled, but no display is selected. Disable screen capture or select a display.",
