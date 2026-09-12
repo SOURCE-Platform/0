@@ -44,8 +44,10 @@ export function useSettingsController() {
 
   useEffect(() => {
     if (!captureStatus?.isActive) return;
+    // Refresh live status only. Reloading config here overwrote switches the
+    // user had flipped but not saved yet, snapping them back within seconds.
     const interval = window.setInterval(() => {
-      void load(true);
+      void load(true, false);
     }, 5000);
     return () => window.clearInterval(interval);
   }, [captureStatus?.isActive]);
@@ -60,7 +62,7 @@ export function useSettingsController() {
     [displays, selectedDisplay],
   );
 
-  async function load(silent = false) {
+  async function load(silent = false, includeConfig = true) {
     if (!silent) setLoading(true);
     try {
       const [
@@ -86,7 +88,7 @@ export function useSettingsController() {
           ),
         ]);
 
-      setConfig(normalizeOcrConfig(normalizeAudioConfig(loadedConfig)));
+      if (includeConfig) setConfig(normalizeOcrConfig(normalizeAudioConfig(loadedConfig)));
       setDisplays(availableDisplays);
       setAudioInputSources(loadedAudioInputSources);
       setChannelStatuses(loadedChannelStatuses);
