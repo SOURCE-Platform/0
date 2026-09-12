@@ -104,7 +104,10 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
         ("keyboard", config.capture_channels.keyboard, "SELECT MAX(timestamp) FROM keyboard_events", "SELECT COUNT(*) FROM keyboard_events WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("mouse", config.capture_channels.mouse, "SELECT MAX(timestamp) FROM mouse_events", "SELECT COUNT(*) FROM mouse_events WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("ocr", config.capture_channels.ocr, "SELECT MAX(timestamp) FROM ocr_results", "SELECT COUNT(*) FROM ocr_results WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
-        ("screen_frames", config.capture_channels.screen_frames, "SELECT MAX(timestamp) FROM frames", "SELECT COUNT(*) FROM frames WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
+        // Keyframe evidence is persisted as encoded video segments. Nothing in
+        // the live recorder writes the `frames` table, so reading it left this
+        // channel at "No samples yet" while capture was working.
+        ("screen_frames", config.capture_channels.screen_frames, "SELECT MAX(end_timestamp) FROM video_segments", "SELECT COUNT(*) FROM video_segments WHERE end_timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("camera_future", config.capture_channels.camera_future, "SELECT MAX(value) FROM (SELECT MAX(timestamp) AS value FROM visual_scene_snapshots UNION ALL SELECT MAX(timestamp) AS value FROM gaze_samples UNION ALL SELECT MAX(timestamp) AS value FROM attention_snapshots UNION ALL SELECT MAX(last_seen_at) AS value FROM attention_spans)", "SELECT (SELECT COUNT(*) FROM visual_scene_snapshots WHERE timestamp >= strftime('%s','now') * 1000 - 3600000) + (SELECT COUNT(*) FROM gaze_samples WHERE timestamp >= strftime('%s','now') * 1000 - 3600000) + (SELECT COUNT(*) FROM attention_snapshots WHERE timestamp >= strftime('%s','now') * 1000 - 3600000) + (SELECT COUNT(*) FROM attention_spans WHERE last_seen_at >= strftime('%s','now') * 1000 - 3600000)"),
         ("audio_future", config.capture_channels.audio_future, "SELECT MAX(start_timestamp) FROM audio_chunks", "SELECT COUNT(*) FROM audio_chunks WHERE start_timestamp >= strftime('%s','now') * 1000 - 3600000"),
     ];
