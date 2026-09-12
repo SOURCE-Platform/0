@@ -141,6 +141,9 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         gearView?.frame = NSRect(x: 14, y: 8, width: 24, height: 24)
         appIconView?.frame = NSRect(x: (width - 24) / 2, y: 8, width: 24, height: 24)
         elapsedLabel?.frame = NSRect(x: width - 14 - 120, y: 11, width: 120, height: 17)
+        if let pillBackground = pill as? PillBackgroundView {
+            panel.invalidateCursorRects(for: pillBackground)
+        }
     }
 
     private var gearView: GearControl?
@@ -316,6 +319,13 @@ final class PillBackgroundView: NSVisualEffectView {
     private var trackingAreaRef: NSTrackingArea?
     private var cursorTimer: Timer?
     private var lastMovedDiagAt: TimeInterval = 0
+
+    /// Belt and suspenders: the rect covers steady-state hover evaluated
+    /// by AppKit on every move; the explicit sets below cover drag states.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .openHand)
+    }
 
     override func updateTrackingAreas() {
         if let trackingAreaRef {
