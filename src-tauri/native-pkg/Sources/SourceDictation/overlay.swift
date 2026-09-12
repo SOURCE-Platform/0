@@ -276,6 +276,34 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
     }
 }
 
+/// Temporary diagnostic: file logging (helper stdout never reaches the
+/// unified log from a GUI launch). Records hover/drag events plus whether
+/// the requested cursor is actually current afterwards.
+func pillDiag(_ line: String) {
+    let url = URL(fileURLWithPath: "/tmp/pillcursor.log")
+    let entry = "\(Date().timeIntervalSince1970) \(line)\n"
+    guard let data = entry.data(using: .utf8) else { return }
+    if FileManager.default.fileExists(atPath: url.path) {
+        if let handle = try? FileHandle(forWritingTo: url) {
+            try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+            try? handle.close()
+        }
+    } else {
+        try? data.write(to: url)
+    }
+}
+
+func pillCursorState(_ context: String) -> String {
+    let current = NSCursor.currentSystem
+    let name =
+        current === NSCursor.openHand ? "openHand"
+        : current === NSCursor.closedHand ? "closedHand"
+        : current === NSCursor.arrow ? "arrow"
+        : current === NSCursor.pointingHand ? "pointingHand" : "other"
+    return "\(context) cursor=\(name)"
+}
+
 /// Pill surface: open-hand cursor on hover to signal draggability,
 /// closed-hand cursor for the drag itself. Dragging moves the panel by
 /// mouse delta, so grabs work from any empty area (waveform, words,
@@ -287,6 +315,7 @@ final class PillBackgroundView: NSVisualEffectView {
     private var dragStartOrigin: NSPoint?
     private var trackingAreaRef: NSTrackingArea?
     private var cursorTimer: Timer?
+    private var lastMovedDiagAt: TimeInterval = 0
 
     override func updateTrackingAreas() {
         if let trackingAreaRef {
@@ -308,6 +337,7 @@ final class PillBackgroundView: NSVisualEffectView {
         writeDictationLine("DEBUG pill hover entered")
         startCursorForcing(.openHand)
         layer?.borderColor = NSColor.white.cgColor
+        pillDiag("entered rects=\(window?.areCursorRectsEnabled ?? false) moved=\(window?.acceptsMouseMovedEvents ?? false) \(pillCursorState("after-set"))")
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -316,6 +346,7 @@ final class PillBackgroundView: NSVisualEffectView {
         stopCursorForcing()
         NSCursor.arrow.set()
         layer?.borderColor = NSColor.systemGray.cgColor
+        pillDiag("exited \(pillCursorState("after-set"))")
     }
 
     /// Something on this panel reverts explicitly-set cursors (the border
@@ -340,6 +371,11 @@ final class PillBackgroundView: NSVisualEffectView {
             NSCursor.closedHand.set()
         } else {
             NSCursor.openHand.set()
+        }
+        let now = Date().timeIntervalSince1970
+        if now - lastMovedDiagAt > 3 {
+            lastMovedDiagAt = now
+            pillDiag("moved \(pillCursorState("after-set"))")
         }
     }
 
