@@ -122,6 +122,25 @@ export function DeviceContextTimelineSection({
                     interactionFilter={controller.interactionFilter}
                   />
                 ))}
+                {controller.timeline.rails
+                  .filter((rail) => rail.id === "ocr")
+                  .map((rail) => (
+                  <TimelineRailTree
+                    key={rail.id}
+                    rail={rail}
+                    depth={0}
+                    expandedRails={{}}
+                    onToggleRail={() => {}}
+                    windowStart={controller.effectiveWindowStart}
+                    windowEnd={controller.effectiveWindowEnd}
+                    selectedSliceId={controller.selectedSlice?.id ?? null}
+                    selectedRailId={selectedRailId}
+                    onSelect={controller.handleSelectSlice}
+                    onDeselect={controller.clearSelectedSlice}
+                    appFilter={controller.appFilter}
+                    interactionFilter={controller.interactionFilter}
+                  />
+                ))}
               </div>
             </div>
           </div>

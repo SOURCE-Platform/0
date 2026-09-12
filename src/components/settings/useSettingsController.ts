@@ -3,6 +3,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { DISPLAY_KEY } from "@/components/TimelinePage";
 import { normalizeAudioConfig, updateChannelConfig } from "@/components/settings/audioConfig";
 import { createAudioSettingsActions } from "@/components/settings/audioSettingsActions";
+import { normalizeOcrConfig, updateOcrChannelConfig } from "@/components/settings/ocrConfig";
+import { createOcrSettingsActions } from "@/components/settings/ocrSettingsActions";
 import { useTheme } from "@/components/theme-provider";
 import { useUIPrefs } from "@/components/ui-prefs-provider";
 import { ChannelStatus, DesktopCaptureStatus } from "@/types/contextTimeline";
@@ -84,7 +86,7 @@ export function useSettingsController() {
           ),
         ]);
 
-      setConfig(normalizeAudioConfig(loadedConfig));
+      setConfig(normalizeOcrConfig(normalizeAudioConfig(loadedConfig)));
       setDisplays(availableDisplays);
       setAudioInputSources(loadedAudioInputSources);
       setChannelStatuses(loadedChannelStatuses);
@@ -119,7 +121,7 @@ export function useSettingsController() {
 
   function updateChannel(channel: keyof CaptureChannels, enabled: boolean) {
     if (!config) return;
-    setConfig(updateChannelConfig(config, channel, enabled));
+    setConfig(updateOcrChannelConfig(updateChannelConfig(config, channel, enabled), channel, enabled));
   }
 
   function updatePiiCategory(category: string, enabled: boolean) {
@@ -178,7 +180,7 @@ export function useSettingsController() {
       return accumulator;
     }, {} as CaptureChannels);
 
-    const nextConfig = { ...config, capture_channels: nextChannels };
+    const nextConfig = normalizeOcrConfig({ ...config, capture_channels: nextChannels });
     setConfig(nextConfig);
     await saveConfig(nextConfig);
     showSettingsToast({
@@ -194,7 +196,7 @@ export function useSettingsController() {
   async function handleStartCapture() {
     if (!config) return;
     try {
-      const nextConfig = normalizeAudioConfig(config);
+      const nextConfig = normalizeOcrConfig(normalizeAudioConfig(config));
       setConfig(nextConfig);
       await persistConfig(nextConfig);
       const nextStatus = await invoke<DesktopCaptureStatus>("start_desktop_capture", {
@@ -273,6 +275,7 @@ export function useSettingsController() {
   }
 
   const audioActions = createAudioSettingsActions(config, setConfig);
+  const ocrActions = createOcrSettingsActions(config, setConfig);
 
   return {
     config,
@@ -300,6 +303,7 @@ export function useSettingsController() {
     setPendingDelete,
     selectDisplay,
     ...audioActions,
+    ...ocrActions,
     updateConfig,
     updateChannel,
     updatePiiCategory,

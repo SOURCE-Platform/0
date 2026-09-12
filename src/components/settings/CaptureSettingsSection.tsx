@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AudioCaptureControls } from "@/components/settings/AudioCaptureControls";
+import { OcrCaptureControls } from "@/components/settings/OcrCaptureControls";
 import { CHANNEL_META, RESOURCE_PROFILE_META } from "@/components/settings/constants";
 import { GazeCalibrationCard } from "@/components/settings/GazeCalibrationCard";
 import { SettingsController } from "@/components/settings/useSettingsController";
@@ -193,6 +194,9 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                       {channel.key === "audio_future" ? (
                         <AudioCaptureControls controller={controller} />
                       ) : null}
+                      {channel.key === "ocr" ? (
+                        <OcrCaptureControls controller={controller} />
+                      ) : null}
                     </div>
 
                     <div className="flex min-w-[240px] flex-col items-end gap-3">
@@ -202,6 +206,11 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                         </span>
                         <Switch
                           checked={isEnabled}
+                          disabled={
+                            controller.saving ||
+                            (channel.key === "ocr" &&
+                              !config.capture_channels.screen_frames)
+                          }
                           onCheckedChange={(enabled) => controller.updateChannel(channel.key, enabled)}
                         />
                       </div>

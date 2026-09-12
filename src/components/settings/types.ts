@@ -33,6 +33,8 @@ export interface Config {
   auto_start: boolean;
   motion_detection_threshold: number;
   ocr_enabled: boolean;
+  ocr_languages: string[];
+  ocr_interval_seconds: number;
   default_recording_fps: number;
   website_blacklist: string[];
   app_blacklist: string[];
