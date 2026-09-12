@@ -25,8 +25,9 @@ final class MicSessionRecorder: @unchecked Sendable {
     private let ioLock = NSLock()
     /// When the tap last delivered audio. Guarded by `ioLock`.
     private var lastBufferAt = DispatchTime(uptimeNanoseconds: 0)
-    /// When the current engine picked its microphone. `lifecycleQueue` only.
-    private var engineStartedAt = DispatchTime(uptimeNanoseconds: 0)
+    /// When the engine last rebuilt after a configuration change.
+    /// `lifecycleQueue` only.
+    private var lastRebuildAt = DispatchTime(uptimeNanoseconds: 0)
 
     var activeSessionPath: String? { sessionURL?.path }
 
@@ -102,7 +103,6 @@ final class MicSessionRecorder: @unchecked Sendable {
         // Record from the microphone chosen in Source, not just the macOS default.
         // Chosen before any format is read, since formats follow the device.
         let source = DictationInput.apply(to: audioEngine)
-        engineStartedAt = .now()
         let input = audioEngine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         guard input.inputFormat(forBus: 0).channelCount > 0, inputFormat.sampleRate > 0 else {
@@ -152,30 +152,25 @@ final class MicSessionRecorder: @unchecked Sendable {
         }
     }
 
-    /// The device was reconfigured and the engine has stopped. Rebuild it on
-    /// the new configuration and keep writing to the same session file.
-    ///
-    /// Selecting the chosen microphone posts this notification too, just after
-    /// an engine starts. Rebuilding for that selects the microphone again, which
-    /// posts another one: a loop. So a notification that close to a start only
-    /// rebuilds if audio then stops arriving.
+    /// The device was reconfigured and the engine may have stopped. Rebuild
+    /// only when audio actually stops arriving: Source's own ambient capture
+    /// opens and closes this same microphone every couple of seconds, and
+    /// each of those posts this notification while the stream is perfectly
+    /// healthy. Rebuilding for every one of them chopped sessions into
+    /// silence, so notifications while audio flows are ignored, and rebuilds
+    /// are rate-limited to one every few seconds.
     private func reconnectAfterConfigurationChange(target: AVAudioFormat) {
         let noticedAt = DispatchTime.now()
-        lifecycleQueue.async { [weak self] in
+        lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(800)) { [weak self] in
             guard let self else { return }
-            guard noticedAt < self.engineStartedAt + .milliseconds(500) else {
-                self.rebuildEngine(target: target)
-                return
-            }
-            self.lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(400)) { [weak self] in
-                guard let self else { return }
-                self.ioLock.lock()
-                let flowing = self.lastBufferAt > noticedAt
-                self.ioLock.unlock()
-                if !flowing {
-                    self.rebuildEngine(target: target)
-                }
-            }
+            self.ioLock.lock()
+            let flowing = self.lastBufferAt > noticedAt
+            self.ioLock.unlock()
+            guard !flowing else { return }
+            let now = DispatchTime.now()
+            guard now > self.lastRebuildAt + .seconds(3) else { return }
+            self.lastRebuildAt = now
+            self.rebuildEngine(target: target)
         }
     }
 
