@@ -28,26 +28,52 @@ final class MicSessionRecorder: @unchecked Sendable {
     /// When the engine last rebuilt after a configuration change.
     /// `lifecycleQueue` only.
     private var lastRebuildAt = DispatchTime(uptimeNanoseconds: 0)
+    /// How much audio this session captured, and whether any of it was
+    /// non-zero. Guarded by `ioLock`. A session that ends with no frames, or
+    /// with nothing but exact zeros, is a failure that used to look exactly
+    /// like success: the file existed, the engine reported no error, and the
+    /// transcript came back empty. It is reported loudly now.
+    private var sessionFrames: AVAudioFrameCount = 0
+    private var sessionPeak: Float = 0
 
     var activeSessionPath: String? { sessionURL?.path }
 
     /// Live loudness (0..1 RMS-ish) for the overlay waveform. Called on the
     /// audio tap thread, throttled to ~20 Hz.
     var onLevel: ((Float) -> Void)?
-    private var lastLevelAt = Date.distantPast
+    var lastLevelAt = Date.distantPast
 
     /// Converted 16 kHz mono samples kept for display-only partial
     /// transcriptions (capped at ~60 s). Reading the open WAV file directly
     /// gives a broken header, so partials come from memory instead.
     /// Guarded by lock: the audio tap appends on a realtime thread while
     /// the main-thread timer snapshots.
-    private var partialSamples: [Float] = []
-    private let partialLock = NSLock()
-    private static let maxPartialSamples = 960_000
+    var partialSamples: [Float] = []
+    let partialLock = NSLock()
+    static let maxPartialSamples = 960_000
+
+    /// Microphone denial arrives as silence, not as an error: the engine starts
+    /// happily and the tap delivers zero-filled buffers. Say so out loud, so a
+    /// revoked grant can never again be mistaken for a capture bug.
+    private func reportMicrophoneAccess() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            return
+        case .notDetermined:
+            writeDictationLine(
+                "ERROR {\"message\":\"microphone access has never been granted to the dictation helper\"}"
+            )
+        default:
+            writeDictationLine(
+                "ERROR {\"message\":\"microphone access denied; enable Source under Privacy & Security > Microphone\"}"
+            )
+        }
+    }
 
     /// Begin recording a session. Stops any previous session file first.
     func beginSession() -> Bool {
         endSessionFile()
+        reportMicrophoneAccess()
         partialLock.lock()
         partialSamples = []
         partialLock.unlock()
@@ -74,6 +100,8 @@ final class MicSessionRecorder: @unchecked Sendable {
         }
         ioLock.lock()
         sessionFile = file
+        sessionFrames = 0
+        sessionPeak = 0
         ioLock.unlock()
         sessionURL = url
         return lifecycleQueue.sync { startEngine(target: format) }
@@ -83,9 +111,22 @@ final class MicSessionRecorder: @unchecked Sendable {
     func endSessionFile() {
         lifecycleQueue.sync { teardownEngine(engine) }
         ioLock.lock()
+        let hadSession = sessionFile != nil
+        let frames = sessionFrames
+        let peak = sessionPeak
         sessionFile = nil
         converter = nil
         ioLock.unlock()
+        guard hadSession else { return }
+        if frames == 0 {
+            writeDictationLine(
+                "ERROR {\"message\":\"microphone delivered no audio this session\"}"
+            )
+        } else if peak == 0 {
+            writeDictationLine(
+                "ERROR {\"message\":\"microphone recorded only silence this session\"}"
+            )
+        }
     }
 
     func discardSession() {
@@ -104,8 +145,16 @@ final class MicSessionRecorder: @unchecked Sendable {
         // Chosen before any format is read, since formats follow the device.
         let source = DictationInput.apply(to: audioEngine)
         let input = audioEngine.inputNode
-        let inputFormat = input.outputFormat(forBus: 0)
-        guard input.inputFormat(forBus: 0).channelCount > 0, inputFormat.sampleRate > 0 else {
+        // Tap the HARDWARE format, never `outputFormat(forBus:)`. Selecting a
+        // device on the AUHAL leaves the node's output format reporting the
+        // PREVIOUS device's sample rate, and it never catches up while the
+        // engine lives. Installing a tap at that stale rate makes AUHAL deliver
+        // zero buffers — sessions that record digital silence with no error
+        // anywhere — or, when the mismatch is visible by the time the tap is
+        // created, throw an uncatchable format-mismatch exception. Only
+        // `inputFormat(forBus:)` tracks the device that was actually selected.
+        let inputFormat = input.inputFormat(forBus: 0)
+        guard inputFormat.channelCount > 0, inputFormat.sampleRate > 0 else {
             writeDictationLine("ERROR {\"message\":\"no mic input\"}")
             return false
         }
@@ -189,76 +238,6 @@ final class MicSessionRecorder: @unchecked Sendable {
         }
     }
 
-    private func reportLevel(buffer: AVAudioPCMBuffer) {
-        let now = Date()
-        guard now.timeIntervalSince(lastLevelAt) > 0.05 else { return }
-        lastLevelAt = now
-        let rms: Float
-        if let channel = buffer.floatChannelData?[0] {
-            rms = rmsOfFloats(channel, count: Int(buffer.frameLength))
-        } else if let channel = buffer.int16ChannelData?[0] {
-            rms = rmsOfInt16(channel, count: Int(buffer.frameLength))
-        } else {
-            return
-        }
-        onLevel?(min(1.0, rms * 6.0))
-    }
-
-    private func rmsOfFloats(_ channel: UnsafePointer<Float>, count: Int) -> Float {
-        guard count > 0 else { return 0 }
-        var sum: Float = 0
-        for i in 0..<count {
-            sum += channel[i] * channel[i]
-        }
-        return sqrt(sum / Float(count))
-    }
-
-    private func rmsOfInt16(_ channel: UnsafePointer<Int16>, count: Int) -> Float {
-        guard count > 0 else { return 0 }
-        var sum: Float = 0
-        for i in 0..<count {
-            let sample = Float(channel[i]) / 32768.0
-            sum += sample * sample
-        }
-        return sqrt(sum / Float(count))
-    }
-
-    /// Valid standalone WAV of the recent session audio (last ~30 s),
-    /// or nil when there is nothing to transcribe yet. Bounded so
-    /// display-only partials stay fast no matter how long dictation runs.
-    private static let partialTailSamples = 480_000
-
-    func partialSnapshotURL() -> URL? {
-        partialLock.lock()
-        let samples = partialSamples
-        partialLock.unlock()
-        guard !samples.isEmpty else { return nil }
-        let tailStart = max(0, samples.count - Self.partialTailSamples)
-        let tail = Array(samples[tailStart...])
-        guard let format = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false
-        ) else {
-            return nil
-        }
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("partial-\(UUID().uuidString).wav")
-        do {
-            let file = try AVAudioFile(forWriting: url, settings: format.settings)
-            let frames = AVAudioFrameCount(tail.count)
-            guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames) else {
-                return nil
-            }
-            buffer.frameLength = frames
-            tail.withUnsafeBufferPointer { source in
-                buffer.floatChannelData?[0].update(from: source.baseAddress!, count: source.count)
-            }
-            try file.write(from: buffer)
-            return url
-        } catch {
-            return nil
-        }
-    }
-
     private func append(buffer: AVAudioPCMBuffer, target: AVAudioFormat) {
         reportLevel(buffer: buffer)
         ioLock.lock()
@@ -285,8 +264,12 @@ final class MicSessionRecorder: @unchecked Sendable {
         }
         if error == nil, output.frameLength > 0 {
             try? file.write(from: output)
+            sessionFrames += output.frameLength
             if let channel = output.floatChannelData?[0] {
                 let count = Int(output.frameLength)
+                for i in 0..<count {
+                    sessionPeak = max(sessionPeak, abs(channel[i]))
+                }
                 partialLock.lock()
                 partialSamples.append(contentsOf: UnsafeBufferPointer(start: channel, count: count))
                 if partialSamples.count > Self.maxPartialSamples {
