@@ -50,6 +50,7 @@ final class DictationRuntime: @unchecked Sendable {
             writeDictationLine("OPEN_SETTINGS")
         }
         watchParent()
+        SessionSpool.sweepLeftovers()
         hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
         watchStdin()
@@ -127,14 +128,22 @@ final class DictationRuntime: @unchecked Sendable {
         writeDictationLine("SESSION_STOPPED \(id)")
         if let path = sessionAudioPath {
             sessionAudioPath = nil
-            transcribeSessionAudio(id: id, path: path, startedAtMs: startedAtMs)
+            // Our own recording: discard it once transcribed.
+            transcribeSessionAudio(
+                id: id, path: path, startedAtMs: startedAtMs, discardAudio: true)
         }
     }
 
-    private func transcribeSessionAudio(id: String, path: String, startedAtMs: Int64? = nil, endedAtMs: Int64? = nil, source: String = "fluid-voice-prompt") {
+    /// `discardAudio` deletes the file once transcription completes, whether it
+    /// succeeded or not. Only Right Option session recordings pass it: files
+    /// sent with TRANSCRIBE_FILE (mobile clips) belong to Source and must stay.
+    private func transcribeSessionAudio(id: String, path: String, startedAtMs: Int64? = nil, endedAtMs: Int64? = nil, source: String = "fluid-voice-prompt", discardAudio: Bool = false) {
         let startedMs = startedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
         let endedMs = endedAtMs ?? Int64(Date().timeIntervalSince1970 * 1000)
         engine.transcribe(audioPath: path) { result in
+            if discardAudio {
+                SessionSpool.discard(path)
+            }
             let payload: [String: Any] = [
                 "id": id,
                 "text": result.text,

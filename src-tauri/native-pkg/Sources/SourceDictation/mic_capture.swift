@@ -77,8 +77,7 @@ final class MicSessionRecorder: @unchecked Sendable {
         partialLock.lock()
         partialSamples = []
         partialLock.unlock()
-        let spool = FileManager.default.temporaryDirectory
-            .appendingPathComponent("source-dictation-sessions", isDirectory: true)
+        let spool = SessionSpool.directory
         do {
             try FileManager.default.createDirectory(
                 at: spool, withIntermediateDirectories: true
