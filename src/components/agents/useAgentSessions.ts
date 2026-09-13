@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import type { AgentSession } from "./types";
+import type { AgentProblem, AgentSession, AgentSessionsSnapshot } from "./types";
 
 const REFRESH_MS = 10_000;
 
@@ -10,15 +10,17 @@ const REFRESH_MS = 10_000;
  */
 export function useAgentSessions(limit = 40) {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [problems, setProblems] = useState<AgentProblem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
     try {
-      const data = await invoke<AgentSession[]>("list_agent_sessions", { limit });
+      const data = await invoke<AgentSessionsSnapshot>("list_agent_sessions", { limit });
       if (!mounted.current) return;
-      setSessions(data);
+      setSessions(data.sessions);
+      setProblems(data.problems);
       setError(null);
     } catch (err) {
       if (mounted.current) setError(String(err));
@@ -37,5 +39,5 @@ export function useAgentSessions(limit = 40) {
     };
   }, [refresh]);
 
-  return { sessions, error, loading, refresh };
+  return { sessions, problems, error, loading, refresh };
 }

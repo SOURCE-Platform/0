@@ -19,6 +19,7 @@ mod dictation_store;
 pub(crate) mod dictation_supervisor;
 pub(crate) mod foreground_coordinator;
 mod indexing;
+pub mod input_watch;
 mod mappers;
 mod media_io;
 mod mic_capture;

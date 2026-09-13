@@ -114,8 +114,12 @@ fn claude_list_marks_running_sessions_live() {
 #[tokio::test]
 #[ignore = "reads the developer's own agent apps"]
 async fn real_machine() {
-    let sessions = list_agent_sessions(8).await;
-    for session in &sessions {
+    let snapshot = list_agent_sessions(8).await;
+    let sessions = &snapshot.sessions;
+    for problem in &snapshot.problems {
+        println!("PROBLEM {}: {}", problem.app.label(), problem.message);
+    }
+    for session in sessions {
         println!(
             "{:<11} {:<24} {:<18} live={} {}",
             session.app.label(),
@@ -133,5 +137,7 @@ async fn real_machine() {
 #[tokio::test]
 async fn missing_apps_produce_an_empty_list_not_an_error() {
     let roots = temp_roots("missing");
-    assert!(list_from(&roots, 10).await.is_empty());
+    let snapshot = list_from(&roots, 10).await;
+    assert!(snapshot.sessions.is_empty());
+    assert!(snapshot.problems.is_empty(), "a missing app is not a problem to report");
 }

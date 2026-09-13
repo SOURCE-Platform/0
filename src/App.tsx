@@ -92,6 +92,23 @@ function App() {
 
     window.addEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
 
+    // Microphone came or went (docking, unplugging an adapter): say which mic
+    // is recording now, the way FluidVoice did, so a dead dictation press is
+    // never a silent surprise.
+    let unlistenAudioInput: (() => void) | undefined;
+    listen<{ message: string; fallingBack: boolean }>("audio-input-changed", (event) => {
+      window.dispatchEvent(
+        new CustomEvent<ObserverAppToastDetail>(OBSERVER_APP_TOAST_EVENT, {
+          detail: {
+            type: event.payload.fallingBack ? "error" : "success",
+            text: event.payload.message,
+          },
+        }),
+      );
+    }).then((stop) => {
+      unlistenAudioInput = stop;
+    });
+
     // Pill gear button: jump to O's dictation settings even when the
     // Settings view is not mounted (it consumes the flag on mount).
     let unlistenSettings: (() => void) | undefined;
@@ -109,6 +126,7 @@ function App() {
     return () => {
       window.removeEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
       unlistenSettings?.();
+      unlistenAudioInput?.();
       toastTimerIds.current.forEach((timerId) => clearTimeout(timerId));
       toastTimerIds.current.clear();
     };

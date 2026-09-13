@@ -12,6 +12,18 @@ export interface AgentSession {
   archived: boolean;
 }
 
+/** An app whose records could not be read, so the UI can say so instead of
+ *  showing it as an app with no sessions. */
+export interface AgentProblem {
+  app: AgentApp;
+  message: string;
+}
+
+export interface AgentSessionsSnapshot {
+  sessions: AgentSession[];
+  problems: AgentProblem[];
+}
+
 export const APP_LABELS: Record<AgentApp, string> = {
   codex: "Codex",
   "claude-code": "Claude Code",

@@ -13,7 +13,7 @@ const FILTERS: Filter[] = ["all", "codex", "claude-code", "factory", "opencode"]
  * running session.
  */
 export default function AgentsPage() {
-  const { sessions, error, loading } = useAgentSessions();
+  const { sessions, problems, error, loading } = useAgentSessions();
   const [filter, setFilter] = useState<Filter>("all");
   const [showArchived, setShowArchived] = useState(false);
 
@@ -77,6 +77,17 @@ export default function AgentsPage() {
           Could not read agent sessions: {error}
         </div>
       )}
+
+      {/* An app that cannot be read must say so: a silent failure looks
+          identical to an app you have simply never used. */}
+      {problems.map((problem) => (
+        <div
+          key={problem.app}
+          className="mb-2 rounded-xl border border-amber-500/30 bg-amber-950/15 px-4 py-3 text-sm text-amber-100"
+        >
+          {APP_LABELS[problem.app]} sessions could not be read: {problem.message}
+        </div>
+      ))}
 
       {!error && loading && visible.length === 0 && (
         <p className="text-sm text-muted-foreground">Reading sessions…</p>

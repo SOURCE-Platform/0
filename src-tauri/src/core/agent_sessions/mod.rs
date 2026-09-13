@@ -18,31 +18,59 @@ mod tests;
 pub use paths::AgentRoots;
 pub use types::{AgentApp, AgentSession};
 
+/// What the hub found, plus anything it could not read.
+///
+/// Problems travel with the result instead of only reaching stderr, because a
+/// packaged app has nowhere to print: an app missing from the list would
+/// otherwise look like an app with no sessions.
+#[derive(Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSessionsSnapshot {
+    pub sessions: Vec<AgentSession>,
+    pub problems: Vec<AgentProblem>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentProblem {
+    pub app: AgentApp,
+    pub message: String,
+}
+
 /// Sessions from every app, newest first.
 ///
 /// `limit` applies per app before merging, so one busy app cannot crowd the
 /// others out of the list.
-pub async fn list_agent_sessions(limit: usize) -> Vec<AgentSession> {
+pub async fn list_agent_sessions(limit: usize) -> AgentSessionsSnapshot {
     list_from(&AgentRoots::from_env(), limit).await
 }
 
-pub async fn list_from(roots: &AgentRoots, limit: usize) -> Vec<AgentSession> {
-    let mut sessions = Vec::new();
-    collect("Codex", codex::list(roots, limit).await, &mut sessions);
-    collect("OpenCode", opencode::list(roots, limit).await, &mut sessions);
-    collect("Factory", factory::list(roots, limit), &mut sessions);
-    collect("Claude Code", claude::list(roots, limit), &mut sessions);
+pub async fn list_from(roots: &AgentRoots, limit: usize) -> AgentSessionsSnapshot {
+    let mut snapshot = AgentSessionsSnapshot::default();
+    collect(AgentApp::Codex, codex::list(roots, limit).await, &mut snapshot);
+    collect(AgentApp::OpenCode, opencode::list(roots, limit).await, &mut snapshot);
+    collect(AgentApp::Factory, factory::list(roots, limit), &mut snapshot);
+    collect(AgentApp::ClaudeCode, claude::list(roots, limit), &mut snapshot);
 
     // Live sessions first, then most recent. A missing timestamp sorts last
     // instead of jumping to the top.
-    sessions.sort_by(|a, b| b.live.cmp(&a.live).then(b.updated_at_ms.cmp(&a.updated_at_ms)));
-    sessions
+    snapshot
+        .sessions
+        .sort_by(|a, b| b.live.cmp(&a.live).then(b.updated_at_ms.cmp(&a.updated_at_ms)));
+    snapshot
 }
 
 /// One unreadable app must not empty the whole hub.
-fn collect(app: &str, result: Result<Vec<AgentSession>, String>, into: &mut Vec<AgentSession>) {
+fn collect(
+    app: AgentApp,
+    result: Result<Vec<AgentSession>, String>,
+    into: &mut AgentSessionsSnapshot,
+) {
     match result {
-        Ok(sessions) => into.extend(sessions),
-        Err(error) => eprintln!("[agent_sessions] {app} sessions unavailable: {error}"),
+        Ok(sessions) => into.sessions.extend(sessions),
+        Err(error) => {
+            eprintln!("[agent_sessions] {} sessions unavailable: {error}", app.label());
+            into.problems.push(AgentProblem { app, message: error });
+        }
     }
 }

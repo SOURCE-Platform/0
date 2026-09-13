@@ -1,3 +1,4 @@
+pub mod audio_input_watch;
 pub mod capture;
 pub mod commands;
 pub mod dictation_supervision;

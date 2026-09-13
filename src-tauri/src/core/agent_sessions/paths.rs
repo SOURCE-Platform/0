@@ -47,13 +47,24 @@ pub fn newest_numbered_file(dir: &std::path::Path, prefix: &str, suffix: &str) -
 }
 
 /// Open one of another app's SQLite files without ever writing to it.
+///
+/// A database left in write-ahead-log mode normally needs a shared-memory file
+/// to be readable, which a strictly read-only opener cannot always get. When
+/// that happens, fall back to reading the main file alone: the newest turns may
+/// be a moment stale, which is far better than showing the app as empty.
 pub async fn read_only_sqlite(
     path: &std::path::Path,
 ) -> Result<sqlx::SqliteConnection, sqlx::Error> {
     use sqlx::{sqlite::SqliteConnectOptions, ConnectOptions};
-    SqliteConnectOptions::new()
-        .filename(path)
-        .read_only(true)
-        .connect()
-        .await
+    let base = SqliteConnectOptions::new().filename(path).read_only(true);
+    match base.clone().connect().await {
+        Ok(conn) => Ok(conn),
+        Err(error) => {
+            eprintln!(
+                "[agent_sessions] {} not readable ({error}); retrying without the write-ahead log",
+                path.display()
+            );
+            base.immutable(true).connect().await
+        }
+    }
 }

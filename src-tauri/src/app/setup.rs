@@ -116,6 +116,7 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             .lock()
             .map(|config| (config.mobile_enabled, config.mobile_port))
             .unwrap_or((true, 8787));
+        crate::app::audio_input_watch::spawn_audio_input_watch(app.handle().clone());
         crate::core::mobile::spawn_mobile_server(
             db.clone(),
             dictation_commands.clone(),
