@@ -2,6 +2,7 @@ use crate::app::capture::sampler::{spawn_desktop_sampler, start_multimodal_captu
 use crate::app::capture::status::{build_channel_statuses, build_desktop_capture_status};
 use crate::app::state::{AppState, ChannelStatusDto, DesktopCaptureStatusDto};
 use crate::core::context_timeline;
+use crate::models::capture::CaptureError;
 use tauri::State;
 
 #[tauri::command]
@@ -72,16 +73,29 @@ pub async fn start_desktop_capture(
             "Screen capture is enabled, but no display is selected. Disable screen capture or select a display.",
         )?;
         if let Some(recorder) = state.screen_recorder.as_ref() {
-            recorder
-                .start_recording(display_id)
-                .await
-                .map_err(|e| format!("Failed to start screen recording: {}", e))?;
-            started_any_channel = true;
-            if let Ok(displays) = recorder.get_available_displays().await {
-                if let Some(display) = displays.iter().find(|item| item.id == display_id) {
-                    state.desktop_capture_runtime.write().await.display_name =
-                        Some(display.name.clone());
+            match recorder.start_recording(display_id).await {
+                Ok(()) => {
+                    started_any_channel = true;
+                    if let Ok(displays) = recorder.get_available_displays().await {
+                        if let Some(display) = displays.iter().find(|item| item.id == display_id)
+                        {
+                            state.desktop_capture_runtime.write().await.display_name =
+                                Some(display.name.clone());
+                        }
+                    }
                 }
+                // A missing macOS grant blocks screenshots and OCR only; the
+                // audio, input, and activity channels should still start.
+                Err(CaptureError::PermissionDenied(message)) => {
+                    let mut runtime = state.desktop_capture_runtime.write().await;
+                    for channel in ["screen_frames", "ocr"] {
+                        runtime
+                            .channel_errors
+                            .insert(channel.to_string(), message.clone());
+                    }
+                    runtime.warnings.push(message);
+                }
+                Err(e) => return Err(format!("Failed to start screen recording: {}", e)),
             }
         }
     }

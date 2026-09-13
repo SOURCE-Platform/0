@@ -32,6 +32,10 @@ export function formatChannelActivity(
     return "Permission is missing, so this channel cannot record yet.";
   }
 
+  if (status.permissionState === "system_denied") {
+    return "macOS Screen Recording permission is off, so this channel cannot see other apps.";
+  }
+
   if (!isCaptureActive) {
     return "Capture is currently stopped. Start capture from the Timeline page to begin collecting data.";
   }

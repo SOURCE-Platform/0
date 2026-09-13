@@ -6,6 +6,27 @@ use core_graphics::display::CGDisplay;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[link(name = "CoreGraphics", kind = "framework")]
+extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+/// Whether macOS Screen Recording permission is granted to this process.
+///
+/// Probing with a capture does not work: without the grant, macOS still hands
+/// back an image, just one holding only the wallpaper, the menu bar, and this
+/// app's own windows. OCR then reads SOURCE's own UI and nothing else.
+pub fn screen_capture_permission_granted() -> bool {
+    unsafe { CGPreflightScreenCaptureAccess() }
+}
+
+/// Ask macOS for Screen Recording permission. Shows the system prompt only the
+/// first time; a grant takes effect after the app is relaunched.
+pub fn request_screen_capture_permission() -> bool {
+    unsafe { CGRequestScreenCaptureAccess() }
+}
+
 /// macOS screen capture implementation
 pub struct MacOSScreenCapture {
     is_capturing: Arc<AtomicBool>,
@@ -13,39 +34,14 @@ pub struct MacOSScreenCapture {
 }
 
 impl MacOSScreenCapture {
-    /// Create a new macOS screen capture instance
+    /// Create a new macOS screen capture instance. Permission is checked when
+    /// recording starts, so a missing grant surfaces as a channel error rather
+    /// than leaving the app without a recorder.
     pub async fn new() -> CaptureResult<Self> {
-        // Check for screen recording permission
-        if !Self::check_screen_recording_permission() {
-            return Err(CaptureError::PermissionDenied(
-                "Screen recording permission not granted. Please enable it in System Settings > Privacy & Security > Screen Recording".to_string()
-            ));
-        }
-
         Ok(Self {
             is_capturing: Arc::new(AtomicBool::new(false)),
             current_display_id: None,
         })
-    }
-
-    /// Check if screen recording permission is granted
-    fn check_screen_recording_permission() -> bool {
-        // On macOS 10.15+, we need screen recording permission
-        // We can check this by attempting to get display info
-        // If permission is denied, the API will return limited information
-
-        // Try to create an image from the main display
-        // If this fails with permission error, we know permission is not granted
-        let display = CGDisplay::main();
-        match display.image() {
-            Some(_) => true,
-            None => {
-                // Could be permission issue or other error
-                // For now, we'll try to continue and let specific operations fail
-                eprintln!("Warning: Unable to capture screen. This may indicate missing screen recording permission.");
-                false
-            }
-        }
     }
 
     /// Get list of all available displays

@@ -2,8 +2,11 @@ use super::{CaptureError, CaptureResult, RecordingState, RecordingStatus, Screen
 use crate::core::motion_detector::MotionDetector;
 use crate::core::video_encoder::VideoEncoder;
 use crate::models::capture::RawFrame;
+use crate::platform::capture::{request_screen_capture_permission, screen_capture_permission_granted};
 use crate::platform::power::PowerEvent;
 use tokio::time::{Duration, Instant};
+
+const SCREEN_PERMISSION_MISSING: &str = "macOS Screen Recording permission is off for SOURCE, so screenshots would only show SOURCE's own window. Turn SOURCE on in System Settings > Privacy & Security > Screen & System Audio Recording, then quit and reopen SOURCE.";
 
 impl ScreenRecorder {
     pub async fn start_recording(&self, display_id: u32) -> CaptureResult<()> {
@@ -12,6 +15,11 @@ impl ScreenRecorder {
                 "Screen recording consent not granted. Please enable it in Privacy & Consent settings."
                     .to_string(),
             ));
+        }
+
+        if !screen_capture_permission_granted() {
+            request_screen_capture_permission();
+            return Err(CaptureError::PermissionDenied(SCREEN_PERMISSION_MISSING.to_string()));
         }
 
         if self.state.read().await.is_some() {
@@ -48,6 +56,7 @@ impl ScreenRecorder {
             last_ocr_capture_at: None,
             last_app_poll_at: None,
             last_frontmost_bundle_id: None,
+            frontmost_is_self: false,
         });
         *self.stop_signal.write().await = false;
 

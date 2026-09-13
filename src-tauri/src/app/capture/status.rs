@@ -2,7 +2,12 @@ use crate::app::state::{AppState, ChannelStatusDto, DesktopCaptureStatusDto};
 use crate::core::config::{Config, ResourceProfile};
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::context_timeline;
+use crate::platform::capture::screen_capture_permission_granted;
 use std::sync::Arc;
+
+fn permission_blocks_channel(permission_state: &str) -> bool {
+    matches!(permission_state, "missing" | "system_denied")
+}
 
 pub fn enabled_channels_from_config(config: &Config) -> Vec<String> {
     let channels = &config.capture_channels;
@@ -48,6 +53,12 @@ pub async fn channel_permission_state(
 
     match feature {
         Some(feature) => match consent_manager.is_consent_granted(feature).await {
+            Ok(true)
+                if matches!(channel, "screen_frames" | "ocr")
+                    && !screen_capture_permission_granted() =>
+            {
+                "system_denied".to_string()
+            }
             Ok(true) => "granted".to_string(),
             Ok(false) => "missing".to_string(),
             Err(_) => "unknown".to_string(),
@@ -69,9 +80,9 @@ pub async fn build_desktop_capture_status(
     let mut missing_permissions = Vec::new();
 
     for channel in &enabled_channels {
-        if channel_permission_state_for_config(&state.consent_manager, channel, &config).await
-            == "missing"
-        {
+        if permission_blocks_channel(
+            &channel_permission_state_for_config(&state.consent_manager, channel, &config).await,
+        ) {
             missing_permissions.push(channel.clone());
         }
     }
@@ -149,7 +160,8 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
         statuses.push(ChannelStatusDto {
             channel: channel.to_string(),
             enabled,
-            health: if runtime.channel_errors.contains_key(channel) || permission_state == "missing"
+            health: if runtime.channel_errors.contains_key(channel)
+                || permission_blocks_channel(&permission_state)
             {
                 "degraded".to_string()
             } else if last_event_time.is_some() {

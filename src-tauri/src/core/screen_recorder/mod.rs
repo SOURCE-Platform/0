@@ -123,6 +123,7 @@ struct RecordingState {
     last_ocr_capture_at: Option<i64>,
     last_app_poll_at: Option<i64>,
     last_frontmost_bundle_id: Option<String>,
+    frontmost_is_self: bool,
 }
 
 #[derive(Debug, Clone)]

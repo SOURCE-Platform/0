@@ -27,6 +27,20 @@ impl ScreenRecorder {
                 .await;
         }
 
+        // Reading SOURCE's own window stores its UI (often the text of earlier
+        // OCR scenes) as if it were user activity. Leave triggers pending so
+        // the next app the user switches to is read straight away.
+        let frontmost_is_self = self
+            .state
+            .read()
+            .await
+            .as_ref()
+            .map(|state| state.frontmost_is_self)
+            .unwrap_or(false);
+        if frontmost_is_self {
+            return Ok(());
+        }
+
         let trigger_outcome = self.ocr_trigger_signals.consume_due(frame.timestamp).await;
         let (session_id, display_id, trigger_reason) = {
             let mut state = self.state.write().await;
@@ -110,18 +124,18 @@ impl ScreenRecorder {
         let Some(recorder) = self.os_activity_recorder.read().await.clone() else {
             return;
         };
-        let current_bundle_id = recorder
-            .get_current_app()
-            .await
-            .ok()
-            .flatten()
-            .map(|app| app.bundle_id);
+        let current_app = recorder.get_current_app().await.ok().flatten();
+        let frontmost_is_self = current_app
+            .as_ref()
+            .is_some_and(|app| app.process_id == std::process::id());
+        let current_bundle_id = current_app.map(|app| app.bundle_id);
 
         let switched = {
             let mut state = self.state.write().await;
             let Some(state) = state.as_mut() else {
                 return;
             };
+            state.frontmost_is_self = frontmost_is_self;
 
             match (&state.last_frontmost_bundle_id, &current_bundle_id) {
                 (Some(previous), Some(current)) if previous != current => {

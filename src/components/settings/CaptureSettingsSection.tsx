@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AudioCaptureControls } from "@/components/settings/AudioCaptureControls";
 import { OcrCaptureControls } from "@/components/settings/OcrCaptureControls";
+import { ScreenPermissionNotice } from "@/components/settings/ScreenPermissionNotice";
 import { CHANNEL_META, RESOURCE_PROFILE_META } from "@/components/settings/constants";
 import { GazeCalibrationCard } from "@/components/settings/GazeCalibrationCard";
 import { SettingsController } from "@/components/settings/useSettingsController";
@@ -193,6 +194,10 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
                       ) : null}
                       {channel.key === "audio_future" ? (
                         <AudioCaptureControls controller={controller} />
+                      ) : null}
+                      {channel.key === "screen_frames" &&
+                      status?.permissionState === "system_denied" ? (
+                        <ScreenPermissionNotice />
                       ) : null}
                       {channel.key === "ocr" ? (
                         <OcrCaptureControls controller={controller} />

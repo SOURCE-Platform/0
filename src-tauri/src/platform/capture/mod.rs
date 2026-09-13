@@ -8,6 +8,18 @@ pub mod macos_display_names;
 
 #[cfg(target_os = "macos")]
 pub use macos::MacOSScreenCapture as PlatformCapture;
+#[cfg(target_os = "macos")]
+pub use macos::{request_screen_capture_permission, screen_capture_permission_granted};
+
+#[cfg(not(target_os = "macos"))]
+pub fn screen_capture_permission_granted() -> bool {
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn request_screen_capture_permission() -> bool {
+    true
+}
 
 #[cfg(target_os = "windows")]
 pub mod windows;
