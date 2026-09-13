@@ -14,6 +14,7 @@ mod bench_wer;
 mod constants;
 mod desktop_audio_runtime;
 pub(crate) mod dictation_helper;
+mod dictation_helper_protocol;
 mod dictation_pipeline;
 mod dictation_store;
 pub(crate) mod dictation_supervisor;
