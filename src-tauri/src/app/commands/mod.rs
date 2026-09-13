@@ -1,3 +1,4 @@
+pub mod agent_sessions;
 pub mod capture_control;
 pub mod capture_data;
 pub mod context;
@@ -12,6 +13,7 @@ pub mod system_core;
 pub mod system_search;
 pub mod timeline;
 
+pub use agent_sessions::*;
 pub use capture_control::*;
 pub use capture_data::*;
 pub use context::*;

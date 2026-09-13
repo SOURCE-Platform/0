@@ -5,17 +5,19 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
 import TimelinePage from "./components/TimelinePage";
 import ID from "./components/ID";
+import AgentsPage from "@/components/agents/AgentsPage";
 import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibrationOverlayPage";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { OBSERVER_APP_TOAST_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
 
-type View = "settings" | "timeline" | "id";
+type View = "settings" | "timeline" | "id" | "agents";
 
 const TABS = [
   { value: "timeline",  label: "Timeline" },
   { value: "id",        label: "ID" },
+  { value: "agents",    label: "Agents" },
   { value: "settings",  label: "Settings" },
 ];
 
@@ -201,6 +203,7 @@ function App() {
               <ViewErrorBoundary>
                 {displayedView === "timeline"  && <TimelinePage />}
                 {displayedView === "id"        && <ID />}
+                {displayedView === "agents"    && <AgentsPage />}
                 {displayedView === "settings"  && <Settings />}
               </ViewErrorBoundary>
             </div>
