@@ -139,6 +139,9 @@ pub async fn get_context_slice_detail(
             state.linked_file_paths.push(path);
         }
     }
+    state
+        .linked_file_paths
+        .retain(|path| Path::new(path).exists());
 
     Ok(ContextSliceDetailDto {
         rail_label: rail.label.clone(),

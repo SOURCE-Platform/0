@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { convertFileSrc } from "@tauri-apps/api/core";
 import { Check, Copy, Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EvidenceImage } from "@/components/desktop-context-workspace/EvidenceImage";
 import { OcrReconstructionView } from "@/components/desktop-context-workspace/OcrReconstructionView";
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
@@ -21,8 +21,12 @@ export function BlockDetailPanel({
 }) {
   const linkedPath =
     controller.sliceDetail?.linkedFilePaths[0] ?? controller.sliceDetail?.slice.evidenceFramePath ?? null;
-  const selectedEvidenceSrc = linkedPath ? convertFileSrc(linkedPath) : null;
-  const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!selectedEvidenceSrc;
+  const showVisualTab = !!controller.sliceDetail?.ocrReconstruction || !!linkedPath;
+  const noVisual = (
+    <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
+      No visual reconstruction is available for this block.
+    </div>
+  );
   const showTranscriptTab = controller.sliceDetail?.slice.tags.includes("asr") ?? false;
   const showRawJsonTab = (controller.sliceDetail?.rawPayloads.length ?? 0) > 0;
   const isAudioBlock = controller.sliceDetail?.slice.tags.includes("audio") ?? false;
@@ -151,19 +155,24 @@ export function BlockDetailPanel({
                 <TabsContent value="visual" className="space-y-4 pt-4">
                   {controller.sliceDetail.ocrReconstruction ? (
                     <OcrReconstructionView reconstruction={controller.sliceDetail.ocrReconstruction} />
-                  ) : selectedEvidenceSrc ? (
+                  ) : controller.loadingDetail && controller.sliceDetail.slice.rail === "ocr" ? (
+                    <div className="rounded-xl border border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
+                      Loading scene...
+                    </div>
+                  ) : linkedPath ? (
                     <div className="space-y-3">
-                      <div className="text-xs uppercase tracking-wide text-muted-foreground">Linked evidence frame</div>
-                      <img
-                        src={selectedEvidenceSrc}
+                      <EvidenceImage
+                        path={linkedPath}
                         alt="Evidence frame"
                         className="w-full rounded-xl border border-border/70 object-cover"
+                        label={
+                          <div className="text-xs uppercase tracking-wide text-muted-foreground">Linked evidence frame</div>
+                        }
+                        fallback={noVisual}
                       />
                     </div>
                   ) : (
-                    <div className="rounded-xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
-                      No visual reconstruction is available for this block.
-                    </div>
+                    noVisual
                   )}
                 </TabsContent>
               ) : null}

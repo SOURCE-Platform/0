@@ -1,3 +1,9 @@
+/// Evidence frames can be deleted after use (OCR screenshots go once their text
+/// is read), so only point at, and count, files still on disk.
+fn existing_frame_path(path: &Option<String>) -> Option<String> {
+    path.clone().filter(|path| Path::new(path).exists())
+}
+
 fn build_ocr_rail(
     ocr_scenes: &[AgentSceneSnapshotDto],
     snapshots: &[WindowSnapshotRow],
@@ -41,11 +47,11 @@ fn build_ocr_rail(
                 visible_windows,
                 ocr_preview: Some(scene.full_text.clone()),
                 pii_count: scene.pii_entities.len(),
-                evidence_frame_path: scene.frame_path.clone(),
+                evidence_frame_path: existing_frame_path(&scene.frame_path),
                 storage_bytes,
                 storage_exact: true,
                 row_count: scene.raw_source.raw_row_ids.len() as u64,
-                file_count: scene.frame_path.as_ref().map(|_| 1).unwrap_or(0),
+                file_count: existing_frame_path(&scene.frame_path).map(|_| 1).unwrap_or(0),
                 has_detail_view: true,
                 tags: vec!["ocr".to_string(), scene.trigger_reason.clone()],
             }
@@ -142,11 +148,11 @@ fn build_vision_rail(
             visible_windows: Vec::new(),
             ocr_preview: None,
             pii_count: 0,
-            evidence_frame_path: scene.frame_path.clone(),
+            evidence_frame_path: existing_frame_path(&scene.frame_path),
             storage_bytes: estimate_visual_scene_storage_bytes(scene),
             storage_exact: true,
             row_count: scene.detections.len() as u64,
-            file_count: scene.frame_path.as_ref().map(|_| 1).unwrap_or(0),
+            file_count: existing_frame_path(&scene.frame_path).map(|_| 1).unwrap_or(0),
             has_detail_view: true,
             tags: vec![
                 "vision".to_string(),

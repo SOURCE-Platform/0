@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { EvidenceImage } from "@/components/desktop-context-workspace/EvidenceImage";
 import { OcrReconstruction } from "@/types/contextTimeline";
 import { parseBoundingBox } from "@/components/desktop-context-workspace/utils";
 
@@ -6,7 +6,6 @@ import { parseBoundingBox } from "@/components/desktop-context-workspace/utils";
 const TEXT_TO_LINE_HEIGHT = 0.8;
 
 export function OcrReconstructionView({ reconstruction }: { reconstruction: OcrReconstruction }) {
-  const backdropSrc = reconstruction.framePath ? convertFileSrc(reconstruction.framePath) : null;
   const width = Math.max(reconstruction.width, 1);
   const height = Math.max(reconstruction.height, 1);
 
@@ -22,15 +21,14 @@ export function OcrReconstructionView({ reconstruction }: { reconstruction: OcrR
           className="relative mx-auto w-full [container-type:inline-size]"
           style={{ aspectRatio: `${width} / ${height}` }}
         >
-          {backdropSrc && reconstruction.backdropAvailable ? (
-            <img
-              src={backdropSrc}
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_50%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(0,0,0,0.08))]" />
+          {reconstruction.framePath && reconstruction.backdropAvailable ? (
+            <EvidenceImage
+              path={reconstruction.framePath}
               alt="OCR evidence backdrop"
               className="absolute inset-0 h-full w-full object-cover opacity-25 grayscale"
             />
-          ) : (
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.08),transparent_50%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(0,0,0,0.08))]" />
-          )}
+          ) : null}
 
           {reconstruction.blocks.map((block) => {
             const bbox = parseBoundingBox(block.boundingBox);
