@@ -131,5 +131,16 @@ asks on the phone.
   - `droid` over stdio
 
   SOURCE is the only thing exposed to the phone, behind existing pairing.
-- Approvals from the phone use the same allowlist idea as Claude Code
-  channels: only the paired device can approve.
+- **Sending prompts is an explicit choice.** Pairing today lets a phone upload
+  recordings. With `/v1/agent`, a paired phone can also drive coding agents that
+  act on real files, so:
+  - A Mac setting "Allow phone to send prompts to agents" is **off by default**.
+    With it off, the phone can still browse sessions and read conversations.
+  - `/v1/agent` accepts the token in the `Authorization` header only. The
+    existing `?token=` query fallback isn't allowed, because URLs end up in logs.
+  - Every spoken prompt is also saved to the timeline as a `source-mobile`
+    transcript, so there's a record of what was sent and when.
+- SOURCE never tries to make its messages count as your approval inside an
+  agent app. Approvals from the phone only go through each app's own supported
+  approval mechanism. Only the paired device can answer them, the same allowlist
+  idea as Claude Code channels.

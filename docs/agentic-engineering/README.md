@@ -1,6 +1,11 @@
 # Agentic Engineering in SOURCE
 
-Status: research phase (September 2026). Nothing here is built yet.
+Status (September 2026):
+
+- **Done:** research and proof tests; the Agents tab on the Mac.
+- **Next:** the M0 go/no-go spikes, then the first usable slice: push-to-talk
+  into Claude Code with a spoken reply.
+- **Build order and progress:** [implementation-plan.md](implementation-plan.md).
 
 ## The idea, in plain terms
 
@@ -43,6 +48,8 @@ Supporting tests:
 
 ## Documents
 
+- [implementation-plan.md](implementation-plan.md): the build order, step by
+  step, across the Mac and iPhone repos, with status.
 - [harness-integration.md](harness-integration.md): how SOURCE talks to each
   agent app, with test results.
 - [voice-router.md](voice-router.md): how speech becomes a routed prompt, with
@@ -55,16 +62,18 @@ Supporting tests:
 
 ## Roadmap
 
-1. **Session hub (Mac).** One list of every session across the four apps: title,
-   project, app, last activity, busy or idle. Mirrored read-only to the phone.
-2. **Stream mode.** Voice → live transcript → router → send. Push-to-talk first,
-   then always-on streaming.
-3. **Replies.** Brief text and speech back to the phone, "catch me up", approving
-   agent permission prompts from the phone.
-4. **Live view.** Tap a session and the dev server starts, and the site opens in
-   the phone's own browser engine. Tailscale for use away from home Wi-Fi.
-5. **Later.** Streaming the Mac screen for native apps, and ChatGPT web through
-   browser automation.
+Summary only; the steps and "done when" checks are in
+[implementation-plan.md](implementation-plan.md).
+
+1. **M0 Go/no-go.** Confirm Claude acts on prompts delivered from outside.
+2. **M1–M3 First usable slice.** Send to Claude from the Mac, then from the phone,
+   then by holding a button and speaking; the phone speaks a short reply.
+3. **M4 Away from home.** Tailscale.
+4. **M5 Steer and queue for all four apps.** Codex, OpenCode, Factory.
+5. **M6 Hands-free streaming with the router.**
+6. **M7 Catch me up.** Global chat, approvals, the agent speaking first.
+7. **M8 Live view.** The app you're building on your phone, started for you.
+8. **M9–M10.** Mac screen streaming, then ChatGPT web.
 
 ## Decision log
 
@@ -76,9 +85,17 @@ Supporting tests:
 | D4 | Speak replies with Kokoro, one sentence at a time; production path is FluidAudio's Kokoro in SOURCE's Swift helper | About 1 s to first audio with the install already on this Mac; FluidAudio is already a SOURCE dependency. |
 | D5 | Web live view = the phone's WebKit loading the Mac dev server, not Chromium and not video | iPhone browsers all use WebKit, so it's true mobile rendering, and it's interactive. |
 | D6 | Away from home via Tailscale | The existing pairing pins the Mac's certificate fingerprint and ignores the hostname, so the pairing carries over. |
+| D7 | First usable slice: push-to-talk into Claude Code, with a spoken reply | The core loop proves the product; smart routing and live view build on it. Claude Code is the app used most, and steering works best there. |
+| D8 | Home Wi-Fi first; Tailscale in M4 | Keeps the first slice small; the pairing already supports adding a second host later. |
+| D9 | Reading (`core/agent_sessions`) and sending (`core/agent_bridge`) are separate modules | The session hub promises it never writes to an agent app; keeping that true makes it safe to open anytime. |
+| D10 | Watch files for changes (FSEvents); no polling loops | Reacts the moment something changes and does nothing otherwise. |
+| D11 | Phone sending is off until enabled on the Mac; `/v1/agent` accepts header auth only | A paired phone becomes able to drive coding agents, so that ability must be an explicit choice. |
 
 ## Open questions
 
+- **Go/no-go (M0):** Claude labels prompts delivered by another program as
+  coming from another agent. Does it carry them out the way it would a message
+  you typed?
 - Does the ChatGPT app pick up a Codex queued message (`codex queue`) or a turn
   started by another process, and show it live?
 - Factory: does Factory.app show turns added by an outside `droid` process?

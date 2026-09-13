@@ -114,6 +114,22 @@ This also fixes the rate-limit problem ("my Codex window ran out, which app did
 I continue in?"). The session index already knows that, because it spans all
 four apps.
 
+## The agent speaks first
+
+Sometimes you won't look at the screen at all: you open Stream mode on a walk
+or while doing the dishes. So the router can start the conversation:
+
+- **On entering Stream mode** (a preference, off by default), it speaks a short
+  opener built from the session index: "Two sessions are waiting for you: the
+  marketing site finished, and the Mac app is asking a question. What do you
+  want to work on?"
+- **When a watched session finishes or needs you,** it says so once, briefly:
+  "The Mac app is done. Want the summary?"
+- **It never interrupts you mid-sentence** and never repeats an announcement
+  you've already heard.
+
+Built in M7, on top of the per-session summaries.
+
 ## Approvals from the phone
 
 Agents sometimes stop and ask permission to run something. Each protocol
