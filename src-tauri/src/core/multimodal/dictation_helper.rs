@@ -40,6 +40,8 @@ pub enum DictationEvent {
     Inserted { id: String },
     OpenSettings,
     Debug(String),
+    /// Core Audio reported the input devices that exist right now.
+    InputDevices { default_name: Option<String>, devices: Vec<String> },
     EngineError(String),
     Exited,
 }
@@ -254,6 +256,22 @@ fn parse_helper_line(line: &str) -> DictationEvent {
             Err(error) => DictationEvent::EngineError(format!("bad transcript: {error}")),
         };
     }
+    if let Some(payload) = trimmed.strip_prefix("INPUT_DEVICES ") {
+        #[derive(serde::Deserialize)]
+        struct Payload {
+            #[serde(default)]
+            default: Option<String>,
+            #[serde(default)]
+            devices: Vec<String>,
+        }
+        return match serde_json::from_str::<Payload>(payload) {
+            Ok(parsed) => DictationEvent::InputDevices {
+                default_name: parsed.default,
+                devices: parsed.devices,
+            },
+            Err(error) => DictationEvent::EngineError(format!("bad input devices: {error}")),
+        };
+    }
     if let Some(payload) = trimmed.strip_prefix("ERROR ") {
         return DictationEvent::EngineError(payload.to_string());
     }
@@ -324,5 +342,31 @@ mod tests {
             parse_helper_line("HELLO"),
             DictationEvent::EngineError(_)
         ));
+    }
+
+    #[test]
+    fn parses_a_core_audio_device_report() {
+        let event = parse_helper_line(
+            r#"INPUT_DEVICES {"default":"MacBook Air Microphone","devices":["MacBook Air Microphone","USB-C Adapter"]}"#,
+        );
+        match event {
+            DictationEvent::InputDevices { default_name, devices } => {
+                assert_eq!(default_name.as_deref(), Some("MacBook Air Microphone"));
+                assert_eq!(devices, ["MacBook Air Microphone", "USB-C Adapter"]);
+            }
+            other => panic!("expected an input device report, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn reports_a_missing_default_input_without_failing() {
+        let event = parse_helper_line(r#"INPUT_DEVICES {"default":null,"devices":[]}"#);
+        match event {
+            DictationEvent::InputDevices { default_name, devices } => {
+                assert!(default_name.is_none());
+                assert!(devices.is_empty());
+            }
+            other => panic!("expected an input device report, got {other:?}"),
+        }
     }
 }

@@ -11,6 +11,26 @@ use std::sync::{Arc, Mutex};
 use tauri::{Emitter, Manager};
 use tokio::sync::mpsc;
 
+/// Pass Core Audio's device reports from the helper to the part of the app
+/// that follows microphone changes.
+fn spawn_input_device_forwarder(
+    app_handle: tauri::AppHandle,
+    mut events: tokio::sync::broadcast::Receiver<crate::core::multimodal::dictation_helper::DictationEvent>,
+) {
+    tauri::async_runtime::spawn(async move {
+        use crate::core::multimodal::dictation_helper::DictationEvent;
+        while let Ok(event) = events.recv().await {
+            if let DictationEvent::InputDevices { default_name, devices } = event {
+                crate::app::audio_input_watch::handle_input_devices(
+                    app_handle.clone(),
+                    crate::core::multimodal::input_watch::InputSnapshot { default_name, devices },
+                )
+                .await;
+            }
+        }
+    });
+}
+
 pub fn initialize_dictation_supervisor(
     config: Arc<Mutex<Config>>,
     db: Arc<Database>,
@@ -40,7 +60,8 @@ pub fn initialize_dictation_supervisor(
                 .unwrap_or_default();
             let supervisor = DictationSupervisor::new(dictionary);
             match supervisor.run().await {
-                Ok((mut actions, _events, commands)) => {
+                Ok((mut actions, events, commands)) => {
+                    spawn_input_device_forwarder(app_handle.clone(), events);
                     println!("Dictation helper is ready");
                     *commands_holder.lock().await = Some(commands.clone());
                     while let Some(action) = actions.recv().await {

@@ -1,13 +1,13 @@
 use super::state::AppState;
 use crate::core::multimodal::input_watch::{
-    pinned_name, read_snapshot, resolve_active, switch_message, ActiveInput,
+    pinned_name, resolve_active, switch_message, ActiveInput, InputSnapshot,
 };
-use std::time::Duration;
+use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// How often to ask Core Audio what is plugged in. Cheap, and two seconds is
-/// fast enough that a dictation press right after docking lands on the new mic.
-const POLL: Duration = Duration::from_secs(2);
+/// The microphone recording was last using, so a report that changes nothing
+/// stays silent.
+static ACTIVE: Mutex<Option<ActiveInput>> = Mutex::new(None);
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -17,48 +17,43 @@ struct InputChanged {
     falling_back: bool,
 }
 
-/// Follow microphone changes: when the chosen mic is plugged in or pulled out,
-/// move recording onto whatever is actually there and tell the user.
-pub fn spawn_audio_input_watch(app: AppHandle) {
-    tauri::async_runtime::spawn(async move {
-        let mut previous = ActiveInput { name: None, falling_back: false };
-        loop {
-            tokio::time::sleep(POLL).await;
+/// Core Audio reported the devices that exist: follow the change.
+///
+/// The dictation helper owns the Core Audio listener and sends this whenever a
+/// device is added, removed, or made the system default, so nothing polls.
+pub async fn handle_input_devices(app: AppHandle, snapshot: InputSnapshot) {
+    let Some(state) = app.try_state::<AppState>() else { return };
+    let pinned = state
+        .config
+        .lock()
+        .ok()
+        .and_then(|config| pinned_name(config.selected_audio_input_id.as_deref()));
 
-            let snapshot = match tauri::async_runtime::spawn_blocking(read_snapshot).await {
-                Ok(snapshot) => snapshot,
-                Err(error) => {
-                    eprintln!("[audio-input] could not read input devices: {error}");
-                    continue;
-                }
-            };
+    let current = resolve_active(pinned.as_deref(), &snapshot);
+    let previous = {
+        let Ok(mut active) = ACTIVE.lock() else { return };
+        active.replace(current.clone())
+    }
+    .unwrap_or(ActiveInput { name: None, falling_back: false });
 
-            let Some(state) = app.try_state::<AppState>() else { continue };
-            let pinned = state
-                .config
-                .lock()
-                .ok()
-                .and_then(|config| pinned_name(config.selected_audio_input_id.as_deref()));
+    if previous == current {
+        return;
+    }
+    let (Some(message), Some(name)) = (
+        switch_message(&previous, &current, pinned.as_deref()),
+        current.name.clone(),
+    ) else {
+        return;
+    };
+    println!("[audio-input] {message}");
 
-            let current = resolve_active(pinned.as_deref(), &snapshot);
-            if current == previous {
-                continue;
-            }
-            let message = switch_message(&previous, &current, pinned.as_deref());
-            previous = current.clone();
-
-            let (Some(name), Some(message)) = (current.name.clone(), message) else { continue };
-            println!("[audio-input] {message}");
-
-            restart_audio_capture(&state).await;
-            if let Err(error) = app.emit(
-                "audio-input-changed",
-                InputChanged { name, message, falling_back: current.falling_back },
-            ) {
-                eprintln!("[audio-input] could not notify the window: {error}");
-            }
-        }
-    });
+    restart_audio_capture(&state).await;
+    if let Err(error) = app.emit(
+        "audio-input-changed",
+        InputChanged { name, message, falling_back: current.falling_back },
+    ) {
+        eprintln!("[audio-input] could not notify the window: {error}");
+    }
 }
 
 /// Ambient capture binds its microphone when the channel starts, so the new

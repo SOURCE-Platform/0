@@ -232,6 +232,8 @@ fn log_helper_event(event: &DictationEvent) {
         DictationEvent::EngineError(message) => {
             eprintln!("Dictation helper error: {message}");
         }
+        // Device reports are routed to the microphone follower, not the log.
+        DictationEvent::InputDevices { .. } => {}
         DictationEvent::Exited => {}
     }
 }

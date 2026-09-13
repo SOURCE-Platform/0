@@ -51,6 +51,8 @@ impl DictationPipeline {
         now_ms: i64,
     ) -> PipelineAction {
         match event {
+            // Not a dictation step: the microphone follower handles these.
+            DictationEvent::InputDevices { .. } => PipelineAction::None,
             DictationEvent::SessionStarted { id } => {
                 self.coordinator.on_session_started(id, now_ms);
                 self.pending_insertion = None;

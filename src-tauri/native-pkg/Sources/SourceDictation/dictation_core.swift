@@ -30,6 +30,7 @@ final class DictationRuntime: @unchecked Sendable {
     private let mic = MicSessionRecorder()
     private var partialTimer: Timer?
     private var partialBusy = false
+    private let inputWatch = InputDeviceWatch()
     /// Held for the process lifetime: without it macOS App Nap suspends
     /// this windowless helper, which stalls both the hotkey event tap
     /// and mic capture (no pill, no signal level, no sessions).
@@ -53,6 +54,9 @@ final class DictationRuntime: @unchecked Sendable {
         SessionSpool.sweepLeftovers()
         hotkey = RightOptionHotkey(onToggle: { [weak self] in self?.toggleSession() })
         hotkey?.start()
+        // Source follows microphones being plugged in or pulled out; Core Audio
+        // posts those, so nothing polls for them.
+        inputWatch.start()
         watchStdin()
         // Load the speech model now rather than on the first Right Option press.
         // Loading takes around 20 seconds, and that delay used to land on the
