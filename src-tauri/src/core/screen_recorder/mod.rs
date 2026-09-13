@@ -123,7 +123,9 @@ struct RecordingState {
     last_ocr_capture_at: Option<i64>,
     last_app_poll_at: Option<i64>,
     last_frontmost_bundle_id: Option<String>,
-    frontmost_is_self: bool,
+    /// Polled every OCR_APP_SWITCH_POLL_MS, so it names the app in front at
+    /// capture time rather than a snapshot from seconds earlier.
+    frontmost_app: Option<crate::models::activity::AppInfo>,
 }
 
 #[derive(Debug, Clone)]

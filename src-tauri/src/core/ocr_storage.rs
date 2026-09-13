@@ -41,7 +41,18 @@ pub struct ProcessedOcrResult {
     pub frame_width: u32,
     pub frame_height: u32,
     pub trigger_reason: String,
+    #[serde(default)]
+    pub frontmost_app: Option<CapturedApp>,
     pub ocr_result: OcrResult,
+}
+
+/// The app in front when a frame was captured, as the screen recorder saw it
+/// at that moment. Inferred app context comes from snapshots sampled every few
+/// seconds, so it still names the previous app right after a switch.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapturedApp {
+    pub name: String,
+    pub bundle_id: String,
 }
 
 // ==============================================================================
@@ -320,6 +331,7 @@ mod tests {
             frame_width: 1920,
             frame_height: 1080,
             trigger_reason: "static_fallback".to_string(),
+            frontmost_app: None,
             ocr_result: OcrResult::new(0, vec![], 100),
         };
 

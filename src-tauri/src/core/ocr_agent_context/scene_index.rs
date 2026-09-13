@@ -58,7 +58,16 @@ pub(super) async fn build_scene_snapshot(
 ) -> Result<AgentSceneSnapshotDto, Box<dyn std::error::Error + Send + Sync>> {
     let session_id = result.session_id.to_string();
     let scene_id = format!("scene-{}-{}", session_id, result.timestamp);
-    let context = infer_app_context(db, result.timestamp, Some(&session_id)).await?;
+    let mut context = infer_app_context(db, result.timestamp, Some(&session_id)).await?;
+    // Inferred context is sampled every few seconds and lags app switches;
+    // the recorder saw the front app at the moment of capture.
+    if let Some(app) = &result.frontmost_app {
+        if context.app_name.as_deref() != Some(app.name.as_str()) {
+            context.window_title = None;
+        }
+        context.app_name = Some(app.name.clone());
+        context.bundle_id = Some(app.bundle_id.clone());
+    }
     let frame_path_string = result
         .frame_path
         .as_ref()

@@ -20,24 +20,28 @@ fn build_ocr_rail(
                 .unwrap_or_default()
                 .unwrap_or_default();
             let storage_bytes = scene_snapshot_storage_bytes(scene);
+            let app_name = scene
+                .frontmost_app_name
+                .clone()
+                .or_else(|| snapshot.and_then(|snap| snap.frontmost_app_name.clone()));
             ContextSlice {
                 id: scene.scene_id.clone(),
                 rail: "ocr".to_string(),
                 slice_kind: "event".to_string(),
                 start_timestamp: scene.timestamp,
                 end_timestamp: scene.timestamp + 5_000,
-                title: preview_text(&scene.full_text),
+                // The app in front says what the scene is; its first OCR lines
+                // are usually menu bar and sidebar fragments.
+                title: app_name.clone().unwrap_or_else(|| "Unknown app".to_string()),
                 subtitle: Some(format!(
-                    "{} text blocks · {}",
-                    scene.block_count, scene.trigger_reason
+                    "{} lines · {}",
+                    scene.block_count,
+                    scene.trigger_reason.replace('_', " ")
                 )),
                 source: "ocr_scene_snapshot".to_string(),
                 confidence: scene.avg_confidence,
                 session_id: Some(scene.session_id.clone()),
-                app_name: scene
-                    .frontmost_app_name
-                    .clone()
-                    .or_else(|| snapshot.and_then(|snap| snap.frontmost_app_name.clone())),
+                app_name,
                 window_title: scene.window_title.clone(),
                 interaction_state: None,
                 reasons: vec![format!(

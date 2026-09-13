@@ -3,6 +3,7 @@ use super::{
     OCR_LARGE_SCENE_CHANGE_THRESHOLD,
 };
 use crate::core::motion_detector::MotionResult;
+use crate::core::ocr_storage::CapturedApp;
 use crate::models::capture::RawFrame;
 use crate::models::ocr::BoundingBox as OcrBoundingBox;
 
@@ -30,14 +31,16 @@ impl ScreenRecorder {
         // Reading SOURCE's own window stores its UI (often the text of earlier
         // OCR scenes) as if it were user activity. Leave triggers pending so
         // the next app the user switches to is read straight away.
-        let frontmost_is_self = self
+        let frontmost_app = self
             .state
             .read()
             .await
             .as_ref()
-            .map(|state| state.frontmost_is_self)
-            .unwrap_or(false);
-        if frontmost_is_self {
+            .and_then(|state| state.frontmost_app.clone());
+        if frontmost_app
+            .as_ref()
+            .is_some_and(|app| app.process_id == std::process::id())
+        {
             return Ok(());
         }
 
@@ -96,6 +99,10 @@ impl ScreenRecorder {
                 display_id,
                 trigger_reason,
                 motion_regions,
+                frontmost_app.map(|app| CapturedApp {
+                    name: app.name,
+                    bundle_id: app.bundle_id,
+                }),
             )
             .await
             .map_err(|e| CaptureError::CaptureFailed(format!("Failed to enqueue OCR frame: {}", e)))
@@ -125,17 +132,14 @@ impl ScreenRecorder {
             return;
         };
         let current_app = recorder.get_current_app().await.ok().flatten();
-        let frontmost_is_self = current_app
-            .as_ref()
-            .is_some_and(|app| app.process_id == std::process::id());
-        let current_bundle_id = current_app.map(|app| app.bundle_id);
+        let current_bundle_id = current_app.as_ref().map(|app| app.bundle_id.clone());
 
         let switched = {
             let mut state = self.state.write().await;
             let Some(state) = state.as_mut() else {
                 return;
             };
-            state.frontmost_is_self = frontmost_is_self;
+            state.frontmost_app = current_app;
 
             match (&state.last_frontmost_bundle_id, &current_bundle_id) {
                 (Some(previous), Some(current)) if previous != current => {

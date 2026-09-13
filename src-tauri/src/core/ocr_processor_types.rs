@@ -1,3 +1,4 @@
+use crate::core::ocr_storage::CapturedApp;
 use crate::models::ocr::BoundingBox;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -32,6 +33,7 @@ pub struct OcrJob {
     pub display_id: Option<u32>,
     pub trigger_reason: String,
     pub motion_regions: Vec<BoundingBox>,
+    pub frontmost_app: Option<CapturedApp>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

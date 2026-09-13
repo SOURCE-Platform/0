@@ -58,7 +58,7 @@ impl ScreenRecorder {
             last_ocr_capture_at: None,
             last_app_poll_at: None,
             last_frontmost_bundle_id: None,
-            frontmost_is_self: false,
+            frontmost_app: None,
         });
         *self.stop_signal.write().await = false;
 

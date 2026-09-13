@@ -3,7 +3,7 @@
 use crate::core::ocr_engine::{OcrEngine, OcrError};
 pub use crate::core::ocr_processor_types::OcrProcessorConfig;
 use crate::core::ocr_processor_types::{OcrJob, OcrMetrics};
-use crate::core::ocr_storage::{OcrStorage, ProcessedOcrResult};
+use crate::core::ocr_storage::{CapturedApp, OcrStorage, ProcessedOcrResult};
 use crate::models::capture::{PixelFormat, RawFrame};
 use crate::models::ocr::{BoundingBox, OcrResult};
 use std::collections::VecDeque;
@@ -122,6 +122,7 @@ impl OcrProcessor {
         display_id: Option<u32>,
         trigger_reason: String,
         motion_regions: Vec<BoundingBox>,
+        frontmost_app: Option<CapturedApp>,
     ) -> Result<(), OcrError> {
         // A frame that won't be read is discarded here, like one that was.
         let skip_static = self.config.skip_static_frames && motion_regions.is_empty();
@@ -147,6 +148,7 @@ impl OcrProcessor {
             display_id,
             trigger_reason,
             motion_regions,
+            frontmost_app,
         });
 
         // Update queue size metric
@@ -191,6 +193,7 @@ impl OcrProcessor {
             frame_width: frame.width,
             frame_height: frame.height,
             trigger_reason: job.trigger_reason,
+            frontmost_app: job.frontmost_app,
             ocr_result,
         })
     }
