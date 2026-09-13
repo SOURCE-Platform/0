@@ -10,6 +10,13 @@ use std::sync::Arc;
 extern "C" {
     fn CGPreflightScreenCaptureAccess() -> bool;
     fn CGRequestScreenCaptureAccess() -> bool;
+    fn CGGetOnlineDisplayList(max: u32, displays: *mut u32, count: *mut u32) -> i32;
+}
+
+/// Whether the display is asleep. A sleeping display yields no image, so the
+/// recorder waits for it to wake instead of failing every frame.
+pub fn display_is_asleep(display_id: u32) -> bool {
+    CGDisplay::new(display_id).is_asleep()
 }
 
 /// Whether macOS Screen Recording permission is granted to this process.
@@ -47,12 +54,15 @@ impl MacOSScreenCapture {
     /// Get list of all available displays
     pub async fn get_displays() -> CaptureResult<Vec<Display>> {
         unsafe {
-            // Get all active displays
+            // Online, not active: a display asleep after the idle timeout is
+            // not "active", and listing only active ones made capture fail
+            // with "No displays found" whenever SOURCE started with the
+            // screen off, taking audio capture down with it.
             let max_displays = 32;
             let mut display_ids: Vec<u32> = vec![0; max_displays];
             let mut display_count = 0u32;
 
-            let result = core_graphics::display::CGGetActiveDisplayList(
+            let result = CGGetOnlineDisplayList(
                 max_displays as u32,
                 display_ids.as_mut_ptr(),
                 &mut display_count,

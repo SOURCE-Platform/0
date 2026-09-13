@@ -2,7 +2,9 @@ use super::{CaptureError, CaptureResult, RecordingState, RecordingStatus, Screen
 use crate::core::motion_detector::MotionDetector;
 use crate::core::video_encoder::VideoEncoder;
 use crate::models::capture::RawFrame;
-use crate::platform::capture::{request_screen_capture_permission, screen_capture_permission_granted};
+use crate::platform::capture::{
+    display_is_asleep, request_screen_capture_permission, screen_capture_permission_granted,
+};
 use crate::platform::power::PowerEvent;
 use tokio::time::{Duration, Instant};
 
@@ -233,6 +235,11 @@ impl ScreenRecorder {
             .as_ref()
             .ok_or(CaptureError::NotCapturing)?
             .display_id;
+
+        if display_is_asleep(display_id) {
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            return Ok(());
+        }
 
         let frame = self.capture.lock().await.capture_frame(display_id).await?;
         self.maybe_detect_app_switch(frame.timestamp).await;

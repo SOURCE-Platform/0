@@ -69,12 +69,20 @@ pub async fn start_desktop_capture(
     }
 
     if config.capture_channels.screen_frames {
-        let display_id = display_id.ok_or(
-            "Screen capture is enabled, but no display is selected. Disable screen capture or select a display.",
-        )?;
         if let Some(recorder) = state.screen_recorder.as_ref() {
-            match recorder.start_recording(display_id).await {
-                Ok(()) => {
+            let started = match display_id {
+                None => Err(
+                    "Screen capture is enabled, but no display is selected. Select a display in Settings."
+                        .to_string(),
+                ),
+                Some(display_id) => match recorder.start_recording(display_id).await {
+                    Ok(()) => Ok(display_id),
+                    Err(CaptureError::PermissionDenied(message)) => Err(message),
+                    Err(other) => Err(format!("Failed to start screen recording: {other}")),
+                },
+            };
+            match started {
+                Ok(display_id) => {
                     started_any_channel = true;
                     if let Ok(displays) = recorder.get_available_displays().await {
                         if let Some(display) = displays.iter().find(|item| item.id == display_id)
@@ -84,9 +92,10 @@ pub async fn start_desktop_capture(
                         }
                     }
                 }
-                // A missing macOS grant blocks screenshots and OCR only; the
-                // audio, input, and activity channels should still start.
-                Err(CaptureError::PermissionDenied(message)) => {
+                // A screen problem (missing macOS grant, no display) blocks
+                // screenshots and OCR only; audio, input, and activity
+                // channels should still start.
+                Err(message) => {
                     let mut runtime = state.desktop_capture_runtime.write().await;
                     for channel in ["screen_frames", "ocr"] {
                         runtime
@@ -95,7 +104,6 @@ pub async fn start_desktop_capture(
                     }
                     runtime.warnings.push(message);
                 }
-                Err(e) => return Err(format!("Failed to start screen recording: {}", e)),
             }
         }
     }

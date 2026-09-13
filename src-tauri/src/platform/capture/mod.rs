@@ -9,11 +9,18 @@ pub mod macos_display_names;
 #[cfg(target_os = "macos")]
 pub use macos::MacOSScreenCapture as PlatformCapture;
 #[cfg(target_os = "macos")]
-pub use macos::{request_screen_capture_permission, screen_capture_permission_granted};
+pub use macos::{
+    display_is_asleep, request_screen_capture_permission, screen_capture_permission_granted,
+};
 
 #[cfg(not(target_os = "macos"))]
 pub fn screen_capture_permission_granted() -> bool {
     true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn display_is_asleep(_display_id: u32) -> bool {
+    false
 }
 
 #[cfg(not(target_os = "macos"))]
