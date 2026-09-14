@@ -5,7 +5,11 @@
 //! them back when it's done.
 
 pub mod claude_cli;
+pub mod claude_driver;
+pub mod driver_events;
 pub mod stream_protocol;
 
+#[cfg(test)]
+mod driver_tests;
 #[cfg(test)]
 mod tests;
