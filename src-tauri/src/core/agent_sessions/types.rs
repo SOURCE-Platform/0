@@ -1,12 +1,17 @@
 use serde::{Deserialize, Serialize};
 
 /// The coding-agent apps SOURCE can read sessions from.
+///
+/// The names on the wire ("codex", "claude-code", "factory", "opencode") are what
+/// the Agents tab and the phone expect; the golden file pins them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AgentApp {
     Codex,
     ClaudeCode,
     Factory,
+    // Kebab-case alone would make this "open-code".
+    #[serde(rename = "opencode")]
     OpenCode,
 }
 

@@ -18,10 +18,25 @@ fn session() -> AgentSession {
     }
 }
 
+/// One session from every app, so the golden file pins every app's name.
+fn session_per_app() -> Vec<AgentSession> {
+    [AgentApp::ClaudeCode, AgentApp::Codex, AgentApp::Factory, AgentApp::OpenCode]
+        .into_iter()
+        .enumerate()
+        .map(|(i, app)| AgentSession { id: format!("s-{}", i + 1), app, live: i == 0, ..session() })
+        .collect()
+}
+
+#[test]
+fn app_names_match_what_the_agents_tab_and_phone_expect() {
+    let names: Vec<String> = session_per_app().iter().map(|s| serde_json::to_value(s.app).unwrap().to_string()).collect();
+    assert_eq!(names, [r#""claude-code""#, r#""codex""#, r#""factory""#, r#""opencode""#]);
+}
+
 /// One of every frame the Mac sends, in a fixed order.
 fn every_server_frame() -> Vec<ServerFrame> {
     let bodies = vec![
-        ServerBody::Snapshot { epoch: "e-1".into(), sessions: vec![session()], held: vec!["s-1".into()], can_send: true },
+        ServerBody::Snapshot { epoch: "e-1".into(), sessions: session_per_app(), held: vec!["s-1".into()], can_send: true },
         ServerBody::Sessions { sessions: vec![session()], held: vec![] },
         ServerBody::Messages {
             session_id: "s-1".into(),

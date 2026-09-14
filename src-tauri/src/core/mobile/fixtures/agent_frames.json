@@ -40,6 +40,39 @@
           "projectPath": "/Users/a/site",
           "title": "Marketing site header",
           "updatedAtMs": 1789344240100
+        },
+        {
+          "app": "codex",
+          "archived": false,
+          "id": "s-2",
+          "live": false,
+          "preview": "The header now hides on scroll down.",
+          "projectName": "site",
+          "projectPath": "/Users/a/site",
+          "title": "Marketing site header",
+          "updatedAtMs": 1789344240100
+        },
+        {
+          "app": "factory",
+          "archived": false,
+          "id": "s-3",
+          "live": false,
+          "preview": "The header now hides on scroll down.",
+          "projectName": "site",
+          "projectPath": "/Users/a/site",
+          "title": "Marketing site header",
+          "updatedAtMs": 1789344240100
+        },
+        {
+          "app": "opencode",
+          "archived": false,
+          "id": "s-4",
+          "live": false,
+          "preview": "The header now hides on scroll down.",
+          "projectName": "site",
+          "projectPath": "/Users/a/site",
+          "title": "Marketing site header",
+          "updatedAtMs": 1789344240100
         }
       ],
       "type": "snapshot"
