@@ -16,7 +16,6 @@ async fn sends_a_prompt_and_broadcasts_the_brief_reply() {
     let mut events = bridge.subscribe();
 
     assert_eq!(bridge.send_prompt("s-1", "reply DONE").await.unwrap(), DriverEvent::Working);
-    assert_eq!(bridge.held_sessions().await, vec!["s-1".to_string()]);
 
     let done = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
@@ -31,7 +30,12 @@ async fn sends_a_prompt_and_broadcasts_the_brief_reply() {
     assert_eq!(done.session_id, "s-1");
     assert_eq!(done.brief.as_deref(), Some("DONE"));
 
-    bridge.release("s-1").await;
+    // Handed back without being asked.
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while events.recv().await.unwrap().event != DriverEvent::Released {}
+    })
+    .await
+    .expect("released after the reply");
     assert!(bridge.held_sessions().await.is_empty());
 }
 

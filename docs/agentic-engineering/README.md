@@ -36,7 +36,7 @@ Proof tests on this Mac (details in [harness-integration.md](harness-integration
 | Codex | Yes (tested) | Yes, built-in steer (tested) | Yes | Not yet verified |
 | Factory | Yes (tested) | Queues it for the next turn (tested) | Yes | Not tested |
 | OpenCode | Yes (tested) | Built-in steer/queue switch (tested) | Yes | Only after reloading the window |
-| Claude Code | Yes, by continuing the conversation (tested) | Yes, between tool calls (tested) | Yes | No: the window doesn't show turns added from outside, but Claude remembers them |
+| Claude Code | Yes, by continuing the conversation (tested) | Yes, between tool calls (tested) | Yes | Not live; the window catches up when it reopens the conversation |
 | ChatGPT web | Only by automating the browser | – | – | Deferred |
 
 Supporting tests:
@@ -93,12 +93,10 @@ Summary only; the steps and "done when" checks are in
 | D9 | Reading (`core/agent_sessions`) and sending (`core/agent_bridge`) are separate modules | The session hub promises it never writes to an agent app; keeping that true makes it safe to open anytime. |
 | D10 | Watch files for changes (FSEvents); no polling loops | Reacts the moment something changes and does nothing otherwise. |
 | D11 | Phone sending is off until enabled on the Mac; `/v1/agent` accepts header auth only | A paired phone becomes able to drive coding agents, so that ability must be an explicit choice. |
-| D12 | Reach Claude Code by continuing the conversation in a SOURCE-owned Claude process (`--resume`), taking it over from the Claude app when idle | Tested in M0: words arrive as yours, corrections land mid-task, and Claude's memory includes them when you return to the app. Peer messages were sometimes refused as unverified. Trade-off: the Claude app window doesn't display voice turns. |
+| D12 | Reach Claude Code by continuing the conversation in a SOURCE-owned Claude process (`--resume`), taking it over from the Claude app when idle | Tested in M0: words arrive as yours, corrections land mid-task, and Claude's memory includes them when you return to the app. Peer messages were sometimes refused as unverified. Trade-off: the Claude app window only catches up when it reopens the conversation, and SOURCE must hold the conversation only while Claude is replying. |
 
 ## Open questions
 
-- Does the Claude app window ever show voice turns added by SOURCE, for example
-  after quitting and reopening the app?
 - Does the ChatGPT app pick up a Codex queued message (`codex queue`) or a turn
   started by another process, and show it live?
 - Factory: does Factory.app show turns added by an outside `droid` process?

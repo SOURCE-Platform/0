@@ -61,21 +61,19 @@ async fn sends_a_message_and_reports_the_finished_turn() {
 }
 
 #[tokio::test]
-async fn releases_on_request_and_starts_again_on_the_next_message() {
+async fn hands_the_conversation_back_as_soon_as_the_reply_finishes() {
     let driver = ClaudeDriver::new(config(fake_claude("release"), Duration::from_secs(60)));
     let mut events = driver.subscribe();
     driver.send("first").await.unwrap();
-    next_matching(&mut events, |e| matches!(e, DriverEvent::TurnDone { .. })).await;
     let first_pid = driver.pid();
-
-    driver.release().await;
-    next_matching(&mut events, |e| *e == DriverEvent::Released).await;
+    let seen = next_matching(&mut events, |e| *e == DriverEvent::Released).await;
+    let done_at = seen.iter().position(|e| matches!(e, DriverEvent::TurnDone { .. })).expect("turn finished");
+    assert_eq!(seen.len() - 1, done_at + 1, "released right after the reply, not after a quiet period");
     assert!(driver.pid().is_none());
 
     driver.send("second").await.unwrap();
-    next_matching(&mut events, |e| matches!(e, DriverEvent::TurnDone { .. })).await;
-    assert!(driver.pid().is_some() && driver.pid() != first_pid);
-    driver.release().await;
+    assert!(driver.pid().is_some() && driver.pid() != first_pid, "a new message starts a fresh process");
+    next_matching(&mut events, |e| *e == DriverEvent::Released).await;
 }
 
 #[tokio::test]

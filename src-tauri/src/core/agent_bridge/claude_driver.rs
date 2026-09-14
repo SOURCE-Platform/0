@@ -8,8 +8,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{broadcast, watch};
 
-/// How long a conversation stays with SOURCE after its last activity before it
-/// is handed back to the Claude app.
+/// Safety net only: a conversation is normally handed back the moment Claude
+/// finishes a reply. This covers a turn that never reports finishing.
 pub const RELEASE_AFTER_QUIET: Duration = Duration::from_secs(5 * 60);
 
 /// How to start the process for one conversation.
@@ -35,9 +35,11 @@ struct Running {
 
 /// Continues one Claude Code conversation in a process SOURCE owns.
 ///
-/// The process starts on the first message and is released after a quiet
-/// period, so the conversation goes back to the Claude app when nobody is
-/// talking to it. Messages sent while Claude is working join that work.
+/// The process starts when a message is sent and is released as soon as Claude
+/// finishes replying, so SOURCE only holds the conversation while Claude is
+/// working on something it sent. Holding it any longer would let the Claude app
+/// open its own copy alongside, and the two would drift apart. Messages sent
+/// while Claude is working join that work.
 pub struct ClaudeDriver {
     config: DriverConfig,
     events: broadcast::Sender<DriverEvent>,
@@ -102,13 +104,24 @@ impl ClaudeDriver {
     /// cleanly, and stop it if it doesn't within a few seconds.
     pub async fn release(&self) {
         let Some(mut process) = self.running.lock().await.take() else { return };
+        let released_pid = process.child.id();
         drop(process.stdin);
         if tokio::time::timeout(Duration::from_secs(10), process.child.wait()).await.is_err() {
             let _ = process.child.kill().await;
         }
         // Don't wait for the output reader to notice: callers check this right away.
-        if let Ok(mut pid) = self.pid.lock() {
-            *pid = None;
+        self.forget_pid(released_pid);
+    }
+
+    /// Clear the recorded pid only if it still names this process: a new
+    /// message may already have started a fresh one.
+    fn forget_pid(&self, exited: Option<u32>) -> bool {
+        match self.pid.lock() {
+            Ok(mut pid) if *pid == exited => {
+                *pid = None;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -128,7 +141,7 @@ impl ClaudeDriver {
         if let Ok(mut pid) = self.pid.lock() {
             *pid = child.id();
         }
-        tokio::spawn(read_output(Arc::downgrade(self), stdout));
+        tokio::spawn(read_output(Arc::downgrade(self), stdout, child.id()));
         tokio::spawn(release_when_quiet(Arc::downgrade(self), self.activity.subscribe()));
         Ok(Running { child, stdin })
     }
@@ -138,26 +151,39 @@ impl ClaudeDriver {
     }
 }
 
-async fn read_output(driver: Weak<ClaudeDriver>, stdout: tokio::process::ChildStdout) {
+async fn read_output(driver: Weak<ClaudeDriver>, stdout: tokio::process::ChildStdout, own_pid: Option<u32>) {
     let mut lines = BufReader::new(stdout).lines();
     while let Ok(Some(line)) = lines.next_line().await {
         let Some(driver) = driver.upgrade() else { return };
         for event in parse_line(&line) {
             let translated = driver.turn.lock().ok().and_then(|mut turn| turn.on_stream(event));
             if let Some(event) = translated {
+                let finished = matches!(event, DriverEvent::TurnDone { .. } | DriverEvent::AuthExpired);
                 let _ = driver.events.send(event);
+                // Hand the conversation back as soon as nothing is left to do.
+                // Released from its own task: this one must keep reading output.
+                if finished && !driver.is_busy() {
+                    let releasing = driver.clone();
+                    tokio::spawn(async move { releasing.release().await });
+                }
             }
         }
         driver.touch();
     }
     // Output ended: the process exited (released, crashed, or signed out).
-    if let Some(driver) = driver.upgrade() {
-        if let Ok(mut turn) = driver.turn.lock() {
+    // If a newer process has already taken over, this one's ending changes nothing.
+    // The turn lock is held across the check, so a message being sent can't slip
+    // in between deciding and resetting.
+    let Some(driver) = driver.upgrade() else { return };
+    let released = match driver.turn.lock() {
+        Ok(mut turn) if driver.pid() == own_pid || driver.pid().is_none() => {
+            driver.forget_pid(own_pid);
             turn.on_exit();
+            true
         }
-        if let Ok(mut pid) = driver.pid.lock() {
-            *pid = None;
-        }
+        _ => false,
+    };
+    if released {
         let _ = driver.events.send(DriverEvent::Released);
     }
 }

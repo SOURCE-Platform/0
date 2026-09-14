@@ -69,5 +69,12 @@ function StatusLine({ status }: { status: TurnStatus }) {
         : status.state === "done"
           ? status.brief
           : status.message;
-  return <p className={`mb-2 max-w-[70ch] text-xs leading-5 ${tone}`}>{text}</p>;
+  return (
+    <p className={`mb-2 max-w-[70ch] text-xs leading-5 ${tone}`}>
+      {text}
+      {status.state === "done" && status.handedBack && (
+        <span className="text-muted-foreground"> · Handed back to the Claude app</span>
+      )}
+    </p>
+  );
 }

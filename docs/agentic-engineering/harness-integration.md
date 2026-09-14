@@ -26,7 +26,7 @@ throwaway sessions in a scratch folder and harmless prompts ("reply PONG",
 | Mid-turn message | ✅ `turn/steer` | ✅ picked up between tool calls, changes course | Queued as the next turn ✅ | `delivery: "steer" \| "queue"` ✅ |
 | Interrupt | `turn/interrupt` | SDK `interrupt()` | `droid.interrupt_session` | `POST /api/session/:id/interrupt`, `/session/:id/abort` |
 | Live events | `item/agentMessage/delta`, `turn/completed` ✅ | stream-json, hooks, JSONL tail | `create_message`, `agent_turn_completed` ✅ | `/event`, `/api/event` SSE ✅ |
-| Shows in the app's own window | Not verified | ❌ not displayed; Claude's memory includes it once the app's process restarts | Not tested | Only after "Reload Webview"; v2-API messages don't render |
+| Shows in the app's own window | Not verified | Not live; appears once the app reopens the conversation, and Claude's memory includes it | Not tested | Only after "Reload Webview"; v2-API messages don't render |
 | Auth used | Existing ChatGPT login ✅ | claude.ai login ✅ (the CLI keeps its own, separate from the desktop app's) | Existing Factory login ✅ | Existing OpenCode providers ✅ |
 
 ✅ = proven on this Mac. ⏳ = blocked.
@@ -105,8 +105,8 @@ child over stdio.
    - About 7 s to resume and answer a short prompt.
    - **One writer rule:** the Claude app's own process for that session doesn't
      see outside turns, so SOURCE stops it first (only when idle). The app
-     starts a fresh process on next use, and that one's memory includes the
-     voice turns. The app window doesn't display them.
+     starts a fresh process on next use; that one's memory includes the voice
+     turns, and its window shows them.
 2. **Relay through SendMessage (not reliable).** Delivery works, including into
    a busy desktop session. But messages arrive labelled as coming from another
    agent, and Claude decides whether to trust them: in M0 it refused a
@@ -153,8 +153,8 @@ off, since SOURCE is the remote control.
   have a running process, plus the JSONL transcripts for history.
 - **Sends:** take the conversation over (stop the Claude app's idle process for
   it, or refuse if it's mid-task), then drive it with a SOURCE-owned stream-json
-  process. Release it after a few minutes of quiet so the Claude app can use it
-  again.
+  process. Release it as soon as Claude finishes replying, so the Claude app
+  never opens a second copy alongside SOURCE's.
 
 **Subscription use.** Personal Agent SDK and `claude -p` use on a Pro/Max
 plan draws from plan limits. Offering claude.ai login inside a product for

@@ -37,7 +37,7 @@ work reliably: Claude sometimes refuses it as unverified, which protects you.
 | Research | All four apps reachable from outside; steering proven; router and speech proven | ✅ Done |
 | Session hub v1 | Agents tab on the Mac listing every session from all four apps | ✅ Done |
 | M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
-| M1 | Mac-only loop: send to Claude, get the reply | ✅ Done (one manual check left, see 1.7) |
+| M1 | Mac-only loop: send to Claude, get the reply | ✅ Done |
 | M2 | Phone ↔ Mac agent channel, sessions on the phone | ⬜ Next |
 | M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
 | M3b | Kokoro voice | ⬜ |
@@ -89,8 +89,11 @@ These findings changed the design:
    tracking is needed for turns SOURCE starts.
 3. **The Claude app keeps its own copy of an open conversation.**
    - Its running process doesn't see turns added from outside.
-   - Its window doesn't display them, even after its process restarts.
-   - Once its process restarts, Claude's memory does include them.
+   - Once it starts a fresh process for the conversation (after SOURCE hands it
+     back), Claude's memory includes them, and so does the window: in the M1
+     test, messages sent from SOURCE appeared in the Claude app after it
+     reopened the conversation. The one outside turn added while the app's
+     process was still running (M0's PINEAPPLE) never appeared in the window.
 4. **Session names change** (`0-e0` later became `0-c1`); session ids don't.
    Resolve live state from `~/.claude/sessions/<pid>.json` by `sessionId` right
    before every send.
@@ -136,19 +139,18 @@ folder, and one Claude desktop session in `~/Documents/voice-test`.
 Deliver voice prompts to Claude Code by **continuing the conversation in a
 SOURCE-owned Claude process**, not by peer messages. Consequences:
 
-- **You follow voice turns on the phone** (and in SOURCE on the Mac). The Claude
-  app window won't show them. When you go back to the Mac and type in that
-  session, Claude remembers the voice turns.
+- **You follow voice turns on the phone** (and in SOURCE on the Mac) as they
+  happen. The Claude app window catches up when it reopens the conversation,
+  and Claude remembers the voice turns either way.
 - **One writer per conversation.** Before continuing a conversation, SOURCE
   checks whether the Claude app's process for it is running. If it is and it's
   idle, SOURCE stops it (the app starts a fresh one next time you use the
   session). If it's mid-task, SOURCE says so and doesn't send.
-- **While SOURCE holds a conversation,** anything you type in the Claude app for
-  that session would fork it. SOURCE releases a conversation (stops its own
-  process) after a few minutes of quiet, and the Agents tab marks conversations
-  SOURCE is holding.
-- **Still open:** does the Claude app window ever show voice turns (for example
-  after quitting and reopening the app)? Worth checking once; not blocking.
+- **SOURCE holds a conversation only while Claude works on a message SOURCE
+  sent,** then hands it back immediately. The first version held it for five
+  quiet minutes; in the M1 test that let the Claude app open its own copy
+  alongside SOURCE's when the conversation was clicked there, which risks the
+  two drifting apart. The Agents tab marks conversations SOURCE is holding.
 
 ---
 
@@ -222,8 +224,9 @@ Pure logic.
     delivered mid-turn (proven in M0) and reported as "added to current work".
   - Streams `DriverEvent`s: working, tool in progress, assistant text, turn done
     (with final text), error.
-  - Released after 5 minutes with no turn running: stdin closed, process exits,
-    the conversation goes back to the Claude app.
+  - Released as soon as Claude finishes replying (no follow-up queued): stdin
+    closed, process exits, the conversation goes back to the Claude app. A
+    5-minute quiet timer remains only as a safety net.
   - `kill_on_drop`; restart on the next send if the process died; log to
     `~/.observer_data/helpers/claude-driver.log`.
 - **Done when:** an ignored live test continues a throwaway conversation, gets
@@ -262,7 +265,7 @@ Pure logic.
 
 ### 1.7 Mac session detail with a prompt box
 
-✅ Done. Real run against a throwaway Claude desktop conversation: taken over in 1.6 s, reply "PONG" with its brief in 5.7 s. Left to check by hand: asking that conversation in the Claude app "what was the last word you said?" gets "PONG".
+✅ Done. Real run against a throwaway Claude desktop conversation: taken over in 1.6 s, reply "PONG" with its brief in 5.7 s. Tried in the app: prompts sent from the Agents tab got replies, and appeared in the Claude app window after it reopened the conversation. That test also showed SOURCE holding a conversation for five quiet minutes let the Claude app open a second copy, so SOURCE now hands it back as soon as each reply finishes.
 
 
 - **Files:**
@@ -494,8 +497,8 @@ Browser automation. Deferred.
 
 | Risk | Mitigation |
 |---|---|
-| You type in the Claude app while SOURCE holds that conversation, forking it | SOURCE releases conversations after 5 minutes of quiet; the Agents tab shows "held by SOURCE". Later: detect the app's process starting for a held session and release immediately. |
-| Voice turns don't show in the Claude app window | Accepted: you follow them on the phone and in SOURCE; Claude's memory includes them. Check once whether reopening the app shows them. |
+| You type in the Claude app while SOURCE holds that conversation, forking it | SOURCE holds a conversation only while Claude is replying to it, and the Agents tab shows "Held by SOURCE" meanwhile. Later: detect the app starting its own process for a held conversation and warn. |
+| The Claude app window lags behind voice turns | It catches up when it reopens the conversation (seen in M1); if it shows "Session was interrupted", that's SOURCE having taken the conversation over, and using it again in the app resumes normally. |
 | Claude asks for approval during a voice turn | Claude runs with the session's own permission settings; SOURCE never auto-approves. While waiting on a tool for over 60 s, say "Claude may be waiting for approval". Approvals from the phone in M7. |
 | Sign-in expires (the CLI keeps its own login, separate from the app's) | Detect 401; tell the phone and Mac to run `claude auth login`; no retry loop. |
 | Stopping the app's process at the wrong moment | Only when the transcript shows no turn in progress; only that session's Claude app process, matched by session id. |

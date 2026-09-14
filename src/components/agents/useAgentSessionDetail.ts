@@ -7,7 +7,7 @@ export type TurnStatus =
   | { state: "idle" }
   | { state: "sending" }
   | { state: "working"; detail: string }
-  | { state: "done"; brief: string }
+  | { state: "done"; brief: string; handedBack: boolean }
   | { state: "error"; message: string };
 
 /**
@@ -81,7 +81,10 @@ function nextStatus(current: TurnStatus, { event, brief, stillWorking }: BridgeE
     case "turn_done":
       return event.is_error
         ? { state: "error", message: brief ?? "Claude reported an error." }
-        : { state: "done", brief: brief ?? "Done." };
+        : { state: "done", brief: brief ?? "Done.", handedBack: false };
+    case "released":
+      // SOURCE let go of the conversation: the Claude app can use it again.
+      return current.state === "done" ? { ...current, handedBack: true } : current;
     case "auth_expired":
       return { state: "error", message: "Claude Code's sign-in has expired. Run `claude auth login` in Terminal." };
     default:
