@@ -9,6 +9,7 @@ Status (September 2026):
   (see sessions, read a Claude Code conversation, type a prompt into it).
 - **Next:** push-to-talk with a spoken reply (M3).
 - **Build order and progress:** [implementation-plan.md](implementation-plan.md).
+- **Picking this up as a developer?** Start with [HANDOFF.md](HANDOFF.md).
 
 ## The idea, in plain terms
 
