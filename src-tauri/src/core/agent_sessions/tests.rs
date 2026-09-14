@@ -96,9 +96,11 @@ fn claude_list_marks_running_sessions_live() {
         "{\"type\":\"user\",\"cwd\":\"/Users/a/site\",\"message\":{\"role\":\"user\",\"content\":\"fix the nav\"}}\n",
     )
     .unwrap();
+    // The registry entry must name a process that is really running; use this test's own.
+    let pid = std::process::id();
     std::fs::write(
-        roots.claude.join("sessions/4242.json"),
-        r#"{"pid":4242,"sessionId":"aaaa1111-2222-3333-4444-555566667777","name":"site-a1","kind":"interactive"}"#,
+        roots.claude.join(format!("sessions/{pid}.json")),
+        format!(r#"{{"pid":{pid},"sessionId":"aaaa1111-2222-3333-4444-555566667777","name":"site-a1","kind":"interactive"}}"#),
     )
     .unwrap();
 

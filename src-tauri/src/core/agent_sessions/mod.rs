@@ -6,15 +6,24 @@
 //! written back, so opening the hub can never disturb a running session.
 
 mod claude;
+mod claude_history;
+mod claude_records;
+mod claude_registry;
 mod codex;
 mod factory;
+mod message_types;
 mod opencode;
 mod paths;
 mod types;
 
 #[cfg(test)]
+mod claude_tests;
+#[cfg(test)]
 mod tests;
 
+pub use claude_history::{recent_messages as claude_recent_messages, transcript_path as claude_transcript_path};
+pub use claude_registry::{processes_for as claude_processes_for, LiveClaudeSession};
+pub use message_types::{AgentMessage, MessageRole};
 pub use paths::AgentRoots;
 pub use types::{AgentApp, AgentSession};
 

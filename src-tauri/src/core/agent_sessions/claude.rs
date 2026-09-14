@@ -1,8 +1,8 @@
+use super::claude_history::read_tail;
+use super::claude_registry::read_registry;
 use super::paths::AgentRoots;
 use super::types::{project_name_from_path, shorten, title_or_prompt, AgentApp, AgentSession};
 use std::collections::HashMap;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::Path;
 
 /// Only the tail of a transcript is read: enough for the title, the last reply
 /// and the working directory, without loading long conversations.
@@ -16,26 +16,13 @@ pub(crate) struct Parsed {
     pub cwd: String,
 }
 
-/// Sessions Claude Code has open right now, keyed by session id.
-///
-/// The desktop app and the terminal both write these registry files, so this is
-/// how the hub knows a row is live rather than history.
+/// Sessions Claude Code has running right now, keyed by session id, with the
+/// running process's name.
 fn live_sessions(roots: &AgentRoots) -> HashMap<String, String> {
-    let mut live = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(roots.claude.join("sessions")) else {
-        return live;
-    };
-    for entry in entries.flatten() {
-        if entry.path().extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(entry.path()) else { continue };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else { continue };
-        let Some(id) = value.get("sessionId").and_then(|v| v.as_str()) else { continue };
-        let name = value.get("name").and_then(|v| v.as_str()).unwrap_or_default();
-        live.insert(id.to_string(), name.to_string());
-    }
-    live
+    read_registry(roots)
+        .into_iter()
+        .map(|session| (session.session_id, session.name))
+        .collect()
 }
 
 /// Read the last chunk of a transcript and pull out what a row needs.
@@ -93,17 +80,6 @@ fn message_text(value: &serde_json::Value) -> String {
     }
 }
 
-fn read_tail(path: &Path) -> Option<String> {
-    let mut file = std::fs::File::open(path).ok()?;
-    let len = file.metadata().ok()?.len();
-    if len > TAIL_BYTES {
-        file.seek(SeekFrom::Start(len - TAIL_BYTES)).ok()?;
-    }
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).ok()?;
-    Some(String::from_utf8_lossy(&buffer).to_string())
-}
-
 /// Claude Code stores one JSONL transcript per session under `projects/`.
 pub fn list(roots: &AgentRoots, limit: usize) -> Result<Vec<AgentSession>, String> {
     let projects = roots.claude.join("projects");
@@ -137,7 +113,7 @@ pub fn list(roots: &AgentRoots, limit: usize) -> Result<Vec<AgentSession>, Strin
         .into_iter()
         .map(|(path, modified)| {
             let id = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-            let parsed = read_tail(&path).map(|text| parse_tail(&text)).unwrap_or_default();
+            let parsed = read_tail(&path, TAIL_BYTES).map(|text| parse_tail(&text)).unwrap_or_default();
             let live_name = live.get(&id);
             // A title the user set wins; otherwise the running session's own
             // name; otherwise the first line of what was asked.

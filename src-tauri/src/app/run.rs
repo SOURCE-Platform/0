@@ -15,6 +15,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             list_agent_sessions,
+            agent_session_messages,
             check_consent_status,
             request_consent,
             revoke_consent,
