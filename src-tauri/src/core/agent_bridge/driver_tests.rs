@@ -4,18 +4,7 @@ use super::stream_protocol::{StreamEvent, TurnResult};
 use std::path::PathBuf;
 use std::time::Duration;
 
-/// A stand-in for `claude`: replies to every message with a real captured turn.
-fn fake_claude(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("source_fake_claude_{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let fixture = concat!(env!("CARGO_MANIFEST_DIR"), "/src/core/agent_bridge/fixtures/claude_stream.jsonl");
-    let script = dir.join("claude");
-    std::fs::write(&script, format!("#!/bin/sh\nwhile IFS= read -r line; do cat '{fixture}'; done\n")).unwrap();
-    use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
-    script
-}
+use super::test_support::fake_claude;
 
 fn config(binary: PathBuf, quiet: Duration) -> DriverConfig {
     DriverConfig {
