@@ -265,7 +265,7 @@ Pure logic.
 
 ### 1.7 Mac session detail with a prompt box
 
-✅ Done. Real run against a throwaway Claude desktop conversation: taken over in 1.6 s, reply "PONG" with its brief in 5.7 s. Tried in the app: prompts sent from the Agents tab got replies, and appeared in the Claude app window after it reopened the conversation. That test also showed SOURCE holding a conversation for five quiet minutes let the Claude app open a second copy, so SOURCE now hands it back as soon as each reply finishes.
+✅ Done. Real run against a throwaway Claude desktop conversation: taken over in 1.6 s, reply "PONG" with its brief in 5.7 s. Tried in the app: prompts sent from the Agents tab got replies, and appeared in the Claude app window after it reopened the conversation. That test also showed SOURCE holding a conversation for five quiet minutes let the Claude app open a second copy, so SOURCE now hands it back as soon as each reply finishes. Retested after that fix: the reply came back, SOURCE let go immediately (no second copy running), and Cmd+R in the Claude app showed the new messages.
 
 
 - **Files:**
@@ -498,7 +498,7 @@ Browser automation. Deferred.
 | Risk | Mitigation |
 |---|---|
 | You type in the Claude app while SOURCE holds that conversation, forking it | SOURCE holds a conversation only while Claude is replying to it, and the Agents tab shows "Held by SOURCE" meanwhile. Later: detect the app starting its own process for a held conversation and warn. |
-| The Claude app window lags behind voice turns | It catches up when it reopens the conversation (seen in M1); if it shows "Session was interrupted", that's SOURCE having taken the conversation over, and using it again in the app resumes normally. |
+| The Claude app window lags behind voice turns | It doesn't refresh by itself, but Cmd+R in the Claude app reloads the conversation and shows them (seen in M1). "Session was interrupted" there just means SOURCE took the conversation over; using it again in the app resumes normally. |
 | Claude asks for approval during a voice turn | Claude runs with the session's own permission settings; SOURCE never auto-approves. While waiting on a tool for over 60 s, say "Claude may be waiting for approval". Approvals from the phone in M7. |
 | Sign-in expires (the CLI keeps its own login, separate from the app's) | Detect 401; tell the phone and Mac to run `claude auth login`; no retry loop. |
 | Stopping the app's process at the wrong moment | Only when the transcript shows no turn in progress; only that session's Claude app process, matched by session id. |

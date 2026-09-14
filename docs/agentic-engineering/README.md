@@ -36,7 +36,7 @@ Proof tests on this Mac (details in [harness-integration.md](harness-integration
 | Codex | Yes (tested) | Yes, built-in steer (tested) | Yes | Not yet verified |
 | Factory | Yes (tested) | Queues it for the next turn (tested) | Yes | Not tested |
 | OpenCode | Yes (tested) | Built-in steer/queue switch (tested) | Yes | Only after reloading the window |
-| Claude Code | Yes, by continuing the conversation (tested) | Yes, between tool calls (tested) | Yes | Not live; the window catches up when it reopens the conversation |
+| Claude Code | Yes, by continuing the conversation (tested) | Yes, between tool calls (tested) | Yes | Not live; Cmd+R in the Claude app shows them |
 | ChatGPT web | Only by automating the browser | – | – | Deferred |
 
 Supporting tests:
