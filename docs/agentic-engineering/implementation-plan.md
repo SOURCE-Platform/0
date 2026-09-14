@@ -38,7 +38,7 @@ work reliably: Claude sometimes refuses it as unverified, which protects you.
 | Session hub v1 | Agents tab on the Mac listing every session from all four apps | ✅ Done |
 | M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
 | M1 | Mac-only loop: send to Claude, get the reply | ✅ Done |
-| M2 | Phone ↔ Mac agent channel, sessions on the phone | ⬜ Next |
+| M2 | Phone ↔ Mac agent channel, sessions on the phone | 🧪 Built and tested; waiting for the on-phone check |
 | M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
 | M3b | Kokoro voice | ⬜ |
 | M4 | Away from home (Tailscale) | ⬜ |
@@ -292,7 +292,21 @@ Pure logic.
 
 ## M2: Phone ↔ Mac agent channel
 
-### 2.1 Frame schema
+**Status:** built in both repos (Mac `ca09664`, phone `df7e653`). 55 Mac agent
+tests and 5 phone tests pass. Still to do: the on-phone check in 2.5.
+
+**What changed from the plan while building:**
+
+| Plan | Built | Why |
+|---|---|---|
+| `messages_appended` frame | `messages`: the latest 60 messages, sent again when they change | Simpler, and a reconnect can't miss anything. The Mac diffs them, so unchanged lists aren't resent. |
+| No reply frame for `send_text` | `send_result` with `requestId`, `ok`, `error` | The phone needs to say *why* a send failed: Claude busy in the app, open in a terminal, or the setting is off. |
+| `transcript` frame | Not yet | Added with push-to-talk in M3. |
+| New `registry_watch.rs` | `agent_sessions/watch.rs` (from M1) watches both transcripts and the registry, 300 ms settle | One watcher already covered it; the Mac tab and the phone share it. |
+| `MobileServices` struct | `Option<AgentServices>` passed to `serve_mobile` | Only one new argument was needed; `server.rs` is 267 lines. |
+| Golden file shared | The phone test target decodes a **copy** of the Mac's file | Separate repos. When frames change, copy `fixtures/agent_frames.json` to `SourceMobileTests/Fixtures/`. |
+
+### 2.1 Frame schema ✅
 
 - **Files:**
   - Mac: `core/mobile/agent_frames.rs`.
@@ -306,7 +320,7 @@ Pure logic.
 - **Tests:** a golden JSON file both sides agree on; a Rust test checks every
   variant against it.
 
-### 2.2 Two-way socket
+### 2.2 Two-way socket ✅
 
 - **Files:**
   - `core/mobile/agent_socket.rs`:
@@ -322,14 +336,14 @@ Pure logic.
     so their signatures stop growing.
 - **Done when:** tests pass and `server.rs` stays at or under 350 lines.
 
-### 2.3 Event-driven session list
+### 2.3 Event-driven session list ✅
 
 - **File:** `core/agent_sessions/registry_watch.rs`: `notify` on
   `~/.claude/sessions`, debounced 300 ms.
 - **Done when:** starting or closing a Claude session updates the Mac and phone
   lists within 1 s.
 
-### 2.4 Phone client
+### 2.4 Phone client ✅ (build and tests; the Wi-Fi check happens with 2.5)
 
 - **Files:**
   - `Net/AgentClient.swift`:
@@ -344,7 +358,7 @@ Pure logic.
     succeeds.
   - On a device, turning the Mac's Wi-Fi off and on reconnects and resyncs.
 
-### 2.5 Phone UI
+### 2.5 Phone UI 🧪 built; waiting for the on-phone check
 
 - **Files:**
   - `UI/Agents/AgentSessionsView.swift`: live sessions first, app badge, title,

@@ -5,8 +5,9 @@ Status (September 2026):
 - **Done:** research and proof tests; the Agents tab on the Mac; the M0
   go/no-go tests; M1 (send prompts to Claude Code from the Agents tab and get
   the reply back).
-- **Next:** M2, the phone ↔ Mac agent channel, then push-to-talk with a spoken
-  reply (M3).
+- **Built, waiting for an on-phone check:** M2, the Agents screen on the phone
+  (see sessions, read a Claude Code conversation, type a prompt into it).
+- **Next:** push-to-talk with a spoken reply (M3).
 - **Build order and progress:** [implementation-plan.md](implementation-plan.md).
 
 ## The idea, in plain terms
