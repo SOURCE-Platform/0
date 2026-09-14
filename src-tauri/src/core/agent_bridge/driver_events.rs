@@ -3,7 +3,7 @@ use serde::Serialize;
 
 /// What a conversation SOURCE is driving reports, in the order it happens.
 #[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
 pub enum DriverEvent {
     /// A message was sent and Claude started working on it.
     Working,

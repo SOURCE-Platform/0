@@ -176,6 +176,10 @@ pub struct Config {
     /// Retain mobile clips for this many days (0 = keep forever)
     #[serde(default = "crate::core::config_defaults::default_mobile_clip_retention_days")]
     pub mobile_clip_retention_days: u32,
+    /// Let a paired phone send prompts into coding-agent conversations. Off by
+    /// default: pairing alone should only allow uploading recordings.
+    #[serde(default)]
+    pub mobile_agent_prompts_enabled: bool,
 }
 
 include!("config_default_impl.rs");

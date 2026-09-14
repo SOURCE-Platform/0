@@ -1,3 +1,10 @@
+pub mod agent_feed;
+pub mod agent_frames;
+mod agent_socket;
+#[cfg(test)]
+mod agent_socket_tests;
+#[cfg(test)]
+mod agent_frames_tests;
 mod discovery;
 mod enrollment;
 mod ingest;
@@ -14,6 +21,7 @@ pub use enrollment::{Enrollment, EnrollmentPayload};
 pub use pair_requests::{short_auth_string, PairRequests, PairState, PendingPair};
 pub use qr::{local_hostname, render_enrollment_qr};
 pub use pairing::{hash_token, PairingManager};
+pub use agent_feed::AgentServices;
 pub use server::{serve_mobile, MobileState};
 pub use tls::ensure_mobile_cert;
 
@@ -56,6 +64,7 @@ pub fn spawn_mobile_server(
     commands: Arc<Mutex<Option<mpsc::Sender<SupervisorCommand>>>>,
     session: Option<Arc<crate::core::session_manager::SessionManager>>,
     app_handle: Option<tauri::AppHandle>,
+    agents: Option<agent_feed::AgentServices>,
     enabled: bool,
     preferred_port: u16,
 ) {
@@ -63,7 +72,7 @@ pub fn spawn_mobile_server(
         return;
     }
     tauri::async_runtime::spawn(async move {
-        match serve_mobile(db, commands, session, app_handle, true, preferred_port).await {
+        match serve_mobile(db, commands, session, app_handle, agents, true, preferred_port).await {
             Ok((port, fingerprint)) => {
                 MOBILE_PORT.store(port, Ordering::SeqCst);
                 let _ = MOBILE_FINGERPRINT.set(fingerprint);

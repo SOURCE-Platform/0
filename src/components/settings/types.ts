@@ -51,6 +51,7 @@ export interface Config {
   mobile_enabled: boolean;
   mobile_port: number;
   mobile_clip_retention_days: number;
+  mobile_agent_prompts_enabled?: boolean;
   pii_settings: {
     detect_only: boolean;
     enabled: boolean;

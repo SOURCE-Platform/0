@@ -69,8 +69,8 @@ export type DriverEvent =
   | { kind: "progress"; detail: string }
   | { kind: "tool_use"; name: string }
   | { kind: "assistant_text"; text: string }
-  | { kind: "turn_done"; text: string; summary: string | null; is_error: boolean; cost_usd: number; duration_ms: number }
-  | { kind: "usage"; status: string; weekly_utilization: number | null }
+  | { kind: "turn_done"; text: string; summary: string | null; isError: boolean; costUsd: number; durationMs: number }
+  | { kind: "usage"; status: string; weeklyUtilization: number | null }
   | { kind: "auth_expired" }
   | { kind: "released" };
 

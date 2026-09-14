@@ -28,6 +28,8 @@ pub struct MobileState {
     pub fingerprint: String,
     pub device_name: String,
     pub app_handle: Option<tauri::AppHandle>,
+    /// Present when agent features are running; `/v1/agent` needs them.
+    pub agents: Option<super::agent_feed::AgentServices>,
 }
 
 pub async fn serve_mobile(
@@ -35,6 +37,7 @@ pub async fn serve_mobile(
     commands: Arc<Mutex<Option<mpsc::Sender<SupervisorCommand>>>>,
     session: Option<Arc<crate::core::session_manager::SessionManager>>,
     app_handle: Option<tauri::AppHandle>,
+    agents: Option<super::agent_feed::AgentServices>,
     enabled: bool,
     preferred_port: u16,
 ) -> Result<(u16, String), String> {
@@ -67,6 +70,7 @@ pub async fn serve_mobile(
         fingerprint: fingerprint.clone(),
         device_name: device_name.clone(),
         app_handle,
+        agents,
     };
     let app = Router::new()
         .route("/v1/health", get(health))
@@ -79,6 +83,7 @@ pub async fn serve_mobile(
         )
         .route("/v1/clips/status", get(super::routes_clips::clip_status))
         .route("/v1/stream", get(stream_ws))
+        .route("/v1/agent", get(super::agent_socket::agent_ws))
         .with_state(state.clone());
 
     let config = axum_server::tls_rustls::RustlsConfig::from_pem(cert_pem, key_pem)

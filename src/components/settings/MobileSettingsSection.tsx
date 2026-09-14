@@ -129,6 +129,23 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
             />
           </div>
 
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="mobile-agent-prompts" className="text-base">
+                Let the phone send prompts to coding agents
+              </Label>
+              <p className="max-w-[60ch] text-sm text-muted-foreground">
+                Your paired phone can already see your agent sessions. Turn this on to also let it
+                send prompts into them, which can change files on this Mac.
+              </p>
+            </div>
+            <Switch
+              id="mobile-agent-prompts"
+              checked={config.mobile_agent_prompts_enabled ?? false}
+              onCheckedChange={(checked) => controller.updateConfig({ mobile_agent_prompts_enabled: checked })}
+            />
+          </div>
+
           <div className="space-y-3">
             <Label className="text-base">Pair a phone</Label>
             <p className="text-sm text-muted-foreground">

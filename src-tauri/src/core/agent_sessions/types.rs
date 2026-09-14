@@ -25,7 +25,7 @@ impl AgentApp {
 ///
 /// Everything here comes from files the apps already keep on disk, so reading a
 /// session never disturbs the app that owns it.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentSession {
     pub id: String,

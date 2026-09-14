@@ -79,7 +79,7 @@ function nextStatus(current: TurnStatus, { event, brief, stillWorking }: BridgeE
     case "tool_use":
       return { state: "working", detail: `Using ${event.name}` };
     case "turn_done":
-      return event.is_error
+      return event.isError
         ? { state: "error", message: brief ?? "Claude reported an error." }
         : { state: "done", brief: brief ?? "Done.", handedBack: false };
     case "released":

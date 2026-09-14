@@ -1,0 +1,130 @@
+{
+  "client": [
+    {
+      "type": "hello"
+    },
+    {
+      "app": "claude-code",
+      "sessionId": "s-1",
+      "type": "open_session"
+    },
+    {
+      "type": "close_session"
+    },
+    {
+      "requestId": "r-1",
+      "sessionId": "s-1",
+      "text": "hide the header",
+      "type": "send_text"
+    },
+    {
+      "type": "pong"
+    }
+  ],
+  "server": [
+    {
+      "canSend": true,
+      "epoch": "e-1",
+      "held": [
+        "s-1"
+      ],
+      "seq": 1,
+      "sessions": [
+        {
+          "app": "claude-code",
+          "archived": false,
+          "id": "s-1",
+          "live": true,
+          "preview": "The header now hides on scroll down.",
+          "projectName": "site",
+          "projectPath": "/Users/a/site",
+          "title": "Marketing site header",
+          "updatedAtMs": 1789344240100
+        }
+      ],
+      "type": "snapshot"
+    },
+    {
+      "held": [],
+      "seq": 2,
+      "sessions": [
+        {
+          "app": "claude-code",
+          "archived": false,
+          "id": "s-1",
+          "live": true,
+          "preview": "The header now hides on scroll down.",
+          "projectName": "site",
+          "projectPath": "/Users/a/site",
+          "title": "Marketing site header",
+          "updatedAtMs": 1789344240100
+        }
+      ],
+      "type": "sessions"
+    },
+    {
+      "messages": [
+        {
+          "atMs": 1,
+          "id": "u-1",
+          "role": "user",
+          "text": "hide the header"
+        }
+      ],
+      "seq": 3,
+      "sessionId": "s-1",
+      "type": "messages"
+    },
+    {
+      "brief": null,
+      "event": {
+        "kind": "working"
+      },
+      "seq": 4,
+      "sessionId": "s-1",
+      "stillWorking": false,
+      "type": "turn"
+    },
+    {
+      "brief": "Done.",
+      "event": {
+        "costUsd": 0.01,
+        "durationMs": 2500,
+        "isError": false,
+        "kind": "turn_done",
+        "summary": "hid the header",
+        "text": "Done."
+      },
+      "seq": 5,
+      "sessionId": "s-1",
+      "stillWorking": false,
+      "type": "turn"
+    },
+    {
+      "error": null,
+      "ok": true,
+      "requestId": "r-1",
+      "seq": 6,
+      "type": "send_result"
+    },
+    {
+      "error": {
+        "kind": "handoff",
+        "reason": "busy_in_app"
+      },
+      "ok": false,
+      "requestId": "r-2",
+      "seq": 7,
+      "type": "send_result"
+    },
+    {
+      "message": "Sending from the phone is turned off on the Mac.",
+      "seq": 8,
+      "type": "error"
+    },
+    {
+      "seq": 9,
+      "type": "ping"
+    }
+  ]
+}
