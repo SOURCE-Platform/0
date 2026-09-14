@@ -1,4 +1,4 @@
-use super::claude_history::{messages_from_text, recent_messages, transcript_path};
+use super::claude_history::{context_from_text, messages_from_text, recent_messages, transcript_path};
 use super::claude_records::{parse_line, ClaudeRecord};
 use super::claude_registry::{parse_registry_entry, pid_alive, processes_for};
 use super::message_types::MessageRole;
@@ -112,6 +112,18 @@ fn finds_a_transcript_in_any_project_folder_and_reads_it() {
     assert!(transcript_path(&roots, "../s-1").is_none(), "ids can't escape the projects folder");
     assert_eq!(recent_messages(&roots, "s-1", 1).unwrap()[0].text, "Thanks, now the footer.");
     assert!(recent_messages(&roots, "missing", 5).is_err());
+}
+
+#[test]
+fn reads_the_folder_and_latest_permission_mode() {
+    let text = r#"{"type":"user","cwd":"/Users/a/old","permissionMode":"default"}
+{"type":"assistant","cwd":"/Users/a/site"}
+{"type":"user","cwd":"/Users/a/site","permissionMode":"acceptEdits"}
+{"type":"last-prompt"}"#;
+    let context = context_from_text(text).unwrap();
+    assert_eq!(context.cwd, "/Users/a/site");
+    assert_eq!(context.permission_mode.as_deref(), Some("acceptEdits"));
+    assert!(context_from_text(r#"{"type":"last-prompt"}"#).is_none(), "no folder, no context");
 }
 
 /// Manual timing check against this machine's real, large transcripts:

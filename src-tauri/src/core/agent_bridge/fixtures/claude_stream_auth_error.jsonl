@@ -1,0 +1,1 @@
+{"type": "result", "subtype": "success", "is_error": false, "result": "Failed to authenticate. API Error: 401 OAuth access token has expired. Re-authenticate to continue.", "api_error_status": null, "duration_ms": 820, "num_turns": 1, "total_cost_usd": 0, "session_id": "bc54654d-32bd-4310-acdd-4c2107bd2b68", "queued_turn_count": 0}

@@ -21,7 +21,10 @@ mod claude_tests;
 #[cfg(test)]
 mod tests;
 
-pub use claude_history::{recent_messages as claude_recent_messages, transcript_path as claude_transcript_path};
+pub use claude_history::{
+    conversation_context as claude_conversation_context, recent_messages as claude_recent_messages,
+    transcript_path as claude_transcript_path, ConversationContext,
+};
 pub use claude_registry::{processes_for as claude_processes_for, LiveClaudeSession};
 pub use message_types::{AgentMessage, MessageRole};
 pub use paths::AgentRoots;

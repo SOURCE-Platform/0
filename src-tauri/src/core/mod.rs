@@ -1,3 +1,4 @@
+pub mod agent_bridge;
 pub mod agent_sessions;
 pub mod command_analyzer;
 pub mod config;

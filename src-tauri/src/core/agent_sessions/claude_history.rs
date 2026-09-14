@@ -35,6 +35,38 @@ pub fn recent_messages(
     Ok(messages_from_text(&text, limit))
 }
 
+/// Where a conversation runs and the permission mode it last ran in, so a
+/// prompt SOURCE sends is allowed exactly what one typed in the app would be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationContext {
+    pub cwd: String,
+    pub permission_mode: Option<String>,
+}
+
+pub fn conversation_context(roots: &AgentRoots, session_id: &str) -> Option<ConversationContext> {
+    let path = transcript_path(roots, session_id)?;
+    context_from_text(&read_tail(&path, HISTORY_TAIL_BYTES)?)
+}
+
+/// The newest record wins: both the folder and the mode can change mid-conversation.
+pub(crate) fn context_from_text(text: &str) -> Option<ConversationContext> {
+    let mut cwd = None;
+    let mut permission_mode = None;
+    for line in text.lines().rev() {
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+        if cwd.is_none() {
+            cwd = value.get("cwd").and_then(|v| v.as_str()).map(str::to_string);
+        }
+        if permission_mode.is_none() {
+            permission_mode = value.get("permissionMode").and_then(|v| v.as_str()).map(str::to_string);
+        }
+        if cwd.is_some() && permission_mode.is_some() {
+            break;
+        }
+    }
+    Some(ConversationContext { cwd: cwd?, permission_mode })
+}
+
 /// Read the last `bytes` of a file. The first line may be cut in half; callers
 /// drop it (a partial line never parses as JSON).
 pub(crate) fn read_tail(path: &Path, bytes: u64) -> Option<String> {

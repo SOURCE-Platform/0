@@ -1,0 +1,11 @@
+//! Sending prompts into coding-agent conversations.
+//!
+//! The counterpart of `agent_sessions`, which only reads. Everything here acts on
+//! an agent app: it continues conversations in processes SOURCE owns, and hands
+//! them back when it's done.
+
+pub mod claude_cli;
+pub mod stream_protocol;
+
+#[cfg(test)]
+mod tests;
