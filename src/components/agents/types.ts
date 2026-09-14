@@ -52,3 +52,64 @@ export function relativeTime(ms: number, now = Date.now()): string {
   if (days < 7) return `${days}d ago`;
   return new Date(ms).toLocaleDateString();
 }
+
+export type MessageRole = "user" | "assistant" | "peer" | "tool";
+
+export interface AgentMessage {
+  id: string;
+  role: MessageRole;
+  text: string;
+  atMs: number;
+}
+
+/** What a conversation SOURCE is driving reports (mirrors `DriverEvent`). */
+export type DriverEvent =
+  | { kind: "working" }
+  | { kind: "added_to_current_work" }
+  | { kind: "progress"; detail: string }
+  | { kind: "tool_use"; name: string }
+  | { kind: "assistant_text"; text: string }
+  | { kind: "turn_done"; text: string; summary: string | null; is_error: boolean; cost_usd: number; duration_ms: number }
+  | { kind: "usage"; status: string; weekly_utilization: number | null }
+  | { kind: "auth_expired" }
+  | { kind: "released" };
+
+export interface BridgeEvent {
+  sessionId: string;
+  event: DriverEvent;
+  brief: string | null;
+  stillWorking: boolean;
+}
+
+/** Why a prompt couldn't be sent (mirrors `SendError`). */
+export type SendError =
+  | { kind: "handoff"; reason: "busy_in_app" | "running_elsewhere" | "stop_failed" | "no_transcript"; entrypoint?: string }
+  | { kind: "no_claude_program" }
+  | { kind: "no_conversation" }
+  | { kind: "driver"; message: string };
+
+export function describeSendError(error: unknown): string {
+  const value = error as Partial<SendError> | string;
+  if (typeof value === "string") return value;
+  switch (value?.kind) {
+    case "handoff":
+      switch ((value as Extract<SendError, { kind: "handoff" }>).reason) {
+        case "busy_in_app":
+          return "Claude is working on something in the Claude app right now. Try again when it's done.";
+        case "running_elsewhere":
+          return "This conversation is open in a terminal. Close it there first.";
+        case "stop_failed":
+          return "The Claude app didn't let go of this conversation. Try again in a moment.";
+        default:
+          return "This conversation's transcript couldn't be found.";
+      }
+    case "no_claude_program":
+      return "Claude Code isn't installed where SOURCE can find it.";
+    case "no_conversation":
+      return "SOURCE couldn't tell which folder this conversation runs in.";
+    case "driver":
+      return (value as Extract<SendError, { kind: "driver" }>).message;
+    default:
+      return "The prompt couldn't be sent.";
+  }
+}

@@ -94,3 +94,31 @@ fn briefs_are_capped_at_a_word_boundary() {
     assert!(brief.chars().count() <= 280, "{}", brief.len());
     assert!(brief.ends_with("word…"), "{brief}");
 }
+
+/// Real end-to-end run against a Claude desktop conversation you name:
+/// `SOURCE_LIVE_SESSION=<session id> cargo test --lib bridge_tests::live_bridge -- --ignored --nocapture`
+/// Use a throwaway conversation: it is taken over from the Claude app.
+#[tokio::test]
+#[ignore = "takes over a real Claude conversation and uses plan usage"]
+async fn live_bridge() {
+    let session_id = std::env::var("SOURCE_LIVE_SESSION").expect("set SOURCE_LIVE_SESSION");
+    let bridge = AgentBridge::new(crate::core::agent_sessions::AgentRoots::from_env());
+    let mut events = bridge.subscribe();
+    let started = std::time::Instant::now();
+    let sent = bridge.send_prompt(&session_id, "This is a test from SOURCE. Reply with only the word PONG.").await;
+    println!("send: {sent:?} after {:?}", started.elapsed());
+    sent.expect("sent");
+    let done = tokio::time::timeout(Duration::from_secs(120), async {
+        loop {
+            let event = events.recv().await.unwrap();
+            println!("  {:?} brief={:?}", event.event, event.brief);
+            if matches!(event.event, DriverEvent::TurnDone { .. } | DriverEvent::AuthExpired) {
+                return event;
+            }
+        }
+    })
+    .await
+    .expect("turn finished");
+    println!("done after {:?}: brief={:?}", started.elapsed(), done.brief);
+    bridge.release(&session_id).await;
+}

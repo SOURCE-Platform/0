@@ -1,9 +1,18 @@
 import { APP_ACCENTS, APP_LABELS, relativeTime, type AgentSession } from "./types";
 
+interface AgentSessionRowProps {
+  session: AgentSession;
+  held: boolean;
+  onOpen: () => void;
+}
+
 /** One conversation: which app it lives in, what it is about, how fresh it is. */
-export function AgentSessionRow({ session }: { session: AgentSession }) {
+export function AgentSessionRow({ session, held, onOpen }: AgentSessionRowProps) {
   return (
-    <div className="flex items-start gap-4 rounded-xl border border-border/60 bg-card/40 px-4 py-3 transition-colors hover:bg-card/70">
+    <button
+      onClick={onOpen}
+      className="flex w-full cursor-pointer items-start gap-4 rounded-xl border border-border/60 bg-card/40 px-4 py-3 text-left transition-colors hover:bg-card/70"
+    >
       <span
         className={`mt-0.5 shrink-0 rounded-md border px-2 py-1 text-[11px] font-medium leading-none ${APP_ACCENTS[session.app]}`}
       >
@@ -19,6 +28,11 @@ export function AgentSessionRow({ session }: { session: AgentSession }) {
             />
           )}
           <p className="truncate text-sm font-medium text-foreground">{session.title}</p>
+          {held && (
+            <span className="shrink-0 rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] leading-none text-sky-200">
+              Held by SOURCE
+            </span>
+          )}
           {session.archived && (
             <span className="shrink-0 text-[11px] text-muted-foreground">archived</span>
           )}
@@ -38,6 +52,6 @@ export function AgentSessionRow({ session }: { session: AgentSession }) {
           {relativeTime(session.updatedAtMs)}
         </p>
       </div>
-    </div>
+    </button>
   );
 }

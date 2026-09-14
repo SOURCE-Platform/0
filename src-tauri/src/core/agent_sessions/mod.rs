@@ -16,6 +16,7 @@ mod message_types;
 mod opencode;
 mod paths;
 mod types;
+mod watch;
 
 #[cfg(test)]
 mod claude_tests;
@@ -32,6 +33,7 @@ pub use claude_registry::{processes_for as claude_processes_for, LiveClaudeSessi
 pub use message_types::{AgentMessage, MessageRole};
 pub use paths::AgentRoots;
 pub use types::{AgentApp, AgentSession};
+pub use watch::{watch_agent_changes, AgentChangeWatch};
 
 /// What the hub found, plus anything it could not read.
 ///

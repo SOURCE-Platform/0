@@ -126,6 +126,35 @@ fn reads_the_folder_and_latest_permission_mode() {
     assert!(context_from_text(r#"{"type":"last-prompt"}"#).is_none(), "no folder, no context");
 }
 
+#[test]
+fn watches_only_files_that_describe_sessions() {
+    use super::watch::is_relevant;
+    use std::path::Path;
+    assert!(is_relevant(Path::new("/h/.claude/sessions/4242.json")));
+    assert!(is_relevant(Path::new("/h/.claude/projects/-a/s-1.jsonl")));
+    assert!(is_relevant(Path::new("/h/.codex/state_5.sqlite-wal")));
+    assert!(is_relevant(Path::new("/h/.local/share/opencode/opencode.db-wal")));
+    assert!(is_relevant(Path::new("/h/.factory/sessions-index.json")));
+    assert!(!is_relevant(Path::new("/h/.codex/logs_2.sqlite-wal")));
+    assert!(!is_relevant(Path::new("/h/.claude/projects/-a/memory/notes.md")));
+    assert!(!is_relevant(Path::new("/h/.factory/settings.json")));
+}
+
+#[tokio::test]
+async fn announces_a_burst_of_changes_once() {
+    let roots = temp_claude_root("watch");
+    let project = roots.claude.join("projects/-a");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::create_dir_all(roots.claude.join("sessions")).unwrap();
+    let (_watch, mut changes) = super::watch::watch_agent_changes(&roots).unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await; // FSEvents stream starts asynchronously
+    for n in 0..5 {
+        std::fs::write(project.join("s-1.jsonl"), format!("line {n}\n")).unwrap();
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(5), changes.changed()).await.unwrap().unwrap();
+    assert_eq!(*changes.borrow_and_update(), 1, "five quick writes settle into one change");
+}
+
 /// Manual timing check against this machine's real, large transcripts:
 /// `cargo test --lib claude_tests::real_history_speed -- --ignored --nocapture`
 #[test]

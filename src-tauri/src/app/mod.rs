@@ -1,3 +1,4 @@
+pub mod agent_bridge_events;
 pub mod audio_input_watch;
 pub mod capture;
 pub mod commands;

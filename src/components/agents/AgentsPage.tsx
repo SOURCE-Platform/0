@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AgentSessionDetail } from "./AgentSessionDetail";
 import { AgentSessionRow } from "./AgentSessionRow";
 import { useAgentSessions } from "./useAgentSessions";
 import { APP_LABELS, type AgentApp } from "./types";
@@ -9,12 +10,13 @@ const FILTERS: Filter[] = ["all", "codex", "claude-code", "factory", "opencode"]
 
 /**
  * Every coding-agent conversation on this Mac in one list: Codex, Claude Code,
- * Factory and OpenCode. Read-only, so opening this page cannot disturb a
- * running session.
+ * Factory and OpenCode. Opening a conversation shows its messages; Claude Code
+ * conversations can be continued from here.
  */
 export default function AgentsPage() {
-  const { sessions, problems, error, loading } = useAgentSessions();
+  const { sessions, problems, held, error, loading } = useAgentSessions();
   const [filter, setFilter] = useState<Filter>("all");
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [showArchived, setShowArchived] = useState(false);
 
   const counts = useMemo(() => {
@@ -37,6 +39,20 @@ export default function AgentsPage() {
   );
 
   const liveCount = visible.filter((session) => session.live).length;
+  const open = sessions.find((session) => `${session.app}:${session.id}` === openKey);
+
+  if (open) {
+    return (
+      <div className="mx-auto w-full max-w-5xl px-4 py-2">
+        <AgentSessionDetail
+          key={openKey}
+          session={open}
+          held={held.includes(open.id)}
+          onBack={() => setOpenKey(null)}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-2">
@@ -103,7 +119,12 @@ export default function AgentsPage() {
 
       <div className="flex flex-col gap-2">
         {visible.map((session) => (
-          <AgentSessionRow key={`${session.app}:${session.id}`} session={session} />
+          <AgentSessionRow
+            key={`${session.app}:${session.id}`}
+            session={session}
+            held={held.includes(session.id)}
+            onOpen={() => setOpenKey(`${session.app}:${session.id}`)}
+          />
         ))}
       </div>
     </div>
