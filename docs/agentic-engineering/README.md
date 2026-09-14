@@ -2,9 +2,10 @@
 
 Status (September 2026):
 
-- **Done:** research and proof tests; the Agents tab on the Mac.
-- **Next:** the M0 go/no-go spikes, then the first usable slice: push-to-talk
-  into Claude Code with a spoken reply.
+- **Done:** research and proof tests; the Agents tab on the Mac; the M0
+  go/no-go tests (SOURCE reaches Claude Code by continuing the conversation).
+- **Next:** M1, then the first usable slice: push-to-talk into Claude Code with
+  a spoken reply.
 - **Build order and progress:** [implementation-plan.md](implementation-plan.md).
 
 ## The idea, in plain terms
@@ -34,7 +35,7 @@ Proof tests on this Mac (details in [harness-integration.md](harness-integration
 | Codex | Yes (tested) | Yes, built-in steer (tested) | Yes | Not yet verified |
 | Factory | Yes (tested) | Queues it for the next turn (tested) | Yes | Not tested |
 | OpenCode | Yes (tested) | Built-in steer/queue switch (tested) | Yes | Only after reloading the window |
-| Claude Code | Yes (tested) | Yes, between tool calls (tested) | Yes | Yes: a test message landed in an open desktop session |
+| Claude Code | Yes, by continuing the conversation (tested) | Yes, between tool calls (tested) | Yes | No: the window doesn't show turns added from outside, but Claude remembers them |
 | ChatGPT web | Only by automating the browser | – | – | Deferred |
 
 Supporting tests:
@@ -65,7 +66,8 @@ Supporting tests:
 Summary only; the steps and "done when" checks are in
 [implementation-plan.md](implementation-plan.md).
 
-1. **M0 Go/no-go.** Confirm Claude acts on prompts delivered from outside.
+1. **M0 Go/no-go.** ✅ Done: continue the conversation in SOURCE's own Claude
+   process, not peer messages.
 2. **M1–M3 First usable slice.** Send to Claude from the Mac, then from the phone,
    then by holding a button and speaking; the phone speaks a short reply.
 3. **M4 Away from home.** Tailscale.
@@ -90,12 +92,12 @@ Summary only; the steps and "done when" checks are in
 | D9 | Reading (`core/agent_sessions`) and sending (`core/agent_bridge`) are separate modules | The session hub promises it never writes to an agent app; keeping that true makes it safe to open anytime. |
 | D10 | Watch files for changes (FSEvents); no polling loops | Reacts the moment something changes and does nothing otherwise. |
 | D11 | Phone sending is off until enabled on the Mac; `/v1/agent` accepts header auth only | A paired phone becomes able to drive coding agents, so that ability must be an explicit choice. |
+| D12 | Reach Claude Code by continuing the conversation in a SOURCE-owned Claude process (`--resume`), taking it over from the Claude app when idle | Tested in M0: words arrive as yours, corrections land mid-task, and Claude's memory includes them when you return to the app. Peer messages were sometimes refused as unverified. Trade-off: the Claude app window doesn't display voice turns. |
 
 ## Open questions
 
-- **Go/no-go (M0):** Claude labels prompts delivered by another program as
-  coming from another agent. Does it carry them out the way it would a message
-  you typed?
+- Does the Claude app window ever show voice turns added by SOURCE, for example
+  after quitting and reopening the app?
 - Does the ChatGPT app pick up a Codex queued message (`codex queue`) or a turn
   started by another process, and show it live?
 - Factory: does Factory.app show turns added by an outside `droid` process?

@@ -22,11 +22,11 @@ throwaway sessions in a scratch folder and harmless prompts ("reply PONG",
 | Installed | ChatGPT.app bundles `codex-cli 0.154.0-alpha` (not on PATH) | Desktop app runs bundled CLI 2.1.266; `~/.local/bin/claude` 2.1.252 | Factory.app 0.170, `droid` 0.213 | Desktop 1.18.27, Homebrew CLI 1.18.20 |
 | Protocol | `codex app-server` JSON-RPC (stdio / unix / ws) | stream-json (Agent SDK), channels (MCP), session files | `droid exec` stream-jsonrpc, `droid daemon` (ws/ipc) | HTTP + SSE server (`opencode serve`) |
 | List sessions | `thread/list` ✅ (shows desktop threads) | `claude agents --json` ✅ (shows desktop sessions) + JSONL files | `droid search --json`, SDK `listSessions()`, JSONL files | `GET /session` ✅ (shows desktop sessions) |
-| Send from outside | ✅ `turn/start` | ✅ relay session's SendMessage | ✅ `droid exec -s <id>`, `droid.add_user_message` | ✅ `POST /api/session/:id/prompt` |
+| Send from outside | ✅ `turn/start` | ✅ continue the conversation (`--resume`, stream-json); peer SendMessage not reliable | ✅ `droid exec -s <id>`, `droid.add_user_message` | ✅ `POST /api/session/:id/prompt` |
 | Mid-turn message | ✅ `turn/steer` | ✅ picked up between tool calls, changes course | Queued as the next turn ✅ | `delivery: "steer" \| "queue"` ✅ |
 | Interrupt | `turn/interrupt` | SDK `interrupt()` | `droid.interrupt_session` | `POST /api/session/:id/interrupt`, `/session/:id/abort` |
 | Live events | `item/agentMessage/delta`, `turn/completed` ✅ | stream-json, hooks, JSONL tail | `create_message`, `agent_turn_completed` ✅ | `/event`, `/api/event` SSE ✅ |
-| Shows in the app's own window | Not verified | ✅ arrives in an open desktop session | Not tested | Only after "Reload Webview"; v2-API messages don't render |
+| Shows in the app's own window | Not verified | ❌ not displayed; Claude's memory includes it once the app's process restarts | Not tested | Only after "Reload Webview"; v2-API messages don't render |
 | Auth used | Existing ChatGPT login ✅ | claude.ai login ✅ (the CLI keeps its own, separate from the desktop app's) | Existing Factory login ✅ | Existing OpenCode providers ✅ |
 
 ✅ = proven on this Mac. ⏳ = blocked.
@@ -93,28 +93,29 @@ child over stdio.
   `messagingSocketPath: /tmp/cc-socks/<pid>.sock`.
 - `claude agents --json` lists these desktop sessions.
 
-**Ways in, best first.**
+**Ways in, best first** (after the M0 tests, see
+[implementation-plan.md](implementation-plan.md), section M0).
 
-1. **Relay through SendMessage (proven).** Claude sessions can message each
-   other: a ListAgents lookup, then SendMessage by session name. SOURCE keeps a
-   tiny headless Claude relay (Agent SDK or `claude -p` with stream-json, on
-   Haiku) whose only job is to forward the routed prompt.
-   - This is the only supported path found into a session the desktop app has
-     open.
-   - The peer socket itself is key-protected and undocumented, so SOURCE should
-     not speak it directly.
-   - Cost: one short relay turn per delivered prompt.
-2. **Channels** (documented, research preview). An MCP server declares
+1. **Continue the conversation in a SOURCE-owned process (chosen).**
+   `claude -p --resume <sessionId> --input-format stream-json --output-format
+   stream-json`, run in the session's working directory.
+   - Same session id and transcript file; history kept.
+   - Words arrive as the user's own; corrections land between tool calls.
+   - Turn end arrives as a `result` line, so no file-based turn tracking.
+   - About 7 s to resume and answer a short prompt.
+   - **One writer rule:** the Claude app's own process for that session doesn't
+     see outside turns, so SOURCE stops it first (only when idle). The app
+     starts a fresh process on next use, and that one's memory includes the
+     voice turns. The app window doesn't display them.
+2. **Relay through SendMessage (not reliable).** Delivery works, including into
+   a busy desktop session. But messages arrive labelled as coming from another
+   agent, and Claude decides whether to trust them: in M0 it refused a
+   mid-task correction and a simple "reply WARM" as unverified requests.
+3. **Channels** (documented, research preview). An MCP server declares
    `experimental['claude/channel']` and pushes `notifications/claude/channel`
    events into a running CLI session. Custom channels need
    `claude --dangerously-load-development-channels server:<name>`. Only works
    for sessions started with that flag, not desktop sessions.
-3. **SOURCE-owned sessions via the Agent SDK.** Full control: streaming input,
-   queued messages, `interrupt()`, `resume: <sessionId>`. They don't appear in
-   the desktop app.
-4. **Resume by id** (`claude -p --resume <id>`). Fine for idle CLI sessions.
-   Avoid on a session the desktop app has open: that makes a second writer on
-   the same conversation.
 
 **P2a: delivery into a live desktop session (pass).** A headless
 `claude -p --model haiku --allowedTools "ListAgents SendMessage ToolSearch"`
@@ -148,12 +149,12 @@ off, since SOURCE is the remote control.
 
 **Recommended adapter.**
 
-- Reads: the live registry (`~/.claude/sessions/*.json`) for who is running,
-  plus the JSONL transcripts for history. Tail the JSONL for new turns.
-- Sends into sessions you started yourself in the app: one long-lived relay
-  Claude session, kept warm, that forwards prompts with SendMessage.
-- Sends into sessions SOURCE owns: drive them directly with stream-json, which
-  also gives true mid-turn steering and `interrupt()`.
+- **Reads:** the live registry (`~/.claude/sessions/*.json`) for which sessions
+  have a running process, plus the JSONL transcripts for history.
+- **Sends:** take the conversation over (stop the Claude app's idle process for
+  it, or refuse if it's mid-task), then drive it with a SOURCE-owned stream-json
+  process. Release it after a few minutes of quiet so the Claude app can use it
+  again.
 
 **Subscription use.** Personal Agent SDK and `claude -p` use on a Pro/Max
 plan draws from plan limits. Offering claude.ai login inside a product for

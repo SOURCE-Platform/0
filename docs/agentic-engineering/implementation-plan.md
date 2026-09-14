@@ -25,10 +25,10 @@ Everything else comes after that loop works reliably. Order:
 4. Catch me up.
 5. Live view of the app you're building.
 
-Before building anything, one question needs a yes (M0). When another program
-sends a message into a Claude session, Claude labels it as coming from another
-agent, not from you. We haven't tested whether Claude acts on an instruction
-sent that way.
+The first question (M0) is answered: SOURCE can reach a Claude Code
+conversation by **continuing it in its own Claude process**, so your words
+arrive as your own messages. Sending a message "from another session" doesn't
+work reliably: Claude sometimes refuses it as unverified, which protects you.
 
 ## Status
 
@@ -36,8 +36,8 @@ sent that way.
 |---|---|---|
 | Research | All four apps reachable from outside; steering proven; router and speech proven | ✅ Done |
 | Session hub v1 | Agents tab on the Mac listing every session from all four apps | ✅ Done |
-| M0 | Go/no-go spikes for Claude delivery | ⬜ Next |
-| M1 | Mac-only loop: send to Claude, watch the reply | ⬜ |
+| M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
+| M1 | Mac-only loop: send to Claude, get the reply | ⬜ Next |
 | M2 | Phone ↔ Mac agent channel, sessions on the phone | ⬜ |
 | M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
 | M3b | Kokoro voice | ⬜ |
@@ -63,6 +63,9 @@ Update the Status column as tasks land.
 - **Respect the agent apps' permission systems.** SOURCE never tries to make its
   messages count as your approval. Approval prompts stay on the Mac until an
   app's own supported approval path is wired up (M7).
+- **One writer per conversation.** SOURCE never adds to a Claude conversation
+  while the Claude app's own process for it is running. It stops that process
+  first, and only when it's idle.
 - **A paired phone becomes powerful, so:**
   - add a Mac setting "Allow phone to send prompts to agents", off by default;
   - `/v1/agent` accepts header auth only;
@@ -72,25 +75,25 @@ Update the Status column as tasks land.
   - the phone repo regenerates its Xcode project with `xcodegen generate` after
     adding files.
 
-## What the code review found
+## What the code review and M0 found
 
 These findings changed the design:
 
-1. **Messages between Claude sessions arrive labelled as coming from another
-   agent,** not from the user. Whether the target acts on them is untested, so it
-   becomes the M0 gate.
-2. **Delivery can be confirmed exactly.** The relay's SendMessage result carries
-   a `msg_id`. The target's transcript then gets an attachment with
-   `origin.msg_id` and the verbatim `origin.body`.
-3. **Session names change** (`0-e0` later became `0-c1`); session ids don't.
-   - Resolve the name from `~/.claude/sessions/*.json` by `sessionId` right
-     before every send.
-   - Idle desktop sessions lose their process, so only live sessions can
-     receive.
-4. **Turn end in the transcript is subtle.**
-   - One API message is written as several records sharing a `message.id`.
-   - `stop_hook_summary` and `last-prompt` records are not end markers.
-   - API errors appear as `stop_sequence` text.
+1. **Peer messages aren't a delivery path.** Messages between Claude sessions
+   arrive labelled as coming from another agent, and Claude decides case by case
+   whether to trust them (see M0 results).
+2. **Continuing the conversation is.** A SOURCE-owned
+   `claude -p --resume <sessionId> --input-format stream-json --output-format stream-json`
+   process writes to the same transcript. Claude treats the words as the user's,
+   and reports turn end directly with a `result` line, so no file-based turn
+   tracking is needed for turns SOURCE starts.
+3. **The Claude app keeps its own copy of an open conversation.**
+   - Its running process doesn't see turns added from outside.
+   - Its window doesn't display them, even after its process restarts.
+   - Once its process restarts, Claude's memory does include them.
+4. **Session names change** (`0-e0` later became `0-c1`); session ids don't.
+   Resolve live state from `~/.claude/sessions/<pid>.json` by `sessionId` right
+   before every send.
 5. **No per-request transcript result exists.** The waiter must complete in the
    action loop in `app/dictation_supervision.rs`, on both `PersistForeground`
    and `DuplicateIgnored`. Empty or failed transcripts never reach
@@ -109,25 +112,50 @@ These findings changed the design:
 
 ---
 
-## M0: Go/no-go spikes
+## M0: Go/no-go spikes ✅
 
-Throwaway scripts in a scratch folder, against a throwaway Claude desktop
-session. Save useful output as test fixtures for M1.
+Run on 2026-09-14 against throwaway sessions: Claude CLI sessions in a scratch
+folder, and one Claude desktop session in `~/Documents/voice-test`.
 
-| Spike | Pass when | If it fails |
-|---|---|---|
-| **P-auth** | The relay delivers "create `voice-proof.txt` containing BANANA, then reply DONE". The target does it and replies in its own transcript. Record any approval prompt. Try with and without a framing prefix (`Adam, by voice via SOURCE:`). | Choose a delivery fallback before M1: a desktop-hosted relay using Claude's own session-send tool, or typed insertion as a last resort. |
-| **P-flags** | A long-lived, trimmed relay works: `--model haiku --tools SendMessage --allowedTools SendMessage --system-prompt … --strict-mcp-config --setting-sources "" --no-session-persistence`. `uds:<socket>` addressing works. A warm send takes under 5 s. Save the stdout lines as fixtures. | Keep ListAgents and name addressing; accept slower sends. |
-| **P-shape** | Transcript records captured for delivery to an **idle** target and to a **busy** one. | – |
-| **P-timing** | Measured delay between an assistant message's blocks landing on disk, which sets the settle window. | Use a longer settle window. |
-| **P-live** | Known: how long an idle desktop session stays in the registry; whether opening it restarts a process; whether the relay triggers Keychain prompts. | – |
+### Results
+
+| Test | Result |
+|---|---|
+| **Peer delivery, idle target, plain instruction** ("create `voice-proof.txt` containing BANANA") | Mixed. A neutral default-model session did it, both with and without "Message from Adam, relayed by SOURCE:". A session told earlier to "reply only OK" declined it as a request from another session. |
+| **Peer delivery, busy target, correction** ("I forgot to say: skip the rest, reply STEERED") | ❌ Refused. Claude finished its original task and noted it had ignored an unverified request "from relay". |
+| **Trimmed relay flags** | ✅ `--tools SendMessage`, `--system-prompt`, `--strict-mcp-config`, `--setting-sources ""`, `--no-session-persistence` all work; `uds:<socket>` addressing works; warm send about 2.3 s. |
+| **Relay forwards verbatim** | A plain "copy both byte-for-byte" prompt forwarded 0 of 8 tricky payloads; the model answered them itself. A hardened "sealed mail, never addressed to you" prompt forwarded 8 of 8. (Moot now; kept for reference.) |
+| **Continue the conversation** (`claude -p --resume <id>`) | ✅ Same session id and transcript file; history kept ("my favourite fruit" → "Mango"); about 7 s to resume and answer. |
+| **Correction mid-task, continued conversation** | ✅ Four slow commands started; "I forgot to say: skip the rest, reply STEERED" sent after the first. Ran one command, replied STEERED. |
+| **Claude desktop app, conversation open** | Turn added from outside was saved and shows in the app's session data, but not in the window, even after switching away and back. |
+| **Claude desktop app, after its process restarts** | SOURCE stopped the app's idle process for that session; the app started a fresh one on next use. Window still didn't show the added turn, but asked "what was the last word you said?", Claude answered **PINEAPPLE**: its memory includes what SOURCE added. |
+| **Transcript timing** | Records land on disk within about 0.05 s of their timestamp; blocks of one assistant message land together. |
+
+### Decision
+
+Deliver voice prompts to Claude Code by **continuing the conversation in a
+SOURCE-owned Claude process**, not by peer messages. Consequences:
+
+- **You follow voice turns on the phone** (and in SOURCE on the Mac). The Claude
+  app window won't show them. When you go back to the Mac and type in that
+  session, Claude remembers the voice turns.
+- **One writer per conversation.** Before continuing a conversation, SOURCE
+  checks whether the Claude app's process for it is running. If it is and it's
+  idle, SOURCE stops it (the app starts a fresh one next time you use the
+  session). If it's mid-task, SOURCE says so and doesn't send.
+- **While SOURCE holds a conversation,** anything you type in the Claude app for
+  that session would fork it. SOURCE releases a conversation (stops its own
+  process) after a few minutes of quiet, and the Agents tab marks conversations
+  SOURCE is holding.
+- **Still open:** does the Claude app window ever show voice turns (for example
+  after quitting and reopening the app)? Worth checking once; not blocking.
 
 ---
 
 ## M1: Mac-only loop
 
-Prove sending and reply capture with a prompt box on the Mac, before any phone
-code. Paths are under `src-tauri/src/` unless they start with `src/`.
+Prove sending and getting the reply with a prompt box on the Mac, before any
+phone code. Paths are under `src-tauri/src/` unless they start with `src/`.
 
 ### 1.1 Split `dictation_helper.rs`
 
@@ -137,121 +165,105 @@ code. Paths are under `src-tauri/src/` unless they start with `src/`.
   to `core/multimodal/dictation_helper_protocol.rs` and are re-exported.
 - **Done when:** the file-length audit is clean and the 9 helper tests pass.
 
-### 1.2 Claude registry, record parser, history
+### 1.2 Claude registry and history
 
 Read-only.
 
 - **Files:**
-  - `core/agent_sessions/claude_registry.rs`: `LiveClaudeSession`,
-    `read_registry`, `find_live(session_id)`. Checks the pid is alive and skips
-    the relay's own pid and working directory.
-  - `core/agent_sessions/claude_records.rs`: `ClaudeRecord` (user prompt, queued
-    command, queue operation, assistant block, tool result, other) and `Origin`
-    (human, peer with `msg_id` and body, task notification).
+  - `core/agent_sessions/claude_registry.rs`: `LiveClaudeSession {pid,
+    session_id, name, cwd, entrypoint}`, `read_registry`, `find_live(session_id)`.
+    Checks the pid is alive, and tells the Claude app's processes apart from
+    SOURCE's own (by pid).
+  - `core/agent_sessions/claude_records.rs`: parse transcript records into user
+    prompt, assistant text, tool use, tool result, other.
   - `core/agent_sessions/claude_history.rs`: `recent_messages(session_id, limit)`
     reading the last 512 KB.
   - `core/agent_sessions/message_types.rs`: `AgentMessage {id, role, text, at_ms}`.
-  - Fixtures under `core/agent_sessions/fixtures/`.
+  - Fixtures under `core/agent_sessions/fixtures/`, from the M0 transcripts.
   - Tauri command `agent_session_messages`.
 - **Tests:**
-  - Peer queued command parses with body and `msg_id`.
   - Thinking blocks and tool results are hidden.
-  - Human and peer prompts are distinguished.
+  - Cross-session messages are shown as such, not as the user.
   - A cut-off first line is ignored.
   - A stale pid is not live.
 - **Done when:** the last 40 messages of a 5 MB transcript come back in under
   100 ms.
 
-### 1.3 Tail watcher
-
-- **Files:**
-  - `core/agent_sessions/tail_watch.rs`: `notify` on the parent folder,
-    starting at a byte offset; a pure `LineAssembler` for partial lines; handles
-    the file shrinking.
-  - `core/agent_sessions/tail_hub.rs`: one shared watcher per session,
-    reference-counted.
-- **Tests:** split lines, CRLF, three lines written in two chunks.
-- **Done when:** records from a live session arrive within 500 ms of being
-  written.
-
-### 1.4 Turn tracker
-
-Pure logic.
-
-- **File:** `core/agent_sessions/turn_tracker.rs`.
-- **States:** anchored on our `msg_id`: awaiting anchor → working → settling →
-  done.
-- **Completion:** a terminal stop reason, on a message with text, with no queued
-  follow-up, and the settle window passes quietly. A 20 s fallback covers a
-  final message with only thinking.
-- **Events:** delivered (new turn or mid-turn), progress, assistant text,
-  completed (with API error flag).
-- **Tests:** fixtures for idle delivery, mid-turn delivery, queued follow-up,
-  thinking-only then text, a 401 error, and records before the anchor being
-  ignored.
-
-### 1.5 Relay protocol and CLI lookup
+### 1.3 Claude CLI lookup and stream protocol
 
 Pure logic.
 
 - **Files:**
   - `core/agent_bridge/mod.rs`
-  - `core/agent_bridge/relay_protocol.rs`: encode the request, parse relay
-    output, relay system prompt.
-  - `core/agent_bridge/claude_cli.rs`: binary lookup (finding 6), relay
-    arguments, relay folder `~/.observer_data/agent-relay/source-voice`.
-- **Tests:** the M0 fixtures, version sorting, quotes and newlines survive
-  encoding.
+  - `core/agent_bridge/claude_cli.rs`: binary lookup (finding 6) and the
+    arguments for continuing a conversation: `-p --resume <id> --input-format
+    stream-json --output-format stream-json --verbose`, run in the session's own
+    working directory.
+  - `core/agent_bridge/stream_protocol.rs`: encode a user message; parse output
+    into `Init {session_id}`, `AssistantText`, `ToolUse {name}`, `ToolResult`,
+    `TurnResult {is_error, result, cost_usd, duration_ms}`, `AuthError`.
+- **Tests:** real stream lines captured in M0; version sorting; quotes and
+  newlines survive encoding; a 401 line becomes `AuthError`.
 
-### 1.6 Relay process
+### 1.4 Conversation driver
 
-- **File:** `core/agent_bridge/claude_relay.rs`: `ClaudeRelay::send(to, message)`
-  returning a receipt, or a `RelayError` (auth expired, no such peer,
-  paraphrased, timeout, spawn failed).
-- **Behaviour:**
-  - Lazy start; one send at a time.
-  - Restart if it exits; recycle after 30 sends or 30 min idle.
-  - Log to `~/.observer_data/helpers/agent-relay.log`.
-  - Match results by `msg_id`, not by order.
-- **Done when:** an ignored live test gets a `msg_id`, and the relay never
-  appears as a row in the Agents list.
+- **File:** `core/agent_bridge/claude_driver.rs`: `ClaudeDriver` owns one
+  SOURCE-held Claude process per conversation.
+  - `send(text)` writes a user message. If a turn is running, the message is
+    delivered mid-turn (proven in M0) and reported as "added to current work".
+  - Streams `DriverEvent`s: working, tool in progress, assistant text, turn done
+    (with final text), error.
+  - Released after 5 minutes with no turn running: stdin closed, process exits,
+    the conversation goes back to the Claude app.
+  - `kill_on_drop`; restart on the next send if the process died; log to
+    `~/.observer_data/helpers/claude-driver.log`.
+- **Done when:** an ignored live test continues a throwaway conversation, gets
+  the reply and turn end, and releases it.
 
-### 1.7 Delivery and brief reply
+### 1.5 Hand-off from the Claude app
+
+- **File:** `core/agent_bridge/handoff.rs`: `take_over(session_id)`:
+  1. No Claude app process for the session → go ahead.
+  2. App process running and idle (no turn in progress in the transcript tail)
+     → stop it (`SIGTERM`), wait for it to exit, go ahead.
+  3. App process mid-task → refuse with `BusyInApp`.
+- **Tests:** decisions from fixture registries and transcript tails; never
+  touches a pid that isn't a Claude app process for that session.
+- **Done when:** a live test takes over a throwaway desktop session, and the
+  Claude app resumes it normally afterwards (M0 showed it does).
+
+### 1.6 Bridge and brief reply
 
 - **Files:**
-  - `core/agent_bridge/delivery.rs`: `AgentBridge::send_prompt(session_id, text)`.
-    Steps:
-    1. Find the live session.
-    2. Note the transcript offset and subscribe to the tail.
-    3. Send through the relay.
-    4. Wait up to 10 s for the anchor; otherwise report "unconfirmed".
-    5. Check the body is verbatim.
-    6. Run the turn tracker.
-    7. Broadcast turn events; send "still working" once after 90 s of quiet.
+  - `core/agent_bridge/bridge.rs`: `AgentBridge::send_prompt(session_id, text)`:
+    take over, then send through that conversation's driver, broadcast turn
+    events, report "still working" once after 90 s of quiet.
   - `core/agent_bridge/brief.rs`: strip markdown and code, keep 2 sentences, at
     most 280 characters. No model.
   - `core/agent_bridge/types.rs`
-  - A `RelaySender` trait so tests can use a fake relay.
-- **Tests:** a completed turn with its brief; not live; unconfirmed; markdown
-  stripping.
+  - A `ConversationDriver` trait so tests can use a fake driver.
+- **Tests:** a completed turn with its brief; busy in the app; auth expired;
+  markdown stripping.
 
-### 1.8 Mac session detail with a prompt box
+### 1.7 Mac session detail with a prompt box
 
 - **Files:**
-  - `app/commands/agent_bridge.rs`: `agent_send_prompt`, `agent_watch_session`,
-    `agent_unwatch_session`; events `agent-turn-event`, `agent-session-appended`.
+  - `app/commands/agent_bridge.rs`: `agent_send_prompt`, `agent_release_session`;
+    event `agent-turn-event`.
   - `app/setup.rs` manages `Arc<AgentBridge>`.
   - `src/components/agents/AgentSessionDetail.tsx`, `AgentPromptBox.tsx`,
     `useAgentSessionDetail.ts`.
-  - Rows become clickable.
-  - A watcher-driven `agent-sessions-changed` event replaces the 10 s interval in
-    `useAgentSessions.ts`, plus a refresh when the window regains focus.
+  - Rows become clickable; a "held by SOURCE" badge on conversations SOURCE is
+    driving.
+  - A watcher-driven `agent-sessions-changed` event (FSEvents on
+    `~/.claude/sessions` and the transcript folders) replaces the 10 s interval
+    in `useAgentSessions.ts`, plus a refresh when the window regains focus.
 - **Done when:**
-  - In `tauri dev` with a live desktop session, typing "reply with the word PONG"
-    shows Sent in under 5 s while the relay is warm.
-  - The message appears in the Claude window.
-  - SOURCE shows the reply and its brief within 2 s of the turn ending.
-  - A session that isn't live shows why it can't receive.
+  - In `tauri dev`, typing "reply with the word PONG" into a throwaway desktop
+    session gets the reply and its brief in SOURCE.
+  - Going back to that session in the Claude app and asking "what was the last
+    word you said?" gets "PONG".
+  - A session mid-task in the Claude app shows why it can't receive right now.
   - `npm run build` and the file-length audit pass; no `setInterval` remains in
     `src/components/agents/`.
 
@@ -464,16 +476,15 @@ Browser automation. Deferred.
 
 | Risk | Mitigation |
 |---|---|
-| Claude doesn't act on peer-delivered prompts, or asks for approval | M0 P-auth gate. Fallbacks: desktop-hosted relay, or typed insertion. While waiting on a tool for over 60 s, say "Claude may be waiting for approval on the Mac". |
-| The relay paraphrases the prompt, or is steered by what was said | Pass the text as data; verify tool input, `msg_id` and `origin.body`; report "paraphrased". An optional pre-tool hook can enforce verbatim sends (ask first; edits Claude settings). |
-| Relay cost and latency | One warm Haiku process with trimmed flags; lazy start; recycle; log cost and latency per send. |
-| Relay sign-in expires | Detect 401; tell the phone and Mac to run `claude login`; no retry loop. |
-| Turn end detected wrong | Turn tracker, fixtures from real transcripts, measured settle window, 90 s "still working". |
-| Target session not live, or renamed | Resolve by `sessionId` before each send; only live sessions are sendable; "open it in Claude on the Mac". |
+| You type in the Claude app while SOURCE holds that conversation, forking it | SOURCE releases conversations after 5 minutes of quiet; the Agents tab shows "held by SOURCE". Later: detect the app's process starting for a held session and release immediately. |
+| Voice turns don't show in the Claude app window | Accepted: you follow them on the phone and in SOURCE; Claude's memory includes them. Check once whether reopening the app shows them. |
+| Claude asks for approval during a voice turn | Claude runs with the session's own permission settings; SOURCE never auto-approves. While waiting on a tool for over 60 s, say "Claude may be waiting for approval". Approvals from the phone in M7. |
+| Sign-in expires (the CLI keeps its own login, separate from the app's) | Detect 401; tell the phone and Mac to run `claude auth login`; no retry loop. |
+| Stopping the app's process at the wrong moment | Only when the transcript shows no turn in progress; only that session's Claude app process, matched by session id. |
 | Right Option dictation delays transcription | Tell the phone; longer timeout; `fail_all` if the helper exits. |
 | iOS audio session switching | `VoiceSession` owns it; stop speech on press; `.defaultToSpeaker`; no push-to-talk during recordings. |
-| Echo | Push-to-talk is half-duplex; hands-free (M6) adds echo cancellation. Our own relayed messages show as "You (voice)". |
-| Relay sessions clutter the list | `--no-session-persistence`, a dedicated folder, filter by pid and folder. |
+| Echo | Push-to-talk is half-duplex; hands-free (M6) adds echo cancellation. |
+| SOURCE's own Claude processes show up as live sessions in the list | Tell them apart by pid; show them as "held by SOURCE", not as extra rows. |
 | A paired phone can drive agents | Mac toggle off by default; header-only auth; prompts visible in the timeline. |
 | Existing bug: the dictation supervisor loop exits on a broadcast `Lagged` error, silently stopping transcripts | Small separate fix before M3. |
 
