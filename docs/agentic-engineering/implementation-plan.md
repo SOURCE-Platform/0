@@ -37,8 +37,8 @@ work reliably: Claude sometimes refuses it as unverified, which protects you.
 | Research | All four apps reachable from outside; steering proven; router and speech proven | ✅ Done |
 | Session hub v1 | Agents tab on the Mac listing every session from all four apps | ✅ Done |
 | M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
-| M1 | Mac-only loop: send to Claude, get the reply | ⬜ Next |
-| M2 | Phone ↔ Mac agent channel, sessions on the phone | ⬜ |
+| M1 | Mac-only loop: send to Claude, get the reply | ✅ Done (one manual check left, see 1.7) |
+| M2 | Phone ↔ Mac agent channel, sessions on the phone | ⬜ Next |
 | M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
 | M3b | Kokoro voice | ⬜ |
 | M4 | Away from home (Tailscale) | ⬜ |
@@ -167,6 +167,9 @@ phone code. Paths are under `src-tauri/src/` unless they start with `src/`.
 
 ### 1.2 Claude registry and history
 
+✅ Done. The last 40 messages of a 61 MB transcript come back in about 8 ms.
+
+
 Read-only.
 
 - **Files:**
@@ -191,6 +194,9 @@ Read-only.
 
 ### 1.3 Claude CLI lookup and stream protocol
 
+✅ Done. Also parses Claude's own progress and after-turn recap lines, and plan usage.
+
+
 Pure logic.
 
 - **Files:**
@@ -207,6 +213,9 @@ Pure logic.
 
 ### 1.4 Conversation driver
 
+✅ Done. Real run: continued a throwaway conversation and recalled the remembered word in 5.7 s.
+
+
 - **File:** `core/agent_bridge/claude_driver.rs`: `ClaudeDriver` owns one
   SOURCE-held Claude process per conversation.
   - `send(text)` writes a user message. If a turn is running, the message is
@@ -222,6 +231,9 @@ Pure logic.
 
 ### 1.5 Hand-off from the Claude app
 
+✅ Done. On this Mac's real sessions: the idle test session would be taken over; the busy working session is refused. Process exit is awaited with a kqueue notification, not polling.
+
+
 - **File:** `core/agent_bridge/handoff.rs`: `take_over(session_id)`:
   1. No Claude app process for the session → go ahead.
   2. App process running and idle (no turn in progress in the transcript tail)
@@ -233,6 +245,9 @@ Pure logic.
   Claude app resumes it normally afterwards (M0 showed it does).
 
 ### 1.6 Bridge and brief reply
+
+✅ Done.
+
 
 - **Files:**
   - `core/agent_bridge/bridge.rs`: `AgentBridge::send_prompt(session_id, text)`:
@@ -246,6 +261,9 @@ Pure logic.
   markdown stripping.
 
 ### 1.7 Mac session detail with a prompt box
+
+✅ Done. Real run against a throwaway Claude desktop conversation: taken over in 1.6 s, reply "PONG" with its brief in 5.7 s. Left to check by hand: asking that conversation in the Claude app "what was the last word you said?" gets "PONG".
+
 
 - **Files:**
   - `app/commands/agent_bridge.rs`: `agent_send_prompt`, `agent_release_session`;
