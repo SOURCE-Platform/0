@@ -255,10 +255,15 @@ impl ScreenRecorder {
             eprintln!("OCR enqueue error: {}", error);
         }
 
-        if motion.has_motion {
-            self.handle_motion_frame(frame, motion).await?;
-        } else {
-            self.handle_static_frame(frame).await?;
+        // Video evidence is disabled by policy: no MP4 segments, no base
+        // layer. The frame is dropped after OCR enqueue; screenshots are
+        // deleted once their text is stored.
+        if self.config.video_evidence_enabled {
+            if motion.has_motion {
+                self.handle_motion_frame(frame, motion).await?;
+            } else {
+                self.handle_static_frame(frame).await?;
+            }
         }
 
         Ok(())

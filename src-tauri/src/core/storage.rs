@@ -51,10 +51,11 @@ impl RecordingStorage {
         let session_id = Uuid::new_v4();
         let start_timestamp = chrono::Utc::now().timestamp();
 
-        // Create session directory
+        // Create session directory. No segments/ or frames/ dirs: video
+        // evidence is disabled, OCR frames are created on demand under
+        // ocr_frames/ and deleted after reading.
         let session_path = self.get_session_path(&session_id);
-        std::fs::create_dir_all(session_path.join("frames"))?;
-        std::fs::create_dir_all(session_path.join("segments"))?;
+        std::fs::create_dir_all(&session_path)?;
 
         // Insert session into database
         sqlx::query(

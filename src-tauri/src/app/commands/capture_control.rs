@@ -68,7 +68,11 @@ pub async fn start_desktop_capture(
             .await;
     }
 
-    if config.capture_channels.screen_frames {
+    // Frame loop runs for video evidence OR for OCR screenshots.
+    // Video output itself is disabled in RecordingConfig; OCR frames are
+    // deleted after their text is stored.
+    let frame_loop_needed = config.capture_channels.screen_frames || ocr_requested;
+    if frame_loop_needed {
         if let Some(recorder) = state.screen_recorder.as_ref() {
             let started = match display_id {
                 None => Err(

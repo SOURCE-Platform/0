@@ -92,6 +92,10 @@ pub struct RecordingConfig {
     pub codec: VideoCodec,
     pub quality: CompressionQuality,
     pub hardware_acceleration: bool,
+    /// MP4 / base-layer persistence is disabled by policy. Frame capture
+    /// exists only to feed OCR screenshots, which are deleted after reading.
+    /// Kept as a flag (always false) so the video path can't silently return.
+    pub video_evidence_enabled: bool,
 }
 
 impl Default for RecordingConfig {
@@ -104,6 +108,7 @@ impl Default for RecordingConfig {
             codec: VideoCodec::H264,
             quality: CompressionQuality::Medium,
             hardware_acceleration: true,
+            video_evidence_enabled: false,
         }
     }
 }

@@ -67,7 +67,11 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
             None
         };
         let ocr_trigger_signals = Arc::new(OcrTriggerSignals::new());
-        let screen_recorder = if config.capture_channels.screen_frames {
+        let ocr_requested = config.ocr_enabled && config.capture_channels.ocr;
+        // The frame loop feeds OCR screenshots (deleted after reading).
+        // Video evidence stays disabled, so the recorder starts for OCR
+        // even when screen_frames is off.
+        let screen_recorder = if config.capture_channels.screen_frames || ocr_requested {
             initialize_screen_recorder(
                 consent_manager.clone(),
                 storage.clone(),
