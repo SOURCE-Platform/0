@@ -28,6 +28,7 @@ mod mobile_store;
 mod parakeet_worker;
 mod queries;
 mod retention;
+pub mod transcript_waiters;
 pub(crate) mod service;
 mod speech_model;
 pub(crate) mod speech_provider;

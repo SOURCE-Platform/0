@@ -18,6 +18,27 @@
       "type": "send_text"
     },
     {
+      "sessionId": "s-1",
+      "talkId": "t-1",
+      "type": "talk_start"
+    },
+    {
+      "talkId": "t-1",
+      "type": "talk_end"
+    },
+    {
+      "talkId": "t-1",
+      "type": "talk_cancel"
+    },
+    {
+      "talkId": "t-1",
+      "type": "send_now"
+    },
+    {
+      "talkId": "t-1",
+      "type": "cancel_send"
+    },
+    {
       "type": "pong"
     }
   ],
@@ -162,6 +183,65 @@
     },
     {
       "seq": 10,
+      "sessionId": "s-1",
+      "state": {
+        "delayed": false,
+        "kind": "transcribing"
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 11,
+      "sessionId": "s-1",
+      "state": {
+        "kind": "confirm",
+        "sendInMs": 3000,
+        "text": "hide the header"
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 12,
+      "sessionId": "s-1",
+      "state": {
+        "kind": "sending",
+        "text": "hide the header"
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 13,
+      "sessionId": "s-1",
+      "state": {
+        "kind": "no_speech"
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 14,
+      "sessionId": "s-1",
+      "state": {
+        "kind": "cancelled"
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 15,
+      "sessionId": "s-1",
+      "state": {
+        "kind": "failed",
+        "message": "Transcribing took too long. Try again."
+      },
+      "talkId": "t-1",
+      "type": "talk"
+    },
+    {
+      "seq": 16,
       "type": "ping"
     }
   ]

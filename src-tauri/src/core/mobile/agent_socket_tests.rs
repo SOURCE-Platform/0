@@ -40,7 +40,7 @@ fn harness(name: &str) -> Harness {
     let (_setting, can_send_changes) = PhonePromptSetting::new(false);
     let agents = AgentServices { bridge, changes, can_send_changes, config: config.clone(), roots };
     let (out, outbox) = mpsc::channel(64);
-    Harness { connection: Connection::new(agents, out), outbox, config, transcript }
+    Harness { connection: Connection::new(agents, None, out), outbox, config, transcript }
 }
 
 async fn next(outbox: &mut mpsc::Receiver<ServerBody>) -> ServerBody {

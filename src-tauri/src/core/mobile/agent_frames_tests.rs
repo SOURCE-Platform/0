@@ -1,4 +1,4 @@
-use super::agent_frames::{parse_client_frame, ClientFrame, ServerBody, ServerFrame};
+use super::agent_frames::{parse_client_frame, ClientFrame, ServerBody, ServerFrame, TalkState};
 use crate::core::agent_bridge::{DriverEvent, HandoffError, SendError};
 use crate::core::agent_sessions::{AgentApp, AgentMessage, AgentSession, MessageRole};
 
@@ -33,6 +33,10 @@ fn app_names_match_what_the_agents_tab_and_phone_expect() {
     assert_eq!(names, [r#""claude-code""#, r#""codex""#, r#""factory""#, r#""opencode""#]);
 }
 
+fn talk(state: TalkState) -> ServerBody {
+    ServerBody::Talk { talk_id: "t-1".into(), session_id: "s-1".into(), state }
+}
+
 /// One of every frame the Mac sends, in a fixed order.
 fn every_server_frame() -> Vec<ServerFrame> {
     let bodies = vec![
@@ -53,6 +57,12 @@ fn every_server_frame() -> Vec<ServerFrame> {
         ServerBody::SendResult { request_id: "r-2".into(), ok: false, error: Some(SendError::Handoff(HandoffError::BusyInApp)) },
         ServerBody::Error { message: "Sending from the phone is turned off on the Mac.".into() },
         ServerBody::CanSend { can_send: true },
+        talk(TalkState::Transcribing { delayed: false }),
+        talk(TalkState::Confirm { text: "hide the header".into(), send_in_ms: 3000 }),
+        talk(TalkState::Sending { text: "hide the header".into() }),
+        talk(TalkState::NoSpeech),
+        talk(TalkState::Cancelled),
+        talk(TalkState::Failed { message: "Transcribing took too long. Try again.".into() }),
         ServerBody::Ping,
     ];
     bodies.into_iter().enumerate().map(|(i, body)| ServerFrame { seq: i as u64 + 1, body }).collect()
@@ -76,6 +86,11 @@ fn client_samples() -> serde_json::Value {
         { "type": "open_session", "app": "claude-code", "sessionId": "s-1" },
         { "type": "close_session" },
         { "type": "send_text", "requestId": "r-1", "sessionId": "s-1", "text": "hide the header" },
+        { "type": "talk_start", "talkId": "t-1", "sessionId": "s-1" },
+        { "type": "talk_end", "talkId": "t-1" },
+        { "type": "talk_cancel", "talkId": "t-1" },
+        { "type": "send_now", "talkId": "t-1" },
+        { "type": "cancel_send", "talkId": "t-1" },
         { "type": "pong" }
     ])
 }
@@ -96,6 +111,11 @@ fn parses_every_client_frame_in_the_golden_file() {
             ClientFrame::OpenSession { app: AgentApp::ClaudeCode, session_id: "s-1".into() },
             ClientFrame::CloseSession,
             ClientFrame::SendText { request_id: "r-1".into(), session_id: "s-1".into(), text: "hide the header".into() },
+            ClientFrame::TalkStart { talk_id: "t-1".into(), session_id: "s-1".into() },
+            ClientFrame::TalkEnd { talk_id: "t-1".into() },
+            ClientFrame::TalkCancel { talk_id: "t-1".into() },
+            ClientFrame::SendNow { talk_id: "t-1".into() },
+            ClientFrame::CancelSend { talk_id: "t-1".into() },
             ClientFrame::Pong,
         ]
     );

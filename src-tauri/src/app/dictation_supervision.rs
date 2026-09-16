@@ -2,6 +2,7 @@ use crate::core::config::Config;
 use crate::core::database::Database;
 use crate::core::multimodal::foreground_coordinator::set_background_transcription_paused;
 use crate::core::multimodal::speech_provider::DictionaryEntry;
+use crate::core::multimodal::transcript_waiters::transcript_waiters;
 use crate::core::multimodal::{
     persist_foreground_transcript, DictationHelper, DictationSupervisor, PipelineAction,
     SupervisorCommand,
@@ -103,6 +104,12 @@ pub fn initialize_dictation_supervisor(
                                 model,
                             )
                             .await;
+                            transcript_waiters().complete(id, text);
+                        }
+                        // Empty transcripts arrive here too, so a voice prompt
+                        // with no speech ends its wait instead of timing out.
+                        if let PipelineAction::DuplicateIgnored { id } = &action {
+                            transcript_waiters().complete(id, "");
                         }
                         if let PipelineAction::InsertIntoFocusedField { id, text } = &action {
                             let command = SupervisorCommand::Insert(id.clone(), text.clone());
@@ -115,6 +122,7 @@ pub fn initialize_dictation_supervisor(
                         }
                     }
                     set_background_transcription_paused(false);
+                    transcript_waiters().fail_all();
                     eprintln!("Dictation helper exited; restarting soon");
                 }
                 Err(error) => {

@@ -1,4 +1,5 @@
 use super::types::AuthDevice;
+use super::wav::ensure_wav_header;
 use crate::core::database::Database;
 use crate::core::multimodal::{
     mark_mobile_clip_delivered, persist_mobile_transcript, track_mobile_clip, SupervisorCommand,
@@ -246,37 +247,6 @@ async fn already_transcribed(db: &Arc<Database>, clip_id: &str) -> bool {
     .await
     .map(|count| count > 0)
     .unwrap_or(false)
-}
-
-fn ensure_wav_header(path: &std::path::Path) -> Result<(), String> {
-    let bytes = std::fs::read(path).map_err(|error| format!("Failed to read spool: {error}"))?;
-    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" {
-        return Ok(());
-    }
-    // Raw Int16LE mono 16 kHz -> wrap with a WAV header.
-    let header = wav_header(bytes.len() as u32);
-    let mut out = Vec::with_capacity(header.len() + bytes.len());
-    out.extend_from_slice(&header);
-    out.extend_from_slice(&bytes);
-    std::fs::write(path, out).map_err(|error| format!("Failed to wrap PCM: {error}"))?;
-    Ok(())
-}
-
-fn wav_header(data_len: u32) -> Vec<u8> {
-    let mut header = Vec::with_capacity(44);
-    header.extend_from_slice(b"RIFF");
-    header.extend_from_slice(&(36u32 + data_len).to_le_bytes());
-    header.extend_from_slice(b"WAVEfmt ");
-    header.extend_from_slice(&16u32.to_le_bytes());
-    header.extend_from_slice(&1u16.to_le_bytes());
-    header.extend_from_slice(&1u16.to_le_bytes());
-    header.extend_from_slice(&16000u32.to_le_bytes());
-    header.extend_from_slice(&32000u32.to_le_bytes());
-    header.extend_from_slice(&2u16.to_le_bytes());
-    header.extend_from_slice(&16u16.to_le_bytes());
-    header.extend_from_slice(b"data");
-    header.extend_from_slice(&data_len.to_le_bytes());
-    header
 }
 
 #[cfg(test)]

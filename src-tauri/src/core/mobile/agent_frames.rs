@@ -21,6 +21,16 @@ pub enum ClientFrame {
     CloseSession,
     /// A typed prompt. `request_id` comes back on the matching `send_result`.
     SendText { request_id: String, session_id: String, text: String },
+    /// Push-to-talk pressed for a conversation. The binary messages that follow
+    /// are its audio: 16 kHz mono Int16 little-endian.
+    TalkStart { talk_id: String, session_id: String },
+    /// Released: transcribe what was said.
+    TalkEnd { talk_id: String },
+    /// Slid away while talking: drop the audio.
+    TalkCancel { talk_id: String },
+    /// During the confirm window: send the transcript now, or don't send it.
+    SendNow { talk_id: String },
+    CancelSend { talk_id: String },
     /// Reply to a `ping`.
     Pong,
 }
@@ -61,8 +71,26 @@ pub enum ServerBody {
     Error { message: String },
     /// "Let the phone send prompts" was switched on or off on the Mac.
     CanSend { can_send: bool },
+    /// Where a push-to-talk prompt has got to.
+    Talk { talk_id: String, session_id: String, state: TalkState },
     /// Liveness check; the phone answers `pong`.
     Ping,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum TalkState {
+    /// Waiting for speech recognition. `delayed` while Right Option dictation
+    /// on the Mac is using the speech engine.
+    Transcribing { delayed: bool },
+    /// What was heard. It's sent when the window ends unless cancelled.
+    Confirm { text: String, send_in_ms: u64 },
+    /// Going into the conversation; a `send_result` whose `requestId` is the
+    /// talk id follows.
+    Sending { text: String },
+    NoSpeech,
+    Cancelled,
+    Failed { message: String },
 }
 
 impl ServerFrame {

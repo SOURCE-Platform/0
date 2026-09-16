@@ -1,5 +1,9 @@
 pub mod agent_feed;
 pub mod agent_frames;
+mod agent_send_window;
+mod agent_voice;
+#[cfg(test)]
+mod agent_voice_tests;
 mod agent_socket;
 #[cfg(test)]
 mod agent_socket_tests;
@@ -16,6 +20,7 @@ mod routes_pair;
 mod server;
 mod tls;
 mod types;
+pub(crate) mod wav;
 
 pub use enrollment::{Enrollment, EnrollmentPayload};
 pub use pair_requests::{short_auth_string, PairRequests, PairState, PendingPair};

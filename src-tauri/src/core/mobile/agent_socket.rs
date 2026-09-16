@@ -3,10 +3,12 @@
 //! On connect the Mac sends a snapshot, then pushes what changes: the session
 //! list (when session files change), the open conversation's messages, and
 //! turn events from conversations SOURCE is driving. The phone can open a
-//! conversation and send typed prompts.
+//! conversation and send prompts, typed or spoken (see `agent_voice.rs`).
 
 use super::agent_feed::{epoch, AgentServices};
-use super::agent_frames::{parse_client_frame, ClientFrame, ServerBody, ServerFrame};
+use super::agent_frames::{parse_client_frame, ClientFrame, ServerBody, ServerFrame, TalkState};
+use super::agent_send_window::Decision;
+use super::agent_voice::{Talks, VoiceServices};
 use super::server::MobileState;
 use crate::core::agent_bridge::SendError;
 use crate::core::agent_sessions::{AgentApp, AgentMessage, AgentSession};
@@ -35,10 +37,16 @@ pub(super) async fn agent_ws(
         .ok_or(StatusCode::UNAUTHORIZED)?;
     state.pairing.verify(token).await.ok_or(StatusCode::UNAUTHORIZED)?;
     let agents = state.agents.clone().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
-    Ok(ws.on_upgrade(move |socket| run(socket, agents)))
+    let voice = VoiceServices {
+        commands: state.commands.clone(),
+        db: Some(state.db.clone()),
+        session: state.session.clone(),
+        audio_dir: None,
+    };
+    Ok(ws.on_upgrade(move |socket| run(socket, agents, voice)))
 }
 
-async fn run(socket: WebSocket, agents: AgentServices) {
+async fn run(socket: WebSocket, agents: AgentServices, voice: VoiceServices) {
     let (mut sink, mut incoming) = socket.split();
     let (out, mut outbox) = mpsc::channel::<ServerBody>(OUTBOX);
     let writer = tokio::spawn(async move {
@@ -53,7 +61,7 @@ async fn run(socket: WebSocket, agents: AgentServices) {
         let _ = sink.close().await;
     });
 
-    let mut connection = Connection::new(agents.clone(), out);
+    let mut connection = Connection::new(agents.clone(), Some(voice), out);
     let mut changes = agents.changes.clone();
     changes.borrow_and_update();
     let mut can_send_changes = agents.can_send_changes.clone();
@@ -72,6 +80,7 @@ async fn run(socket: WebSocket, agents: AgentServices) {
                     Some(frame) => connection.handle(frame).await,
                     None => connection.push(ServerBody::Error { message: "Unknown message.".into() }),
                 },
+                Some(Ok(Message::Binary(bytes))) => { connection.audio(&bytes); true }
                 Some(Ok(Message::Close(_))) | Some(Err(_)) | None => false,
                 Some(Ok(_)) => true,
             },
@@ -103,15 +112,17 @@ async fn run(socket: WebSocket, agents: AgentServices) {
 /// a fresh snapshot, rather than falling silently behind.
 pub(super) struct Connection {
     agents: AgentServices,
+    voice: Option<VoiceServices>,
     out: mpsc::Sender<ServerBody>,
     open: Option<(AgentApp, String)>,
     last_sessions: Option<(Vec<AgentSession>, Vec<String>)>,
     last_messages: Option<Vec<AgentMessage>>,
+    talks: Talks,
 }
 
 impl Connection {
-    pub(super) fn new(agents: AgentServices, out: mpsc::Sender<ServerBody>) -> Self {
-        Self { agents, out, open: None, last_sessions: None, last_messages: None }
+    pub(super) fn new(agents: AgentServices, voice: Option<VoiceServices>, out: mpsc::Sender<ServerBody>) -> Self {
+        Self { agents, voice, out, open: None, last_sessions: None, last_messages: None, talks: Talks::default() }
     }
 
     /// Returns false when the connection should close.
@@ -140,8 +151,48 @@ impl Connection {
                 true
             }
             ClientFrame::SendText { request_id, session_id, text } => self.send_text(request_id, session_id, text),
+            ClientFrame::TalkStart { talk_id, session_id } => self.start_talk(talk_id, session_id),
+            ClientFrame::TalkEnd { talk_id } => {
+                if let Some(voice) = &self.voice {
+                    self.talks.end(&talk_id, &self.agents, voice, &self.out);
+                }
+                true
+            }
+            ClientFrame::TalkCancel { talk_id } => match self.talks.cancel(&talk_id) {
+                Some(session_id) => self.push(ServerBody::Talk { talk_id, session_id, state: TalkState::Cancelled }),
+                None => true,
+            },
+            ClientFrame::SendNow { talk_id } => {
+                self.talks.decide(&talk_id, Decision::SendNow);
+                true
+            }
+            ClientFrame::CancelSend { talk_id } => {
+                self.talks.decide(&talk_id, Decision::Cancel);
+                true
+            }
             ClientFrame::Pong => true,
         }
+    }
+
+    /// Audio for the voice prompt being recorded, if there is one.
+    pub(super) fn audio(&mut self, bytes: &[u8]) {
+        self.talks.audio(bytes);
+    }
+
+    fn start_talk(&mut self, talk_id: String, session_id: String) -> bool {
+        let refusal = if self.voice.is_none() {
+            Some("Voice prompts aren't available on this Mac.")
+        } else if !self.agents.phone_may_send() {
+            Some(SENDING_OFF)
+        } else {
+            None
+        };
+        if let Some(message) = refusal {
+            let state = TalkState::Failed { message: message.into() };
+            return self.push(ServerBody::Talk { talk_id, session_id, state });
+        }
+        self.talks.start(talk_id, session_id);
+        true
     }
 
     /// The setting was switched: tell the phone what it is now.
@@ -175,26 +226,41 @@ impl Connection {
     /// Sending can take seconds (handing the conversation over, starting
     /// Claude), so it runs on its own task and answers with `send_result`.
     fn send_text(&self, request_id: String, session_id: String, text: String) -> bool {
-        if text.trim().is_empty() {
-            let error = SendError::Driver { message: "Nothing to send.".into() };
-            return self.push(ServerBody::SendResult { request_id, ok: false, error: Some(error) });
-        }
-        if !self.agents.phone_may_send() {
-            let error = SendError::Driver {
-                message: "Sending prompts from the phone is turned off. Turn it on in SOURCE on the Mac: Settings → Mobile.".into(),
-            };
-            return self.push(ServerBody::SendResult { request_id, ok: false, error: Some(error) });
-        }
-        let bridge = self.agents.bridge.clone();
-        let out = self.out.clone();
-        tokio::spawn(async move {
-            let outcome = bridge.send_prompt(&session_id, text.trim()).await;
-            let body = match outcome {
-                Ok(_) => ServerBody::SendResult { request_id, ok: true, error: None },
-                Err(error) => ServerBody::SendResult { request_id, ok: false, error: Some(error) },
-            };
-            let _ = out.try_send(body);
-        });
+        let (agents, out) = (self.agents.clone(), self.out.clone());
+        tokio::spawn(async move { deliver_prompt(&agents, &out, request_id, session_id, text).await });
         true
     }
+}
+
+const SENDING_OFF: &str =
+    "Sending prompts from the phone is turned off. Turn it on in SOURCE on the Mac: Settings → Mobile.";
+
+/// Send a prompt from the phone, typed or spoken, and answer with `send_result`.
+/// The setting is checked here, at the moment of sending, so switching it off
+/// stops a voice prompt still in its confirm window too.
+pub(super) async fn deliver_prompt(
+    agents: &AgentServices,
+    out: &mpsc::Sender<ServerBody>,
+    request_id: String,
+    session_id: String,
+    text: String,
+) {
+    let refusal = if text.trim().is_empty() {
+        Some("Nothing to send.")
+    } else if !agents.phone_may_send() {
+        Some(SENDING_OFF)
+    } else {
+        None
+    };
+    let body = match refusal {
+        Some(message) => {
+            let error = SendError::Driver { message: message.into() };
+            ServerBody::SendResult { request_id, ok: false, error: Some(error) }
+        }
+        None => match agents.bridge.send_prompt(&session_id, text.trim()).await {
+            Ok(_) => ServerBody::SendResult { request_id, ok: true, error: None },
+            Err(error) => ServerBody::SendResult { request_id, ok: false, error: Some(error) },
+        },
+    };
+    let _ = out.try_send(body);
 }
