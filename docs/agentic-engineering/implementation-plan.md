@@ -38,7 +38,7 @@ work reliably: Claude sometimes refuses it as unverified, which protects you.
 | Session hub v1 | Agents tab on the Mac listing every session from all four apps | ✅ Done |
 | M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
 | M1 | Mac-only loop: send to Claude, get the reply | ✅ Done |
-| M2 | Phone ↔ Mac agent channel, sessions on the phone | 🧪 Built and tested; waiting for the on-phone check |
+| M2 | Phone ↔ Mac agent channel, sessions on the phone | ✅ Done 2026-09-16 (verified from the phone) |
 | M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
 | M3b | Kokoro voice | ⬜ |
 | M4 | Away from home (Tailscale) | ⬜ |
@@ -360,7 +360,7 @@ tests and 5 phone tests pass. Still to do: the on-phone check in 2.5.
     succeeds.
   - On a device, turning the Mac's Wi-Fi off and on reconnects and resyncs.
 
-### 2.5 Phone UI 🧪 built; waiting for the on-phone check
+### 2.5 Phone UI ✅ verified on the phone 2026-09-16
 
 - **Files:**
   - `UI/Agents/AgentSessionsView.swift`: live sessions first, app badge, title,
