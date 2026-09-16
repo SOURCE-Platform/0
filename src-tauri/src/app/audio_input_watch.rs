@@ -23,6 +23,9 @@ struct InputChanged {
 /// device is added, removed, or made the system default, so nothing polls.
 pub async fn handle_input_devices(app: AppHandle, snapshot: InputSnapshot) {
     let Some(state) = app.try_state::<AppState>() else { return };
+    // Every report, even one that doesn't change the active microphone, so
+    // microphone pickers can refresh their list without checking on a timer.
+    let _ = app.emit("audio-inputs-changed", ());
     let pinned = state
         .config
         .lock()

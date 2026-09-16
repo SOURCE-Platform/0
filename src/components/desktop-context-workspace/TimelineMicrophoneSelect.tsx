@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { Check, LoaderCircle, Mic } from "lucide-react";
 import { Popover } from "radix-ui";
 import { normalizeAudioConfig } from "@/components/settings/audioConfig";
@@ -15,6 +16,16 @@ interface TimelineMicrophoneSelectProps {
   currentSourceName: string | null;
 }
 
+const PINNED_PREFIX = "microphone-name:";
+
+// The microphone picker on the Timeline.
+//
+// The chosen microphone is a preference that survives unplugging: while it's
+// gone, the backend records from the macOS default and switches back the
+// moment it returns. So this never saves a fallback. It used to save the
+// MacBook's microphone as the new choice on unplug, which stopped SOURCE ever
+// switching back to the USB-C microphone. The list refreshes when Core Audio
+// reports a change, not on a timer.
 export function TimelineMicrophoneSelect({
   currentSourceName,
 }: TimelineMicrophoneSelectProps) {
@@ -22,13 +33,12 @@ export function TimelineMicrophoneSelect({
   const [sources, setSources] = useState<AudioInputSource[]>([]);
   const [config, setConfig] = useState<Config | null>(null);
   const [selectedId, setSelectedId] = useState<string>();
-  const [selectedName, setSelectedName] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [switching, setSwitching] = useState(false);
   const switchingRef = useRef(false);
   const lastLoadErrorRef = useRef<string | null>(null);
 
-  async function refreshSources(allowFallback = false) {
+  async function refreshSources() {
     setLoading(true);
     try {
       const [rawConfig, available] = await Promise.all([
@@ -38,32 +48,20 @@ export function TimelineMicrophoneSelect({
       const nextConfig = normalizeAudioConfig(rawConfig);
       setConfig(nextConfig);
       setSources(available);
-      const selected = available.find(
-        (source) => source.sourceId === nextConfig.selected_audio_input_id,
-      );
-      const active = available.find((source) => source.name === currentSourceName);
-      const sameName = available.find((source) => source.name === selectedName);
-      const fallback =
-        available.find((source) => source.isSystemDefault) ?? available[0];
-      const resolved = selected ?? sameName ?? active ?? fallback;
       lastLoadErrorRef.current = null;
-      setSelectedId(resolved?.sourceId);
-      setSelectedName(resolved?.name);
-
-      const disconnectedName = selectedName ?? currentSourceName;
-      const wasDisconnected =
-        allowFallback &&
-        disconnectedName != null &&
-        !available.some((source) => source.name === disconnectedName);
-      if (wasDisconnected && fallback) {
-        await applySource(
-          fallback,
-          `${disconnectedName} disconnected. Switched to ${fallback.name}.`,
-        );
+      const chosen = nextConfig.selected_audio_input_id;
+      if (chosen) {
+        // Unplugged: nothing is ticked, and the note below says what's recording.
+        setSelectedId(available.find((source) => source.sourceId === chosen)?.sourceId);
+      } else {
+        const following =
+          available.find((source) => source.name === currentSourceName) ??
+          available.find((source) => source.isSystemDefault);
+        setSelectedId(following?.sourceId);
       }
     } catch (error) {
-      // The source list polls every few seconds; only toast when the
-      // failure message changes so a persistent error doesn't flicker.
+      // Only toast when the failure message changes, so a repeated error
+      // doesn't flicker.
       const text = `Could not load microphone inputs: ${error}`;
       if (lastLoadErrorRef.current !== text) {
         lastLoadErrorRef.current = text;
@@ -75,15 +73,27 @@ export function TimelineMicrophoneSelect({
   }
 
   useEffect(() => {
-    void refreshSources(false);
+    void refreshSources();
   }, [currentSourceName]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refreshSources(true);
-    }, 3000);
-    return () => window.clearInterval(interval);
-  }, [currentSourceName, selectedName]);
+    let stop: (() => void) | undefined;
+    let cancelled = false;
+    void listen("audio-inputs-changed", () => void refreshSources()).then((unlisten) => {
+      if (cancelled) unlisten();
+      else stop = unlisten;
+    });
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [currentSourceName]);
+
+  const chosenId = config?.selected_audio_input_id ?? null;
+  const unpluggedName =
+    chosenId?.startsWith(PINNED_PREFIX) && !sources.some((source) => source.sourceId === chosenId)
+      ? chosenId.slice(PINNED_PREFIX.length)
+      : null;
 
   async function applySource(source: AudioInputSource, successText: string) {
     if (switchingRef.current) return;
@@ -100,7 +110,6 @@ export function TimelineMicrophoneSelect({
       broadcastConfigUpdate(next);
       setConfig(next);
       setSelectedId(source.sourceId);
-      setSelectedName(source.name);
       await invoke("restart_multimodal_capture");
       showSettingsToast({ type: "success", text: successText });
     } catch (error) {
@@ -121,8 +130,8 @@ export function TimelineMicrophoneSelect({
     await applySource(source, `Microphone changed to ${source.name}.`);
   }
 
-  const triggerLabel = selectedName ?? currentSourceName
-    ? `Microphone: ${selectedName ?? currentSourceName}`
+  const triggerLabel = currentSourceName
+    ? `Microphone: ${currentSourceName}`
     : "Choose microphone";
 
   return (
@@ -131,7 +140,7 @@ export function TimelineMicrophoneSelect({
       onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
         if (nextOpen) {
-          void refreshSources(true);
+          void refreshSources();
         } else {
           void invoke("stop_audio_meter_stream");
         }
@@ -164,6 +173,13 @@ export function TimelineMicrophoneSelect({
               {sources.length} available
             </span>
           </div>
+
+          {unpluggedName ? (
+            <p className="px-2 pb-1 text-xs text-muted-foreground">
+              {unpluggedName} is unplugged.
+              {currentSourceName ? ` Recording from ${currentSourceName} until it's back.` : ""}
+            </p>
+          ) : null}
 
           <div className="max-h-52 overflow-y-auto py-1" role="menu">
             {sources.length === 0 ? (

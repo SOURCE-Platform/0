@@ -19,14 +19,25 @@ fn spawn_input_device_forwarder(
 ) {
     tauri::async_runtime::spawn(async move {
         use crate::core::multimodal::dictation_helper::DictationEvent;
-        while let Ok(event) = events.recv().await {
-            if let DictationEvent::InputDevices { default_name, devices } = event {
-                crate::app::audio_input_watch::handle_input_devices(
-                    app_handle.clone(),
-                    crate::core::multimodal::input_watch::InputSnapshot { default_name, devices },
-                )
-                .await;
-            }
+        use crate::core::multimodal::input_watch::{read_snapshot, InputSnapshot};
+        use tokio::sync::broadcast::error::RecvError;
+        loop {
+            let snapshot = match events.recv().await {
+                Ok(DictationEvent::InputDevices { default_name, devices }) => {
+                    InputSnapshot { default_name, devices }
+                }
+                Ok(_) => continue,
+                // Fell behind a burst of helper events (a long dictation's
+                // partial transcripts). Stopping here used to end microphone
+                // following until SOURCE restarted. Read the devices afresh
+                // instead, in case the report that was dropped was a plug-in.
+                Err(RecvError::Lagged(_)) => match tokio::task::spawn_blocking(read_snapshot).await {
+                    Ok(snapshot) => snapshot,
+                    Err(_) => continue,
+                },
+                Err(RecvError::Closed) => return,
+            };
+            crate::app::audio_input_watch::handle_input_devices(app_handle.clone(), snapshot).await;
         }
     });
 }
