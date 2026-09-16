@@ -18,8 +18,27 @@ pub struct AgentServices {
     pub bridge: Arc<AgentBridge>,
     /// Counts up whenever agent session files change (FSEvents, settled).
     pub changes: watch::Receiver<u64>,
+    /// Changes when "Let the phone send prompts" is switched on or off.
+    pub can_send_changes: watch::Receiver<bool>,
     pub config: Arc<Mutex<Config>>,
     pub roots: AgentRoots,
+}
+
+/// Tells connected phones when "Let the phone send prompts" is switched, so
+/// they don't wait for a reconnect to find out. The app manages one; the
+/// settings commands announce after saving.
+pub struct PhonePromptSetting(watch::Sender<bool>);
+
+impl PhonePromptSetting {
+    pub fn new(enabled: bool) -> (Self, watch::Receiver<bool>) {
+        let (sender, receiver) = watch::channel(enabled);
+        (Self(sender), receiver)
+    }
+
+    /// Notifies phones only when the value actually changed.
+    pub fn announce(&self, enabled: bool) {
+        self.0.send_if_modified(|current| std::mem::replace(current, enabled) != enabled);
+    }
 }
 
 impl AgentServices {

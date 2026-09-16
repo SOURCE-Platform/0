@@ -59,6 +59,8 @@ pub enum ServerBody {
     /// Outcome of a `send_text`.
     SendResult { request_id: String, ok: bool, error: Option<SendError> },
     Error { message: String },
+    /// "Let the phone send prompts" was switched on or off on the Mac.
+    CanSend { can_send: bool },
     /// Liveness check; the phone answers `pong`.
     Ping,
 }

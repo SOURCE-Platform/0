@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { SettingsController } from "@/components/settings/useSettingsController";
+import { showSettingsToast } from "@/components/settings/utils";
 
 interface PairRequest {
   requestId: string;
@@ -89,6 +90,18 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
     }
   }
 
+  // Saves straight away rather than waiting for "Save settings", and only this
+  // setting, so other unsaved edits on the page stay unsaved.
+  async function setPhonePrompts(enabled: boolean) {
+    controller.updateConfig({ mobile_agent_prompts_enabled: enabled });
+    try {
+      await invoke("set_mobile_agent_prompts_enabled", { enabled });
+    } catch (error) {
+      controller.updateConfig({ mobile_agent_prompts_enabled: !enabled });
+      showSettingsToast({ type: "error", text: `Couldn't change phone prompts: ${error}` });
+    }
+  }
+
   async function refreshDevices() {
     try {
       const rows = await invoke<MobileDevice[]>("mobile_list_devices");
@@ -136,13 +149,13 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
               </Label>
               <p className="max-w-[60ch] text-sm text-muted-foreground">
                 Your paired phone can already see your agent sessions. Turn this on to also let it
-                send prompts into them, which can change files on this Mac.
+                send prompts into them, which can change files on this Mac. Takes effect right away.
               </p>
             </div>
             <Switch
               id="mobile-agent-prompts"
               checked={config.mobile_agent_prompts_enabled ?? false}
-              onCheckedChange={(checked) => controller.updateConfig({ mobile_agent_prompts_enabled: checked })}
+              onCheckedChange={(checked) => void setPhonePrompts(checked)}
             />
           </div>
 

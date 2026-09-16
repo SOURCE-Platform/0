@@ -156,7 +156,12 @@
       "type": "error"
     },
     {
+      "canSend": true,
       "seq": 9,
+      "type": "can_send"
+    },
+    {
+      "seq": 10,
       "type": "ping"
     }
   ]

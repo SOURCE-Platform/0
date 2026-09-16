@@ -52,6 +52,7 @@ fn every_server_frame() -> Vec<ServerFrame> {
         ServerBody::SendResult { request_id: "r-1".into(), ok: true, error: None },
         ServerBody::SendResult { request_id: "r-2".into(), ok: false, error: Some(SendError::Handoff(HandoffError::BusyInApp)) },
         ServerBody::Error { message: "Sending from the phone is turned off on the Mac.".into() },
+        ServerBody::CanSend { can_send: true },
         ServerBody::Ping,
     ];
     bodies.into_iter().enumerate().map(|(i, body)| ServerFrame { seq: i as u64 + 1, body }).collect()

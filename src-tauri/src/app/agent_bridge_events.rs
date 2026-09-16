@@ -1,7 +1,7 @@
 use crate::core::agent_bridge::AgentBridge;
 use crate::core::agent_sessions::{watch_agent_changes, AgentRoots};
 use crate::core::config::Config;
-use crate::core::mobile::AgentServices;
+use crate::core::mobile::{AgentServices, PhonePromptSetting};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
@@ -51,5 +51,9 @@ pub fn start_agent_bridge(app: &AppHandle, config: Arc<Mutex<Config>>) -> AgentS
         drop(watch);
     });
 
-    AgentServices { bridge, changes: changes_rx, config, roots }
+    let enabled = config.lock().map(|config| config.mobile_agent_prompts_enabled).unwrap_or(false);
+    let (setting, can_send_changes) = PhonePromptSetting::new(enabled);
+    app.manage(setting);
+
+    AgentServices { bridge, changes: changes_rx, can_send_changes, config, roots }
 }

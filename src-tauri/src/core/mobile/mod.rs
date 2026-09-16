@@ -21,7 +21,7 @@ pub use enrollment::{Enrollment, EnrollmentPayload};
 pub use pair_requests::{short_auth_string, PairRequests, PairState, PendingPair};
 pub use qr::{local_hostname, render_enrollment_qr};
 pub use pairing::{hash_token, PairingManager};
-pub use agent_feed::AgentServices;
+pub use agent_feed::{AgentServices, PhonePromptSetting};
 pub use server::{serve_mobile, MobileState};
 pub use tls::ensure_mobile_cert;
 

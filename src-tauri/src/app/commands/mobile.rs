@@ -1,5 +1,6 @@
 use crate::app::state::AppState;
-use tauri::State;
+use crate::core::mobile::PhonePromptSetting;
+use tauri::{AppHandle, Manager, State};
 
 /// Build the QR code the phone scans. Contains this Mac's address, its TLS
 /// fingerprint, and a single-use secret, so the phone can pin the certificate
@@ -135,6 +136,33 @@ pub async fn mobile_list_devices(
             last_seen_at,
         })
         .collect())
+}
+
+/// Switch "Let the phone send prompts to coding agents". Unlike most of
+/// Settings this saves at once, touching only this setting, and tells
+/// connected phones straight away.
+#[tauri::command]
+pub fn set_mobile_agent_prompts_enabled(
+    enabled: bool,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    {
+        let mut current = state.config.lock().map_err(|e| format!("Failed to lock config: {e}"))?;
+        let mut next = current.clone();
+        next.mobile_agent_prompts_enabled = enabled;
+        next.save().map_err(|e| format!("Failed to save configuration: {e}"))?;
+        *current = next;
+    }
+    announce_phone_prompts(&app, enabled);
+    Ok(())
+}
+
+/// Tell connected phones whether they may send prompts, if that changed.
+pub fn announce_phone_prompts(app: &AppHandle, enabled: bool) {
+    if let Some(setting) = app.try_state::<PhonePromptSetting>() {
+        setting.announce(enabled);
+    }
 }
 
 #[tauri::command]

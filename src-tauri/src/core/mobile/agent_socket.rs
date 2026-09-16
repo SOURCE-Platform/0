@@ -56,6 +56,8 @@ async fn run(socket: WebSocket, agents: AgentServices) {
     let mut connection = Connection::new(agents.clone(), out);
     let mut changes = agents.changes.clone();
     changes.borrow_and_update();
+    let mut can_send_changes = agents.can_send_changes.clone();
+    can_send_changes.borrow_and_update();
     let mut turns = agents.bridge.subscribe();
     let mut ping = tokio::time::interval(PING_EVERY);
     ping.tick().await; // the first tick is immediate
@@ -74,6 +76,7 @@ async fn run(socket: WebSocket, agents: AgentServices) {
                 Some(Ok(_)) => true,
             },
             changed = changes.changed() => changed.is_ok() && connection.refresh().await,
+            changed = can_send_changes.changed() => changed.is_ok() && connection.send_can_send(),
             turn = turns.recv() => match turn {
                 Ok(event) => connection.push(ServerBody::Turn {
                     session_id: event.session_id,
@@ -139,6 +142,11 @@ impl Connection {
             ClientFrame::SendText { request_id, session_id, text } => self.send_text(request_id, session_id, text),
             ClientFrame::Pong => true,
         }
+    }
+
+    /// The setting was switched: tell the phone what it is now.
+    pub(super) fn send_can_send(&self) -> bool {
+        self.push(ServerBody::CanSend { can_send: self.agents.phone_may_send() })
     }
 
     /// Session files changed: send whatever actually differs.

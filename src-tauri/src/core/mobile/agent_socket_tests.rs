@@ -1,4 +1,4 @@
-use super::agent_feed::AgentServices;
+use super::agent_feed::{AgentServices, PhonePromptSetting};
 use super::agent_frames::{ClientFrame, ServerBody};
 use super::agent_socket::Connection;
 use crate::core::agent_bridge::{AgentBridge, SendError};
@@ -37,7 +37,8 @@ fn harness(name: &str) -> Harness {
     // No Claude program: sends that get past the setting fail fast and visibly.
     let bridge = AgentBridge::with_binary(roots.clone(), None, Duration::from_secs(60));
     let (_tx, changes) = watch::channel(0u64);
-    let agents = AgentServices { bridge, changes, config: config.clone(), roots };
+    let (_setting, can_send_changes) = PhonePromptSetting::new(false);
+    let agents = AgentServices { bridge, changes, can_send_changes, config: config.clone(), roots };
     let (out, outbox) = mpsc::channel(64);
     Harness { connection: Connection::new(agents, out), outbox, config, transcript }
 }
@@ -86,6 +87,24 @@ async fn refuses_to_send_until_the_setting_is_on() {
         }
         other => panic!("{other:?}"),
     }
+}
+
+#[tokio::test]
+async fn tells_the_phone_when_the_setting_is_switched() {
+    let mut h = harness("can_send");
+    h.config.lock().unwrap().mobile_agent_prompts_enabled = true;
+    assert!(h.connection.send_can_send());
+    assert_eq!(next(&mut h.outbox).await, ServerBody::CanSend { can_send: true });
+}
+
+#[test]
+fn announces_only_real_changes() {
+    let (setting, mut changes) = PhonePromptSetting::new(false);
+    setting.announce(false);
+    assert!(!changes.has_changed().unwrap(), "same value: phones aren't bothered");
+    setting.announce(true);
+    assert!(changes.has_changed().unwrap());
+    assert!(*changes.borrow_and_update());
 }
 
 #[tokio::test]

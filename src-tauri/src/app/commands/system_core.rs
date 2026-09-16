@@ -1,9 +1,10 @@
+use crate::app::commands::mobile::announce_phone_prompts;
 use crate::app::state::AppState;
 use crate::core::config::Config;
 use crate::core::consent::Feature;
 use crate::core::screen_recorder::RecordingStatus;
 use crate::models::capture::Display;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[tauri::command]
 pub fn greet(name: &str) -> String {
@@ -68,7 +69,7 @@ pub fn get_config(state: State<'_, AppState>) -> Result<Config, String> {
 }
 
 #[tauri::command]
-pub fn update_config(config: Config, state: State<'_, AppState>) -> Result<(), String> {
+pub fn update_config(config: Config, app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     config
         .validate()
         .map_err(|e| format!("Invalid configuration: {}", e))?;
@@ -77,13 +78,16 @@ pub fn update_config(config: Config, state: State<'_, AppState>) -> Result<(), S
         .lock()
         .map_err(|e| format!("Failed to lock config: {}", e))?;
     *current = config.clone();
-    config
+    drop(current);
+    let saved = config
         .save()
-        .map_err(|e| format!("Failed to save configuration: {}", e))
+        .map_err(|e| format!("Failed to save configuration: {}", e));
+    announce_phone_prompts(&app, config.mobile_agent_prompts_enabled);
+    saved
 }
 
 #[tauri::command]
-pub fn reset_config(state: State<'_, AppState>) -> Result<Config, String> {
+pub fn reset_config(app: AppHandle, state: State<'_, AppState>) -> Result<Config, String> {
     let config = Config::default();
     config
         .save()
@@ -93,6 +97,8 @@ pub fn reset_config(state: State<'_, AppState>) -> Result<Config, String> {
         .lock()
         .map_err(|e| format!("Failed to lock config: {}", e))?;
     *current = config.clone();
+    drop(current);
+    announce_phone_prompts(&app, config.mobile_agent_prompts_enabled);
     Ok(config)
 }
 
