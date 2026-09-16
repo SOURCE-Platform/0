@@ -39,6 +39,10 @@ impl TurnResult {
     /// app's, and reports an expired one as ordinary reply text.
     pub fn is_auth_error(&self) -> bool {
         self.api_error_status == Some(401)
+            || self.text.contains("Failed to authenticate")
+            || self.text.contains("Not logged in")
+            || self.text.contains("Run /login")
+            || self.text.contains("run /login")
             || (self.text.contains("401")
                 && (self.text.contains("authenticate") || self.text.contains("OAuth")))
     }

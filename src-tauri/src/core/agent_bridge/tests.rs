@@ -1,4 +1,4 @@
-use super::claude_cli::{newest_bundled, resume_args};
+use super::claude_cli::{inherited_host_settings, newest_bundled, resume_args};
 use super::stream_protocol::{encode_user_message, parse_line, StreamEvent};
 
 const STREAM: &str = include_str!("fixtures/claude_stream.jsonl");
@@ -99,6 +99,49 @@ fn picks_the_newest_bundled_claude_by_version_number() {
     std::fs::create_dir_all(root.join("2.2.0")).unwrap();
     let found = newest_bundled(&root).unwrap();
     assert!(found.starts_with(root.join("2.1.266")), "{found:?}");
+}
+
+#[test]
+fn removes_a_claude_hosts_session_settings_and_keeps_the_rest() {
+    let names = [
+        "PATH",
+        "HOME",
+        "CLAUDE_CONFIG_DIR",
+        "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH",
+        "CLAUDE_CODE_MESSAGING_SOCKET",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDECODE",
+        "ANTHROPIC_BASE_URL",
+    ]
+    .map(String::from);
+    assert_eq!(
+        inherited_host_settings(names),
+        [
+            "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH",
+            "CLAUDE_CODE_MESSAGING_SOCKET",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDECODE",
+            "ANTHROPIC_BASE_URL"
+        ]
+    );
+}
+
+#[test]
+fn recognises_a_sign_in_that_could_not_be_renewed() {
+    for message in [
+        "Failed to authenticate: OAuth session expired and could not be refreshed",
+        "Not logged in · Please run /login",
+    ] {
+        let line = serde_json::json!({
+            "type": "result", "subtype": "success", "is_error": true, "result": message,
+            "duration_ms": 250, "total_cost_usd": 0
+        })
+        .to_string();
+        match parse_line(&line).as_slice() {
+            [StreamEvent::TurnDone(result)] => assert!(result.is_auth_error(), "{message}"),
+            other => panic!("expected one turn result, got {other:?}"),
+        }
+    }
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use super::claude_cli::resume_args;
+use super::claude_cli::{inherited_host_settings, resume_args};
 use super::driver_events::{DriverEvent, TurnState};
 use super::stream_protocol::{encode_user_message, parse_line};
 use std::path::PathBuf;
@@ -127,7 +127,11 @@ impl ClaudeDriver {
 
     fn spawn(self: &Arc<Self>) -> Result<Running, DriverError> {
         let args = resume_args(&self.config.session_id, self.config.permission_mode.as_deref());
-        let mut child = Command::new(&self.config.binary)
+        let mut command = Command::new(&self.config.binary);
+        for name in inherited_host_settings(std::env::vars_os().filter_map(|(name, _)| name.into_string().ok())) {
+            command.env_remove(name);
+        }
+        let mut child = command
             .args(&args)
             .current_dir(&self.config.cwd)
             .stdin(std::process::Stdio::piped())
