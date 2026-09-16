@@ -82,9 +82,11 @@ async fn stop_app_process(roots: &AgentRoots, session_id: &str, pid: i32) -> Res
     if !still_ours {
         return Ok(()); // already gone
     }
-    let exited = tokio::task::spawn_blocking(move || terminate_and_wait(pid, Duration::from_secs(5)))
-        .await
-        .unwrap_or(false);
+    let exited = tokio::task::spawn_blocking(move || {
+        stop_and_wait(pid, Duration::from_secs(3), Duration::from_secs(5))
+    })
+    .await
+    .unwrap_or(false);
     if exited {
         Ok(())
     } else {
@@ -92,13 +94,20 @@ async fn stop_app_process(roots: &AgentRoots, session_id: &str, pid: i32) -> Res
     }
 }
 
-/// Ask a process to stop and wait for it to exit, using a kqueue exit
-/// notification: the kernel wakes this up when it happens, so there's no
-/// checking in a loop. The watch is registered before the signal is sent, so a
-/// process that exits instantly can't slip past it.
-pub(crate) fn terminate_and_wait(pid: i32, timeout: Duration) -> bool {
+/// Ask a process to stop and wait for it to exit: gently first, firmly only if
+/// it doesn't.
+///
+/// Gently is SIGINT. An idle `claude` answers it by exiting with code 0, which
+/// the Claude app treats as a normal end. SIGTERM makes it exit with 143, and
+/// the app reads that as "Session was interrupted" and shows a card asking to
+/// try again, even though nothing went wrong.
+///
+/// Waiting uses a kqueue exit notification: the kernel wakes this up when the
+/// process exits, so there's no checking in a loop. The watch is registered
+/// before any signal is sent, so a process that exits instantly can't slip past.
+pub(crate) fn stop_and_wait(pid: i32, gently_for: Duration, firmly_for: Duration) -> bool {
     // SAFETY: a private kqueue watching one pid for NOTE_EXIT, closed before
-    // returning; SIGTERM goes to a pid the caller confirmed.
+    // returning; signals go to a pid the caller confirmed.
     unsafe {
         let queue = libc::kqueue();
         if queue < 0 {
@@ -114,14 +123,17 @@ pub(crate) fn terminate_and_wait(pid: i32, timeout: Duration) -> bool {
             // The kernel refuses to watch a process that has already exited.
             return true;
         }
-        libc::kill(pid, libc::SIGTERM);
-        let deadline = libc::timespec {
-            tv_sec: timeout.as_secs() as libc::time_t,
-            tv_nsec: timeout.subsec_nanos() as libc::c_long,
+        let exited_after = |signal: libc::c_int, wait: Duration| {
+            libc::kill(pid, signal);
+            let deadline = libc::timespec {
+                tv_sec: wait.as_secs() as libc::time_t,
+                tv_nsec: wait.subsec_nanos() as libc::c_long,
+            };
+            let mut event: libc::kevent = std::mem::zeroed();
+            libc::kevent(queue, std::ptr::null(), 0, &mut event, 1, &deadline) > 0
         };
-        let mut event: libc::kevent = std::mem::zeroed();
-        let fired = libc::kevent(queue, std::ptr::null(), 0, &mut event, 1, &deadline);
+        let exited = exited_after(libc::SIGINT, gently_for) || exited_after(libc::SIGTERM, firmly_for);
         libc::close(queue);
-        fired > 0
+        exited
     }
 }

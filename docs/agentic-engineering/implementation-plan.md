@@ -240,7 +240,9 @@ Pure logic.
 - **File:** `core/agent_bridge/handoff.rs`: `take_over(session_id)`:
   1. No Claude app process for the session → go ahead.
   2. App process running and idle (no turn in progress in the transcript tail)
-     → stop it (`SIGTERM`), wait for it to exit, go ahead.
+     → stop it (`SIGINT`, then `SIGTERM` if it's still running after 3 s),
+     wait for it to exit, go ahead. SIGINT lets it exit with code 0, so the
+     Claude app doesn't show "Session was interrupted".
   3. App process mid-task → refuse with `BusyInApp`.
 - **Tests:** decisions from fixture registries and transcript tails; never
   touches a pid that isn't a Claude app process for that session.

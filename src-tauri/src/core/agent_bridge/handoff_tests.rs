@@ -1,4 +1,4 @@
-use super::handoff::{decide, take_over, terminate_and_wait, Decision, HandoffError};
+use super::handoff::{decide, stop_and_wait, take_over, Decision, HandoffError};
 use crate::core::agent_sessions::{turn_activity, AgentRoots, LiveClaudeSession, TurnActivity};
 use std::time::Duration;
 
@@ -56,20 +56,30 @@ fn decides_when_a_conversation_can_be_taken_over() {
 }
 
 #[test]
-fn stops_a_process_and_waits_for_it_without_polling() {
+fn stops_a_process_gently_and_waits_for_it_without_polling() {
+    use std::os::unix::process::ExitStatusExt;
     let mut child = std::process::Command::new("sleep").arg("30").spawn().unwrap();
-    assert!(terminate_and_wait(child.id() as i32, Duration::from_secs(5)));
-    assert!(!child.wait().unwrap().success());
+    assert!(stop_and_wait(child.id() as i32, Duration::from_secs(5), Duration::from_secs(5)));
+    assert_eq!(child.wait().unwrap().signal(), Some(libc::SIGINT), "asked gently first");
 }
 
 #[test]
-fn reports_a_process_that_ignores_the_stop_request() {
+fn stops_firmly_when_asking_gently_is_ignored() {
+    use std::os::unix::process::ExitStatusExt;
+    let mut deaf = std::process::Command::new("sh").args(["-c", "trap '' INT; sleep 30"]).spawn().unwrap();
+    std::thread::sleep(Duration::from_millis(200)); // let the shell install its trap
+    assert!(stop_and_wait(deaf.id() as i32, Duration::from_millis(300), Duration::from_secs(5)));
+    assert_eq!(deaf.wait().unwrap().signal(), Some(libc::SIGTERM));
+}
+
+#[test]
+fn reports_a_process_that_ignores_every_stop_request() {
     let mut stubborn = std::process::Command::new("sh")
-        .args(["-c", "trap '' TERM; sleep 30"])
+        .args(["-c", "trap '' INT TERM; sleep 30"])
         .spawn()
         .unwrap();
-    std::thread::sleep(Duration::from_millis(200)); // let the shell install its trap
-    assert!(!terminate_and_wait(stubborn.id() as i32, Duration::from_millis(500)));
+    std::thread::sleep(Duration::from_millis(200));
+    assert!(!stop_and_wait(stubborn.id() as i32, Duration::from_millis(300), Duration::from_millis(300)));
     stubborn.kill().unwrap();
     let _ = stubborn.wait();
 }
