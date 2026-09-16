@@ -39,7 +39,7 @@ work reliably: Claude sometimes refuses it as unverified, which protects you.
 | M0 | Go/no-go spikes for Claude delivery | ✅ Done: continue the conversation, not peer messages |
 | M1 | Mac-only loop: send to Claude, get the reply | ✅ Done |
 | M2 | Phone ↔ Mac agent channel, sessions on the phone | ✅ Done 2026-09-16 (verified from the phone) |
-| M3 | Push-to-talk with spoken reply (**first usable slice**) | ⬜ |
+| M3 | Push-to-talk with spoken reply (**first usable slice**) | 🧪 Built 2026-09-17 (Mac `7e03161`, phone `765a381`); waiting for the on-phone check |
 | M3b | Kokoro voice | ⬜ |
 | M4 | Away from home (Tailscale) | ⬜ |
 | M5 | Steer/queue + Codex, OpenCode, Factory | ⬜ |
