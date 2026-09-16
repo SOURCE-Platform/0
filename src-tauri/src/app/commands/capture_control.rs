@@ -1,3 +1,4 @@
+use crate::app::capture::display_choice::online_display_or_main;
 use crate::app::capture::sampler::{spawn_desktop_sampler, start_multimodal_capture};
 use crate::app::capture::status::{build_channel_statuses, build_desktop_capture_status};
 use crate::app::state::{AppState, ChannelStatusDto, DesktopCaptureStatusDto};
@@ -79,21 +80,23 @@ pub async fn start_desktop_capture(
                     "Screen capture is enabled, but no display is selected. Select a display in Settings."
                         .to_string(),
                 ),
-                Some(display_id) => match recorder.start_recording(display_id).await {
-                    Ok(()) => Ok(display_id),
-                    Err(CaptureError::PermissionDenied(message)) => Err(message),
-                    Err(other) => Err(format!("Failed to start screen recording: {other}")),
-                },
+                Some(saved) => {
+                    let displays = recorder.get_available_displays().await.unwrap_or_default();
+                    let display_id = online_display_or_main(&displays, saved).unwrap_or(saved);
+                    match recorder.start_recording(display_id).await {
+                        Ok(()) => Ok(displays.into_iter().find(|item| item.id == display_id)),
+                        Err(CaptureError::PermissionDenied(message)) => Err(message),
+                        Err(other) => Err(format!("Failed to start screen recording: {other}")),
+                    }
+                }
             };
             match started {
-                Ok(display_id) => {
+                Ok(display) => {
                     started_any_channel = true;
-                    if let Ok(displays) = recorder.get_available_displays().await {
-                        if let Some(display) = displays.iter().find(|item| item.id == display_id)
-                        {
-                            state.desktop_capture_runtime.write().await.display_name =
-                                Some(display.name.clone());
-                        }
+                    if let Some(display) = display {
+                        let mut runtime = state.desktop_capture_runtime.write().await;
+                        runtime.display_id = Some(display.id);
+                        runtime.display_name = Some(display.name);
                     }
                 }
                 // A screen problem (missing macOS grant, no display) blocks
