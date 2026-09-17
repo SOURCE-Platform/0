@@ -2,6 +2,8 @@
 
 // Keyboard listeners
 #[cfg(target_os = "macos")]
+pub mod key_codes;
+#[cfg(target_os = "macos")]
 pub mod keyboard_macos;
 #[cfg(target_os = "macos")]
 pub use keyboard_macos::MacOSKeyboardListener;
