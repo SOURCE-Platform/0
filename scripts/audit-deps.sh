@@ -23,7 +23,12 @@ fi
 
 # Known vulnerabilities fail the check (cargo audit exits nonzero);
 # unmaintained/soundness notices are printed as warnings only.
-cargo audit
+#
+# RUSTSEC-2023-0071 (rsa, Marvin timing attack): no fixed release exists,
+# and rsa is not in the macOS build graph (`cargo tree -i rsa` is empty —
+# it enters the lockfile only via target-gated, non-shipped sqlx backends;
+# SOURCE ships sqlite only). Re-evaluate on every sqlx/rustls upgrade.
+cargo audit --ignore RUSTSEC-2023-0071
 
 # Supply-chain review gate: the current graph is exempted as the bootstrap
 # baseline (supply-chain/config.toml); any NEW dependency added to
