@@ -1,7 +1,22 @@
 # O / Source Credential Vault — Implementation Specification
 
-**Status:** Implementation specification v0.1 — pre-implementation. Nothing in
-this document is implemented authorization.
+**Status:** Implementation specification v0.2 — pre-implementation. Nothing in
+this document is implemented authorization. Supersedes v0.1.
+**v0.2 changes (from the v0.1 adversarial review, findings F1–F16):**
+helper-owned secure panel for all MP/RK entry (F3, §1.5/§1.7); per-device
+backup credentials with server-enforced revocation, recovery credentials,
+and replay protection (F1, §2.2/§2.9/§11.4); unambiguous recovery-epoch
+binding (F2, §4.3–4.5); nm-host caller-origin + parent verification with
+a prototype gate (F4, §9.2); randomized-ECDSA/low-S/65-byte key model
+(F5, §2.7); Secure-Enclave HPKE decapsulation adapter with a hard pre-gate
+PoC (F6, §2.12); HMAC-under-VK import fingerprints (F7, §10.3); causal
+revision-graph merge replacing timestamp picks (F8, §3.2/§11.3);
+extension-independent `save_update` confirmation (F9, §9.8); byte-exact
+object header (F10, §3.7); accurate LA policy usage (F11, §6.4); honest
+Argon2 attribution + calibration gate (F12, §2.3); two-class freshness
+honesty (F13, §11.7); OQ-1/2/3 locked (F14, §21); test-plan expansion —
+new families NM/IM/SY/FR/UI plus new CR/RG/BR/BK rows (F15, §16);
+ordered dependency/HPKE policy (F16, §17.4).
 **Canonical architecture:** `docs/security/credential-vault-security-architecture.md`
 v0.3. Where this specification and v0.3 conflict, v0.3 controls and this
 document must be corrected — except where this document records a genuine
@@ -153,19 +168,21 @@ human-safe context.
 |---|---|---|---|
 | `hello` | handshake | any | `{proto, client:"app"}` |
 | `get_state` | state machine state | any | |
-| `unlock` | unlock via LA presence or phone approval | LOCKED | never carries MP for routine unlock |
-| `unlock_with_recovery` | MP or RK entry (setup/recovery/fallback) | LOCKED/RECOVERING | `{kind:"mp"\|"rk", secret}` — secret zeroized by both sides after use |
+| `unlock` | unlock via LA presence or phone approval | LOCKED | no secret material involved |
+| `setup_vault` | first-device creation | UNINITIALIZED | helper's own secure panel collects the new MP and displays/prints the RK (§1.7); main receives status only |
+| `begin_recovery_unlock` | MP or RK entry for unlock/recovery/fallback | LOCKED/RECOVERING/UNINITIALIZED | `{kind:"mp"\|"rk"}` only — the helper collects the secret in its own panel; response is a status code, never an echo |
 | `lock` | immediate lock | any | |
 | `list_items` | metadata list | UNLOCKED | `[{ref, kind, title, username, hosts}]`, no secrets |
-| `add_item` / `update_item` | create/modify record | UNLOCKED + fresh presence | full record crosses IPC once |
-| `delete_item` | tombstone record | UNLOCKED + fresh presence | |
+| `add_item` / `update_item` | create/modify record | UNLOCKED + fresh presence | one record's fields cross IPC once, main→helper only |
+| `delete_item` | delete record (tombstone revision) | UNLOCKED + fresh presence | §3.2 revision model |
+| `resolve_conflict` | pick/merge a conflicted record | UNLOCKED + fresh presence | `{ref, chosen_rev, edits?}` → new merge revision (§3.2) |
 | `reveal` | show one password in capture-suppressed UI | UNLOCKED + fresh presence + capture check | one-shot, §14 fail-closed |
-| `change_master_password` | re-wrap VK under new PK | UNLOCKED + fresh presence | old + new MP cross once |
-| `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | returns new RK words once for printing |
-| `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | revocation triggers VK rotation |
+| `change_master_password` | re-wrap VK under new PK | UNLOCKED + fresh presence | helper panel collects old+new MP; main sees status only |
+| `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel displays/prints the new RK; main sees status only |
+| `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | revocation triggers VK rotation + provider credential revocation (§11.4) |
 | `begin_enrollment` | start §5 flow | UNLOCKED + fresh presence | returns QR payload for rendering |
 | `relay_to_device` / `relay_from_device` | opaque vault-protocol frames for iPhone | any | main is a dumb pipe (§5, §6) |
-| `backup_snapshot_prepare` | produce encrypted objects + signed manifest | UNLOCKED | main then uploads (§11) |
+| `backup_snapshot_prepare` | produce encrypted objects + signed manifest + this device's backup credential id | UNLOCKED | main then uploads (§11) |
 | `backup_state_apply` | verify + import downloaded state | UNLOCKED/RECOVERING | rollback/fork checked in helper |
 | `import_dashlane` | §10 import from user-picked path | UNLOCKED | helper opens the file itself |
 | `approval_result` | deliver signed iPhone approval | AUTHORIZING | §6.5 |
@@ -175,20 +192,25 @@ human-safe context.
 | op | Purpose | Notes |
 |---|---|---|
 | `hello` | `{proto, client:"nm-host"}` | |
-| `fill_candidates` | `{origin, tab_url}` → `{request_id, accounts:[{ref,title,username}]}` or `{locked:true}` | no secrets; origin checked against tab_url (§9.4) |
+| `fill_candidates` | `{origin, tab_url}` → `{request_id, accounts:[{ref,title,username}]}` or `{locked:true}` | no secrets; origin checked against tab_url (§9.4); conflicted records excluded (§3.2) |
 | `fill_authorize` | `{request_id, ref, method:"local"\|"iphone"}` → presence → `{username, password, expires_in}` | one-shot; consumed on response |
-| `save_new` | `{origin, username, password, title}` → `{ref}` | requires UNLOCKED |
-| `save_update` | `{ref, password}` | requires UNLOCKED |
+| `save_new` | `{origin, username, password, title}` → `{ref}` | requires UNLOCKED (user just typed the value) |
+| `save_update` | `{ref, origin, password}` → held pending | requires UNLOCKED **plus trusted confirmation** (§9.8): LA or iPhone approval bound to origin/ref/action; the password is applied only after approval and never shown in the confirmation UI |
 
 **Helper → main app events:** `state` (state transitions), `locked`,
 `approval_requested` (main relays to iPhone, §6.5), `enrollment_progress`,
 `backup_progress`, `registry_changed`, `capture_unsafe` (a display-class
-release was refused).
+release was refused), `secure_panel_visible` (`{visible: bool}` — main bumps
+the sensitive-surface counter so Source capture suppresses while a
+helper-owned secret panel is up, §14.2).
 
-**Never across IPC, in either direction, in any op:** VK, PK, device private
-keys, bulk record export, password-history dumps, decrypted-notes search,
+**Never across IPC, in either direction, in any op:** VK, PK, MP, RK
+plaintext, RK words, RecoveryWrapPayload/DeviceEnvelopePayload bytes, device
+private keys, backup credentials, bulk record export, password-history
+dumps, decrypted-notes search,
 any "dump all" operation, any op returning more than one record's secret
-fields. There is intentionally **no** `export_vault` op in v1.
+fields. MP/RK enter and leave only through helper-owned native UI (§1.7).
+There is intentionally **no** `export_vault` op in v1.
 
 ### 1.6 Process lifecycle
 
@@ -213,6 +235,51 @@ fields. There is intentionally **no** `export_vault` op in v1.
   the §6 user-presence path (device envelope unwrap is itself ACL-gated,
   §2.8).
 
+### 1.7 Helper-owned native secure UI
+
+The main process's WebView never renders fields that collect or display
+the root recovery secrets. The helper — an LSUIElement app that can
+activate to present a modal panel (the `pinentry-mac` pattern) — owns
+native, capture-protected UI for:
+
+- initial master-password creation (with confirmation field);
+- master-password entry (recovery/fallback unlock);
+- master-password change (old + new);
+- Recovery Key entry (24-word field with offline checksum validation);
+- Recovery Key display and printing (NSPrintOperation from the helper);
+- trusted confirmations that must show transaction details outside any
+  browser/extension context (§9.8 update confirmation text).
+
+Mechanics:
+
+- Panels are `NSSecureTextField`-based wherever a secret is typed, which
+  sets secure event input — Source's keyboard recorder already suppresses
+  on that signal (`IsSecureEventInputEnabled` gate,
+  `platform/input/keyboard_macos.rs`).
+- While a helper secret panel is visible the helper emits
+  `secure_panel_visible`; the main app raises the sensitive-surface
+  counter (`core/capture_exclusions.rs`), so Source's screen capture and
+  one-shot frame APIs suppress for the exact visibility window (§14).
+- The panel activates the helper app (`NSApplication.activate`), presents
+  modally, and resigns on completion. Focus theft is mitigated by
+  activating only on an explicit user-initiated op and by the panel
+  naming the requesting flow in its title.
+- The main process receives status codes only: `success`, `cancelled`,
+  `wrong_credential`, `recovery_complete`. It never receives MP, PK, RK
+  plaintext, RK words, RecoveryWrapPayload/DeviceEnvelopePayload bytes, or VK.
+- Printing: the recovery sheet is rendered by the helper and sent
+  directly to `NSPrintOperation` (never via the WebView, never written to
+  a temp PDF). The sheet includes the vault_id, current manifest
+  generation, and an 8-hex-char prefix of the registry head hash as a
+  user-held freshness checkpoint (§11.7).
+- iOS has no process split: the Source iOS app itself is the vault
+  boundary on the phone (no capture stack, no agent surface there); MP/RK
+  entry on iOS uses the app's own secure fields.
+
+There is no macOS platform constraint forcing MP/RK through the main
+process; the pinentry-style helper panel is the normative design, not a
+fallback.
+
 ---
 
 ## 2. Cryptographic data model
@@ -228,8 +295,8 @@ composition.
 | Password KDF | Argon2id (RFC 9106) | RustCrypto `argon2` |
 | Record/wrap/metadata AEAD | XChaCha20-Poly1305 (RFC 8439 + XChaCha draft) | RustCrypto `chacha20poly1305` |
 | Subkey derivation / KEK derivation | HKDF-SHA-256 (RFC 5869) | RustCrypto `hkdf` + `sha2` |
-| Device signatures | ECDSA over P-256 with SHA-256, deterministic (RFC 6979), low-S enforced | RustCrypto `p256` / Apple SE + CryptoKit |
-| Device key agreement envelopes | HPKE base mode: DHKEM(P-256, HKDF-SHA-256), HKDF-SHA-256, ChaCha20-Poly1305 (RFC 9180) | `hpke` crate / CryptoKit HPKE (iOS 17+) |
+| Device signatures | ECDSA over P-256 with SHA-256; randomized signing accepted; canonical low-S wire form (§2.7) | RustCrypto `p256` (verify/normalize) / Apple SE + CryptoKit (sign) |
+| Device key agreement envelopes | HPKE base mode: DHKEM(P-256, HKDF-SHA-256), HKDF-SHA-256, ChaCha20-Poly1305 (RFC 9180); 65-byte uncompressed key serialization | `hpke` crate (seal; software open for tests) + reviewed SE-decapsulation adapter (§2.12) / CryptoKit or Security.framework composition on iOS (proved in the §6/Phase-E PoC) |
 | Hashes | SHA-256 | `sha2` / CryptoKit |
 | RNG | OS CSPRNG | `rand::rngs::OsRng` / `SecRandomCopyBytes` |
 | Constant-time compare | `subtle` / manual | tokens, secrets, SAS |
@@ -248,27 +315,45 @@ composition.
   RK  = 32 bytes OsRng, shown as BIP-39 words   (never stored by Source)
 ```
 
-Every wrap seals the same **WrapPayload**:
+Two payload shapes exist, deliberately different (v0.2 finding 1 — a
+shared, never-rotated backup secret inside every wrap made a compromised
+device's backup authorization unrevocable):
 
 ```text
-WrapPayload = {
-  vk:                32 bytes,
-  backup_auth:       32 bytes,   // §11.4 backup request authentication
-  wrapped_at:        u64,        // unix seconds
-  vk_generation:     u32         // matches header.json
-}
+RecoveryWrapPayload (password.wrap / recovery.wrap only):
+{ vk: 32 B, wrapped_at: u64, vk_generation: u32 }
+
+DeviceEnvelopePayload (devices/<id>.wrap only):
+{ vk: 32 B, device_backup_cred: 32 B, wrapped_at: u64, vk_generation: u32 }
 ```
 
-`backup_auth` rides every wrap so that any recovery path (MP, RK, or device
-envelope) also restores the ability to authenticate to the backup service
-without that service ever seeing MP/RK/VK.
+- **Recovery wraps carry no backup credential.** The recovery path
+  *derives* its backup credentials from PK / RK (§11.4), so nothing
+  backup-related is stored where a device could keep it.
+- **Device envelopes carry a per-device backup credential**, generated
+  by the authorizing device at enrollment and revocable at the provider
+  (§11.4). A revoked device's credential stops authenticating; VK
+  rotation remains the cryptographic backstop.
+- No wrap ever contains MP, PK, RK, or device private keys.
 
 ### 2.3 Argon2id parameters and upgrade path
 
 - v1 parameters: `m = 64 MiB`, `t = 3`, `p = 1`, output 32 bytes, random
-  16-byte `kdf_salt` (OWASP/RFC 9106 "first recommended" class, calibrated
-  on the slowest supported device during Phase B; target ≤ 1 s on a 2020
-  MacBook Air, ≤ 2 s on the oldest supported iPhone).
+  16-byte `kdf_salt`. **Attribution (corrected, v0.2 finding 12):** RFC
+  9106's recommended profiles are `m=64 MiB, t=3, p=4` (first) and
+  `m=19 MiB, t=2, p=1` (second); this tuple matches neither exactly — it
+  is an application-specific configuration that keeps the first
+  profile's memory cost (the dominant hardness parameter) while using
+  one lane for predictable latency on memory-constrained devices.
+- **Calibration gate (Phase B, before parameters freeze):** benchmark
+  Argon2id on every supported Mac class and iPhone class; record unlock/
+  recovery latency and memory pressure; choose the strongest parameters
+  whose interactive cost stays ≤ 1 s on a 2020 MacBook Air and ≤ 2 s on
+  the oldest supported iPhone; commit the benchmark table alongside the
+  chosen tuple. Recovery security must not be weakened for speed — if a
+  device class can't meet the latency target at `m=64 MiB`, prefer
+  raising its latency budget over lowering memory cost, and document the
+  choice.
 - Storage: `header.json` carries `{kdf: "argon2id", kdf_version: 1, m, t,
   p, salt}`. `password.wrap` carries a copy of the same parameter block.
 - Upgrade: parameter changes bump `kdf_version`; the next successful MP
@@ -303,7 +388,7 @@ password.wrap (JSON):
   wrap_key = HKDF-SHA256(ikm=PK, salt=argon2id.salt,
                          info="ov0/wrap/mp/v1")           // 32 bytes
   ct = XChaCha20-Poly1305-Seal(wrap_key, nonce=random24,
-       plaintext=WrapPayload, aad="ov0/wrap" || vault_id || "mp")
+       plaintext=RecoveryWrapPayload, aad="ov0/wrap" || vault_id || "mp")
 
 recovery.wrap: identical shape, kind="rk",
   wrap_key = HKDF-SHA256(ikm=RK_bytes, salt=random16-stored,
@@ -343,15 +428,31 @@ nonces.
 - **Signing key:** P-256 ECDSA, SE-generated (`kSecAttrTokenIDSecureEnclave`,
   `SecKeyCreateRandomKey`, `privateKeyUsage` sign). Non-exportable.
 - **Agreement key:** P-256 ECDH, SE-generated, distinct key. Used only via
-  HPKE DHKEM decapsulation (`SecKeyCopyKeyExchangeResult` on the SE key).
+  HPKE DHKEM decapsulation; the private DH operation runs inside the
+  Secure Enclave (`SecKeyCopyKeyExchangeResult` for raw DH output), never
+  in software (§2.12).
 - Never one key for both roles (v0.3 C14).
 - SE access control: `.privateKeyUsage` + `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`;
   the agreement key adds no biometric ACL of its own (presence is enforced
   explicitly by LA at the operation level, §6, so prompts are uniform and
   testable across devices).
-- Public keys on the wire: ANSI X9.63 compressed points (33 bytes).
-- Signatures on the wire: fixed 64-byte `r || s`, low-S required;
-  verifiers reject high-S (malleability).
+- **Signature policy (corrected, v0.2 finding 5):** Secure Enclave /
+  CryptoKit ECDSA signing is randomized, not RFC 6979 deterministic. The
+  protocol therefore depends only on: valid P-256 ECDSA over the SHA-256
+  domain-separated digest, and the canonical wire form below. Producers
+  **normalize to low-S before embedding** (`s' = min(s, n−s)`; Rust:
+  `p256::ecdsa::Signature::normalize_s()`; Swift: normalize the `s` half of
+  `rawRepresentation` before TLV encoding). Verifiers **reject high-S** so
+  the bytes inside hash-chained objects are canonical and a relay cannot
+  re-encode an entry to a different hash. Repeated signing of the same
+  message may yield different valid signatures; tests verify signatures,
+  never compare them for equality.
+- **Public keys on the wire (corrected, v0.2 finding 5):** both roles use
+  the 65-byte uncompressed X9.63 form (`0x04 ‖ X ‖ Y`). RFC 9180
+  DHKEM(P-256, HKDF-SHA256) serializes KEM public keys uncompressed, and
+  using one encoding for both roles removes a conversion step that would
+  otherwise live on the verification path. (CryptoKit's
+  `x963Representation` is exactly this form.)
 
 ### 2.8 Keychain usage
 
@@ -361,9 +462,13 @@ nonces.
 | SE keys (both) | key class | §2.7 | device identity |
 | `com.racker.zero.vault.helper-prefs` | generic password | `WhenUnlockedThisDeviceOnly` | auto-lock minutes, non-secret prefs |
 
-The Keychain never stores VK, WrapPayload, MP, or RK. Unlock uses the
+The Keychain never stores VK, wrap payloads, MP, RK, or backup
+credentials. Unlock uses the
 device envelope: HPKE-decapsulate `devices/<self>.wrap` with the SE
-agreement key after an LA presence check. If the SE key is missing
+agreement key after an LA presence check. The same decapsulation also
+yields the device's current `device_backup_cred` (§2.2), so the
+credential needs no independent Keychain slot and is re-issued at
+enrollment/rotation. If the SE key is missing
 (device restored from backup, key wiped), the device must re-enroll or
 recover — documented behavior, not an error.
 
@@ -377,6 +482,8 @@ recover — documented behavior, not an error.
 | `ov0/meta/v1` | metadata key from VK |
 | `ov0/recovery-auth/v1` | registry recovery-epoch proof key from VK (§4.5) |
 | `ov0/locate/mp/v1`, `ov0/locate/rk/v1` | recovery locator keys from PK / RK-derived key (§12 scenario 3) |
+| `ov0/backup-auth/mp/v1`, `ov0/backup-auth/rk/v1` | recovery-class backup credentials from PK / RK-derived key (§11.4) |
+| `ov0/import-fingerprint/v1` | import idempotency HMAC key from VK (§10.3) |
 | `ov0/enroll/sas/v1` | SAS display bytes from enrollment transcript |
 | `ov0/approval/…` | not used — approvals are plain ECDSA over TLV (§6.5) |
 
@@ -399,8 +506,8 @@ new_device_id || enrollment_nonce`.
 
 ### 2.11 Memory-lifetime rules
 
-- All secret buffers (`VK`, `PK`, `RK_bytes`, `WrapPayload`, record
-  plaintext, `backup_auth`) live in `zeroize::Zeroizing`/`secrecy` types.
+- All secret buffers (`VK`, `PK`, `RK_bytes`, wrap payloads, record
+  plaintext, backup credentials) live in `zeroize::Zeroizing`/`secrecy` types.
 - Transient secrets cross a trust hop exactly once: derive → use →
   zeroize. The helper never caches MP/PK/RK beyond the call that used
   them (state machine §13 reflects this).
@@ -414,6 +521,39 @@ new_device_id || enrollment_nonce`.
   code; process death is the zeroization of last resort. Release builds
   compile the helper with `panic = "abort"`, `debug = false`, and no
   secret-bearing type implements `Debug`.
+
+### 2.12 HPKE with Secure-Enclave-backed agreement keys
+
+Problem (v0.2 finding 6): a non-exportable SE agreement key cannot be
+handed to any HPKE library's open/decap API, because those APIs take a
+software private key. The decapsulation DH must happen inside the
+Secure Enclave. This is proved, not assumed:
+
+- **Interop proof-of-concept (hard pre-gate to Phase E):** a dedicated
+  PoC must demonstrate, with a real Secure-Enclave-resident key:
+  (a) Rust `hpke` crate seal → open on macOS with the private DH computed
+  by `SecKeyCopyKeyExchangeResult` on an SE key; (b) Apple-side seal →
+  Rust open; (c) the same against CryptoKit on iOS (CryptoKit HPKE with
+  `SecureEnclave.P256.KeyAgreement.PrivateKey` if supported, otherwise
+  raw-DH + HKDF composition); both directions against shared RFC 9180
+  vectors. Phase E code does not start until this PoC is green and its
+  vectors are committed (XV-HPKE-SE).
+- **Adapter design:** decapsulation with an external DH is isolated
+  behind a tiny reviewed adapter (`vault-helper/src/crypto/hpke_se.rs`,
+  target ≤ 150 lines): `Z` comes from the SE; the adapter performs only
+  RFC 9180's KEM `ExtractAndExpand` (HKDF-SHA-256 over the standard KEM
+  context) and the base-mode key schedule, then opens with
+  `chacha20poly1305`. It is verified against the official RFC 9180 test
+  vectors (running the adapter with the vector's private scalar must
+  reproduce the vector's shared secret and plaintext).
+- **Encapsulation always uses the reviewed `hpke` crate** (seal needs
+  only the recipient public key, so it never touches the SE).
+- **Dependency policy consequence:** if the `hpke` crate review or the
+  PoC fails, the next step is evaluating maintained alternatives — not
+  automatically hand-composing HPKE (§17.4 policy, v0.2 finding 16). The
+  adapter above is the *only* hand-assembled standards composition in the
+  design; it requires the RFC vectors plus independent review before real
+  credentials (§19).
 
 ---
 
@@ -447,30 +587,74 @@ search roots, and from timeline/export paths (§14).
 ### 3.2 SQLite schema (vault.db, `user_version = 1`)
 
 ```sql
-CREATE TABLE records (
-  record_id     TEXT PRIMARY KEY,   -- uuid
-  kind_tag      INTEGER NOT NULL,   -- 1=login, 2=card (plaintext; §3.4)
+CREATE TABLE record_revs (           -- every revision of every record
+  rev_hash      BLOB PRIMARY KEY,    -- 32 B, content commitment below
+  record_id     TEXT NOT NULL,       -- uuid
+  parent_revs   BLOB NOT NULL,       -- concatenated 32-byte parent rev_hash(es)
+  author_device TEXT NOT NULL,       -- device_id of the writer
+  counter       INTEGER NOT NULL,    -- per-(record_id, author_device) monotonic
+  deleted       INTEGER NOT NULL DEFAULT 0,  -- 1 = tombstone revision
+  kind_tag      INTEGER NOT NULL,    -- 1=login, 2=card (plaintext; §3.4)
   vk_generation INTEGER NOT NULL,
   schema_version INTEGER NOT NULL,
   nonce         BLOB NOT NULL CHECK(length(nonce)=24),
-  ct            BLOB NOT NULL,      -- record JSON under record_key
+  ct            BLOB NOT NULL,       -- record JSON under record_key
   meta_nonce    BLOB NOT NULL CHECK(length(meta_nonce)=24),
-  meta_ct       BLOB NOT NULL,      -- metadata JSON under meta_key
-  created_at    INTEGER NOT NULL,
-  updated_at    INTEGER NOT NULL
+  meta_ct       BLOB NOT NULL,       -- metadata JSON under meta_key
+  created_at    INTEGER NOT NULL,    -- display/sort only, never merge authority
+  updated_at    INTEGER NOT NULL     -- display/sort only, never merge authority
 );
-CREATE TABLE tombstones (
-  record_id     TEXT PRIMARY KEY,
-  deleted_at    INTEGER NOT NULL,
-  vk_generation INTEGER NOT NULL    -- generation that processed the delete
+CREATE INDEX idx_revs_record ON record_revs(record_id);
+CREATE TABLE record_tips (           -- current accepted tip per record
+  record_id TEXT PRIMARY KEY,
+  tip_rev   BLOB                     -- NULL while conflicted
 );
-CREATE TABLE kv (                   -- helper-internal non-secret bookkeeping
+CREATE TABLE record_conflicts (      -- open conflict tips awaiting the user
+  record_id TEXT NOT NULL,
+  rev_hash  BLOB NOT NULL,
+  PRIMARY KEY (record_id, rev_hash)
+);
+CREATE TABLE import_log (            -- §10.3; no plaintext-derived identity
+  fingerprint BLOB PRIMARY KEY,      -- HMAC under a VK-derived key
+  identity_ct BLOB NOT NULL          -- identity string sealed under meta_key
+);
+CREATE TABLE kv (                    -- helper-internal non-secret bookkeeping
   key   TEXT PRIMARY KEY,
   value BLOB NOT NULL
 );
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 ```
+
+**Revision model (v0.2 finding 8 — wall-clock merge removed).** Each
+revision is content-committed:
+
+```text
+rev_hash = SHA-256("ov0/rev/v1" ‖ record_id ‖ parent_revs ‖ author_device
+                   ‖ u64be(counter) ‖ u8(deleted) ‖ SHA-256(ct) ‖ SHA-256(meta_ct))
+```
+
+Merge rules (deterministic — any two devices with the same revisions
+compute the same result):
+
+- **Fast-forward:** an incoming revision whose `parent_revs` include the
+  current tip applies cleanly and becomes the tip.
+- **Concurrent edits** (neither revision is an ancestor of the other):
+  `tip_rev` becomes NULL, both revisions enter `record_conflicts`, and
+  the item shows a conflict badge. Source never silently picks a winner
+  for a password/card record — not by timestamp, not by device, not at
+  all. Resolution is `resolve_conflict` (§1.5): the user picks a version
+  or edits; the result is a **new merge revision** whose parents are all
+  conflict tips.
+- **Tombstones:** a delete revision wins iff it fast-forwards (causally
+  after all known edits). Concurrent (delete ‖ edit) is a conflict,
+  surfaced like any other. Devices refuse to author an edit on a record
+  they know is tombstoned; an edit claiming causal ancestry after a
+  tombstone is treated as a conflict (conservative, never resurrect).
+- **Equivocation:** two revisions from the same author with equal
+  `counter` but different content are fork evidence → conflict with a
+  tamper flag in diagnostics.
+- Timestamps remain for display/sorting only.
 
 `PRAGMA secure_delete = ON`. The DB file never leaves the device except as
 per-record ciphertext objects in backups (§11); the DB itself is not
@@ -488,8 +672,9 @@ provider — accepted and documented in v0.3 F15.
 | Field | Where | Plaintext? | Why |
 |---|---|---|---|
 | `record_id` | db, backup keys | yes | needed for sync/backup addressing; random, unlinkable |
+| `rev_hash`, `parent_revs`, `author_device`, `counter`, `deleted` | db, backup objects | yes | the merge graph must be computable without decrypting; leaks edit-pattern metadata (who edited, roughly when, how often) — accepted, v0.3 F15 class |
 | `kind_tag` | db | yes | chooser/list rendering without full metadata decrypt; leaks login-vs-card only |
-| `created_at`, `updated_at` | db | yes | sync conflict resolution + UI sorting; second precision is required for merge correctness |
+| `created_at`, `updated_at` | db | yes | UI display/sorting only — explicitly **not** merge authority (§3.2) |
 | ciphertext sizes | db/backup | yes | unavoidable; documented metadata leak |
 | title, username, hosts/URLs, notes | `meta_ct` / `ct` | **no** | metadata minimization (v0.3 §7) |
 | password, card fields | `ct` | **no** | — |
@@ -522,12 +707,37 @@ provider — accepted and documented in v0.3 F15.
 
 ### 3.7 Backup-compatible serialization
 
-Each record's backup object is exactly its `(nonce || ct || meta_nonce ||
-meta_ct)` concatenation plus a 16-byte object header
-`{"ov0obj", u16 version, u16 kind_tag, u32 vk_generation, u64 updated_at}`
-— all fields already plaintext-classified. The backup store therefore
-needs no re-encryption and no transformation; the helper emits objects
-byte-identical between local storage and upload.
+Each revision's backup object is a byte-exact, self-describing binary
+(corrected byte accounting, v0.2 finding 10):
+
+```text
+offset  size    field
+0       8       magic "OV0OBJ01"  — trailing "01" is the object-format version
+8       1       kind_tag (1=login, 2=card)
+9       1       flags (0x00; reserved)
+10      4       vk_generation, u32 BE
+14      8       revision counter, u64 BE
+22      16      author device_id (uuid bytes)
+38      1       parent_count n (0–8)
+39      32×n    parent rev_hashes
+39+32n  24      nonce
+…       4       ct_len, u32 BE
+…       ct_len  ct
+…       24      meta_nonce
+…       4       meta_ct_len, u32 BE
+…       …       meta_ct
+```
+
+- Fixed header before the variable parent list is **39 bytes**; total
+  object size is bounded at 1 MiB; parsers must enforce `parent_count ≤
+  8`, length consistency, and no trailing bytes.
+- Unknown magic (including a different version suffix) → `FORMAT_TOO_NEW`,
+  never a best-effort parse.
+- All header fields are plaintext-classified (§3.4). Object key:
+  `objects/rec/<record_id>/<rev_hash hex>` — content-addressed, so
+  conflicting revisions coexist without clobbering.
+- The helper emits objects byte-identical between local storage and
+  upload; the provider needs no transformation and learns nothing new.
 
 ---
 
@@ -570,27 +780,35 @@ Field     := Tag(u8) Len(u32be) Value
 
 | Tag | Field | Type | Present in |
 |---|---|---|---|
-| 0x01 | `entry_version` | u32 (=1) | all |
+| 0x01 | `entry_version` | u32 (=2) | all |
 | 0x02 | `seq` | u64, monotonic | all |
 | 0x03 | `prev_hash` | 32 B | all (genesis: 32 zero bytes) |
-| 0x04 | `epoch` | u64 | all |
+| 0x04 | `epoch` | u64 (new epoch on recovery_epoch) | all |
 | 0x05 | `kind` | u8: 1 genesis, 2 enroll, 3 revoke, 4 recovery_epoch | all |
-| 0x06 | `device_id` | 16 B uuid | genesis/enroll/revoke |
-| 0x07 | `device_name` | string ≤ 64 chars | genesis/enroll |
-| 0x08 | `platform` | u8: 1 macos, 2 ios | genesis/enroll |
-| 0x09 | `sign_pub` | 33 B compressed P-256 | genesis/enroll |
-| 0x0A | `agree_pub` | 33 B compressed P-256 | genesis/enroll |
-| 0x0B | `enrolled_at` | u64 | genesis/enroll |
-| 0x0C | `authorizer` | 16 B device_id, or 16 zero bytes for recovery_epoch | all |
+| 0x06 | `device_id` | 16 B uuid | all (recovery_epoch: the **new** device) |
+| 0x07 | `device_name` | string ≤ 64 chars | genesis/enroll/recovery_epoch |
+| 0x08 | `platform` | u8: 1 macos, 2 ios | genesis/enroll/recovery_epoch |
+| 0x09 | `sign_pub` | 65 B uncompressed P-256 (§2.7) | genesis/enroll/recovery_epoch |
+| 0x0A | `agree_pub` | 65 B uncompressed P-256 (§2.7) | genesis/enroll/recovery_epoch |
+| 0x0B | `enrolled_at` | u64 | genesis/enroll/recovery_epoch |
+| 0x0C | `authorizer` | 16 B device_id | genesis/enroll/revoke — **absent** in recovery_epoch |
 | 0x0D | `revoked_at` | u64 | revoke |
-| 0x0E | `recovery_proof` | 32 B (§4.5) | recovery_epoch |
-| 0x0F | `manifest_hash` | 32 B, head manifest at entry time | recovery_epoch |
-| 0x10 | `signature` | 64 B r‖s | all |
+| 0x0E | `recovery_proof` | 32 B (§4.5) | recovery_epoch only |
+| 0x0F | `manifest_hash` | 32 B, head manifest the transition binds | recovery_epoch only |
+| 0x10 | `signature` | 64 B r‖s, low-S (§2.7) | genesis/enroll/revoke — **absent** in recovery_epoch |
+| 0x11 | `prior_epoch` | u64 | recovery_epoch only |
+| 0x12 | `vault_id` | 16 B | recovery_epoch only |
+| 0x13 | `recovery_nonce` | 16 B, OsRng by recovering device | recovery_epoch only |
 
 ```text
-entry_hash = SHA-256("ov0/registry/entry/v1" || tlv(Entry))   -- includes signature
+entry_hash = SHA-256("ov0/registry/entry/v1" || tlv(Entry))   -- includes signature/proof
 sign_input = SHA-256("ov0/registry/sign/v1"  || tlv(Entry without field 0x10))
 ```
+
+`entry_version = 2` reflects the v0.2 changes: 65-byte key encoding, and
+recovery_epoch carrying a possession proof instead of a fake signature
+(v0.2 findings 2 and 5). There is no v1 registry in the wild; no
+migration exists.
 
 ### 4.4 Validity rules
 
@@ -599,39 +817,60 @@ A registry state is **valid** iff all hold:
 1. seq starts at 0 and increments by exactly 1; no gaps (truncation).
 2. Every `prev_hash` equals the previous entry's `entry_hash` (genesis:
    zeros).
-3. Every `signature` verifies with the `sign_pub` of the `authorizer`
-   device, which must be enrolled and not revoked at that `seq`.
+3. Every **genesis/enroll/revoke** entry carries a `signature` that
+   verifies with the `sign_pub` of the `authorizer` device, which must be
+   enrolled and not revoked at that `seq`. This rule does not apply to
+   recovery_epoch (rule 6 is its only authorization).
 4. Genesis: `authorizer` == own `device_id`; self-signature must verify.
 5. A revoked device appears in exactly one `revoke` entry; no enroll after
    revoke for the same `device_id` (re-enrollment = new device identity).
-6. `recovery_epoch` entries carry a valid `recovery_proof` (§4.5) and bump
-   `epoch`; entries after it must authorise from devices enrolled in the
-   new epoch.
+6. **Recovery transition (explicit):** a recovery_epoch entry carries no
+   `authorizer` and no `signature`. It is valid iff its `recovery_proof`
+   verifies (§4.5), `epoch == prior_epoch + 1`, and `manifest_hash` names
+   a manifest the verifier can independently confirm (§11.5). The entry
+   immediately following it must be an `enroll` for the same `device_id`
+   named in the recovery_epoch, with `authorizer == device_id`
+   (self-signed) — an **epoch-start enroll**, which is the only valid
+   self-signed enroll other than genesis. What authorizes the first
+   device of a recovered epoch is the vault-possession proof in the
+   recovery_epoch entry, full stop; subsequent entries are signed by
+   enrolled devices as usual.
 7. Exactly one tip: two distinct entries with the same `prev_hash` → fork
    (§4.6).
+8. All public key fields are exactly 65-byte uncompressed points that lie
+   on P-256; any other length or off-curve point invalidates the entry.
 
 ### 4.5 Recovery-epoch authorization
 
 When no trusted device survives, the recovering device proves possession of
 the vault itself (v0.3 §10.3: standard primitives, no Source escrow, MP-only
-must work):
+must work). The proof is an HMAC over the entry's TLV encoding, which binds
+exactly these fields: `vault_id`, `prev_hash` (the prior registry head),
+`manifest_hash` (the prior/current manifest the transition builds on),
+`prior_epoch`, `epoch` (new), the new device's `device_id`, `sign_pub`,
+`agree_pub`, and a fresh `recovery_nonce` (16 B OsRng, making each
+transition instance unique and copied proofs unreplayable):
 
 ```text
 recovery_key  = HKDF-SHA256(ikm=VK, salt=manifest_hash,
                             info="ov0/recovery-auth/v1")
 recovery_proof = HMAC-SHA256(recovery_key,
-                  "ov0/registry/recovery/v1" || tlv(entry without 0x0E/0x10))
+                  "ov0/registry/recovery/v1" || tlv(entry without field 0x0E))
 ```
 
-- Only a party that unwrapped the current VK (via MP, RK, or a surviving
-  device) can produce this proof for the manifest it binds to.
-- The new device's own `enroll` entry immediately follows at the new epoch;
-  the recovering device then rotates VK (§12 scenario 3/4) so the proof key
-  is retired with the old generation.
+- Only a party that unwrapped the VK protecting the bound manifest (via MP,
+  RK, or a surviving device) can produce a valid proof for it. (`VK` in the
+  derivation above is that recovered VK.)
+- Altering any bound field — including the new device's public keys —
+  invalidates the proof (test RG-08).
+- The epoch-start enroll (rule 6) then installs the new device, and the
+  recovering device immediately rotates VK (§12 scenario 3/4) so the proof
+  key is retired with the old generation.
 - An attacker holding an *old* VK/RK can forge an epoch bound only to the
   *old* `manifest_hash`; devices that have seen a newer manifest reject it
   (§4.6 rollback), and the recovery UI shows the bound manifest generation
-  so a stale-epoch fork is visible to the user.
+  so a stale-epoch fork is visible to the user. The freshness limit this
+  cannot fix on a fully fresh device is stated honestly in §11.7.
 
 ### 4.6 Fork, truncation, rollback
 
@@ -697,7 +936,7 @@ sequenceDiagram
     U->>MA: confirm → Mac LA presence (Touch ID)
     MA->>H: enroll_confirm
     H->>H: LA presence → sign enroll entry (Mac sign key)
-    H->>H: envelope = HPKE-Seal(iPhone agree_pub, WrapPayload)
+    H->>H: envelope = HPKE-Seal(iPhone agree_pub, DeviceEnvelopePayload{VK, fresh device_backup_cred})
     H-->>IP: relay {registry to head, envelope, manifest, records ciphertext}
     IP->>IP: verify registry chain + manifest; decapsulate envelope (SE agree key)
     IP->>IP: store envelope/wraps; Keychain ThisDeviceOnly
@@ -717,8 +956,9 @@ sequenceDiagram
 | Transcript | `SHA-256("ov0/enroll/transcript/v1" ‖ fp_bytes ‖ secret ‖ nonce_e ‖ nonce_n ‖ mac_device_id ‖ new_device_id ‖ sign_pub ‖ agree_pub)` — binds everything the user is about to approve |
 | SAS | 8 chars, alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (repo's existing unambiguous alphabet), from `HKDF-SHA256(transcript, salt=nil, info="ov0/enroll/sas/v1")` → 5 bytes → 40 bits → 8×5-bit indices. Longer than the legacy 4-char pair tag on purpose. |
 | SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned |
-| Key exchange | iPhone sends only public keys; private keys never leave SE |
-| Envelope | HPKE base (§2.7/§2.9), plaintext = WrapPayload, `info` per §2.9 |
+| Key exchange | iPhone sends only public keys (65-byte uncompressed, §2.7); private keys never leave SE |
+| Envelope | HPKE base (§2.7/§2.9), plaintext = `DeviceEnvelopePayload` = VK + a fresh random per-device backup credential, `info` per §2.9 |
+| Backup credential registration | after ENROLL ACK, the authorizer registers `{vault_id, new device_id, device_backup_cred}` at the provider, authenticated with its own device credential (§11.4) |
 | Initial vault transfer | registry JSONL to head + all current record objects (§3.7) + wraps; all ciphertext; sent only after SAS + LA confirm |
 | ENROLL_ACK | iPhone signs `SHA-256("ov0/enroll/ack/v1" ‖ registry_head_hash ‖ mac_device_id)` with its SE signing key; proves the private key exists in that device |
 | Replay prevention | single-use secret + fresh nonces + transcript binding + ACK binds head hash; a captured session replays to nothing |
@@ -735,7 +975,7 @@ sequenceDiagram
 | SAS mismatch | both sides warn, teardown | "Codes don't match — do not pair" (security UX, no retry button on same secret) |
 | Network drop mid-transfer | resume unsupported → restart with fresh secret | "Connection lost — start over" |
 | ACK invalid/never arrives | registry entry not written | "iPhone didn't confirm — try again" |
-| iPhone OS < required version | polite refusal before keygen | "Update iOS to continue" (§21 OQ-3) |
+| iPhone OS < required version | polite refusal before keygen | "Update iOS to continue" (floor per §21) |
 
 ### 5.4 First device
 
@@ -758,8 +998,8 @@ Chrome login page
  → extension: fill_candidates(origin, tab_url)
  → helper: origin policy check (§9.5) → matching accounts
  → extension popup: user picks "Sign in as alice@…"
- → helper: LA evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics,
-                             "Source Vault: fill <origin>")
+ → helper: LA evaluatePolicy(.deviceOwnerAuthentication,
+                             "Source Vault: fill <origin>")  → Touch ID sheet
  → success → helper decrypts exactly that record
  → helper → nm-host → extension fills the approved frame
  → fill authorization consumed (one-shot)
@@ -785,24 +1025,35 @@ Chrome login page
 ```text
 … same until account picked …
  → helper: LA evaluatePolicy(.deviceOwnerAuthentication, …)
-   (on a clamshell/no-Touch-ID Mac this natively prompts for the
-    Mac login password — no separate password UI is built)
+   (same policy as 6.A; with biometrics unavailable, macOS presents the
+    native login-password sheet — no separate password UI is built)
  → success → release one credential → consumed
 ```
 
 The Source master password is **not** offered in the fill UI. It appears
-only in setup, recovery, and the exceptional `unlock_with_recovery` path
-(e.g., Keychain/SE state lost).
+only inside helper-owned secure panels (§1.7): setup, recovery, and the
+panel-based unlock path used when Keychain/SE state is lost
+(`begin_recovery_unlock`).
 
 ### 6.4 User-presence policy resolution
 
-Helper-side order for a fill:
+Helper-side order for a fill (API model corrected, v0.2 finding 11):
+
 1. Caller asked `method:"iphone"` → §6.B (with fallback offer on timeout).
-2. Default: LA `.deviceOwnerAuthenticationWithBiometrics` with
-   `.deviceOwnerAuthentication` fallback behavior — Touch ID when present,
-   password when not. This is one LA call, so path 6.A and 6.C are the
-   same code path with OS-mediated UX.
-3. Card fills always force a fresh evaluation (no grace), action=`fill_card`.
+2. Default: one LA call, `LAPolicy.deviceOwnerAuthentication`. Apple's
+   behavior for this policy is exactly the intended UX: on a Touch ID Mac
+   it presents the biometric sheet (with a password fallback button); on
+   a clamshell / biometry-unavailable Mac it presents the native macOS
+   login-password sheet directly. Paths 6.A and 6.C are literally the
+   same code path; the OS picks the UI.
+3. `LAPolicy.deviceOwnerAuthenticationWithBiometrics` is **not** used for
+   fills: with biometrics unavailable it fails with
+   `biometryNotAvailable` instead of offering a password path, which
+   would silently kill the clamshell flow.
+4. No custom Mac-password prompt is built anywhere — password entry for
+   path C is rendered by macOS inside the LA sheet.
+5. iOS uses the same single policy: Face ID with passcode fallback.
+6. Card fills always force a fresh evaluation (no grace), action=`fill_card`.
 
 ### 6.5 Signed iPhone approval payload
 
@@ -815,7 +1066,7 @@ Canonical TLV (§4.2), tags ascending:
 | 0x03 | `mac_device_id` | 16 B | must equal this Mac |
 | 0x04 | `iphone_device_id` | 16 B | must be enrolled, not revoked |
 | 0x05 | `origin` | string ≤ 253 | canonical origin (§9.4) |
-| 0x06 | `action` | u8: 1 fill_password, 2 fill_card, 3 reveal, 4 unlock_vault | |
+| 0x06 | `action` | u8: 1 fill_password, 2 fill_card, 3 reveal, 4 unlock_vault, 5 update_password | |
 | 0x07 | `credential_ref` | 16 B uuid or absent | required for actions 1–3 |
 | 0x08 | `nonce` | 16 B | helper-generated, single-use |
 | 0x09 | `iat` | u64 | issued-at |
@@ -900,7 +1151,8 @@ server learns message sizes and timing only.
 - **Offline / unreachable fallback:** if the direct fetch fails (phone on
   cellular, Mac behind NAT), the request fails and the extension offers
   the §6.C macOS authentication fallback. v1 does not relay challenge
-  contents through the provider; §21 OQ-2 covers that v1.1 option. UX
+  contents through the provider; §21 keeps that as a possible future
+  owner decision. UX
   copy must not promise phone approval when the phone is unreachable
   (v0.3 §15.2).
 
@@ -1018,15 +1270,51 @@ browser session, connects to the helper socket as client class
    "type": "stdio",
    "allowed_origins": ["chrome-extension://<pinned-id>/"]}
   ```
-- **Authentication layers:** (1) Chrome enforces `allowed_origins`;
-  (2) nm-host is signed and peer-authenticated by the helper (§1.4);
-  (3) nm-host performs a handshake with the extension: on connect it
-  sends a per-session random `session_id` that the extension must echo in
-  every request — this binds messages to one browser session, not to
-  another local process replaying stdio.
+- **Authentication layers (strengthened, v0.2 finding 4).** The v0.1
+  per-session `session_id` bound messages to a browser session but did
+  not prove *Chrome* launched the broker — a same-user process could exec
+  the signed host itself and drive it over its own pipes. The corrected
+  stack:
+  1. **Chrome `allowed_origins`** (above) — the browser only connects the
+     pinned extension ID.
+  2. **Caller-origin argument check:** Chrome passes the calling
+     extension's origin as the host's first argv element. nm-host
+     requires argv to contain exactly
+     `chrome-extension://<production-id>/` (release build) or the
+     explicitly compiled-in dev ID (debug builds only, set at build time,
+     never accepted in release); missing/malformed/unexpected origin →
+     exit nonzero before reading stdin. Necessary, not sufficient (a
+     manual exec can forge argv).
+  3. **Parent-process code-identity check:** nm-host verifies its parent
+     process via pid → `SecCodeCopyGuestWithAttributes` →
+     `SecCodeCheckValidityWithErrors` against a per-browser designated
+     requirement (Chrome: `anchor apple generic and identifier
+     "com.google.Chrome" and certificate leaf[subject.OU] = "EQHXZ8M8AV"`;
+     other Chromium variants get their own reviewed requirement rows or
+     are unsupported). A shell, script, or malware exec'ing the host has
+     itself as parent and fails. **This check is specified but marked
+     UNVERIFIED until the Phase H prototype confirms Chrome's actual
+     spawn behavior on macOS (which process is the parent, whether the
+     pid→SecCode mapping is race-free enough here); the spec's
+     security claims below do not rely on it until the prototype reports
+     (NM-05/NM-06).** If it proves unreliable, the honest residual
+     boundary is layers 1+2+4 and the documented local-attacker
+     limitation (§9.9).
+  4. **Helper peer authentication** (§1.4) — the helper only serves
+     peers signed as `com.racker.zero.nm-host`.
+  5. The v0.1 `session_id` handshake remains as session hygiene, not as
+     an authentication factor.
+- Combined guarantee claimed: only the pinned extension, connected through
+  a Chrome-controlled stdio channel, to the signed broker, to the
+  authenticated helper. Not claimed: protection against a same-user
+  attacker who executes the signed broker manually and speaks the
+  protocol — that attacker reaches exactly the same IPC surface as the
+  extension (per-origin, one-shot, presence-gated), which is why every
+  release still requires user presence showing the claimed origin
+  (§9.9); layer 3 narrows this further once verified.
 - nm-host is a dumb broker: it validates frame shape (schema, lengths)
   and forwards to the helper. It holds no keys, performs no matching,
-  never logs field values.
+  never logs field values. It exits when stdin closes.
 
 ### 9.3 Message schemas (extension ↔ nm-host, JSON, ≤ 32 KiB)
 
@@ -1113,15 +1401,26 @@ browser session, connects to the helper socket as client class
   captures `{origin, username, password}` into session memory; after
   navigation success heuristic (URL change without error page), the
   popup badge offers "Save to Source Vault". Tapping sends `save_new`.
-  Requires vault UNLOCKED; if locked, offer unlock first. The helper
-  merges duplicates by (canonical host, username): existing match →
-  `save_update` suggestion instead.
-- **Update:** on submit where a stored ref was filled and the password
-  differs, offer "Update saved password" → `save_update`; old password
-  moves to `password_history`.
-- Save/update never require *fresh* presence beyond the vault being
-  unlocked (the user just typed the secret), but they are logged in the
-  vault's local audit view.
+  Requires vault UNLOCKED; if locked, offer unlock first. Rationale: the
+  user just typed this value into the page, so the extension learns
+  nothing new; a compromised extension gains no extra capability.
+  The helper merges duplicates by (canonical host, username): existing
+  match → treated as an update, which changes the policy (next bullet).
+- **Update (trusted confirmation required, v0.2 finding 9):** replacing
+  an existing credential is never applied on the extension's say-so —
+  that would let a compromised extension overwrite stored passwords.
+  `save_update` is held pending by the helper until a confirmation
+  **controlled outside the extension** completes:
+  - local: helper-presented LA prompt
+    ("Source Vault: update the saved password for alice@example.com on
+    github.com?"), or
+  - iPhone: signed approval, `action: update_password` (§6.5 tag 0x06 =
+    5), bound to origin + credential ref + request_id + nonce + expiry.
+  The confirmation UI names the origin and account and **never displays
+  the new or old password**. Only after approval does the helper apply
+  the update (old password → `password_history`) as a new revision.
+  Replays of the approval fail per §6.6.
+- Update decisions are logged in the vault's local audit view.
 
 ### 9.9 Extension compromise assumptions (documented, v0.3 §12.5)
 
@@ -1194,15 +1493,37 @@ row number only.
 - **Unicode:** NFC-normalize display fields; reject unpaired surrogates
   / invalid UTF-8 at read (lossy conversion forbidden for secrets).
 - **Oversized:** field > 64 KiB or row > 256 KiB → skip + count.
-- **Duplicates within the file / against the vault:** key =
-  (kind, canonical host, username) for logins, (kind, last-4-of-number)
-  for cards. Duplicate → keep existing vault item, count as duplicate.
-  Last-4 is stored only transiently for this comparison, never persisted.
-- **Idempotent re-import:** an `import_log` table stores
-  `SHA-256(normalized-row-key)` digests (no secret values — the digest
-  input includes the password only in combination with a random per-vault
-  import salt from `kv`, so the log is not an offline dictionary oracle).
-  Re-importing the same file → all duplicates reported, zero new items.
+- **Duplicates within the file / against the vault:** identity =
+  (kind, canonical host, username) for logins, (kind, label, card
+  number) for cards — compared only as HMAC fingerprints (below), never
+  as persisted plaintext. Duplicate → keep existing vault item, count as
+  duplicate.
+- **Idempotent re-import (keyed construction, v0.2 finding 7):** the
+  `import_log` table (§3.2) stores `fingerprint = HMAC-SHA256(
+  import_fp_key, normalized_identity)` where
+
+  ```text
+  import_fp_key       = HKDF-SHA256(ikm=VK, salt=header.import_fp_salt,
+                                    info="ov0/import-fingerprint/v1")
+  normalized_identity = u8(kind) ‖ canonical_host ‖ username    (logins)
+                      = u8(kind) ‖ label ‖ card_number          (cards)
+  ```
+
+  The key is derived from VK, never stored, and exists only while the
+  vault is unlocked — without VK the log is a set of opaque HMACs with
+  no feasible oracle (unlike v0.1's salted SHA-256 over password
+  material, which would have been a fast offline guessing oracle to
+  anyone holding the database + salt). **Passwords are not part of the
+  identity:** idempotency is defined by *who/where*, not *what* — a
+  re-imported row with the same identity but a changed password is a
+  duplicate (the vault keeps its item; the change is reported in the
+  counts as "duplicate"), matching the keep-existing duplicate rule.
+  The plaintext identity string is additionally sealed into
+  `identity_ct` under the meta key so that VK rotation can recompute all
+  fingerprints under the new generation's key during re-encryption; a
+  rotation that skips this recomputation would break idempotency, so it
+  is part of the rotation transaction (§2.10).
+- Re-importing the same file → all duplicates reported, zero new items.
 
 ### 10.4 Streaming encryption, no plaintext staging
 
@@ -1297,7 +1618,7 @@ vault/<vault_id>/
 ├── manifest.gen-<n>.json            previous generations (retention: 2)
 ├── registry.json                    copy of registry JSONL at manifest time
 ├── wraps/password.wrap | recovery.wrap | devices/<id>.wrap
-└── objects/rec/<record_id>/<vk_generation>    §3.7 object bytes
+└── objects/rec/<record_id>/<rev_hash>         §3.7 object bytes
 ```
 
 `SignedManifest` (canonical TLV, signed by the device's signing key):
@@ -1335,37 +1656,87 @@ listing thousands of keys.
   any manifest ≤ retention are garbage, collected after a 7-day grace
   (protects slow peers that may be referencing them mid-sync).
 - **CAS failure** (another device published first): helper re-reads head,
-  verifies, merges (records merge by record_id + updated_at with
-  tombstone dominance; registry must chain — divergence → §4.6 fork
-  handling), rebuilds manifest at generation+1, retries CAS. Max 3
-  retries then `BACKUP_CONFLICT` surfaced.
+  verifies, merges per the §3.2 revision graph (union of revisions;
+  fast-forwards apply; concurrent edits become conflicts — never a
+  timestamp pick; registry must chain — divergence → §4.6 fork handling),
+  rebuilds manifest at generation+1, retries CAS. Max 3 retries then
+  `BACKUP_CONFLICT` surfaced. Conflicts replicate to all devices and
+  resolve once via `resolve_conflict`; the resolution is itself a
+  revision, so it syncs like any other change.
 - **GC:** objects referenced by neither the current nor the retained
   previous 2 manifests, older than 7 days → deleted.
 
-### 11.4 Backup authentication and authorization
+### 11.4 Backup authentication, authorization, and revocation
 
-- `vault_id` (random UUID) is the account identifier.
-- Every request carries
-  `Authorization: SourceVault t=<unix> s=<HMAC-SHA256(backup_auth,
-  "ov0/backup-req/v1" ‖ method ‖ path ‖ SHA-256(body) ‖ t)>`,
-  timestamp skew ≤ 300 s, nonce-cache on the server for replays.
-- `backup_auth` reaches devices only inside WrapPayload (§2.2): MP wrap,
-  RK wrap, device envelopes. Disaster recovery therefore restores backup
-  access by construction. `backup_auth` is generated at vault creation
-  and is **not rotated** by VK rotation in v1 (rotating it would orphan
-  the provider account; it protects availability and third-party
-  vandalism only, never confidentiality).
-- The server stores `backup_auth` to verify HMACs. This is honest and
-  deliberate: the server is untrusted for confidentiality (it holds only
-  ciphertext) and semi-trusted for availability; HMAC auth exists to
-  prevent *third-party* vandalism of the account, not to keep secrets
-  from the provider. Device **authorization** (who may publish a new
-  manifest generation) is additionally enforced client-side by manifest
-  signature verification — the provider cannot mint devices (§4.6).
-- Upload authorization: a valid manifest signature from a non-revoked
-  enrolled device at generation > current. The server checks signature
-  against the uploaded registry's keys as a courtesy filter; devices
-  never trust the server's filter.
+Design choice (v0.2 finding 1): **Option A** — per-device backup
+credentials, with recovery-class credentials derived from MP/RK. Option B
+(rotate a shared secret on revocation) was rejected: the MP/RK wraps
+cannot be rewritten without the user re-entering MP/RK, so a rotated
+shared secret would silently break disaster recovery — or, if the old
+secret kept working for recovery, revocation would be toothless. Per-device
+credentials make revocation precise without touching recovery wraps.
+
+**Credential classes:**
+
+1. **Device credential** (`device_backup_cred`): 32 bytes from OsRng,
+   generated by the *authorizing* device at enrollment, delivered inside
+   that device's `DeviceEnvelopePayload` (§2.2), registered at the
+   provider as `{vault_id, device_id, credential}` when the enrollment
+   ACK lands (§5). New VK rotations do not change it; it rotates only by
+   re-enrollment.
+2. **Recovery credentials** (never stored anywhere): derived on demand —
+   `cred_mp = HKDF-SHA256(PK, salt=locator_salt_mp, info="ov0/backup-auth/mp/v1")`,
+   `cred_rk` likewise under `…/rk/v1`. Registered at vault setup
+   alongside the §12 locators; re-registered whenever MP/RK changes
+   (§12 scenarios 5–7). Only usable for `GET`/`recover` operations and
+   the recovery publication flow — the provider must reject recovery
+   credentials on mutation endpoints other than recovery-finalize.
+3. There is no third class. The provider stores every registered
+   credential (needed to verify HMACs) — honest framing: the provider is
+   untrusted for confidentiality (it holds only ciphertext) and
+   semi-trusted for availability; request authentication exists to keep
+   *third parties* from vandalizing the account, not to keep secrets
+   from the provider.
+
+**Revocation (normative):** when a device is revoked, the revoking
+device — after writing the registry `revoke` entry — sends
+`POST /v1/devices/<device_id>/revoke` authenticated with its own device
+credential and carrying the revoke entry's hash. The provider must (a)
+verify the requester's credential is active, (b) verify the registry
+entry signature against the uploaded registry, (c) deactivate the revoked
+device's credential immediately. A compromised device that retained its
+credential cannot upload, mutate, delete, or CAS after this lands; VK
+rotation (§9 of v0.3, automatic) independently guarantees it cannot
+*decrypt* new state even if the provider is malicious and ignores the
+revocation. A malicious provider replaying a revoked credential's old
+requests is bounded by the replay cache (below) and by client-side
+manifest verification (devices never trust provider filtering).
+
+**Upload authorization (normative, server-enforced):** manifest CAS is
+accepted only if (a) the request authenticates under an active device
+credential (or a recovery credential in the recovery-finalize flow), and
+(b) the manifest signature verifies under the current uploaded registry's
+non-revoked device keys at generation > current. Devices independently
+verify everything; the server check is defense in depth, not a root of
+trust — the provider still cannot mint devices (§4.6).
+
+**Replay construction:** every authenticated request carries
+
+```text
+Authorization: SourceVault
+  cred=<device_id|"recovery-mp"|"recovery-rk">
+  t=<unix_seconds> n=<16-byte-random-hex>
+  s=<HMAC-SHA256(credential,
+      "ov0/backup-req/v1" ‖ method ‖ path ‖ SHA-256(body) ‖ t ‖ n)>
+```
+
+Server semantics: reject `|now − t| > 300 s`; maintain a per-credential
+replay cache of nonces seen within the valid timestamp window (expiry =
+window edge + 60 s grace; capacity ≥ 10 000 per credential, LRU beyond);
+reject a nonce already present (`BACKUP_REPLAY`). Same timestamp with a
+fresh nonce is valid; a reused nonce is rejected even with a fresh
+timestamp. Cache persistence across provider restarts is best-effort —
+the timestamp window bounds the exposure of a wiped cache.
 
 ### 11.5 Download, restore, verification
 
@@ -1397,6 +1768,36 @@ backup success and warns after 48 h without a successful publication.
 Devices always keep full local copies; provider outage never blocks local
 unlock/fill.
 
+### 11.7 Freshness: two honest classes (v0.2 finding 13)
+
+- **Existing device with remembered state** (any enrolled device that has
+  accepted a generation before): rollback is *detected and rejected* —
+  the helper's persisted last-seen `(generation, head hash)` refuses
+  anything lower (§4.6). This guarantee is solid.
+- **Fresh-device recovery after total device loss:** a brand-new device
+  holds no remembered state. A malicious provider can serve an **older
+  but still validly signed** manifest — every signature verifies, the
+  registry chains, and nothing cryptographic distinguishes "latest" from
+  "older valid". v1 does **not** claim rollback *detection* in this
+  class. What v1 does instead:
+  1. The recovery UI always displays the recovered state's
+     `generation`, `created_at`, and item count: "This backup is from
+     <date> and contains N items" — the user is the freshness oracle for
+     whether that matches their memory.
+  2. The printed recovery sheet (§1.7) carries `vault_id`, the manifest
+     `generation`, and an 8-hex prefix of the registry head hash as of
+     printing/last RK rotation. At recovery the user can compare: a
+     served state *older than the sheet* is detectable; a state *newer
+     than the sheet* is normal (backups advance); a mismatched vault_id
+     or head prefix on an allegedly-old state is fork evidence.
+  3. A recovered epoch transition binds the manifest it recovered from
+     (§4.5), so a stale-state recovery is permanently visible in the
+     registry to any device that later sees a newer history.
+- Explicitly **not** added: a centralized Source freshness anchor, a
+  transparency log, or hosted checkpoint infrastructure. Such a
+  mechanism would be a separate owner-level design decision with its own
+  trust analysis; it is not silently introduced here.
+
 ---
 
 ## 12. Recovery
@@ -1410,9 +1811,12 @@ rules (§4.5), VK rotation (§2.10), enrollment (§5). "Publish" = §11.3.
 2. Helper-equivalent on iPhone appends signed `revoke` entry; VK rotation
    runs on iPhone (new VK, re-encrypt all records, new wraps for MP/RK/
    remaining devices, new manifest generation, publish).
-3. Replacement Mac: §5 enrollment, iPhone authorizes; new device envelope
-   under the *new* VK.
-4. Old Mac's envelope object is GC'd per §11.3 retention.
+3. The iPhone deactivates the lost Mac's backup credential at the provider
+   (§11.4 revoke call); the Mac can no longer authenticate privileged
+   backup requests, and rotation guarantees it cannot decrypt new state.
+4. Replacement Mac: §5 enrollment, iPhone authorizes; new device envelope
+   under the *new* VK + a fresh per-device backup credential.
+5. Old Mac's envelope object is GC'd per §11.3 retention.
 
 ### Scenario 2 — iPhone lost, Mac retained
 
@@ -1422,8 +1826,9 @@ rejected from that moment (`DEVICE_NOT_AUTHORIZED`).
 ### Scenario 3 — both devices lost, master password retained
 
 1. New supported device → Source installed → "Recover vault".
-2. **Account location.** `vault_id` is not memorizable, and `backup_auth`
-   is inside the wraps being fetched, so recovery bootstraps through a
+2. **Account location.** `vault_id` is not memorizable, and the recovery
+   credential (`cred_mp`/`cred_rk`, §11.4) can only be derived after the
+   vault's KDF parameters are fetched, so recovery bootstraps through a
    locator registered at vault setup:
    - At setup the provider account is created with the user's **email
      address** as a non-secret lookup handle (also used for
@@ -1443,15 +1848,22 @@ rejected from that moment (`DEVICE_NOT_AUTHORIZED`).
    - Provider exposure: the handle, the salts, and recovery-attempt
      timing. The locator gives the provider an offline MP-guessing oracle
      no stronger than the wraps it already serves (same Argon2id cost).
-3. Download manifest/registry/wraps/objects → unwrap VK locally →
-   verify manifest + registry chain.
+3. Download manifest/registry/wraps/objects (requests authenticated with
+   the derived recovery credential, §11.4) → unwrap VK locally →
+   verify manifest + registry chain → the recovery UI shows the state's
+   generation, date, and item count and offers the recovery-sheet
+   comparison (§11.7) — freshness here is user-checked, not assumed.
 4. Create new device identity (SE keys) → `recovery_epoch` entry with
-   `recovery_proof` (§4.5) binding the downloaded manifest hash → new
-   genesis-class enroll for the new device at epoch+1.
+   `recovery_proof` (§4.5) binding the downloaded manifest hash →
+   epoch-start enroll for the new device (§4.4 rule 6) → the device
+   generates its own `device_backup_cred` and registers it during
+   recovery-finalize (the only mutation a recovery credential may
+   authorize).
 5. Rotate VK (the recovered VK authorized a registry transition; retire
    it) → re-encrypt → new wraps (MP unchanged material, RK unchanged
    unless user requests replacement) → publish.
-6. Enroll the user's other replacement devices per §5.
+6. Enroll the user's other replacement devices per §5 (each gets its own
+   backup credential from the authorizer).
 
 ### Scenario 4 — both devices lost, Recovery Key retained
 
@@ -1464,7 +1876,8 @@ entered on the new device; checksum validates before any network call.
    re-wraps resident VK under PK′ = Argon2id(MP′, new salt).
 2. `password.wrap` atomically replaced (write tmp + rename); header salt
    updated; manifest generation +1 published; the MP recovery locator
-   (§12 scenario 3) is re-registered with the provider.
+   **and** the MP recovery credential (§11.4) are re-registered with the
+   provider.
 3. Old password wrap is destroyed in the same transaction; there is no
    "both wraps work" window.
 
@@ -1472,7 +1885,8 @@ entered on the new device; checksum validates before any network call.
 
 1. Fresh LA presence → generate RK′ → **rotate VK** (v0.3 C12: re-wrap
    alone is insufficient) → re-encrypt records → new wraps for MP, RK′,
-   all devices → publish → re-register the RK recovery locator → print
+   all devices → publish → re-register the RK recovery locator and RK
+   recovery credential (§11.4) → print
    new recovery sheet (print path never
    renders RK words to the screen longer than the print dialog requires;
    the words are shown once, in a capture-suppressed window, §14).
@@ -1496,7 +1910,8 @@ current and future states; it cannot erase already-exfiltrated copies
 ### Scenario 8 — device compromised while unlocked
 
 1. Revoke the device (any surviving trusted device, or post-recovery
-   epoch) → VK rotation → publish.
+   epoch) → VK rotation → provider deactivates the device's backup
+   credential (§11.4) → publish.
 2. The helper on the revoking device computes the **exposure set**:
    records whose plaintext was served to that device in the last N days
    (the helper keeps a local, non-secret audit log of `record_id` +
@@ -1537,7 +1952,7 @@ registry fork / confirmed tamper ──▶ COMPROMISED (writes frozen until
 
 | State | VK | MP/RK | Decrypted records | IPC ops allowed | Network (main) | UI |
 |---|---|---|---|---|---|---|
-| UNINITIALIZED | none | none | none | `unlock_with_recovery`(setup), `begin_enrollment`(first-device) | backup locate | setup wizard only |
+| UNINITIALIZED | none | none | none | `setup_vault`(panel), `begin_recovery_unlock`(panel), `begin_enrollment`(first-device) | backup locate | setup wizard only |
 | LOCKED | none | none | none | `unlock*`, `get_state`, `fill_candidates`(→`locked`), `approval_result` | backup poll ok | unlock prompt |
 | UNLOCKING | transient (unwrap in flight) | transient during entry | none | only the in-flight op | — | spinner, cancel |
 | UNLOCKED | resident (helper only) | never resident | never resident as a set; per-record transient during an op | all §1.5 ops | sync/backup ok | full vault UI |
@@ -1593,6 +2008,7 @@ mechanisms.
 | Vault management window (unlock, item list, add/edit, reveal, recovery sheet) | window title registered as excluded at creation, unregistered at destroy; during reveal/edit/print steps the surface counter is additionally incremented |
 | Dashlane import wizard (all steps) | window registered + counter incremented for the whole wizard |
 | Setup wizard (MP creation, RK display/print) | same as import wizard |
+| Helper secure panel (§1.7: MP/RK entry, confirm, print) | counter incremented for the full panel lifetime via the `secure_panel_visible` event; panel window title registered at creation; all MP/RK fields are native secure text fields; close decrements the counter and zeroizes inputs |
 | iPhone approval sheet on Mac | registered window |
 | Chrome extension popup | not a Source window — protection comes from never rendering secrets in-page (passwords go into masked fields only); the fill itself happens in Chrome's window, which Source's recorder can see — accepted: filled passwords render as dots; reveal-in-page is not offered |
 | Keyboard: all vault password/MP/RK fields | `secureInput` class → `IsSecureEventInputEnabled` suppression + password-field heuristics; RK/MP entry uses native secure text fields |
@@ -1648,6 +2064,8 @@ allowlists module paths rather than denylisting content.
 | Corrupted record | `RECORD_CORRUPT` | quarantine record, continue; restore from backup/peer offered | "One item is damaged and can be restored" |
 | Corrupted wrap | `WRAP_CORRUPT` | that wrap path disabled; other wraps unaffected | "This unlock method is damaged — use another" |
 | Corrupted database | `DB_CORRUPT` | ERROR state; never auto-delete; restore flow offered | restore wizard |
+| Unknown/future format (object magic, wrap kdf_version, TLV entry_version) | `FORMAT_TOO_NEW` | refuse; never a best-effort parse (§3.5, §3.7) | "This data was written by a newer version of Source — update the app" |
+| Display-class release with capture suppression unverifiable | `CAPTURE_UNSAFE` | §14.4 refusal; nothing rendered | "Screen-capture exclusion is unavailable, so Source won't display this right now" |
 | Invalid AEAD tag (any) | `INTEGRITY_FAILURE` | refuse the operation; counts toward tamper signal | generic failure copy |
 | Invalid signature | `SIGNATURE_INVALID` | reject object; if registry/manifest → COMPROMISED flow | "Vault data failed verification" |
 | Registry fork | `REGISTRY_FORK` | COMPROMISED; writes frozen | fork resolution UI (§4.6) |
@@ -1662,6 +2080,10 @@ allowlists module paths rather than denylisting content.
 | Expired approval delivery | `APPROVAL_EXPIRED` | reject | retry affordance |
 | Extension disconnected | `EXTENSION_LOST` | pending nm requests cancelled; fill not delivered | none (page-side timeout copy) |
 | Backup provider unavailable | `BACKUP_UNAVAILABLE` | queue publication, backoff 1→5→15 min, warn at 48 h | settings badge only |
+| Backup request replay (reused nonce / out-of-window timestamp) | `BACKUP_REPLAY` | request refused; counts toward tamper signal | none (diagnostics only) |
+| Backup credential revocation failed at provider | `BACKUP_REVOCATION_FAILED` | retry with backoff; surface after 3 failures — revocation is security-boundary, not best-effort (§11.4) | "Couldn't finish cutting off <device name> — retry" |
+| Secure panel dismissed/cancelled | `PANEL_CANCELLED` | operation aborts; panel inputs zeroized; no partial state | panel closes, no error copy |
+| Record sync conflict pending | `CONFLICT_PENDING` | both revisions kept; `tip_rev` is NULL so the record is excluded from fill candidates until resolved (fail closed, no silent pick); `resolve_conflict` writes a merge revision | "Needs review" badge on the item |
 | Failed VK rotation | `ROTATION_FAILED` | §2.10 resume-or-rollback to old manifest; never a half-live mix | "Security update didn't finish — retrying" |
 | Interrupted recovery | `RECOVERY_INCOMPLETE` | re-verify downloaded state on retry; idempotent | recovery wizard resumes |
 | Partially completed import | `IMPORT_PARTIAL` | committed rows stay; report shows exact counts; re-import is idempotent | import report |
@@ -1683,7 +2105,7 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 
 | ID | Test | Expected |
 |---|---|---|
-| CR-01 | MP wrap → unwrap round trip | WrapPayload recovered byte-identical |
+| CR-01 | MP wrap → unwrap round trip | RecoveryWrapPayload recovered byte-identical |
 | CR-02 | RK wrap → unwrap round trip | same |
 | CR-03 | Wrong MP (1-bit flip) | AEAD failure, `WRONG_CREDENTIAL`, no partial state |
 | CR-04 | Wrong RK (valid checksum, wrong entropy) | same |
@@ -1694,7 +2116,8 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 | CR-09 | KDF downgrade attempt (header kdf_version-1) | refused |
 | CR-10 | Wrap header tamper (salt/params swapped between files) | AEAD failure |
 | CR-11 | Zeroization spot test: after lock, helper heap sampled for VK/RK sentinel patterns | not found (test build with canary secrets) |
-| CR-12 | backup_auth present in all wrap types after rotation | recovered via MP, RK, and device envelope paths |
+| CR-12 | wrap payload split holds: `device_backup_cred` present in every `DeviceEnvelopePayload`, absent from both `RecoveryWrapPayload`s, after rotation | sizes/parse assertions on both wrap kinds; MP and RK recovery paths work with no `backup_auth` (v0.1's old field) anywhere |
+| CR-13 | `cred_mp` / `cred_rk` derivation | HKDF vectors match §2.9 context strings; never persisted (helper storage scan) |
 
 ### 16.2 Registry
 
@@ -1707,7 +2130,9 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 | RG-05 | Fork (two valid tips, same prev_hash) | `REGISTRY_FORK`, writes frozen, both tips surfaced |
 | RG-06 | Rollback (older head presented) | rejected via persisted head |
 | RG-07 | Wrong authorizer (device signs for another) | rejected |
-| RG-08 | recovery_epoch with bad proof (wrong VK) | rejected |
+| RG-08 | recovery_epoch: bad proof (wrong VK) **or** any bound field altered — vault_id, prev_hash, manifest_hash, prior_epoch, epoch, new device_id/keys, recovery_nonce | rejected in every case |
+| RG-11 | self-signed enroll other than genesis / epoch-start | rejected (§4.4 rule 6) |
+| RG-12 | 33-byte or off-curve device keys in any entry | rejected (§4.4 rule 8) |
 | RG-09 | recovery_epoch binding stale manifest after devices saw newer | rejected on those devices; recovery UI shows bound generation |
 | RG-10 | TLV canonicalization: reordered tags, padded integers, non-NFC strings | decode rejects or normalizes deterministically — byte-identical re-encode required |
 
@@ -1746,6 +2171,10 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 | BR-13 | request for `ref` belonging to another origin | `APPROVAL_MISMATCH` (origin bound at authorize time) |
 | BR-14 | locked vault | `{locked:true}`, no candidates |
 | BR-15 | PSL drift: `github.io`, `co.uk`, `appspot.com` corpus | identical decisions Rust vs JS |
+| BR-16 | `save_update` without trusted confirmation | held pending; stored record unchanged |
+| BR-17 | update approved via helper LA sheet naming origin + account | applied as new revision; old password in `password_history`; sheet displayed no password |
+| BR-18 | update approval with mismatched origin/ref (iPhone action 5) | `APPROVAL_MISMATCH` |
+| BR-19 | replayed update approval | `APPROVAL_REPLAY` |
 
 ### 16.5 Capture safety
 
@@ -1773,8 +2202,13 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 | BK-07 | provider down at publish | queued, backoff, local vault fully usable |
 | BK-08 | interrupted upload mid-step-2 | orphans GC'd after grace; no manifest references missing objects |
 | BK-09 | CAS race (two publishers) | loser merges and republishes at gen+1 |
-| BK-10 | historical snapshot: old RK + old wrap + old object bytes after rotation | old snapshot still decrypts (documents the §12.7 limitation as tested behavior); **new** state refuses old RK |
+| BK-10 | historical snapshot: old RK + old wrap + old object bytes after rotation | old snapshot still decrypts (documents the §12 scenario 7 limitation as tested behavior); **new** state refuses old RK |
 | BK-11 | provider attempts manifest signed by non-enrolled key | devices reject regardless of server acceptance |
+| BK-12 | captured privileged request replayed verbatim (same nonce, in-window) | `BACKUP_REPLAY` |
+| BK-13 | credential of a revoked device reused after revocation | refused before any operation executes |
+| BK-14 | recovery credential attempts normal publish/locate-list write | refused (recovery scope: read + recovery-finalize only) |
+| BK-15 | recovery-finalize registers the new device's credential; that device's later publishes pass; the recovery credential cannot | as specified |
+| BK-16 | MP rotation re-registers MP locator + `cred_mp`; RK rotation re-registers RK locator + `cred_rk` | old recovery credentials fail; new succeed (§12 scenarios 5/6) |
 
 ### 16.7 Recovery scenario tests
 
@@ -1791,17 +2225,70 @@ JSON+hex files; consumed by Rust tests and Swift XCTest:
 
 | Vector family | Contents |
 |---|---|
-| XV-ECDSA | P-256 sign/verify, incl. high-S rejection |
+| XV-ECDSA | P-256 verify of **randomized** signatures produced by Apple stacks (never byte-equality); producer low-S normalization; verifier high-S rejection; 65-byte uncompressed key parsing (exact RFC 9180 serialization) |
 | XV-ECDH/HPKE | envelope seal/open both directions (Rust-seal→Swift-open and vice versa) |
+| XV-HPKE-SE | RFC 9180 base-mode vectors opened through the §2.12 adapter with the vector's scalar as "external DH" input, then the same on a real SE key (PoC artifact, Phase E pre-gate) |
 | XV-HKDF | all §2.9 info strings |
-| XV-TLV | registry entries (all kinds), approval payloads, manifests: canonical bytes + expected hashes + signatures |
+| XV-TLV | registry entries (all kinds, incl. v2 recovery_epoch with the §4.5 binding fields), approval payloads, manifests: canonical bytes + expected hashes + signatures/proofs |
 | XV-SAS | enrollment transcripts → 8-char SAS |
 | XV-BIP39 | RK entropy ↔ 24 words (official reference vectors + ours) |
 | XV-ORIGIN | canonicalization + matching corpus (shared with JS for BR-15) |
-| XV-RECOVERY-EPOCH | VK + manifest → recovery_proof |
+| XV-RECOVERY-EPOCH | VK + manifest + new-device keys + nonce → recovery_proof |
 
 Any wire/crypto change bumps versions and regenerates vectors in the same
 commit.
+
+### 16.9 Sync revision graph
+
+| ID | Test | Expected |
+|---|---|---|
+| SY-01 | single-author linear edits across sync | fast-forward; no conflict rows |
+| SY-02 | two devices edit one record concurrently | conflict marked; both revisions retained; **no** timestamp pick; record excluded from fills until resolved |
+| SY-03 | edit concurrent with delete | conflict (never silent delete-wins) |
+| SY-04 | edit claiming causal ancestry after a tombstone | conflict per §3.2 (conservative, never resurrect) |
+| SY-05 | same author equivocates (two children, same counter) | fork evidence surfaced; both surfaced; writes on that record freeze |
+| SY-06 | counter regression from one author | rejected |
+| SY-07 | parent_count > 8, trailing bytes, unknown object magic | rejected (`FORMAT_TOO_NEW` / `FORMAT_INVALID`) |
+| SY-08 | `resolve_conflict` revision syncs | all devices converge to identical tips |
+
+### 16.10 Native-messaging host
+
+| ID | Test | Expected |
+|---|---|---|
+| NM-01 | host exec'd by a non-Chrome parent with correct argv | parent SecCode check fails; exit nonzero before stdin read |
+| NM-02 | missing argv origin | exit nonzero |
+| NM-03 | unexpected origin (other extension ID) | exit nonzero |
+| NM-04 | dev extension ID offered to a release build | refused (dev ID compiled into debug builds only) |
+| NM-05 | Phase H prototype: observe Chrome's actual spawn behavior (parent identity, argv format) | confirms the §9.2 layer-3 requirement or fails the gate |
+| NM-06 | Phase H prototype: pid→SecCode mapping under rapid spawn/exit | race verdict recorded; if unreliable, §9.2 claims are reduced to layers 1+2+4 and re-reviewed |
+
+### 16.11 Import fingerprints
+
+| ID | Test | Expected |
+|---|---|---|
+| IM-01 | exfiltrated `import_log` + salt, vault locked | no fingerprint oracle: helper exposes no op that computes fingerprints while locked; construction is HMAC under a VK-derived key (code assertion + XV-HKDF vectors) |
+| IM-02 | re-import identical file | 0 new items, all duplicates |
+| IM-03 | same identity, changed password | duplicate; existing item kept; counted in report |
+| IM-04 | VK rotation then re-import of pre-rotation file | fingerprints recomputed under the new generation key inside the rotation transaction; dedupe still works |
+| IM-05 | `identity_ct` tampered | AEAD failure; row quarantined; no fingerprint consulted for it |
+
+### 16.12 Fresh-device freshness UX
+
+| ID | Test | Expected |
+|---|---|---|
+| FR-01 | fresh-device recovery flow | UI shows served generation, date, and item count **before** completion |
+| FR-02 | recovery-sheet checkpoint comparison | vault_id + registry head prefix rendered on the printed sheet; comparison affordance present in the recovery UI |
+| FR-03 | stale-but-valid manifest served at recovery | recovery completes with the freshness display (no claimed detection); a device that later sees newer history surfaces the stale binding from the registry (§11.7) |
+
+### 16.13 Helper secure panel
+
+| ID | Test | Expected |
+|---|---|---|
+| UI-01 | panel opens | `secure_panel_visible` emitted; capture suppression counter up for the whole lifetime |
+| UI-02 | MP/RK fields are native secure fields | secure input active while focused; keystroke recorder sees zero events (CS-03 analog) |
+| UI-03 | panel close/cancel (`PANEL_CANCELLED`) | counter decrements; input buffers zeroized (canary absent from helper heap) |
+| UI-04 | recovery-sheet print | sheet bytes reach NSPrintOperation only; no WebView copy exists (webview snapshot assertion); counter stays up through the print dialog |
+| UI-05 | IPC surface audit | no §1.5 op schema contains an MP/RK/VK-bearing field (schema lint test, run in CI) |
 
 ---
 
@@ -1817,7 +2304,8 @@ Existing usable: `sha2`, `rand` (OsRng), `serde`/`serde_json`, `zeroize`-adjacen
 | `chacha20poly1305` | 0.10.x | record/wrap AEAD | RustCrypto; no known advisories | none present | yes | yes |
 | `hkdf` | 0.12.x | subkeys, KEKs | RustCrypto | sha2 alone is not HKDF | yes | yes |
 | `p256` | 0.13.x (`ecdsa`, `ecdh`) | device signatures/verification | RustCrypto; constant-time via `elliptic-curve` | none present | yes | pubkeys/signatures only; private ops happen in SE |
-| `hpke` | 0.12.x | device envelopes (RFC 9180) | small crate (rozbb); matches RFC 9180 vectors; **flagged for manual pre-merge review** (§17.4) | composing ECDH+HKDF+AEAD by hand is the worse alternative; CryptoKit interop requires exact RFC 9180 | yes | yes (WrapPayload) |
+| `hpke` | 0.12.x | device envelopes (RFC 9180): **seal** always; software open only in tests | small crate (rozbb); matches RFC 9180 vectors; **flagged for manual pre-merge review** (§17.4); production decapsulation goes through the §2.12 SE adapter, not this crate's private-key API | composing ECDH+HKDF+AEAD by hand is the worse alternative; CryptoKit interop requires exact RFC 9180 | yes | yes (envelope payloads) |
+| — | in-house | `hpke_se` adapter: RFC 9180 KEM ExtractAndExpand + base-mode key schedule with externally supplied DH | not a crate; ≤ 150 lines of our code over `hkdf`+`chacha20poly1305`; RFC 9180 vectors + independent review required (§2.12, §19) | SE keys are non-exportable, so no off-the-shelf open path exists | yes | yes |
 | `zeroize` | 1.x | secret erasure | de facto standard, audited transitively everywhere | none present | yes | yes |
 | `secrecy` | 0.10.x | SecretBox wrappers | widely used, tiny | complements zeroize with type-level guards | yes | yes |
 | `subtle` | 2.x | constant-time compares | RustCrypto | — | yes | tokens/secrets |
@@ -1851,10 +2339,21 @@ at Apple-only.
   available) or (b) a recorded manual review note in
   `src-tauri/supply-chain/audits.toml` covering: unsafe usage, FFI
   surface, panic behavior on adversarial input, and maintenance pulse.
-- `hpke` is explicitly called out for manual review before Phase E code
-  lands; if review fails, fallback is manual composition
-  (p256-ECDH + hkdf + chacha20poly1305) with RFC 9180 vectors still
-  enforced on the wire so Swift interop is unchanged.
+- HPKE policy (corrected, v0.2 finding 16) — ordered, none skippable:
+  1. review the chosen `hpke` crate before Phase E code lands;
+  2. prove Secure Enclave interoperability via the §2.12 PoC before
+     Phase E is authorized;
+  3. if the crate fails review or interop, evaluate maintained
+     alternatives (other RFC 9180 implementations, or restructuring so
+     the SE adapter covers both directions);
+  4. only after explicit security review may a small manually composed
+     standards adapter replace more of the crate's role, held to RFC
+     9180 vectors; the existing `hpke_se` decapsulation adapter is the
+     approved instance of this pattern and any expansion of it reopens
+     review;
+  5. independent review of the envelope path is a §19 release-gate item
+     before real credentials.
+  "Hand-compose HPKE" is never an automatic fallback.
 - CI gate: `cargo tree -p source-vault-helper | grep -E "^.* rsa "` must
   be empty; **RUSTSEC-2023-0071 remains outside all vault/helper build
   graphs** and any change that pulls it in is a merge blocker
@@ -1885,31 +2384,44 @@ state machine at LOCKED; `cargo vet` passes with new audits recorded.
 
 ### Phase B — cryptographic core
 VK/wraps/records/subkeys/zeroization; BIP-39 codec; TLV codec;
-gen_vectors CLI; CR-01…CR-12, RG/RG-10, XV-Rust-side.
-Gate: all green; `cargo fuzz` smoke run clean (10 min).
+gen_vectors CLI; CR-01…CR-13, RG/RG-10, XV-Rust-side.
+Gate: all green; `cargo fuzz` smoke run clean (10 min); **Argon2id
+calibration benchmark table committed (§2.3) with the chosen tuple
+justified per device class**.
 
 ### Phase C — local Mac vault
 rusqlite storage; header/manifest; record CRUD with synthetic records;
-UNLOCKED lifecycle + auto-lock; LA presence per op; capture-safe
-management UI (§14 wiring incl. fail-closed reveal); CS-01…CS-07.
-Gate: synthetic vault usable end-to-end in the app; capture tests green.
+UNLOCKED lifecycle + auto-lock; LA presence per op; **helper-owned secure
+panel (§1.7) for unlock/change-MP flows**; capture-safe management UI
+(§14 wiring incl. fail-closed reveal); CS-01…CS-07, UI-01…UI-05.
+Gate: synthetic vault usable end-to-end in the app; capture and panel
+tests green.
 
 ### Phase D — recovery
-MP set/change; RK generate/print/enter; rotation engine; recovery epoch;
-RC-03…RC-07 vs FsBackupStore; BK-10 historical-snapshot test.
+MP set/change; RK generate/print/enter (panel + print path, §1.7);
+rotation engine; recovery epoch; RC-03…RC-07 vs FsBackupStore; BK-10
+historical-snapshot test; FR-01…FR-03 freshness UX.
 Gate: scenarios 3–7 rehearse green on synthetic data.
 
 ### Phase E — device identity + enrollment
-SE keygen (both roles, both platforms); §5 protocol + ephemeral server;
-SAS; envelopes; registry live; revocation + auto-rotation (RC-01/02);
-DA vectors; iOS app vault screens.
-Gate: two real devices enroll/revoke/rotate green on synthetic vaults.
+**Pre-gate (authorization to start envelope code): the §2.12 HPKE-SE
+PoC is green** — Rust-seal→SE-open and Apple-seal→Rust-open both
+demonstrated, CryptoKit-vs-Security.framework composition decision made
+for iOS, and XV-HPKE-SE vectors committed. Then: SE keygen (both roles,
+both platforms); §5 protocol + ephemeral server; SAS; envelopes;
+registry live; revocation + auto-rotation (RC-01/02); DA vectors; iOS
+app vault screens.
+Gate: two real devices enroll/revoke/rotate green on synthetic vaults;
+backup credential issued and registered at enrollment (§5.2).
 
 ### Phase F — remote encrypted backup
-BackupStore trait + Fs + Http impls; publication/CAS/GC; provider
-service (smallest possible: object store + manifest CAS + push relay
-endpoint + recovery locator); BK-01…BK-11.
-Gate: kill-both-devices rehearsal on a fresh machine, synthetic data.
+BackupStore trait + Fs + Http impls; publication/CAS/GC; revision-graph
+merge (§3.2); per-device credential auth, recovery credentials, server
+revocation and replay cache (§11.4); provider service (smallest
+possible: object store + manifest CAS + push relay endpoint + recovery
+locator + credential registry); BK-01…BK-16, SY-01…SY-08.
+Gate: kill-both-devices rehearsal on a fresh machine, synthetic data;
+credential revocation and replay tests green.
 
 ### Phase G — iPhone remote approval
 §6.5/§6.6 + §7.1 foreground + §7.2 APNs alert path; DA-01…DA-11;
@@ -1919,14 +2431,16 @@ fallback demonstrated.
 
 ### Phase H — Chrome extension
 extension + nm-host + manifest install; canonicalization + PSL + policy
-engine; fill/save/update; BR-01…BR-15 with synthetic sites (local test
-server with IDN/punycode/iframe fixtures).
+engine; fill/save/update with trusted update confirmation (§9.8);
+BR-01…BR-19 with synthetic sites (local test server with IDN/punycode/
+iframe fixtures); **nm-host caller-verification prototype NM-05/NM-06
+runs first and its verdict is recorded before relying on §9.2 layer 3**.
 Gate: synthetic fills green; extension cannot enumerate (attempts logged
-+ refused).
++ refused); NM-01…NM-06 closed with the prototype report committed.
 
 ### Phase I — Dashlane importer
 §10 end to end on synthetic fixtures; fuzz corpus + `cargo fuzz` CI
-budget; import UI with capture suppression + honesty copy.
+budget; import UI with capture suppression + honesty copy; IM-01…IM-05.
 Gate: 10⁵-row synthetic import < 60 s, zero panics, report clean.
 
 ### Phase J — first real credential gate
@@ -1947,20 +2461,26 @@ Every item must be verifiably green, with the named evidence:
 | 5 | vault excluded from screen capture | CS-01/02/06 |
 | 6 | vault excluded from OCR/indexing | CS-02 |
 | 7 | password input suppression working | CS-03/04/05 |
-| 8 | cryptographic tests green | CR-01…CR-12 |
+| 8 | cryptographic tests green | CR-01…CR-13 |
 | 9 | tamper tests green | CR-05/06/10, RG-01/02, BK-02 |
-| 10 | registry tests green | RG-01…RG-10 |
+| 10 | registry tests green | RG-01…RG-12, XV-TLV v2 vectors |
 | 11 | key rotation tests green | CR-08/12, RC-01/02/06/07 |
-| 12 | recovery tests green | RC-01…RC-08 |
-| 13 | remote backup restore tested | BK-01 + Phase F rehearsal log |
+| 12 | recovery tests green | RC-01…RC-08, FR-01…FR-03 |
+| 13 | remote backup restore tested | BK-01…BK-16 + Phase F rehearsal log |
 | 14 | no bulk-secret API | IPC catalog audit vs §1.5 — any new op reviewed against the never-list |
 | 15 | no agent vault API | route/command audit: `/v1/agent`, Tauri commands, nm ops |
 | 16 | dependency security review complete | §17.4 audits recorded; helper dep count reported; rsa-absence CI green; `cargo vet` clean |
 | 17 | security logs verified clean | log scrape during full test run: no secret-class strings (canary sweep) |
-| 18 | synthetic Dashlane import fuzzed | Phase I gate + corpus in repo |
-| 19 | Chrome origin-matching tests green | BR-01…BR-15 |
+| 18 | synthetic Dashlane import fuzzed | Phase I gate + corpus in repo + IM-01…IM-05 |
+| 19 | Chrome origin-matching tests green | BR-01…BR-19 |
 | 20 | iPhone approval replay tests green | DA-06/07/08 |
 | 21 | production build signing/hardened runtime verified | `codesign --verify --deep --strict`, runtime flag 0x10000, entitlement audit vs `macos-signing-and-hardening.md`; helper carries no `disable-library-validation` |
+| 22 | HPKE-SE adapter proven | §2.12 PoC report + XV-HPKE-SE vectors green on real SE keys (both directions) |
+| 23 | sync merge semantics proven | SY-01…SY-08 (no timestamp pick anywhere) |
+| 24 | backup credential auth/revocation proven | BK-12…BK-16 |
+| 25 | nm-host caller verification dispositioned | NM-01…NM-06 closed; prototype report committed; if layer 3 proved unreliable, §9.2 claims were reduced and re-reviewed |
+| 26 | helper panel isolation proven | UI-01…UI-05; MP/RK never observable in the WebView (CS-03 analog + webview snapshot) |
+| 27 | independent envelope-path review | §17.4 step 5 report attached (covers `hpke` usage + the `hpke_se` adapter) |
 
 Only then may the first real credential be imported.
 
@@ -1993,73 +2513,42 @@ protocol is out of scope here by instruction.
 
 ---
 
-## 21. Open technical questions
+## 21. Formerly open questions — resolved (v0.2, finding 14)
 
-Settled product decisions are not reopened (v0.3 §19). The following are
-genuine platform/protocol choices that materially shape UX or security
-and are not resolvable by pure engineering convention. Everything else
-encountered during implementation must be resolved by standard practice
-or escalated, not decided silently.
+Settled product decisions remain settled (v0.3 §19). The three v0.1 open
+questions are now closed; the locked choices below are binding for
+implementation. Anything genuinely new that surfaces during
+implementation must be escalated to the owner, not decided silently.
 
-### OQ-1 — Macs without Secure Enclave
+### OQ-1 → locked: Secure-Enclave-capable Macs required
 
-**Issue:** pre-T2 Intel Macs have no SE; device identity keys would fall
-back to software Keychain keys (extractable on full compromise).
-**Why it matters:** v0.3 prefers SE-backed keys "where platform APIs
-permit"; the fallback tier is explicitly called weaker (§8.1) but whether
-v1 *supports* such Macs at all is a product/security cut line.
-**Options:** (a) require SE-capable hardware (all Apple Silicon, T2
-Intel) for device identity — refuse vault setup otherwise; (b) allow a
-software-key tier with a persistent "reduced device security" badge;
-(c) allow software tier silently (rejected: dishonest).
-**Security implications:** (b) creates a downgrade target — an attacker
-who compromises setup-time code could steer enrollment to the weak tier;
-(a) is simplest and honest but excludes old hardware.
-**Recommendation:** (a) for v1, with the requirement stated in onboarding;
-revisit only if real users are blocked. (The Mac in this repo's
-development environment is Apple Silicon and supports SE.)
+Device identity requires an SE on both platforms: all Apple Silicon Macs
+and T2 Intel Macs (subject to the §2.12 PoC confirming the required
+`SecKeyCreateRandomKey`/key-agreement APIs behave identically there).
+Vault setup refuses on hardware without an SE, with a plain explanation.
+No software-Keychain identity tier ships in v1: a downgrade tier would
+be a steering target at setup time, and a silent one would be dishonest.
+This trades old-hardware support for one identity-security level
+everywhere.
 
-### OQ-2 — Approval relay when phone and Mac share no network
+### OQ-2 → locked: direct reachability in v1; relay is a future decision
 
-**Issue:** §7.2 APNs wakes the phone, but if the phone cannot reach the
-Mac directly (cellular-only, restrictive NAT), the challenge fetch fails
-and the user drops to the §6.C password fallback even though both devices
-are online.
-**Why it matters:** APNs reachability materially changes the approval UX
-success rate in exactly the clamshell scenario the feature exists for.
-**Options:** (a) v1 accepts the fallback (APNs wake + direct fetch only);
-(b) relay opaque, end-to-end-protected challenge/approval envelopes
-through the §11 provider (provider sees envelopes + timing, contents are
-signed/encrypted between enrolled devices); (c) skip APNs entirely and
-require direct reachability (rejected: worse UX than (a)).
-**Security implications:** (b) adds no secret exposure (envelopes are
-opaque TLV, signed per §6.5, confidentiality of origin/title protected by
-an AEAD under an HPKE session key between the two devices) but enlarges
-the provider's role from storage to mailbox — availability and traffic
-analysis surface grow.
-**Recommendation:** ship (a) in v1 with the §6.5 format already
-relay-safe (it is — the TLV blob is opaque to the carrier); adopt (b) as
-v1.1 if fallback frequency in practice justifies it. Decide at Phase G
-review with measured fallback rates from dogfooding.
+v1 phone approval requires the APNs wake (§7.2) plus the phone reaching
+the Mac directly; otherwise the §6.C fallback path serves. No provider
+mailbox/relay ships in v1 — the provider stays a dumb ciphertext store.
+The §6.5 approval TLV is already opaque and relay-safe by construction,
+so a future E2E relay (provider learns envelopes + timing only) can be
+adopted as an owner decision without redesigning the payload.
 
-### OQ-3 — Minimum iOS version (CryptoKit HPKE floor)
+### OQ-3 → locked: iOS 17+ for v1
 
-**Issue:** CryptoKit's HPKE API requires iOS 17+. Supporting iOS 15–16
-means hand-composing ECDH+HKDF+AEAD in Swift for envelope decapsulation —
-a second crypto composition path on exactly the code that handles
-WrapPayload.
-**Why it matters:** v0.3 forbids custom primitives and duplicate crypto
-paths without re-review (§18 rules); this is an Apple platform behavior
-forcing a choice.
-**Options:** (a) require iOS 17+ (single HPKE path both platforms);
-(b) add the Swift-side manual composition with XV-ECDH/HPKE vectors
-proving RFC 9180 equivalence; (c) lower security by simplifying the wire
-format for old iOS (rejected outright).
-**Security implications:** (b) is standard-primitive composition but
-hand-rolled assembly — the highest-risk code in the iOS app; (a) risks
-nothing cryptographically and merely narrows device support.
-**Recommendation:** (a) iOS 17+ for v1. Revisit (b) only with a measured
-user need and a dedicated crypto review of the Swift composition.
+CryptoKit's HPKE API floor is iOS 17, and the §2.12 SE-open adapter
+requires the same API family; supporting older iOS would mean a second
+hand-composed crypto path in Swift, which v0.3 §18 forbids without
+re-review. iOS 17+ is therefore the v1 floor, and the §2.12 PoC verifies
+the exact CryptoKit/Security.framework calls on the oldest supported
+version. Revisit older iOS only with measured user need and a dedicated
+review.
 
 ---
 
