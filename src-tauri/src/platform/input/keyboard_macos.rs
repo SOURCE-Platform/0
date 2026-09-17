@@ -13,6 +13,19 @@ use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn IsSecureEventInputEnabled() -> bool;
+}
+
+/// Whether any application currently has Secure Event Input enabled.
+/// Browsers and password fields enable it; macOS already withholds keystrokes
+/// from event taps while it is active, and this explicit gate makes every
+/// other capture path fail closed as well (security architecture §15.5).
+fn secure_event_input_active() -> bool {
+    unsafe { IsSecureEventInputEnabled() }
+}
+
 /// macOS keyboard event listener using CGEventTap
 pub struct MacOSKeyboardListener {
     event_sender: mpsc::UnboundedSender<KeyboardEvent>,
@@ -130,6 +143,13 @@ impl MacOSKeyboardListener {
             .map(|e| e.is_sensitive())
             .unwrap_or(false);
 
+        // Suppression signals beyond the focused element itself: the OS-level
+        // Secure Event Input flag, and SOURCE's own registered sensitive
+        // surface (e.g. the future vault window) being frontmost.
+        let secure_input = secure_event_input_active();
+        let own_sensitive_frontmost = app_context.process_id == std::process::id()
+            && crate::core::capture_exclusions::sensitive_surface_visible();
+
         // Create keyboard event
         let keyboard_event = KeyboardEvent {
             timestamp,
@@ -146,8 +166,15 @@ impl MacOSKeyboardListener {
             is_sensitive,
         };
 
-        // Only log if not sensitive
-        if Self::should_log_keystroke(&keyboard_event) {
+        // Record only when every suppression signal is clear. The registry
+        // check is the single choke point; `should_log_keystroke` keeps its
+        // element-level policy as a second layer.
+        if crate::core::capture_exclusions::should_record_keystroke(
+            keyboard_event.is_sensitive,
+            secure_input,
+            own_sensitive_frontmost,
+        ) && Self::should_log_keystroke(&keyboard_event)
+        {
             let _ = self.event_sender.send(keyboard_event);
         }
     }

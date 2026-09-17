@@ -49,6 +49,12 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         let data_dir = platform
             .get_data_directory()
             .expect("Failed to get data directory");
+        // Reserve the future vault directory with owner-only permissions and
+        // a Spotlight never-index marker. Creates no vault state; see
+        // docs/security/credential-vault-security-architecture.md §7.
+        if let Err(error) = crate::core::vault_dir::ensure_future_vault_dir(&data_dir) {
+            eprintln!("Warning: could not prepare future vault directory: {error}");
+        }
         let recordings_path = data_dir.join("recordings");
         let storage = Arc::new(
             RecordingStorage::new(recordings_path, db.clone())

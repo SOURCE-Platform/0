@@ -174,6 +174,13 @@ impl ScreenRecorder {
                 "Screen recording consent not granted".to_string(),
             ));
         }
+        // One-shot frame requests (previews, samplers) honor the same
+        // capture-exclusion registry as the recording loop.
+        if crate::core::capture_exclusions::screen_capture_suppressed() {
+            return Err(CaptureError::CaptureFailed(
+                "Capture suppressed while a sensitive window is visible".to_string(),
+            ));
+        }
         self.capture.lock().await.capture_frame(display_id).await
     }
 
@@ -238,6 +245,15 @@ impl ScreenRecorder {
 
         if display_is_asleep(display_id) {
             tokio::time::sleep(Duration::from_secs(1)).await;
+            return Ok(());
+        }
+
+        // A registered sensitive SOURCE surface (e.g. the future vault or
+        // import window) is visible. This capture backend records the whole
+        // display, so fail closed: drop the frame instead of recording and
+        // trying to mask later. See core::capture_exclusions.
+        if crate::core::capture_exclusions::screen_capture_suppressed() {
+            tokio::time::sleep(Duration::from_millis(250)).await;
             return Ok(());
         }
 

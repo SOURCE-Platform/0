@@ -1,6 +1,7 @@
 pub mod agent_bridge;
 pub mod agent_sessions;
 pub mod capture_control;
+pub mod capture_exclusions;
 pub mod capture_data;
 pub mod context;
 pub mod gaze;
@@ -17,6 +18,7 @@ pub mod timeline;
 pub use agent_bridge::*;
 pub use agent_sessions::*;
 pub use capture_control::*;
+pub use capture_exclusions::*;
 pub use capture_data::*;
 pub use context::*;
 pub use gaze::*;

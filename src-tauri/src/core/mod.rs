@@ -1,5 +1,6 @@
 pub mod agent_bridge;
 pub mod agent_sessions;
+pub mod capture_exclusions;
 pub mod command_analyzer;
 pub mod config;
 pub mod config_defaults;
@@ -38,6 +39,7 @@ pub mod search_engine;
 pub mod search_engine_types;
 pub mod session_manager;
 pub mod session_manager_helpers;
+pub mod vault_dir;
 pub mod session_manager_types;
 pub mod storage;
 pub mod storage_cleanup;
