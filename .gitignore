@@ -25,11 +25,12 @@ dist-ssr
 
 # Rust
 /target
-Cargo.lock
+# Cargo.lock is intentionally tracked: reproducible dependency resolution is
+# the baseline for cargo audit/vet supply-chain checks (security architecture
+# §15.4 / invariant 13).
 
 # Tauri
 /src-tauri/target
-/src-tauri/Cargo.lock
 
 # OS
 .DS_Store

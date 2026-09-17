@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "check:file-lengths": "node scripts/check-file-lengths.mjs",
+    "audit:deps": "bash scripts/audit-deps.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },
