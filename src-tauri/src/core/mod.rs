@@ -1,5 +1,6 @@
 pub mod agent_bridge;
 pub mod agent_sessions;
+pub mod asset_scope_guard;
 pub mod capture_exclusions;
 pub mod command_analyzer;
 pub mod config;
