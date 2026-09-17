@@ -1,6 +1,24 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { invoke } from "@tauri-apps/api/core";
+import {
+  reportWebviewReady,
+  runAssetScopeProbe,
+  runDevSmokeTour,
+} from "./dev/smoke";
 import "./index.css";
+
+// Forward CSP violations to the Rust log so policy regressions surface
+// during development and testing instead of only in the web inspector.
+window.addEventListener("securitypolicyviolation", (event) => {
+  invoke("report_csp_violation", {
+    directive: event.violatedDirective,
+    blockedUri: event.blockedURI,
+    sourceFile: event.sourceFile,
+  }).catch(() => {
+    // Reporting must never break the app it reports on.
+  });
+});
 
 function renderFatalError(error: unknown) {
   const rootElement = document.getElementById("root");
@@ -68,6 +86,12 @@ async function bootstrap() {
         <App />
       </React.StrictMode>,
     );
+
+    reportWebviewReady();
+    void runAssetScopeProbe();
+    if (import.meta.env.DEV) {
+      runDevSmokeTour();
+    }
   } catch (error) {
     renderFatalError(error);
   }
