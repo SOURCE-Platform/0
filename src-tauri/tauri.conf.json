@@ -37,7 +37,8 @@
     "targets": "all",
     "macOS": {
       "signingIdentity": "Apple Development",
-      "hardenedRuntime": false
+      "hardenedRuntime": true,
+      "entitlements": "entitlements.plist"
     },
     "resources": {
       "native-pkg/.build/release/SourceDictation": "helpers/source-dictation"

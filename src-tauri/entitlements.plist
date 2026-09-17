@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Microphone capture (dictation/ASR/audio metering) requires this
+         entitlement under the hardened runtime. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- Camera access for gaze calibration. -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <!-- Homebrew-installed FFmpeg / Leptonica / Tesseract dylibs are signed
+         by Homebrew, not by our team identity, so library validation would
+         refuse to load them. The future vault helper MUST NOT carry this
+         entitlement: it links no third-party dylibs, keeping its library
+         validation intact (see docs/security/macos-signing-and-hardening.md). -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
