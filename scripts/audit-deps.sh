@@ -34,3 +34,19 @@ cargo audit --ignore RUSTSEC-2023-0071
 # baseline (supply-chain/config.toml); any NEW dependency added to
 # Cargo.lock fails this check until a human vets or deliberately exempts it.
 cargo vet
+
+# Vault-helper minimal-dependency gate (implementation spec §17.4, Phase A):
+# the helper's graph is reported and must stay minimal; the rsa crate must
+# never enter it (Marvin timing attack class, and no RSA is used anywhere
+# in the vault design).
+HELPER_DEPS="$(cargo tree -p source-vault-helper --prefix none | sort -u | wc -l | tr -d ' ')"
+echo "vault-helper dependency count: $HELPER_DEPS (gate: < 120, target: minimal)"
+if [ "$HELPER_DEPS" -ge 120 ]; then
+    echo "error: vault-helper dependency count $HELPER_DEPS exceeds the 120 gate" >&2
+    exit 1
+fi
+if cargo tree -p source-vault-helper --prefix none | grep -qE '^rsa '; then
+    echo "error: rsa entered the vault-helper dependency graph" >&2
+    exit 1
+fi
+echo "vault-helper dependency graph: no rsa"

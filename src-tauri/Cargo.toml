@@ -1,3 +1,7 @@
+[workspace]
+members = ["vault-helper"]
+resolver = "2"
+
 [package]
 name = "SOURCE"
 version = "0.1.0"
