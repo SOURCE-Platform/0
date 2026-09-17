@@ -45,6 +45,7 @@ impl Default for Config {
             mobile_clip_retention_days:
                 crate::core::config_defaults::default_mobile_clip_retention_days(),
             mobile_agent_prompts_enabled: false,
+            agent_prompts_keep_bypass: false,
         }
     }
 }

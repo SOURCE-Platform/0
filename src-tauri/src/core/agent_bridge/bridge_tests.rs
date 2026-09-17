@@ -106,7 +106,8 @@ fn briefs_are_capped_at_a_word_boundary() {
 #[ignore = "takes over a real Claude conversation and uses plan usage"]
 async fn live_bridge() {
     let session_id = std::env::var("SOURCE_LIVE_SESSION").expect("set SOURCE_LIVE_SESSION");
-    let bridge = AgentBridge::new(crate::core::agent_sessions::AgentRoots::from_env());
+    let config = std::sync::Arc::new(std::sync::Mutex::new(crate::core::config::Config::default()));
+    let bridge = AgentBridge::new(crate::core::agent_sessions::AgentRoots::from_env(), config);
     let mut events = bridge.subscribe();
     let started = std::time::Instant::now();
     let sent = bridge.send_prompt(&session_id, "This is a test from SOURCE. Reply with only the word PONG.").await;

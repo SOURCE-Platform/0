@@ -19,6 +19,8 @@ pub struct DriverConfig {
     pub session_id: String,
     pub cwd: PathBuf,
     pub permission_mode: Option<String>,
+    /// Keep `bypassPermissions` if that's the conversation's mode (a Mac setting).
+    pub keep_bypass: bool,
     pub release_after_quiet: Duration,
 }
 
@@ -126,7 +128,7 @@ impl ClaudeDriver {
     }
 
     fn spawn(self: &Arc<Self>) -> Result<Running, DriverError> {
-        let args = resume_args(&self.config.session_id, self.config.permission_mode.as_deref());
+        let args = resume_args(&self.config.session_id, self.config.permission_mode.as_deref(), self.config.keep_bypass);
         let mut command = Command::new(&self.config.binary);
         for name in inherited_host_settings(std::env::vars_os().filter_map(|(name, _)| name.into_string().ok())) {
             command.env_remove(name);

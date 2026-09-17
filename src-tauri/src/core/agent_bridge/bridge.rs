@@ -4,6 +4,7 @@ use super::claude_driver::{ClaudeDriver, DriverConfig, RELEASE_AFTER_QUIET};
 use super::driver_events::DriverEvent;
 use super::handoff::{take_over, HandoffError};
 use crate::core::agent_sessions::{claude_conversation_context, AgentRoots};
+use crate::core::config::Config;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -42,19 +43,35 @@ pub enum SendError {
 pub struct AgentBridge {
     roots: AgentRoots,
     binary: Option<PathBuf>,
+    /// The app's settings, read when a conversation's process starts. Tests go without.
+    config: Option<Arc<std::sync::Mutex<Config>>>,
     release_after_quiet: Duration,
     drivers: Mutex<HashMap<String, Arc<ClaudeDriver>>>,
     events: broadcast::Sender<BridgeEvent>,
 }
 
 impl AgentBridge {
-    pub fn new(roots: AgentRoots) -> Arc<Self> {
-        Self::with_binary(roots, resolve_claude_binary(), RELEASE_AFTER_QUIET)
+    pub fn new(roots: AgentRoots, config: Arc<std::sync::Mutex<Config>>) -> Arc<Self> {
+        Self::build(roots, resolve_claude_binary(), RELEASE_AFTER_QUIET, Some(config))
     }
 
     pub fn with_binary(roots: AgentRoots, binary: Option<PathBuf>, release_after_quiet: Duration) -> Arc<Self> {
+        Self::build(roots, binary, release_after_quiet, None)
+    }
+
+    fn build(
+        roots: AgentRoots,
+        binary: Option<PathBuf>,
+        release_after_quiet: Duration,
+        config: Option<Arc<std::sync::Mutex<Config>>>,
+    ) -> Arc<Self> {
         let (events, _) = broadcast::channel(512);
-        Arc::new(Self { roots, binary, release_after_quiet, drivers: Mutex::new(HashMap::new()), events })
+        Arc::new(Self { roots, binary, config, release_after_quiet, drivers: Mutex::new(HashMap::new()), events })
+    }
+
+    fn keeps_bypass(&self) -> bool {
+        let Some(config) = &self.config else { return false };
+        config.lock().map(|config| config.agent_prompts_keep_bypass).unwrap_or(false)
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<BridgeEvent> {
@@ -104,6 +121,7 @@ impl AgentBridge {
             session_id: session_id.to_string(),
             cwd: PathBuf::from(context.cwd),
             permission_mode: context.permission_mode,
+            keep_bypass: self.keeps_bypass(),
             release_after_quiet: self.release_after_quiet,
         });
         tokio::spawn(forward(driver.subscribe(), self.events.clone(), driver.clone()));

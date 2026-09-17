@@ -146,9 +146,20 @@ fn recognises_a_sign_in_that_could_not_be_renewed() {
 
 #[test]
 fn resume_args_inherit_a_safe_permission_mode_only() {
-    let base = resume_args("s-1", None);
+    let base = resume_args("s-1", None, false);
     assert_eq!(&base[..3], ["-p", "--resume", "s-1"]);
     assert!(!base.contains(&"--permission-mode".to_string()));
-    assert!(resume_args("s-1", Some("acceptEdits")).ends_with(&["--permission-mode".to_string(), "acceptEdits".to_string()]));
-    assert!(!resume_args("s-1", Some("bypassPermissions")).contains(&"bypassPermissions".to_string()));
+    assert!(resume_args("s-1", Some("acceptEdits"), false).ends_with(&["--permission-mode".to_string(), "acceptEdits".to_string()]));
+    let bypass = resume_args("s-1", Some("bypassPermissions"), false);
+    assert!(!bypass.iter().any(|arg| arg.contains("bypass") || arg.contains("skip-permissions")), "{bypass:?}");
+}
+
+#[test]
+fn bypass_is_kept_only_when_the_setting_allows_it_and_the_conversation_uses_it() {
+    let kept = resume_args("s-1", Some("bypassPermissions"), true);
+    assert!(kept.ends_with(&["--permission-mode", "bypassPermissions", "--allow-dangerously-skip-permissions"].map(String::from)));
+    // The setting never raises a conversation that isn't in Bypass.
+    let normal = resume_args("s-1", Some("default"), true);
+    assert!(!normal.iter().any(|arg| arg.contains("skip-permissions")), "{normal:?}");
+    assert!(!resume_args("s-1", None, true).iter().any(|arg| arg.contains("permission")));
 }

@@ -180,6 +180,11 @@ pub struct Config {
     /// default: pairing alone should only allow uploading recordings.
     #[serde(default)]
     pub mobile_agent_prompts_enabled: bool,
+    /// Prompts SOURCE sends into a conversation set to Bypass permissions keep
+    /// that mode. Off by default: SOURCE's own run can't show approval requests,
+    /// so with this on, Claude runs commands from the phone without asking.
+    #[serde(default)]
+    pub agent_prompts_keep_bypass: bool,
 }
 
 include!("config_default_impl.rs");

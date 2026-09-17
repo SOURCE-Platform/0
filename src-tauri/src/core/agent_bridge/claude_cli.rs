@@ -79,7 +79,9 @@ fn parse_version(name: &str) -> Option<Vec<u64>> {
 ///
 /// `permission_mode` should be the mode the conversation last ran in (read from
 /// its transcript), so a voice prompt is allowed exactly what a typed one would be.
-pub fn resume_args(session_id: &str, permission_mode: Option<&str>) -> Vec<String> {
+/// Bypass permissions is dropped unless `keep_bypass` (the Mac setting) allows it;
+/// then it's passed the way the Claude app passes it.
+pub fn resume_args(session_id: &str, permission_mode: Option<&str>, keep_bypass: bool) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--resume",
@@ -93,13 +95,21 @@ pub fn resume_args(session_id: &str, permission_mode: Option<&str>) -> Vec<Strin
     .iter()
     .map(|arg| arg.to_string())
     .collect();
-    if let Some(mode) = permission_mode.filter(|mode| ALLOWED_MODES.contains(mode)) {
-        args.push("--permission-mode".to_string());
-        args.push(mode.to_string());
+    match permission_mode {
+        Some(BYPASS) if keep_bypass => {
+            args.extend(["--permission-mode", BYPASS, "--allow-dangerously-skip-permissions"].map(String::from));
+        }
+        Some(mode) if ALLOWED_MODES.contains(&mode) => {
+            args.push("--permission-mode".to_string());
+            args.push(mode.to_string());
+        }
+        _ => {}
     }
     args
 }
 
-/// Modes a voice prompt may inherit. `bypassPermissions` is deliberately absent:
-/// SOURCE never grants more than asking would.
+const BYPASS: &str = "bypassPermissions";
+
+/// Modes a prompt from SOURCE always inherits. `bypassPermissions` is deliberately
+/// absent: without the Mac setting, SOURCE never grants more than asking would.
 const ALLOWED_MODES: [&str; 4] = ["default", "acceptEdits", "plan", "auto"];

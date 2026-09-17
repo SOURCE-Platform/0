@@ -1,4 +1,5 @@
 use crate::app::state::AppState;
+use crate::core::config::Config;
 use crate::core::mobile::PhonePromptSetting;
 use tauri::{AppHandle, Manager, State};
 
@@ -147,14 +148,28 @@ pub fn set_mobile_agent_prompts_enabled(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    {
-        let mut current = state.config.lock().map_err(|e| format!("Failed to lock config: {e}"))?;
-        let mut next = current.clone();
-        next.mobile_agent_prompts_enabled = enabled;
-        next.save().map_err(|e| format!("Failed to save configuration: {e}"))?;
-        *current = next;
-    }
+    save_one_setting(&state, |config| config.mobile_agent_prompts_enabled = enabled)?;
     announce_phone_prompts(&app, enabled);
+    Ok(())
+}
+
+/// Switch "Keep Bypass permissions for prompts from SOURCE". Saves at once like
+/// the switch above. It applies from the next time SOURCE starts Claude for a
+/// conversation, which is every prompt after the last reply was handed back.
+#[tauri::command]
+pub fn set_agent_prompts_keep_bypass(enabled: bool, state: State<'_, AppState>) -> Result<(), String> {
+    save_one_setting(&state, |config| config.agent_prompts_keep_bypass = enabled)
+}
+
+/// Change one setting and save it, leaving any other unsaved edits on the
+/// Settings page unsaved. The file is written before memory changes, so a failed
+/// save changes nothing.
+fn save_one_setting(state: &State<'_, AppState>, change: impl FnOnce(&mut Config)) -> Result<(), String> {
+    let mut current = state.config.lock().map_err(|e| format!("Failed to lock config: {e}"))?;
+    let mut next = current.clone();
+    change(&mut next);
+    next.save().map_err(|e| format!("Failed to save configuration: {e}"))?;
+    *current = next;
     Ok(())
 }
 

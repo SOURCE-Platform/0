@@ -102,6 +102,16 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
     }
   }
 
+  async function setKeepBypass(enabled: boolean) {
+    controller.updateConfig({ agent_prompts_keep_bypass: enabled });
+    try {
+      await invoke("set_agent_prompts_keep_bypass", { enabled });
+    } catch (error) {
+      controller.updateConfig({ agent_prompts_keep_bypass: !enabled });
+      showSettingsToast({ type: "error", text: `Couldn't change Bypass permissions: ${error}` });
+    }
+  }
+
   async function refreshDevices() {
     try {
       const rows = await invoke<MobileDevice[]>("mobile_list_devices");
@@ -156,6 +166,26 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
               id="mobile-agent-prompts"
               checked={config.mobile_agent_prompts_enabled ?? false}
               onCheckedChange={(checked) => void setPhonePrompts(checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <Label htmlFor="agent-prompts-keep-bypass" className="text-base">
+                Keep Bypass permissions for prompts from the phone
+              </Label>
+              <p className="max-w-[60ch] text-sm text-muted-foreground">
+                The phone can't show Claude's permission requests, so by default anything that needs
+                your approval is refused for prompts sent from it. Turn this on to let a conversation set to
+                Bypass permissions on this Mac keep that mode: Claude then runs commands and changes
+                files without asking, for anyone using your paired phone. Also applies to prompts
+                sent from SOURCE's Agents tab. Other conversations are unaffected.
+              </p>
+            </div>
+            <Switch
+              id="agent-prompts-keep-bypass"
+              checked={config.agent_prompts_keep_bypass ?? false}
+              onCheckedChange={(checked) => void setKeepBypass(checked)}
             />
           </div>
 

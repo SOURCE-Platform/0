@@ -125,6 +125,7 @@ pub fn run() {
             mobile_list_devices,
             mobile_unpair_device,
             set_mobile_agent_prompts_enabled,
+            set_agent_prompts_keep_bypass,
             debug_mobile_transcribe
         ])
         .on_window_event(|window, event| {

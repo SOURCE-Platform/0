@@ -15,7 +15,7 @@ use tokio::sync::watch;
 /// server needs to offer the same to a paired phone.
 pub fn start_agent_bridge(app: &AppHandle, config: Arc<Mutex<Config>>) -> AgentServices {
     let roots = AgentRoots::from_env();
-    let bridge = AgentBridge::new(roots.clone());
+    let bridge = AgentBridge::new(roots.clone(), config.clone());
     app.manage(bridge.clone());
 
     let handle = app.clone();

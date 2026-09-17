@@ -12,6 +12,7 @@ fn config(binary: PathBuf, quiet: Duration) -> DriverConfig {
         session_id: "s-1".to_string(),
         cwd: std::env::temp_dir(),
         permission_mode: None,
+        keep_bypass: false,
         release_after_quiet: quiet,
     }
 }
@@ -148,6 +149,7 @@ async fn live_continue_real_conversation() {
         session_id,
         cwd,
         permission_mode: None,
+        keep_bypass: false,
         release_after_quiet: Duration::from_secs(60),
     });
     let mut events = driver.subscribe();
