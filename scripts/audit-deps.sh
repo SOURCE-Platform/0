@@ -15,7 +15,17 @@ if ! command -v cargo-audit >/dev/null 2>&1; then
     echo "Install it with: cargo install cargo-audit --locked" >&2
     exit 2
 fi
+if ! command -v cargo-vet >/dev/null 2>&1; then
+    echo "error: cargo-vet is not installed." >&2
+    echo "Install it with: cargo install cargo-vet --locked" >&2
+    exit 2
+fi
 
 # Known vulnerabilities fail the check (cargo audit exits nonzero);
 # unmaintained/soundness notices are printed as warnings only.
 cargo audit
+
+# Supply-chain review gate: the current graph is exempted as the bootstrap
+# baseline (supply-chain/config.toml); any NEW dependency added to
+# Cargo.lock fails this check until a human vets or deliberately exempts it.
+cargo vet
