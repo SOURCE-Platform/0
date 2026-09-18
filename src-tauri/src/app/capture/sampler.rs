@@ -1,4 +1,3 @@
-use crate::app::capture::status::interval_for_profile;
 use crate::app::state::{AppState, DesktopCaptureRuntime};
 use crate::core::config::Config;
 use crate::core::context_timeline;
@@ -9,6 +8,9 @@ use crate::models::activity::AppInfo;
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 use tokio::sync::RwLock;
+
+/// Desktop-context sampling interval (system/focus/visible windows).
+const SAMPLE_INTERVAL_SECS: u64 = 5;
 
 pub async fn persist_context_snapshot(
     db: Arc<Database>,
@@ -148,13 +150,13 @@ pub async fn spawn_desktop_sampler(
             .ok()
             .map(|cfg| {
                 (
-                    interval_for_profile(&cfg.resource_profile),
+                    SAMPLE_INTERVAL_SECS,
                     cfg.capture_channels.system,
                     cfg.capture_channels.focus,
                     cfg.capture_channels.visible_windows,
                 )
             })
-            .unwrap_or((5, false, false, false));
+            .unwrap_or((SAMPLE_INTERVAL_SECS, false, false, false));
 
         if capture_system || capture_focus || capture_visible_windows {
             if let Some(recorder) = os_activity_recorder.as_ref() {

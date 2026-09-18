@@ -90,8 +90,8 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
     }
   }
 
-  // Saves straight away rather than waiting for "Save settings", and only this
-  // setting, so other unsaved edits on the page stay unsaved.
+  // Goes through its dedicated command (which applies the change live, not
+  // just to the config file); the settings autosave then writes the same value.
   async function setPhonePrompts(enabled: boolean) {
     controller.updateConfig({ mobile_agent_prompts_enabled: enabled });
     try {

@@ -1,4 +1,4 @@
-import { CaptureChannels, Config } from "@/components/settings/types";
+import { CaptureChannels } from "@/components/settings/types";
 
 export const CHANNEL_META: Array<{
   key: keyof CaptureChannels;
@@ -61,35 +61,6 @@ export const CHANNEL_META: Array<{
     help: "Samples microphone and desktop audio into short local chunks, stores waveform envelopes, and transcribes speech with local Parakeet after each chunk is captured.",
   },
 ];
-
-export const RESOURCE_PROFILE_META: Record<
-  Config["resource_profile"],
-  {
-    label: string;
-    intervalSeconds: number;
-    summary: string;
-    details: string;
-  }
-> = {
-  minimal: {
-    label: "Minimal",
-    intervalSeconds: 15,
-    summary: "Lightest scene sampling, good for low-overhead validation.",
-    details: "System, focus, and visible-window scene snapshots are sampled every 15 seconds while capture is running.",
-  },
-  balanced: {
-    label: "Balanced",
-    intervalSeconds: 5,
-    summary: "Default desktop-context cadence for everyday capture.",
-    details: "System, focus, and visible-window scene snapshots are sampled every 5 seconds while capture is running.",
-  },
-  high_fidelity: {
-    label: "High Fidelity",
-    intervalSeconds: 2,
-    summary: "Fastest scene sampling for richer timeline reconstruction.",
-    details: "System, focus, and visible-window scene snapshots are sampled every 2 seconds while capture is running.",
-  },
-};
 
 export const PII_CATEGORIES = [
   { value: "email", label: "Emails" },

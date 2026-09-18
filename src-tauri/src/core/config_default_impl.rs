@@ -37,7 +37,6 @@ impl Default for Config {
             desktop_audio_gain_db: crate::core::config_defaults::default_desktop_audio_gain_db(),
             custom_dictionary: Vec::new(),
             capture_channels: CaptureChannels::default(),
-            resource_profile: ResourceProfile::Balanced,
             pii_settings: PiiDetectionSettings::default(),
             review_ui_defaults: ReviewUiDefaults::default(),
             mobile_enabled: crate::core::config_defaults::default_mobile_enabled(),

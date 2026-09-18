@@ -6,14 +6,6 @@ use crate::core::config_defaults::{default_pii_categories, default_pii_review_th
 use crate::core::config_validation::validate_config;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum ResourceProfile {
-    Minimal,
-    Balanced,
-    HighFidelity,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CaptureChannels {
     pub system: bool,
     pub focus: bool,
@@ -158,9 +150,6 @@ pub struct Config {
     /// Per-channel capture enablement
     #[serde(default)]
     pub capture_channels: CaptureChannels,
-    /// Capture fidelity/resource budget
-    #[serde(default = "crate::core::config_defaults::default_resource_profile")]
-    pub resource_profile: ResourceProfile,
     /// PII detection and review settings
     #[serde(default)]
     pub pii_settings: PiiDetectionSettings,

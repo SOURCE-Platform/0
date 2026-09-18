@@ -103,13 +103,11 @@ pub fn reset_config(app: AppHandle, state: State<'_, AppState>) -> Result<Config
 }
 
 #[tauri::command]
-pub async fn get_available_displays(state: State<'_, AppState>) -> Result<Vec<Display>, String> {
-    let recorder = state
-        .screen_recorder
-        .as_ref()
-        .ok_or("Screen recorder not initialized")?;
-    recorder
-        .get_available_displays()
+pub async fn get_available_displays() -> Result<Vec<Display>, String> {
+    // Ask the platform directly: the screen recorder only exists when a
+    // screen channel was on at launch, and the display picker must work
+    // before that (it is how capture gets started in the first place).
+    crate::platform::capture::PlatformCapture::get_displays()
         .await
         .map_err(|e| format!("Failed to get displays: {}", e))
 }

@@ -1,5 +1,5 @@
 use crate::app::state::{AppState, ChannelStatusDto, DesktopCaptureStatusDto};
-use crate::core::config::{Config, ResourceProfile};
+use crate::core::config::Config;
 use crate::core::consent::{ConsentManager, Feature};
 use crate::core::context_timeline;
 use crate::platform::capture::screen_capture_permission_granted;
@@ -27,14 +27,6 @@ pub fn enabled_channels_from_config(config: &Config) -> Vec<String> {
     .filter(|(_, enabled)| *enabled)
     .map(|(name, _)| name.to_string())
     .collect()
-}
-
-pub fn interval_for_profile(profile: &ResourceProfile) -> u64 {
-    match profile {
-        ResourceProfile::Minimal => 15,
-        ResourceProfile::Balanced => 5,
-        ResourceProfile::HighFidelity => 2,
-    }
 }
 
 pub async fn channel_permission_state(
@@ -97,7 +89,6 @@ pub async fn build_desktop_capture_status(
         channels_enabled: enabled_channels,
         warnings: runtime.warnings,
         missing_permissions,
-        resource_profile: format!("{:?}", config.resource_profile),
     })
 }
 

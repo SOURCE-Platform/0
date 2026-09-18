@@ -8,7 +8,6 @@ export interface DesktopCaptureStatus {
   channelsEnabled: string[];
   warnings: string[];
   missingPermissions: string[];
-  resourceProfile: string;
 }
 
 export interface ChannelStatus {

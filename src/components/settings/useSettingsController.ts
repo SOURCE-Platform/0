@@ -18,6 +18,7 @@ import {
   SettingsTab,
 } from "@/components/settings/types";
 import { broadcastConfigUpdate, showSettingsToast } from "@/components/settings/utils";
+import { useConfigAutosave } from "@/components/settings/useConfigAutosave";
 
 export function useSettingsController() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -37,6 +38,15 @@ export function useSettingsController() {
   const [tab, setTab] = useState<SettingsTab>("general");
   const { theme, setTheme } = useTheme();
   const { showDescriptions, setShowDescriptions } = useUIPrefs();
+  // Every settings change saves itself; there is no Save button.
+  const markSynced = useConfigAutosave(
+    config,
+    async (next) => {
+      await persistConfig(next);
+      void load(true, false);
+    },
+    (error) => showSettingsToast({ type: "error", text: `Failed to save settings: ${error}` }),
+  );
 
   useEffect(() => {
     void load();
@@ -44,8 +54,8 @@ export function useSettingsController() {
 
   useEffect(() => {
     if (!captureStatus?.isActive) return;
-    // Refresh live status only. Reloading config here overwrote switches the
-    // user had flipped but not saved yet, snapping them back within seconds.
+    // Refresh live status only. Reloading config here could overwrite a
+    // switch flipped in the last moment, before its autosave landed.
     const interval = window.setInterval(() => {
       void load(true, false);
     }, 5000);
@@ -88,7 +98,11 @@ export function useSettingsController() {
           ),
         ]);
 
-      if (includeConfig) setConfig(normalizeOcrConfig(normalizeAudioConfig(loadedConfig)));
+      if (includeConfig) {
+        const normalized = normalizeOcrConfig(normalizeAudioConfig(loadedConfig));
+        markSynced(normalized);
+        setConfig(normalized);
+      }
       setDisplays(availableDisplays);
       setAudioInputSources(loadedAudioInputSources);
       setChannelStatuses(loadedChannelStatuses);
@@ -142,28 +156,16 @@ export function useSettingsController() {
   }
 
   async function persistConfig(nextConfig: Config) {
+    markSynced(nextConfig);
     await invoke("update_config", { config: nextConfig });
     broadcastConfigUpdate(nextConfig);
-  }
-
-  async function saveConfig(nextConfig = config) {
-    if (!nextConfig) return;
-    setSaving(true);
-    try {
-      await persistConfig(nextConfig);
-      await load(true);
-      showSettingsToast({ type: "success", text: "Settings saved successfully." });
-    } catch (error) {
-      showSettingsToast({ type: "error", text: `Failed to save settings: ${error}` });
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function resetToDefaults() {
     setSaving(true);
     try {
       const defaults = await invoke<Config>("reset_config");
+      markSynced(defaults);
       setConfig(defaults);
       broadcastConfigUpdate(defaults);
       await load(true);
@@ -184,15 +186,17 @@ export function useSettingsController() {
 
     const nextConfig = normalizeOcrConfig({ ...config, capture_channels: nextChannels });
     setConfig(nextConfig);
-    await saveConfig(nextConfig);
+    try {
+      await persistConfig(nextConfig);
+      await load(true);
+    } catch (error) {
+      showSettingsToast({ type: "error", text: `Failed to save settings: ${error}` });
+      return;
+    }
     showSettingsToast({
       type: "success",
       text: `Solo test mode is active for ${String(channel).split("_").join(" ")}.`,
     });
-  }
-
-  function applyResourceProfile(profile: Config["resource_profile"]) {
-    updateConfig({ resource_profile: profile });
   }
 
   async function handleStartCapture() {
@@ -309,10 +313,8 @@ export function useSettingsController() {
     updateConfig,
     updateChannel,
     updatePiiCategory,
-    saveConfig,
     resetToDefaults,
     enableOnlyChannel,
-    applyResourceProfile,
     handleStartCapture,
     handleStopCapture,
     handleRevealPath,

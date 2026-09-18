@@ -8,13 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { AudioCaptureControls } from "@/components/settings/AudioCaptureControls";
 import { OcrCaptureControls } from "@/components/settings/OcrCaptureControls";
 import { ScreenPermissionNotice } from "@/components/settings/ScreenPermissionNotice";
-import { CHANNEL_META, RESOURCE_PROFILE_META } from "@/components/settings/constants";
+import { CHANNEL_META } from "@/components/settings/constants";
+import { EvidenceDisplayPicker } from "@/components/settings/EvidenceDisplayPicker";
 import { GazeCalibrationCard } from "@/components/settings/GazeCalibrationCard";
 import { SettingsController } from "@/components/settings/useSettingsController";
 import { formatChannelActivity, formatTimestamp } from "@/components/settings/utils";
@@ -27,56 +27,13 @@ export function CaptureSettingsSection({ controller }: { controller: SettingsCon
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Capture Preset</CardTitle>
+          <CardTitle>Evidence Display</CardTitle>
           <CardDescription className="max-w-[60ch]">
-            Choose how often SOURCE samples desktop context while capture is running.
+            The screen SOURCE records while capture is running.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="space-y-3">
-              <Label className="text-base">Resource Profile</Label>
-              <div className="inline-flex w-full overflow-hidden rounded-lg border border-border">
-                {(Object.keys(RESOURCE_PROFILE_META) as Array<keyof typeof RESOURCE_PROFILE_META>).map((profile) => {
-                  const meta = RESOURCE_PROFILE_META[profile];
-                  const selected = config.resource_profile === profile;
-                  return (
-                    <button
-                      key={profile}
-                      type="button"
-                      onClick={() => controller.applyResourceProfile(profile)}
-                      className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                        selected
-                          ? "bg-white/8 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.07)] ring-1 ring-white/18"
-                          : "bg-muted/18 text-muted-foreground hover:bg-muted/28 hover:text-foreground"
-                      }`}
-                    >
-                      {meta.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-base">Evidence Display</Label>
-              <Select value={controller.selectedDisplay} onValueChange={controller.selectDisplay}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a display" />
-                </SelectTrigger>
-                <SelectContent>
-                  {controller.displays.map((display) => (
-                    <SelectItem key={display.id} value={String(display.id)}>
-                      {display.name} ({display.width}×{display.height})
-                      {display.is_primary ? " - Primary" : ""}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="max-w-[36ch] text-xs text-muted-foreground">
-                Current screen evidence target: {controller.selectedDisplayName}
-              </p>
-            </div>
-          </div>
+        <CardContent className="space-y-2">
+          <EvidenceDisplayPicker controller={controller} />
         </CardContent>
       </Card>
       <Card>

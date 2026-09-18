@@ -1,9 +1,3 @@
-use super::config::ResourceProfile;
-
-pub(crate) fn default_resource_profile() -> ResourceProfile {
-    ResourceProfile::Balanced
-}
-
 pub(crate) fn default_audio_microphone_enabled() -> bool {
     true
 }

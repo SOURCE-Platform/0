@@ -85,33 +85,20 @@ export default function Settings() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Save Changes</CardTitle>
+          <CardTitle>Reset</CardTitle>
           <CardDescription>
-            Channel controls, PII settings, and capture presets are saved to the local SOURCE configuration.
+            Changes save automatically. Reset returns every setting to its default.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-muted-foreground">
-            Current evidence display: {controller.selectedDisplayName}. Save after changing capture profile or channel mix.
-          </p>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={controller.resetToDefaults}
-              disabled={controller.saving}
-              className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
-            >
-              Reset to defaults
-            </button>
-            <button
-              type="button"
-              onClick={() => controller.saveConfig()}
-              disabled={controller.saving}
-              className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-50"
-            >
-              {controller.saving ? "Saving..." : "Save settings"}
-            </button>
-          </div>
+        <CardContent>
+          <button
+            type="button"
+            onClick={controller.resetToDefaults}
+            disabled={controller.saving}
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
+          >
+            Reset to defaults
+          </button>
         </CardContent>
       </Card>
 

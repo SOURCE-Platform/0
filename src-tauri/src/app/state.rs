@@ -76,7 +76,6 @@ pub struct DesktopCaptureStatusDto {
     pub channels_enabled: Vec<String>,
     pub warnings: Vec<String>,
     pub missing_permissions: Vec<String>,
-    pub resource_profile: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
