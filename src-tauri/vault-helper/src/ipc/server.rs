@@ -101,7 +101,13 @@ impl Server {
             last_zero_clients: Instant::now(),
             next_conn_id: 0,
         }));
-        Ok(Server { listener, config, shared, shutdown, verifier })
+        Ok(Server {
+            listener,
+            config,
+            shared,
+            shutdown,
+            verifier,
+        })
     }
 
     pub fn boot_state(&self) -> VaultState {
@@ -193,7 +199,10 @@ fn read_hello(
     let frame = framing::read_frame(stream).ok()?;
     let hello = ops::parse_hello(&frame)?;
     if hello.proto != crate::PROTO_VERSION {
-        eprintln!("vault-helper: protocol major mismatch ({}), closing", hello.proto);
+        eprintln!(
+            "vault-helper: protocol major mismatch ({}), closing",
+            hello.proto
+        );
         return None;
     }
     let class = ops::parse_client_class(&hello.client)?;
@@ -212,7 +221,13 @@ fn register(shared: &Arc<Mutex<Shared>>, class: ClientClass, stream: &UnixStream
         let _ = old.stream.shutdown(Shutdown::Both);
     }
     if let Ok(clone) = stream.try_clone() {
-        shared.slots.insert(class, SlotEntry { conn_id, stream: clone });
+        shared.slots.insert(
+            class,
+            SlotEntry {
+                conn_id,
+                stream: clone,
+            },
+        );
     }
     shared.active += 1;
     conn_id
@@ -220,7 +235,11 @@ fn register(shared: &Arc<Mutex<Shared>>, class: ClientClass, stream: &UnixStream
 
 fn unregister(shared: &Arc<Mutex<Shared>>, class: ClientClass, conn_id: u64) {
     let mut shared = Shared::lock(shared);
-    if shared.slots.get(&class).is_some_and(|s| s.conn_id == conn_id) {
+    if shared
+        .slots
+        .get(&class)
+        .is_some_and(|s| s.conn_id == conn_id)
+    {
         shared.slots.remove(&class);
     }
     shared.active = shared.active.saturating_sub(1);

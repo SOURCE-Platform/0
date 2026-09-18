@@ -15,6 +15,35 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
 core-foundation = "0.10"
+# Phase B cryptographic core (spec §17.1). Versions are the current
+# RustCrypto releases; the spec's minor pins (argon2 0.5, chacha20poly1305
+# 0.10, hkdf 0.12, p256 0.13) predate the digest-0.11 line that the main
+# app's sha2 0.11 already uses. Same algorithms, same maintainers; each
+# version choice is recorded in the Phase B verification report and vetted
+# per §17.4. `hpke` is deliberately absent: envelope code is Phase E.
+argon2 = "0.6"
+chacha20poly1305 = "0.11"
+hkdf = "0.13"
+hmac = "0.13"
+sha2 = "0.11"
+zeroize = { version = "1", features = ["derive"] }
+secrecy = "0.10"
+subtle = "2"
+p256 = { version = "0.14", features = ["ecdsa"] }
+unicode-normalization = "0.1"
+getrandom = "0.4"
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+# Phase B gate tooling (never shipped in the bundle):
+[[bin]]
+name = "gen_vectors"
+path = "src/bin/gen_vectors.rs"
+
+[[bin]]
+name = "kdf_bench"
+path = "src/bin/kdf_bench.rs"
 
 [lib]
 name = "vault_helper"

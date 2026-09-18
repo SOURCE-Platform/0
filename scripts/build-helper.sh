@@ -83,6 +83,14 @@ else
     unset OV0_VAULT_DEV_TEAM_OU 2>/dev/null || true
 fi
 
+# §2.11: release helpers are compiled panic=abort (process death is the
+# zeroization of last resort) without debug info. panic is build-graph
+# global in Cargo, so this rides on RUSTFLAGS of the release invocation
+# rather than the workspace profile (which the main app shares).
+if [ "$PROFILE" = "release" ]; then
+    export RUSTFLAGS="${RUSTFLAGS:-} -C panic=abort -C debug=0"
+fi
+
 echo "==> building source-vault-helper ($PROFILE, OU $TEAM_OU)"
 (cd "$SRC_TAURI" && cargo build -p source-vault-helper ${CARGO_PROFILE_ARGS[@]+"${CARGO_PROFILE_ARGS[@]}"})
 

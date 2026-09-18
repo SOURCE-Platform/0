@@ -133,7 +133,14 @@ mod tests {
 
     #[test]
     fn unknown_ops_are_refused() {
-        for op in ["unlock", "reveal", "export_vault", "sign_backup_request", "", "HELLO"] {
+        for op in [
+            "unlock",
+            "reveal",
+            "export_vault",
+            "sign_backup_request",
+            "",
+            "HELLO",
+        ] {
             let (resp, next) = dispatch_op(VaultState::Locked, &json!({"op": op}));
             assert_eq!(resp["ok"], false, "op {op}");
             assert_eq!(resp["error"], "UNKNOWN_OP");

@@ -11,6 +11,7 @@
     "audit:deps": "bash scripts/audit-deps.sh",
     "build:helper": "bash scripts/build-helper.sh",
     "gate:phase-a": "bash scripts/phase-a-gate.sh",
+    "gate:phase-b": "bash scripts/phase-b-gate.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },

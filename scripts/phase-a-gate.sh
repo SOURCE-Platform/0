@@ -109,6 +109,10 @@ fi
 # --- 4. restart with vault header -> LOCKED --------------------------------
 mkdir -p "$VAULT1"; echo '{}' > "$VAULT1/header.json"
 kill "$HELPER_PID" 2>/dev/null; wait "$HELPER_PID" 2>/dev/null
+# The exited helper leaves its socket file behind (no unlink-on-exit), and
+# wait_for_socket would otherwise accept that stale file and let the client
+# race the new helper's unlink+bind (observed as ECONNREFUSED/ENOENT flakes).
+rm -f "$SOCK1"
 if start_helper "$SOCK1" "$VAULT1"; then
     OUT=$("$T/legit" "$SOCK1" state app 2>&1)
     if echo "$OUT" | grep -q "STATE=locked"; then

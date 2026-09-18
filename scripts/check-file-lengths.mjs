@@ -7,6 +7,8 @@ const includeExtensions = new Set([".rs", ".ts", ".tsx", ".js", ".jsx", ".swift"
 const includeRoots = [
   path.join(root, "src"),
   path.join(root, "src-tauri", "src"),
+  path.join(root, "src-tauri", "vault-helper", "src"),
+  path.join(root, "src-tauri", "vault-helper", "tests"),
 ];
 
 async function walk(dir) {

@@ -1,0 +1,36 @@
+{
+  "family": "XV-BIP39",
+  "vectors": [
+    {
+      "entropy": "00000000000000000000000000000000",
+      "note": "official 128-bit zeros",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+    },
+    {
+      "entropy": "ffffffffffffffffffffffffffffffff",
+      "note": "official 128-bit ones",
+      "words": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"
+    },
+    {
+      "entropy": "0000000000000000000000000000000000000000000000000000000000000000",
+      "note": "official 256-bit zeros",
+      "words": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art"
+    },
+    {
+      "entropy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "note": "official 256-bit ones (RK shape)",
+      "words": "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo vote"
+    },
+    {
+      "entropy": "4242424242424242424242424242424242424242424242424242424242424242",
+      "note": "vault synthetic 0x42*32",
+      "words": "drastic bamboo mountain loyal category cancel animal embark drastic bamboo mountain loyal category cancel animal embark drastic bamboo mountain loyal category cancel animal embark"
+    },
+    {
+      "entropy": "9999999999999999999999999999999999999999999999999999999999999999",
+      "note": "vault synthetic 0x99*32",
+      "words": "office smoke grid creek office smoke grid creek office smoke grid creek office smoke grid creek office smoke grid creek office smoke grid curious"
+    }
+  ],
+  "wordlist_sha256": "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
+}

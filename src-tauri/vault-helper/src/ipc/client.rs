@@ -82,7 +82,9 @@ impl VaultClient {
         if resp.get("op").and_then(Value::as_str) != Some("hello_ok")
             || resp.get("ok").and_then(Value::as_bool) != Some(true)
         {
-            return Err(ClientError::Protocol(format!("expected hello_ok, got {resp}")));
+            return Err(ClientError::Protocol(format!(
+                "expected hello_ok, got {resp}"
+            )));
         }
         if resp.get("proto").and_then(Value::as_u64) != Some(PROTO_VERSION as u64) {
             return Err(ClientError::Protocol("protocol major mismatch".to_string()));
@@ -92,7 +94,11 @@ impl VaultClient {
             .and_then(Value::as_str)
             .unwrap_or("unknown")
             .to_string();
-        Ok(VaultClient { stream, class, state })
+        Ok(VaultClient {
+            stream,
+            class,
+            state,
+        })
     }
 
     pub fn class(&self) -> ClientClass {

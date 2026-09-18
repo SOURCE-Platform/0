@@ -7,8 +7,8 @@
 //! states and the transitions between them; nothing here anticipates them
 //! beyond the enum documentation.
 
-use std::path::Path;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
 use crate::VAULT_HEADER_NAME;
 
@@ -53,10 +53,7 @@ pub fn detect_boot_state(vault_dir: &Path) -> VaultState {
 /// lock and stays UNINITIALIZED (there is no vault to lock). Returns the
 /// resulting state. The transition is idempotent, matching spec §13.2.
 pub fn apply_lock(state: VaultState) -> VaultState {
-    match state {
-        VaultState::Locked => VaultState::Locked,
-        VaultState::Uninitialized => VaultState::Uninitialized,
-    }
+    state // both current states: lock is a no-op identity transition
 }
 
 #[cfg(test)]
@@ -83,6 +80,9 @@ mod tests {
     #[test]
     fn lock_is_idempotent_and_never_unlocks() {
         assert_eq!(apply_lock(VaultState::Locked), VaultState::Locked);
-        assert_eq!(apply_lock(VaultState::Uninitialized), VaultState::Uninitialized);
+        assert_eq!(
+            apply_lock(VaultState::Uninitialized),
+            VaultState::Uninitialized
+        );
     }
 }

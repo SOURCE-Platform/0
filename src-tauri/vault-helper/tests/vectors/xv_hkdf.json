@@ -1,0 +1,72 @@
+{
+  "family": "XV-HKDF",
+  "kdf": "HKDF-SHA-256 (RFC 5869)",
+  "vectors": [
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/wrap/mp/v1",
+      "okm32": "6fd84f37194f3fe041d0b4d398a35c6030ec284d906ec76d5abc5ae3342ffefb",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/wrap/rk/v1",
+      "okm32": "4c31896ca47dd5a4e2adf88b7cbdadfda8338f16203febc5a012b71b8ee8c850",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/record/v1",
+      "okm32": "6484b9817bed5a5df04968ae179406f3b2d053a66bd915c6abaf40e5654af866",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/meta/v1",
+      "okm32": "a71db04bb6ece48709701eaaf253ebd5bdf4298db8e1ea413e9d9c6185098a30",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/recovery-auth/v1",
+      "okm32": "0d3102d0b0fd23c30f5f6b420d3337cf390ff2bb19f1b2511940de3ec2a4ffca",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/locate/mp/v1",
+      "okm32": "afe72c9c587470cee382f4f5a9f599c015569edd4889065eec2696b50aced671",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/locate/rk/v1",
+      "okm32": "eba70d3eb3d0213bda64ae9d476d73ba7dab757d80b4a9f1759084cbbdb8aae6",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/backup-auth/mp/v1",
+      "okm32": "24666051e139be3ec46c0163447b2fb09dfc8c025221f00f8effd3347cf5146f",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/backup-auth/rk/v1",
+      "okm32": "82519be0c4a316d7d96a5fd3deeada129fb7b14248e56f3aadff9580fabbbe6d",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/import-fingerprint/v1",
+      "okm32": "83646881ee62720b5ac998431ec8883d77a04c537fe1dd5e2d2a6a87949e8839",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/enroll/sas/v1",
+      "okm32": "fec490fc9893ea671a9c6a6be13b53c9c1f2390881f3cb9bd5ecdd60c4ad4dfc",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    }
+  ]
+}

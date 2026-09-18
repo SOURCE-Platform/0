@@ -45,9 +45,13 @@ fn idle_timeout() -> std::time::Duration {
 }
 
 fn main() -> ExitCode {
+    // §2.11: the helper must never dump core (VK zeroization policy).
+    vault_helper::crypto::secret::disable_core_dumps();
     install_signal_handlers();
-    let mut config = ServerConfig::default();
-    config.idle_timeout = idle_timeout();
+    let config = ServerConfig {
+        idle_timeout: idle_timeout(),
+        ..ServerConfig::default()
+    };
     let shutdown = Arc::new(AtomicBool::new(false));
     // Bridge the process-wide handler flag into the server's Arc.
     {
@@ -67,7 +71,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    eprintln!("vault-helper: listening (state: {})", server.boot_state().as_str());
+    eprintln!(
+        "vault-helper: listening (state: {})",
+        server.boot_state().as_str()
+    );
     let code = server.run();
     ExitCode::from(code as u8)
 }

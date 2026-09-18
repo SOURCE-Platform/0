@@ -1,4 +1,218 @@
 
 # cargo-vet audits file
 
-[audits]
+[[audits.aead]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = "AEAD trait definitions (seal/open signatures, AAD plumbing). RustCrypto/traits. Pure Rust; unsafe in 1 file (inout buffer plumbing). No logic beyond trait glue."
+
+[[audits.argon2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.0"
+notes = "Phase B KDF (spec §2.3). RustCrypto/password-hashes, actively maintained. Pure Rust; unsafe in 3 files (memory locking + zeroing internals). All parameter and parse paths return errors; helper drives it via Params::new + hash_password_into only."
+
+[[audits.base16ct]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+notes = "Constant-time hex behind sec1/serdect/elliptic-curve. RustCrypto/formats (tarcieri). Pure Rust; unsafe in 2 files. Helper's own hex module is independent of this crate."
+
+[[audits.blake2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.11.0"
+notes = "Argon2's internal block function. RustCrypto/hashes. Pure Rust; unsafe in 1 file (byte-slice cast internals). Not directly exposed by helper code."
+
+[[audits.chacha20poly1305]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.11.0"
+notes = "Phase B AEAD (spec §2.1). RustCrypto/AEADs. Pure Rust; no unsafe in the crate itself (backends live in chacha20/poly1305, already present in the graph). Seal/open return Results; helper maps open failures to IntegrityFailure."
+
+[[audits.cipher]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.5.2"
+notes = "Stream/block cipher traits behind chacha20. RustCrypto/traits. Pure Rust; unsafe in 1 file. Trait-level crate, no parsing."
+
+[[audits.cmov]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.5.4"
+notes = "Constant-time conditional move. RustCrypto/utils. Pure Rust but uses inline asm backends on aarch64/x86 (cmov-0.5.4/src/backends/aarch64.rs) with a software fallback; reviewed for our aarch64-apple-darwin target. No FFI, no panics on value paths."
+
+[[audits.cpubits]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.1.1"
+notes = "CPU feature-bit plumbing for crypto-bigint. RustCrypto/utils. Pure Rust; no unsafe."
+
+[[audits.crypto-bigint]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.7.5"
+notes = "Constant-time big-integer arithmetic. RustCrypto/crypto-bigint. Pure Rust; unsafe in 8 of 194 files (limb assembly internals). Extensively reused across the graph; upstream fuzzed."
+
+[[audits.ctutils]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.4.2"
+notes = "Constant-time utilities behind crypto-bigint/digest/sec1. RustCrypto/utils. Pure Rust; unsafe in 1 file."
+
+[[audits.der]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.8.2"
+notes = "ASN.1 DER codec behind sec1/pkcs8/spki/ecdsa. RustCrypto/formats. Pure Rust; unsafe in 5 files. Not on helper parse paths (vault wire formats are TLV/JSON, no DER)."
+
+[[audits.ecdsa]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.17.0"
+notes = "ECDSA generic implementation behind p256. RustCrypto/signatures. Pure Rust; no unsafe. RFC 6979 deterministic signing; normalize_s provides the low-S canonical form the wire format requires (§2.7)."
+
+[[audits.elliptic-curve]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.1"
+notes = "Curve-generic types behind p256/ecdsa/primeorder. RustCrypto/traits. Pure Rust; unsafe in 3 files (point arithmetic internals)."
+
+[[audits.ff]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "Finite-field traits (ebfull). Pure Rust; unsafe in 1 file. Trait definitions; no parsing."
+
+[[audits.group]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "Group-operation traits (ebfull). Pure Rust; no unsafe. Trait definitions."
+
+[[audits.hkdf]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.13.0"
+notes = "Phase B KDF (spec §2.9). RustCrypto/KDFs. Pure Rust; no unsafe. Expansion beyond 8160 bytes returns errors; helper uses fixed 32-byte outputs."
+
+[[audits.hmac]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.13.0"
+notes = "Phase B MAC (spec §4.5 recovery proof). RustCrypto/MACs. Pure Rust; no unsafe. KeyInit accepts arbitrary key lengths as documented."
+
+[[audits.inout]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "In-place buffer abstraction behind aead/cipher. RustCrypto (tarcieri). Pure Rust; unsafe in 3 files confined to slice re-aliasing invariants, reviewed."
+
+[[audits.p256]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "Phase B device signatures (spec §2.7). RustCrypto/elliptic-curves. Pure Rust; no unsafe in the crate itself. sec1 parsing validates on-curve membership (§4.4 rule 8 relies on this)."
+
+[[audits.password-hash]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.0"
+notes = "PHC string/parameter traits behind argon2. RustCrypto/traits. Pure Rust; unsafe in 1 file. Version-record parsing is fallible and returns errors (relied on by the CR-09 downgrade guard)."
+
+[[audits.password-hash]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+delta = "0.6.0 -> 0.6.1"
+notes = "Patch delta over the audited 0.6.0: 4 files changed, 14 insertions, 5 deletions. No unsafe or API changes; metadata and docs fixes."
+
+[[audits.pem-rfc7468]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "1.0.0"
+notes = "PEM wrapper behind der. RustCrypto/formats. Pure Rust; unsafe in 2 files. Not on helper parse paths."
+
+[[audits.phc]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = "PHC string format codec behind password-hash. RustCrypto/formats. Pure Rust; unsafe in 1 file. Decode paths return errors on malformed input."
+
+[[audits.pkcs8]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.11.0"
+notes = "PKCS#8 key container codec behind elliptic-curve. RustCrypto/formats. Pure Rust; unsafe in 1 file. Not exercised by helper code paths (keys enter as raw 65-byte sec1)."
+
+[[audits.poly1305]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.9.1"
+notes = "Poly1305 MAC behind chacha20poly1305. RustCrypto/universal-hashes. Pure Rust; unsafe in 5 files (AVX2/AArch64 SIMD backends, compile-time gated). Software fallback correct; SIMD paths upstream-tested."
+
+[[audits.primefield]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "Field-element internals for p256. RustCrypto/elliptic-curves. Pure Rust; unsafe in 1 file."
+
+[[audits.primeorder]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.0"
+notes = "Generic prime-order curve arithmetic behind p256. RustCrypto/elliptic-curves. Pure Rust; no unsafe. Constant-time field ops via crypto-bigint/ctutils."
+
+[[audits.rfc6979]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.0"
+notes = "Deterministic nonce generation for ECDSA signing. RustCrypto/signatures. Pure Rust; no unsafe. Drives the dev-only vector signer; production signing is Phase E Secure Enclave."
+
+[[audits.sec1]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.8.1"
+notes = "SEC1 point encoding behind elliptic-curve. RustCrypto/formats. Pure Rust; unsafe in 1 file. Decoding validates point format; helper consumes 65-byte uncompressed keys only."
+
+[[audits.secrecy]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.10.3"
+notes = "Secret-wrapping newtypes (spec §2.11). tony-iqlusion, actively maintained. Pure Rust; unsafe in 1 file (Debug redaction internals). Helper's SecretBytes additionally enforces zeroize-on-drop directly."
+
+[[audits.serdect]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.4.3"
+notes = "Constant-time serde helpers behind elliptic-curve. RustCrypto/formats. Pure Rust; unsafe in 1 file. Not on helper serialization paths (helper uses serde_json directly)."
+
+[[audits.signature]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "3.0.0"
+notes = "Signature trait definitions. RustCrypto/traits. Pure Rust; unsafe in 1 file. Trait glue."
+
+[[audits.spki]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.8.0"
+notes = "X.509 SubjectPublicKeyInfo codec behind pkcs8/ecdsa. RustCrypto/formats. Pure Rust; unsafe in 1 file. Not on helper parse paths."
+
+[[audits.universal-hash]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.6.1"
+notes = "Universal-hash trait behind poly1305. RustCrypto/traits. Pure Rust; unsafe in 1 file. Trait glue only."
+
+[[audits.wnaf]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.1"
+notes = "Scalar-multiplication precomputation behind primeorder. RustCrypto/elliptic-curves. Pure Rust; unsafe in 1 file."
+
+[[audits.zeroize_derive]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "1.5.0"
+notes = "Derive macro for zeroize (already-vetted zeroize 1.x). RustCrypto/utils. Proc-macro; no runtime code, no unsafe beyond macro plumbing in 1 file."

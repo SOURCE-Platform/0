@@ -10,6 +10,7 @@
 //! no cryptography, and no ops beyond the three above. Anything else is
 //! answered `UNKNOWN_OP` (see `ops`).
 
+pub mod crypto;
 pub mod ffi;
 pub mod ipc;
 pub mod ops;

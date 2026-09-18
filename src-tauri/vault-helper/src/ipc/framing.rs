@@ -134,7 +134,10 @@ mod tests {
     fn write_refuses_oversize() {
         let obj = json!({"pad": "x".repeat(MAX_FRAME_BYTES as usize)});
         let mut out = Vec::new();
-        assert_eq!(write_frame(&mut out, &obj).unwrap_err(), FrameError::Oversize);
+        assert_eq!(
+            write_frame(&mut out, &obj).unwrap_err(),
+            FrameError::Oversize
+        );
         assert!(out.is_empty());
     }
 }

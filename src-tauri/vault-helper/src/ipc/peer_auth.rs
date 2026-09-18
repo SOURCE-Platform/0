@@ -180,10 +180,8 @@ mod tests {
 
     #[test]
     fn requirements_compile_in_security_framework() {
-        sec::requirement_from_string(&client_requirement_string())
-            .expect("client DR must compile");
-        sec::requirement_from_string(&helper_requirement_string())
-            .expect("helper DR must compile");
+        sec::requirement_from_string(&client_requirement_string()).expect("client DR must compile");
+        sec::requirement_from_string(&helper_requirement_string()).expect("helper DR must compile");
     }
 
     #[test]

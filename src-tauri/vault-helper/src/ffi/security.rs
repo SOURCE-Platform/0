@@ -130,7 +130,7 @@ pub fn check_path_against_requirement(
     path: &Path,
     requirement: &SecRequirement,
 ) -> Result<(), OSStatus> {
-    let Some(url) = CFURL::from_path(path.to_path_buf(), true) else {
+    let Some(url) = CFURL::from_path(path, true) else {
         return Err(-50); // paramErr: unrepresentable path
     };
     let mut code: SecStaticCodeRef = std::ptr::null_mut();

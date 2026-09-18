@@ -1,0 +1,23 @@
+[package]
+name = "vault-helper-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+license = "GPL-3.0-only"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Standalone crate: not a member of the src-tauri workspace.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+# Package name differs from the lib name (vault_helper).
+source-vault-helper = { path = ".." }
+
+[[bin]]
+name = "tlv_decode"
+path = "fuzz_targets/tlv_decode.rs"
+test = false
+doc = false

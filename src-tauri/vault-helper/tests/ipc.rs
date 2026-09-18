@@ -44,8 +44,11 @@ fn start(cfg: ServerConfig, shutdown: Arc<AtomicBool>) -> std::thread::JoinHandl
 
 fn raw_hello(socket: &std::path::Path, class: &str) -> (UnixStream, Value) {
     let mut stream = UnixStream::connect(socket).unwrap();
-    framing::write_frame(&mut stream, &json!({"op": "hello", "proto": 1, "client": class}))
-        .unwrap();
+    framing::write_frame(
+        &mut stream,
+        &json!({"op": "hello", "proto": 1, "client": class}),
+    )
+    .unwrap();
     let resp = framing::read_frame(&mut stream).unwrap();
     (stream, resp)
 }
@@ -124,7 +127,10 @@ fn same_class_second_hello_replaces_first() {
     // The evicted connection must be closed by the server.
     framing::write_frame(&mut first, &json!({"op": "get_state"})).ok();
     let result = framing::read_frame(&mut first);
-    assert!(result.is_err(), "evicted connection must not answer: {result:?}");
+    assert!(
+        result.is_err(),
+        "evicted connection must not answer: {result:?}"
+    );
 
     // A different class gets its own slot and both stay usable.
     let (mut nm, _) = raw_hello(&dir.join("helper.sock"), "nm-host");
@@ -147,8 +153,11 @@ fn first_frame_must_be_hello() {
 
     // Protocol major mismatch: disconnect per spec §1.4.
     let mut stream = UnixStream::connect(dir.join("helper.sock")).unwrap();
-    framing::write_frame(&mut stream, &json!({"op": "hello", "proto": 2, "client": "app"}))
-        .unwrap();
+    framing::write_frame(
+        &mut stream,
+        &json!({"op": "hello", "proto": 2, "client": "app"}),
+    )
+    .unwrap();
     assert!(framing::read_frame(&mut stream).is_err());
 
     shutdown.store(true, Ordering::SeqCst);
