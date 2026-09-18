@@ -2,6 +2,15 @@
 
 Date: 2026-09-18. Author: Phase B gate run on the development machine.
 
+> **Status (2026-09-18, owner correction):** `m = 64 MiB, t = 3, p = 1`
+> is the **current/provisional** v1 tuple, not a frozen one. The §2.3
+> calibration gate is only partially closed: the committed evidence below
+> covers one machine class (MacBook Air M2). Final parameter freeze still
+> requires benchmark measurements on the supported iPhone floor and every
+> other supported hardware class the spec enumerates (§2.3: "every
+> supported Mac class and iPhone class"). The tuple must not be weakened
+> or changed in the meantime; this open item does not block Phase C.
+
 ## Rule being satisfied
 
 §2.3 pins the v1 tuple `m = 64 MiB, t = 3, p = 1` (RFC 9106 §7.4 second
@@ -40,7 +49,8 @@ per candidate after 1 warmup, minimum latency reported.
 ## Chosen tuple and justification
 
 **`m = 65536 KiB (64 MiB), t = 3, p = 1, outlen = 32`** — the spec-pinned
-v1 tuple — is committed unchanged, because:
+v1 tuple — is committed unchanged as the **provisional** v1 default,
+because:
 
 1. It is RFC 9106 §7.4's second recommended profile in the two dominant
    hardness parameters (memory cost and iteration count); the only
@@ -58,6 +68,13 @@ v1 tuple — is committed unchanged, because:
    gated on iPhone-class measurements that Phase B does not have —
    Phase B ships Mac-only, and weakening memory cost for speed is
    explicitly forbidden, so no downward adjustment was considered.
+
+**Open item before parameter freeze:** the table above is single-class
+evidence (M2 Air). Per §2.3, freeze requires measured unlock/recovery
+latency and memory pressure on the supported iPhone floor and any other
+supported hardware class; those measurements must be appended here before
+the tuple is declared final. The provisional tuple stays in force, and
+stays at full strength, until then.
 
 Memory-pressure note: peak working set tracks the configured memory
 parameter within measurement noise (65,552 KiB observed for the 64 MiB
