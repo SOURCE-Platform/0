@@ -133,7 +133,18 @@ pub fn run() {
             mobile_unpair_device,
             set_mobile_agent_prompts_enabled,
             set_agent_prompts_keep_bypass,
-            debug_mobile_transcribe
+            debug_mobile_transcribe,
+            vault_state,
+            vault_setup,
+            vault_unlock,
+            vault_change_master_password,
+            vault_lock,
+            vault_list_items,
+            vault_add_login,
+            vault_update_item,
+            vault_delete_item,
+            vault_reveal,
+            vault_set_auto_lock_minutes
         ])
         .on_window_event(|window, event| {
             // Standard tray behavior: closing the window hides it to the
@@ -145,6 +156,14 @@ pub fn run() {
                 }
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // §1.6: on the way out, tell the helper to lock (zeroize);
+            // dropping the connection then lets it exit by its rules.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Exit = event {
+                crate::core::vault_client::shutdown();
+            }
+        });
 }

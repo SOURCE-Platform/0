@@ -1,10 +1,11 @@
-//! Phase A op catalog (spec §1.5): `hello`, `get_state`, `lock`.
+//! Shared op protocol pieces (spec §1.5): `hello` parsing, client classes,
+//! and response frame shapes.
 //!
-//! Everything else in the §1.5 catalog belongs to later phases and is
-//! answered `UNKNOWN_OP`. The §15 user-facing error catalog has no code for
-//! "not implemented in this phase"; `UNKNOWN_OP` is an internal,
-//! non-user-facing code used only by this skeleton and documented in the
-//! Phase A verification report.
+//! Op dispatch itself lives in `vault::dispatch` (Phase C ops) and
+//! `ipc::conn` (`get_state`/`lock`, answered inline so `lock` can preempt
+//! in-flight ops per §13.3). Ops beyond the Phase C catalog are answered
+//! `UNKNOWN_OP` (internal, non-user-facing; the §15 catalog has no code
+//! for "not implemented in this phase").
 //!
 //! Frame shapes (spec §1.4):
 //! - request:  `{"op": "...", ...}`
@@ -14,7 +15,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::state::{self, VaultState};
+use crate::state::VaultState;
 use crate::PROTO_VERSION;
 
 /// Client classes with one connection slot each (spec §1.4).
@@ -76,21 +77,6 @@ pub fn err(code: &str) -> Value {
     json!({ "ok": false, "error": code })
 }
 
-/// Dispatch one post-hello op frame against the current state.
-/// Pure function (no I/O, no globals) so the op surface is directly
-/// unit-testable. Returns (response, new state).
-pub fn dispatch_op(state: VaultState, frame: &Value) -> (Value, VaultState) {
-    let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
-    match op {
-        "get_state" => (ok_with_state(state), state),
-        "lock" => {
-            let next = state::apply_lock(state);
-            (ok_with_state(next), next)
-        }
-        _ => (err("UNKNOWN_OP"), state),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,36 +102,6 @@ mod tests {
         assert_eq!(parse_client_class("nm-host"), Some(ClientClass::NmHost));
         assert_eq!(parse_client_class("extension"), None);
         assert!(parse_client_class("").is_none());
-    }
-
-    #[test]
-    fn get_state_and_lock_behave() {
-        let (resp, next) = dispatch_op(VaultState::Locked, &json!({"op": "get_state"}));
-        assert_eq!(resp["ok"], true);
-        assert_eq!(resp["state"], "locked");
-        assert_eq!(next, VaultState::Locked);
-
-        let (resp, next) = dispatch_op(VaultState::Uninitialized, &json!({"op": "lock"}));
-        assert_eq!(resp["ok"], true);
-        assert_eq!(resp["state"], "uninitialized");
-        assert_eq!(next, VaultState::Uninitialized);
-    }
-
-    #[test]
-    fn unknown_ops_are_refused() {
-        for op in [
-            "unlock",
-            "reveal",
-            "export_vault",
-            "sign_backup_request",
-            "",
-            "HELLO",
-        ] {
-            let (resp, next) = dispatch_op(VaultState::Locked, &json!({"op": op}));
-            assert_eq!(resp["ok"], false, "op {op}");
-            assert_eq!(resp["error"], "UNKNOWN_OP");
-            assert_eq!(next, VaultState::Locked);
-        }
     }
 
     #[test]

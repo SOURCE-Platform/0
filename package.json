@@ -12,6 +12,7 @@
     "build:helper": "bash scripts/build-helper.sh",
     "gate:phase-a": "bash scripts/phase-a-gate.sh",
     "gate:phase-b": "bash scripts/phase-b-gate.sh",
+    "gate:phase-c": "bash scripts/phase-c-gate.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },

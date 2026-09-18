@@ -39,7 +39,9 @@ cargo vet
 # the helper's graph is reported and must stay minimal; the rsa crate must
 # never enter it (Marvin timing attack class, and no RSA is used anywhere
 # in the vault design).
-HELPER_DEPS="$(cargo tree -p source-vault-helper --prefix none | sort -u | wc -l | tr -d ' ')"
+# Strip cargo's " (*)" dedup markers before counting so a crate reachable
+# by two paths counts once (name+version pairs are still distinct).
+HELPER_DEPS="$(cargo tree -p source-vault-helper --prefix none | sed 's/ (\*)$//' | grep -E '^[a-zA-Z0-9_-]+ v' | sort -u | wc -l | tr -d ' ')"
 echo "vault-helper dependency count: $HELPER_DEPS (gate: < 120, target: minimal)"
 if [ "$HELPER_DEPS" -ge 120 ]; then
     echo "error: vault-helper dependency count $HELPER_DEPS exceeds the 120 gate" >&2

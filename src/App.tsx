@@ -10,14 +10,16 @@ import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibratio
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
+import { VaultPage } from "@/components/vault/VaultPage";
 import { OBSERVER_APP_TOAST_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
 
-type View = "settings" | "timeline" | "id" | "agents";
+type View = "settings" | "timeline" | "id" | "agents" | "vault";
 
 const TABS = [
   { value: "timeline",  label: "Timeline" },
   { value: "id",        label: "ID" },
   { value: "agents",    label: "Agents" },
+  { value: "vault",     label: "Vault" },
   { value: "settings",  label: "Settings" },
 ];
 
@@ -222,6 +224,7 @@ function App() {
                 {displayedView === "timeline"  && <TimelinePage />}
                 {displayedView === "id"        && <ID />}
                 {displayedView === "agents"    && <AgentsPage />}
+                {displayedView === "vault"     && <VaultPage />}
                 {displayedView === "settings"  && <Settings />}
               </ViewErrorBoundary>
             </div>

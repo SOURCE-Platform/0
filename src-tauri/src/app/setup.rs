@@ -28,6 +28,11 @@ use tauri::Manager;
 use tokio::sync::RwLock;
 
 pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    // Vault manager: stores the app handle for helper-event forwarding.
+    // The helper itself launches lazily on first vault op (§1.6), so
+    // dev builds without a signed helper bundle stay fully usable.
+    #[cfg(target_os = "macos")]
+    crate::core::vault_client::init(app.handle());
     tauri::async_runtime::block_on(async {
         let db = Arc::new(
             Database::init()

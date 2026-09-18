@@ -1,28 +1,39 @@
-//! Vault state machine, Phase A subset (spec §13.1).
+//! Vault state machine (spec §13.1), Phase C subset.
 //!
-//! The full spec state machine has eleven states; Phase A can only ever be
-//! in `Uninitialized` (no vault on this machine) or `Locked` (a vault header
-//! exists and the helper holds no keys — the boot state, and the only state
-//! a helper restart may produce, spec §1.6). Later phases add the remaining
-//! states and the transitions between them; nothing here anticipates them
-//! beyond the enum documentation.
+//! Phase C adds UNLOCKING (panel/unwrap in flight), UNLOCKED (VK resident
+//! in this process only), AUTHORIZING (per-op presence substate; VK
+//! stays resident) and ERROR (fatal vault data problem; zeroized on
+//! entry). RECOVERING / ROTATING_KEYS / SYNCING / BACKING_UP /
+//! COMPROMISED land with Phases D/E/F.
+//!
+//! Transition rules (§13.2/§13.3):
+//! - any unexpected op for the current state → BAD_STATE, no side effects;
+//! - every transition into Locked/Error zeroizes key material (handled by
+//!   the ops layer dropping the resident secrets);
+//! - process death in any state → LOCKED on next start (nothing key-like
+//!   is ever persisted outside wraps).
 
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::VAULT_HEADER_NAME;
 
-/// Phase A states (subset of spec §13.1; later phases add Unlocking,
-/// Unlocked, Relocking, Authorizing, Recovering, Merging, Compromised,
-/// Exporting, Upgrading).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VaultState {
-    /// No vault exists on this machine (spec §13.1).
+    /// No vault exists on this machine.
     Uninitialized,
-    /// Vault exists; helper holds no key material. The only state a helper
-    /// (re)start may produce when a vault is present (spec §1.6).
+    /// Vault exists; helper holds no key material (the only boot state
+    /// with a vault present, §1.6).
     Locked,
+    /// MP entry/unwrap in flight (§13.1). No other op proceeds.
+    Unlocking,
+    /// VK resident; ops per §13.2.
+    Unlocked,
+    /// One op's presence check in flight; VK resident (§13.1 substate).
+    Authorizing,
+    /// Fatal vault-data problem; only get_state/lock proceed (§13.2).
+    Error,
 }
 
 impl VaultState {
@@ -30,30 +41,32 @@ impl VaultState {
         match self {
             VaultState::Uninitialized => "uninitialized",
             VaultState::Locked => "locked",
+            VaultState::Unlocking => "unlocking",
+            VaultState::Unlocked => "unlocked",
+            VaultState::Authorizing => "authorizing",
+            VaultState::Error => "error",
         }
+    }
+
+    /// Whether VK is resident in this state (§13.2 table).
+    pub fn vk_resident(self) -> bool {
+        matches!(
+            self,
+            VaultState::Unlocked | VaultState::Authorizing | VaultState::Unlocking
+        )
     }
 }
 
-/// Boot-time state detection (spec §1.6): a vault is present iff the vault
-/// directory contains `header.json` (spec §3.1). Absent directory or absent
-/// header means UNINITIALIZED. Any I/O error is treated as "no header":
-/// mis-detection toward UNINITIALIZED is the safe direction in Phase A
-/// because no op here can mutate vault data.
+/// Boot-time state detection (§1.6): a vault is present iff the vault
+/// directory contains `header.json` (§3.1). Header *contents* are not
+/// trusted at boot — corrupt/future headers are surfaced when the unlock
+/// path runs the §3.6 open sequence.
 pub fn detect_boot_state(vault_dir: &Path) -> VaultState {
     if vault_dir.join(VAULT_HEADER_NAME).is_file() {
         VaultState::Locked
     } else {
         VaultState::Uninitialized
     }
-}
-
-/// Apply the `lock` op (spec §1.5: "immediate lock, any state").
-///
-/// Phase A semantics: LOCKED stays LOCKED; UNINITIALIZED has nothing to
-/// lock and stays UNINITIALIZED (there is no vault to lock). Returns the
-/// resulting state. The transition is idempotent, matching spec §13.2.
-pub fn apply_lock(state: VaultState) -> VaultState {
-    state // both current states: lock is a no-op identity transition
 }
 
 #[cfg(test)]
@@ -78,11 +91,12 @@ mod tests {
     }
 
     #[test]
-    fn lock_is_idempotent_and_never_unlocks() {
-        assert_eq!(apply_lock(VaultState::Locked), VaultState::Locked);
-        assert_eq!(
-            apply_lock(VaultState::Uninitialized),
-            VaultState::Uninitialized
-        );
+    fn vk_residency_matches_state_table() {
+        assert!(!VaultState::Locked.vk_resident());
+        assert!(!VaultState::Uninitialized.vk_resident());
+        assert!(!VaultState::Error.vk_resident());
+        assert!(VaultState::Unlocked.vk_resident());
+        assert!(VaultState::Authorizing.vk_resident());
+        assert!(VaultState::Unlocking.vk_resident());
     }
 }

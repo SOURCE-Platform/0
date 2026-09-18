@@ -71,6 +71,16 @@ pub fn screen_capture_suppressed() -> bool {
     sensitive_surface_visible()
 }
 
+/// Whether the frontmost app is one of SOURCE's own sensitive surfaces:
+/// SOURCE itself while a registered surface (the Vault tab) is visible, or
+/// the vault helper at any time — its secure master-password panel is its
+/// only UI, and once SOURCE yields focus to it the panel is frontmost in a
+/// different process, so the SOURCE-pid check alone would not cover it.
+pub fn sensitive_surface_frontmost(source_frontmost: bool, frontmost_bundle_id: Option<&str>) -> bool {
+    frontmost_bundle_id == Some(crate::platform::activation::VAULT_HELPER_BUNDLE_ID)
+        || (source_frontmost && sensitive_surface_visible())
+}
+
 /// Single choke-point decision for keystroke recording.
 ///
 /// Suppress when any signal says the input context is sensitive:
@@ -119,6 +129,16 @@ mod tests {
         assert!(is_excluded_window_title(title));
         unregister_excluded_window_title(title);
         assert!(!is_excluded_window_title(title));
+    }
+
+    #[test]
+    fn vault_helper_frontmost_is_always_sensitive() {
+        let helper = Some(crate::platform::activation::VAULT_HELPER_BUNDLE_ID);
+        assert!(sensitive_surface_frontmost(false, helper));
+        assert!(!should_record_keystroke(false, false, sensitive_surface_frontmost(false, helper)));
+        // Another app in front: only the registry-backed SOURCE rule applies.
+        assert!(!sensitive_surface_frontmost(false, Some("com.example.other")));
+        assert!(!sensitive_surface_frontmost(false, None));
     }
 
     #[test]

@@ -144,11 +144,13 @@ impl MacOSKeyboardListener {
             .unwrap_or(false);
 
         // Suppression signals beyond the focused element itself: the OS-level
-        // Secure Event Input flag, and SOURCE's own registered sensitive
-        // surface (e.g. the future vault window) being frontmost.
+        // Secure Event Input flag, and SOURCE's own sensitive surfaces being
+        // frontmost (the Vault tab, or the vault helper's secure panel).
         let secure_input = secure_event_input_active();
-        let own_sensitive_frontmost = app_context.process_id == std::process::id()
-            && crate::core::capture_exclusions::sensitive_surface_visible();
+        let own_sensitive_frontmost = crate::core::capture_exclusions::sensitive_surface_frontmost(
+            app_context.process_id == std::process::id(),
+            crate::platform::activation::frontmost_bundle_id().as_deref(),
+        );
 
         // Create keyboard event
         let keyboard_event = KeyboardEvent {

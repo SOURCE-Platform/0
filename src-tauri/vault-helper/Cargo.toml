@@ -32,6 +32,42 @@ subtle = "2"
 p256 = { version = "0.14", features = ["ecdsa"] }
 unicode-normalization = "0.1"
 getrandom = "0.4"
+# Phase C (spec §17.1): rusqlite/bundled per spec pin; objc2 family for the
+# LA presence checks and the §1.7 native secure panel (objc2-app-kit and
+# objc2-local-authentication are the same project's framework crates —
+# §17.1 lists the family; the specific framework crates are recorded as
+# reviewed in supply-chain/audits.toml). Keychain (§2.8) stays hand-rolled
+# Security.framework FFI like Phase A's SecCode checks — no crate.
+rusqlite = { version = "0.32", features = ["bundled"] }
+objc2 = "0.5"
+# objc2 framework crates gate every class behind a cargo feature; enable
+# exactly the classes the panel/LA/notify code touches (§17.4 minimal
+# surface rule).
+objc2-foundation = { version = "0.2", features = [
+    "NSString",
+    "NSError",
+    "NSNotification",
+    "NSDistributedNotificationCenter",
+    "NSOperation",
+    "NSRunLoop",
+    "NSThread",
+    "block2",
+] }
+objc2-app-kit = { version = "0.2", features = [
+    "NSApplication",
+    "NSButton",
+    "NSControl",
+    "NSGraphics",
+    "NSResponder",
+    "NSSecureTextField",
+    "NSTextField",
+    "NSView",
+    "NSWindow",
+    "NSWorkspace",
+    "NSRunningApplication",
+] }
+objc2-local-authentication = { version = "0.2", features = ["LAContext", "block2"] }
+block2 = "0.5"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

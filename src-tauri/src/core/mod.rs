@@ -40,6 +40,8 @@ pub mod search_engine;
 pub mod search_engine_types;
 pub mod session_manager;
 pub mod session_manager_helpers;
+#[cfg(target_os = "macos")]
+pub mod vault_client;
 pub mod vault_dir;
 pub mod session_manager_types;
 pub mod storage;

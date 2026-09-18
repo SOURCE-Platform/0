@@ -15,6 +15,7 @@ pub mod system_activity;
 pub mod system_core;
 pub mod system_search;
 pub mod timeline;
+pub mod vault;
 
 pub use agent_bridge::*;
 pub use agent_sessions::*;
@@ -33,3 +34,4 @@ pub use system_activity::*;
 pub use system_core::*;
 pub use system_search::*;
 pub use timeline::*;
+pub use vault::*;

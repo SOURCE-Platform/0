@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+pub mod activation;
 pub mod capture;
 pub mod input;
 pub mod os_monitor;

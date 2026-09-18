@@ -11,10 +11,17 @@
 //! answered `UNKNOWN_OP` (see `ops`).
 
 pub mod crypto;
+pub mod errors;
 pub mod ffi;
 pub mod ipc;
+pub mod keychain;
+pub mod la;
+pub mod notify;
 pub mod ops;
+pub mod panel;
 pub mod state;
+pub mod storage;
+pub mod vault;
 
 /// IPC protocol major version (spec §1.4). Peers with a different major
 /// version are disconnected at `hello`.
@@ -27,9 +34,11 @@ pub const DEFAULT_VAULT_DIR: &str = ".observer_data/vault";
 pub const SOCKET_NAME: &str = "helper.sock";
 
 /// Presence of this file in the vault directory means a vault exists.
-/// Phase A never creates it; the Phase A gate materializes a synthetic
-/// placeholder so the UNINITIALIZED → LOCKED boot distinction is testable.
 pub const VAULT_HEADER_NAME: &str = "header.json";
+
+/// Append-only device registry log (spec §4). Phase C creates it empty;
+/// the genesis entry lands with Phase E enrollment.
+pub const VAULT_REGISTRY_NAME: &str = "registry.json";
 
 /// Helper exits after this long with zero connected clients (spec §1.6).
 pub const IDLE_EXIT_SECS: u64 = 30 * 60;

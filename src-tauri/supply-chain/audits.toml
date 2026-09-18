@@ -7,6 +7,12 @@ criteria = "safe-to-deploy"
 version = "0.6.1"
 notes = "AEAD trait definitions (seal/open signatures, AAD plumbing). RustCrypto/traits. Pure Rust; unsafe in 1 file (inout buffer plumbing). No logic beyond trait glue."
 
+[[audits.ahash]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.8.12"
+notes = "Hashing behind hashlink (rusqlite dep). Pure Rust; unsafe in 1 file. Not on secret paths (row bookkeeping)."
+
 [[audits.argon2]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
@@ -24,6 +30,12 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.11.0"
 notes = "Argon2's internal block function. RustCrypto/hashes. Pure Rust; unsafe in 1 file (byte-slice cast internals). Not directly exposed by helper code."
+
+[[audits.block2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.5.1"
+notes = "ObjC block construction, needed for LAContext evaluatePolicy's reply block (objc2 project). All 9 files unsafe by nature (block ABI); lifecycle invariants reviewed at the helper's two call sites (stack block lives for the callback duration)."
 
 [[audits.chacha20poly1305]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -79,6 +91,18 @@ criteria = "safe-to-deploy"
 version = "0.14.1"
 notes = "Curve-generic types behind p256/ecdsa/primeorder. RustCrypto/traits. Pure Rust; unsafe in 3 files (point arithmetic internals)."
 
+[[audits.fallible-iterator]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.3.0"
+notes = "Fallible iterator adapters behind rusqlite rows(). Pure Rust; no unsafe; no parsing."
+
+[[audits.fallible-streaming-iterator]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.1.9"
+notes = "Streaming row iteration behind rusqlite. Pure Rust; no unsafe; single file."
+
 [[audits.ff]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
@@ -90,6 +114,18 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.14.0"
 notes = "Group-operation traits (ebfull). Pure Rust; no unsafe. Trait definitions."
+
+[[audits.hashbrown]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.14.5"
+notes = "Hash table behind hashlink. Ahash project; widely deployed (std's predecessor). Pure Rust; unsafe in 17 files (raw-table internals), no FFI."
+
+[[audits.hashlink]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.9.1"
+notes = "Linked-hash-map behind rusqlite's statement cache. Pure Rust; unsafe in 1 file."
 
 [[audits.hkdf]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -108,6 +144,60 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.2.2"
 notes = "In-place buffer abstraction behind aead/cipher. RustCrypto (tarcieri). Pure Rust; unsafe in 3 files confined to slice re-aliasing invariants, reviewed."
+
+[[audits.objc-sys]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.3.5"
+notes = "Raw libobjc declarations behind block2/objc2. objc2 project. Bindings only; unsafe in 3 files; no logic."
+
+[[audits.objc2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.5.2"
+notes = "Core ObjC runtime interop (spec §17.1 family). objc2 project, actively maintained. Unsafe throughout by design (msgSend, retain/release invariants); the helper uses only NSApplication/window plumbing and LAContext via the typed framework crates."
+
+[[audits.objc2-app-kit]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "AppKit bindings for the §1.7 secure panel (NSApplication, NSPanel, NSSecureTextField, NSButton, NSTextField). Machine-generated objc2 bindings; same review bar as objc2-foundation. Not in §17.1's example list explicitly — recorded as the family's framework crate for the spec-mandated native panel; no alternative exists for AppKit."
+
+[[audits.objc2-core-data]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "Framework stub reachable via objc2-app-kit feature closure; not called by helper code. Machine-generated bindings."
+
+[[audits.objc2-core-image]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "Framework stub reachable via objc2-app-kit feature closure; not called by helper code. Machine-generated bindings."
+
+[[audits.objc2-foundation]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "Foundation bindings (spec §17.1). Machine-generated; unsafe by construction. Helper uses NSString/NSArray/NSData/NSNotification essentials only."
+
+[[audits.objc2-local-authentication]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "LAContext bindings for §6.4 presence checks. Machine-generated objc2 bindings; 13 files. evaluatePolicy(.deviceOwnerAuthentication) is the only call path the helper uses."
+
+[[audits.objc2-metal]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "Framework stub reachable via objc2-quartz-core; not called by helper code. Machine-generated bindings."
+
+[[audits.objc2-quartz-core]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.2.2"
+notes = "Framework stub reachable via objc2-app-kit feature closure; not called by helper code. Machine-generated bindings."
 
 [[audits.p256]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -168,6 +258,12 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.6.0"
 notes = "Deterministic nonce generation for ECDSA signing. RustCrypto/signatures. Pure Rust; no unsafe. Drives the dev-only vector signer; production signing is Phase E Secure Enclave."
+
+[[audits.rusqlite]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.32.1"
+notes = "Phase C vault.db (spec §3.2/§17.1 pin 0.32.x, bundled SQLite). rusqlite team, mainstream. Pure Rust over libsqlite3-sys; unsafe concentrated in the bundled C glue crate. Helper touches encrypted blobs only; all statements are parameterized."
 
 [[audits.sec1]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"

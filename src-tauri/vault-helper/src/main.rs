@@ -1,12 +1,18 @@
-//! `source-vault-helper` binary entry point (Phase A, spec §18).
+//! `source-vault-helper` binary entry point.
 //!
-//! Wires the lifecycle spec §1.6 requires: boot state detection, signal
-//! driven shutdown with client-drain grace, and idle exit. All heavy
-//! lifting lives in the library; this file stays thin.
+//! Thread layout (Phase C): the MAIN thread belongs to AppKit — the §1.7
+//! secure panel is presented from the main dispatch queue, which only the
+//! AppKit event loop drains. The IPC server (accept loop, executor, tick)
+//! runs on worker threads. When the server decides the process should
+//! exit (idle timeout / shutdown drain, §1.6), it exits the process from
+//! the worker thread; VK was already zeroized by the drain-time lock.
 
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
+use objc2_foundation::MainThreadMarker;
 
 use vault_helper::ipc::server::{Server, ServerConfig};
 
@@ -48,6 +54,18 @@ fn main() -> ExitCode {
     // §2.11: the helper must never dump core (VK zeroization policy).
     vault_helper::crypto::secret::disable_core_dumps();
     install_signal_handlers();
+
+    // AppKit takes the main thread before any worker spawns; panel jobs
+    // dispatched to the main queue require this event loop.
+    let Some(mtm) = MainThreadMarker::new() else {
+        eprintln!("vault-helper: must start on the main thread");
+        return ExitCode::from(2);
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    // No Dock icon / menu bar: the helper is UI background-only (§1.7 —
+    // it owns a panel, not an app presence).
+    app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
+
     let config = ServerConfig {
         idle_timeout: idle_timeout(),
         ..ServerConfig::default()
@@ -75,6 +93,15 @@ fn main() -> ExitCode {
         "vault-helper: listening (state: {})",
         server.boot_state().as_str()
     );
-    let code = server.run();
-    ExitCode::from(code as u8)
+    std::thread::spawn(move || {
+        let code = server.run();
+        // The server has finished its drain (which includes the §1.6
+        // lock/zeroize); end the process from here — the AppKit loop on
+        // the main thread has no other exit path.
+        std::process::exit(code);
+    });
+    // SAFETY: called once on the main thread after full initialization;
+    // standard NSApplication event-loop entry.
+    unsafe { app.run() }; // never returns under normal operation
+    ExitCode::SUCCESS
 }

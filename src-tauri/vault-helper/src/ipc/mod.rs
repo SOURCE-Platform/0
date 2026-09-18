@@ -2,6 +2,9 @@
 //! frames, SecCode peer authentication.
 
 pub mod client;
+pub mod conn;
+pub mod executor;
 pub mod framing;
+pub mod hub;
 pub mod peer_auth;
 pub mod server;

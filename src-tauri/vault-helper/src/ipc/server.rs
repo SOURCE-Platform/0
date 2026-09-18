@@ -2,29 +2,33 @@
 //!
 //! - Socket file lives at `<vault_dir>/helper.sock`, directory 0700,
 //!   socket 0600 (same permission model as the main app's vault dir).
-//! - One connection per client class (app, nm-host); a second `hello` from
-//!   the same class replaces the first.
-//! - Auth runs before any frame is read: getpeereid UID gate, then SecCode
-//!   check (see `peer_auth`). Fail-closed: any failure closes the
-//!   connection without a response frame.
+//! - Auth runs before any frame is read: getpeereid UID gate, then
+//!   SecCode check (see `peer_auth`). Fail-closed: any failure closes
+//!   the connection without a response frame.
+//! - One connection per client class (`hub`); per-connection reader
+//!   threads (`conn`); one global ops executor (`executor`); a 1 s tick
+//!   applies the auto-lock and system lock triggers (§1.6, §13.3).
 //! - Lifecycle: exit after `idle_timeout` with zero clients; on shutdown,
 //!   stop accepting and give connected clients `shutdown_grace` to drain.
 
-use std::collections::HashMap;
 use std::io;
-use std::net::Shutdown;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::ipc::framing::{self, FrameError};
+use crate::ipc::conn::{self, ConnCtx};
+use crate::ipc::executor::{self, Inbound};
+use crate::ipc::hub::Hub;
 use crate::ipc::peer_auth::{self, AuthError};
-use crate::ops::{self, ClientClass};
-use crate::state::{self, VaultState};
+use crate::notify::LockTriggers;
+use crate::panel::HelperPanel;
+use crate::state::VaultState;
+use crate::vault::{lock_core, Deps, EventSink, LockReason, VaultCore};
 use crate::{IDLE_EXIT_SECS, SHUTDOWN_GRACE_SECS};
-use std::path::PathBuf;
 
 /// Injected so tests can exercise the full connection path without code
 /// signing; production binaries always pass `peer_auth::verify_client`.
@@ -49,30 +53,12 @@ impl Default for ServerConfig {
     }
 }
 
-struct SlotEntry {
-    conn_id: u64,
-    stream: UnixStream,
-}
-
-struct Shared {
-    vault_state: VaultState,
-    slots: HashMap<ClientClass, SlotEntry>,
-    active: usize,
-    last_zero_clients: Instant,
-    next_conn_id: u64,
-}
-
-impl Shared {
-    fn lock(shared: &Mutex<Shared>) -> std::sync::MutexGuard<'_, Shared> {
-        shared.lock().unwrap_or_else(|e| e.into_inner())
-    }
-}
-
 pub struct Server {
     listener: UnixListener,
     config: ServerConfig,
-    shared: Arc<Mutex<Shared>>,
     shutdown: Arc<AtomicBool>,
+    ctx: Arc<ConnCtx>,
+    #[allow(dead_code)] // held to keep the verifier alive with the server
     verifier: Verifier,
 }
 
@@ -94,24 +80,49 @@ impl Server {
         let listener = UnixListener::bind(&config.socket_path)?;
         std::fs::set_permissions(&config.socket_path, std::fs::Permissions::from_mode(0o600))?;
         listener.set_nonblocking(true)?;
-        let shared = Arc::new(Mutex::new(Shared {
-            vault_state: state::detect_boot_state(&config.vault_dir),
-            slots: HashMap::new(),
-            active: 0,
-            last_zero_clients: Instant::now(),
-            next_conn_id: 0,
-        }));
+
+        let core = Arc::new(Mutex::new(VaultCore::boot(config.vault_dir.clone())));
+        let hub = Arc::new(Hub::new());
+        let panel_cancel = Arc::new(AtomicBool::new(false));
+        let triggers = LockTriggers::new();
+        crate::notify::install(Arc::clone(&triggers));
+
+        let deps = Deps {
+            panel: Arc::new(HelperPanel {
+                cancel: Arc::clone(&panel_cancel),
+            }),
+            la: Arc::new(crate::la::LaPresence),
+            capture: hub.clone(),
+            events: hub.clone(),
+        };
+        let (inbound_tx, inbound_rx) = sync_channel::<Inbound>(64);
+        executor::spawn(Arc::clone(&core), deps, Arc::clone(&panel_cancel), inbound_rx);
+        spawn_tick(
+            Arc::clone(&core),
+            Arc::clone(&hub),
+            Arc::clone(&triggers),
+            Arc::clone(&panel_cancel),
+            Arc::clone(&shutdown),
+        );
+
+        let ctx = Arc::new(ConnCtx {
+            hub,
+            core,
+            inbound: inbound_tx,
+            panel_cancel,
+            verifier: Arc::clone(&verifier),
+        });
         Ok(Server {
             listener,
             config,
-            shared,
             shutdown,
+            ctx,
             verifier,
         })
     }
 
     pub fn boot_state(&self) -> VaultState {
-        Shared::lock(&self.shared).vault_state
+        lock_core(&self.ctx.core).state
     }
 
     /// Accept loop: runs until `shutdown` is set or the idle timeout
@@ -132,7 +143,8 @@ impl Server {
                     // O_NONBLOCK; workers do blocking reads on their own
                     // thread, so force blocking mode here.
                     let _ = stream.set_nonblocking(false);
-                    self.spawn_worker(stream);
+                    let ctx = Arc::clone(&self.ctx);
+                    std::thread::spawn(move || conn::handle_connection(stream, ctx));
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(TICK),
                 Err(e) => {
@@ -144,16 +156,20 @@ impl Server {
     }
 
     fn idle_expired(&self) -> bool {
-        let shared = Shared::lock(&self.shared);
-        shared.active == 0 && shared.last_zero_clients.elapsed() >= self.config.idle_timeout
+        self.ctx.hub.active() == 0
+            && self.ctx.hub.zero_clients_since().elapsed() >= self.config.idle_timeout
     }
 
-    /// Stop accepting; wait up to `shutdown_grace` for clients to drain,
-    /// then exit regardless (spec §1.6: 5 s grace).
+    /// Stop accepting; zeroize the vault (§1.6 shutdown ⇒ lock), then
+    /// wait up to `shutdown_grace` for clients to drain (§1.6: 5 s).
     fn drain_and_exit(&self) -> i32 {
+        let events = lock_core(&self.ctx.core).lock(LockReason::Explicit);
+        for event in events {
+            self.ctx.hub.emit(event);
+        }
         let deadline = Instant::now() + self.config.shutdown_grace;
         loop {
-            if Shared::lock(&self.shared).active == 0 {
+            if self.ctx.hub.active() == 0 {
                 return 0;
             }
             if Instant::now() >= deadline {
@@ -163,111 +179,34 @@ impl Server {
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-
-    fn spawn_worker(&self, stream: UnixStream) {
-        let shared = Arc::clone(&self.shared);
-        let verifier = Arc::clone(&self.verifier);
-        std::thread::spawn(move || handle_connection(stream, shared, verifier));
-    }
 }
 
-fn handle_connection(mut stream: UnixStream, shared: Arc<Mutex<Shared>>, verifier: Verifier) {
-    if let Err(e) = verifier(&stream) {
-        eprintln!("vault-helper: peer authentication failed: {e}");
-        return;
-    }
-    let Some((class, hello_ok)) = read_hello(&mut stream, &shared) else {
-        eprintln!("vault-helper: first frame was not a valid hello; closing");
-        return;
-    };
-    let conn_id = register(&shared, class, &stream);
-    if framing::write_frame(&mut stream, &hello_ok).is_err() {
-        unregister(&shared, class, conn_id);
-        return;
-    }
-    serve_ops(&mut stream, &shared);
-    unregister(&shared, class, conn_id);
-}
-
-/// The first frame must be a spec-conformant `hello` (proto 1, known
-/// client class); anything else closes the connection without a response
-/// (protocol major mismatch is a disconnect per spec §1.4).
-fn read_hello(
-    stream: &mut UnixStream,
-    shared: &Arc<Mutex<Shared>>,
-) -> Option<(ClientClass, serde_json::Value)> {
-    let frame = framing::read_frame(stream).ok()?;
-    let hello = ops::parse_hello(&frame)?;
-    if hello.proto != crate::PROTO_VERSION {
-        eprintln!(
-            "vault-helper: protocol major mismatch ({}), closing",
-            hello.proto
-        );
-        return None;
-    }
-    let class = ops::parse_client_class(&hello.client)?;
-    let state = Shared::lock(shared).vault_state;
-    Some((class, ops::hello_ok(state)))
-}
-
-/// Insert the connection into its class slot, evicting any predecessor
-/// (spec §1.4: one connection per class, second hello replaces the first).
-fn register(shared: &Arc<Mutex<Shared>>, class: ClientClass, stream: &UnixStream) -> u64 {
-    let mut shared = Shared::lock(shared);
-    shared.next_conn_id += 1;
-    let conn_id = shared.next_conn_id;
-    if let Some(old) = shared.slots.remove(&class) {
-        eprintln!("vault-helper: replacing {} connection", class.as_str());
-        let _ = old.stream.shutdown(Shutdown::Both);
-    }
-    if let Ok(clone) = stream.try_clone() {
-        shared.slots.insert(
-            class,
-            SlotEntry {
-                conn_id,
-                stream: clone,
-            },
-        );
-    }
-    shared.active += 1;
-    conn_id
-}
-
-fn unregister(shared: &Arc<Mutex<Shared>>, class: ClientClass, conn_id: u64) {
-    let mut shared = Shared::lock(shared);
-    if shared
-        .slots
-        .get(&class)
-        .is_some_and(|s| s.conn_id == conn_id)
-    {
-        shared.slots.remove(&class);
-    }
-    shared.active = shared.active.saturating_sub(1);
-    if shared.active == 0 {
-        shared.last_zero_clients = Instant::now();
-    }
-}
-
-fn serve_ops(stream: &mut UnixStream, shared: &Arc<Mutex<Shared>>) {
-    loop {
-        match framing::read_frame(stream) {
-            Ok(frame) => {
-                let response = {
-                    let mut shared = Shared::lock(shared);
-                    let (response, next) = ops::dispatch_op(shared.vault_state, &frame);
-                    shared.vault_state = next;
-                    response
-                };
-                if framing::write_frame(stream, &response).is_err() {
-                    return;
-                }
-            }
-            Err(FrameError::Eof) => return,
-            Err(e) => {
-                // Oversize / malformed: fail-closed per spec §1.4.
-                eprintln!("vault-helper: framing violation ({e}); closing connection");
-                return;
+/// §1.6 auto-lock + §13.3 system-trigger lock, checked once per second.
+/// Zeroize-only work runs here precisely so it can land under an
+/// in-flight op (see `executor` module docs).
+fn spawn_tick(
+    core: Arc<Mutex<VaultCore>>,
+    hub: Arc<Hub>,
+    triggers: Arc<LockTriggers>,
+    panel_cancel: Arc<AtomicBool>,
+    shutdown: Arc<AtomicBool>,
+) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(Duration::from_secs(1));
+        if shutdown.load(Ordering::SeqCst) {
+            return;
+        }
+        let reason = match triggers.take() {
+            Some(reason) => Some(reason),
+            None if lock_core(&core).auto_lock_due() => Some(LockReason::Timeout),
+            None => None,
+        };
+        if let Some(reason) = reason {
+            panel_cancel.store(true, Ordering::SeqCst);
+            let events = lock_core(&core).lock(reason);
+            for event in events {
+                hub.emit(event);
             }
         }
-    }
+    });
 }
