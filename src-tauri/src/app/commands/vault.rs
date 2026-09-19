@@ -81,6 +81,27 @@ pub async fn vault_change_master_password(app: tauri::AppHandle) -> Result<Value
     call_with_panel(app, json!({"op": "change_master_password"})).await
 }
 
+/// Unlock with the 24-word Recovery Key, typed into the helper's own
+/// panel (§1.5 begin_recovery_unlock kind "rk"). The words never cross.
+#[tauri::command]
+pub async fn vault_unlock_with_recovery_key(app: tauri::AppHandle) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "begin_recovery_unlock", "kind": "rk"})).await
+}
+
+/// §12 scenarios 6/7: new Recovery Key + vault-key rotation. The helper
+/// shows (and can print) the new words in its own capture-excluded window.
+#[tauri::command]
+pub async fn vault_rotate_recovery_key(app: tauri::AppHandle) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "rotate_recovery_key"})).await
+}
+
+/// §12 scenario 5: set a new master password on an unlocked vault when
+/// the old one is forgotten (e.g. after a Recovery Key unlock).
+#[tauri::command]
+pub async fn vault_reset_master_password(app: tauri::AppHandle) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "change_master_password", "mode": "reset"})).await
+}
+
 #[tauri::command]
 pub async fn vault_lock() -> Result<Value, String> {
     call(json!({"op": "lock"})).await

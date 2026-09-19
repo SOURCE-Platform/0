@@ -25,11 +25,14 @@ fn op01_setup_unlock_crud_reveal_lifecycle() {
         assert!(fx.dir.join(name).exists(), "missing {name}");
     }
     // §14.2: the panel-visibility events bracket the panel with its title.
+    // Phase D: the Recovery Key window follows MP creation (§5.4).
     let panels = fx.events_named("secure_panel_visible");
-    assert_eq!(panels.len(), 2);
+    assert_eq!(panels.len(), 4);
     assert_eq!(panels[0]["visible"], true);
     assert_eq!(panels[0]["title"], "Source Vault — Create Master Password");
     assert_eq!(panels[1]["visible"], false);
+    assert_eq!(panels[2]["title"], "Source Vault — Recovery Key");
+    assert_eq!(panels[3]["visible"], false);
 
     // unlock → UNLOCKED.
     let resp = unlock(&fx, MP);

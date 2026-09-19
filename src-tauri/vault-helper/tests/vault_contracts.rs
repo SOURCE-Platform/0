@@ -20,6 +20,9 @@ fn op04_bad_state_matrix() {
         json!({"op": "reveal", "ref": "r"}),
         json!({"op": "change_master_password"}),
         json!({"op": "begin_recovery_unlock", "kind": "mp"}),
+        json!({"op": "begin_recovery_unlock", "kind": "rk"}),
+        json!({"op": "rotate_recovery_key"}),
+        json!({"op": "change_master_password", "mode": "reset"}),
         json!({"op": "set_auto_lock_minutes", "minutes": 15}),
     ] {
         let resp = fx.op(frame.clone());
@@ -29,14 +32,18 @@ fn op04_bad_state_matrix() {
             "{frame} in UNINITIALIZED: {resp}"
         );
     }
-    // setup while LOCKED is rejected; unknown op / rk kind per spec.
+    // setup while LOCKED is rejected; unknown op / unknown kind per spec.
     assert_eq!(setup_vault(&fx, MP)["ok"], true);
     let resp = fx.op(json!({"op": "setup_vault"}));
     assert_eq!(err_code(&resp), "BAD_STATE");
     let resp = fx.op(json!({"op": "nuke_everything"}));
     assert_eq!(err_code(&resp), "UNKNOWN_OP");
-    let resp = fx.op(json!({"op": "begin_recovery_unlock", "kind": "rk"}));
+    let resp = fx.op(json!({"op": "begin_recovery_unlock", "kind": "device"}));
     assert_eq!(err_code(&resp), "UNKNOWN_OP");
+    // Unlocked-only Phase D ops are refused while LOCKED.
+    for frame in [json!({"op": "rotate_recovery_key"}), json!({"op": "change_master_password", "mode": "reset"})] {
+        assert_eq!(err_code(&fx.op(frame.clone())), "BAD_STATE", "{frame} in LOCKED");
+    }
     let resp = fx.op(json!({"op": "begin_recovery_unlock"}));
     assert_eq!(err_code(&resp), "INVALID_INPUT");
     std::fs::remove_dir_all(&fx.dir).ok();

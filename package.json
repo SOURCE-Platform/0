@@ -13,6 +13,7 @@
     "gate:phase-a": "bash scripts/phase-a-gate.sh",
     "gate:phase-b": "bash scripts/phase-b-gate.sh",
     "gate:phase-c": "bash scripts/phase-c-gate.sh",
+    "gate:phase-d": "bash scripts/phase-d-gate.sh",
     "preview": "vite preview",
     "tauri": "tauri"
   },

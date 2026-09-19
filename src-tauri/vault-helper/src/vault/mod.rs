@@ -23,8 +23,11 @@ use crate::storage::header::Header;
 use crate::storage::VaultStore;
 
 pub mod change_mp;
+pub mod create;
 pub mod gate;
 pub mod items;
+pub mod recovery_ops;
+pub mod rk_ops;
 pub mod setup;
 
 /// What the helper-owned panel is asking for (§1.7). Secrets cross back
@@ -37,6 +40,8 @@ pub enum PanelRequest {
     MpEntry,
     /// MP change: old + new + confirmation (§1.5 change_master_password).
     MpChange,
+    /// Recovery Key entry: one secure field, 24 words (§1.7, §2.4).
+    RkEntry,
 }
 
 impl PanelRequest {
@@ -48,12 +53,28 @@ impl PanelRequest {
             PanelRequest::MpCreate => "Source Vault — Create Master Password",
             PanelRequest::MpEntry => "Source Vault — Unlock",
             PanelRequest::MpChange => "Source Vault — Change Master Password",
+            PanelRequest::RkEntry => "Source Vault — Enter Recovery Key",
         }
     }
 }
 
+/// Title of the Recovery Key display/print window (§1.7).
+pub const RK_SHEET_TITLE: &str = "Source Vault — Recovery Key";
+
+/// What the helper's Recovery Key window shows and prints. Built and
+/// consumed inside the helper only; never crosses IPC (§1.5 never-list).
+pub struct RecoverySheet {
+    /// The 24 words, space separated.
+    pub words: zeroize::Zeroizing<String>,
+    /// Non-secret freshness checkpoint line (§11.7): vault id, manifest
+    /// generation, registry head prefix.
+    pub checkpoint: String,
+}
+
 pub enum PanelOutcome {
     Cancelled,
+    /// Recovery Key window closed through "I've saved it".
+    Acknowledged,
     /// MpCreate / MpEntry submission.
     Submitted(SecretVec),
     /// MpChange submission: (old, new).
@@ -64,6 +85,11 @@ pub enum PanelOutcome {
 /// thread; production impl marshals to the AppKit main thread).
 pub trait PanelRunner: Send + Sync {
     fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome;
+    /// Show (and offer to print) a Recovery Key. `Acknowledged` only when
+    /// the user confirmed they saved it; anything else is `Cancelled`.
+    fn show_recovery_key(&self, _sheet: &RecoverySheet, _timeout: Duration) -> PanelOutcome {
+        PanelOutcome::Cancelled
+    }
 }
 
 /// One LA `deviceOwnerAuthentication` evaluation (§6.4 step 2 — the same
@@ -268,7 +294,11 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     match op {
         "setup_vault" => setup::setup_vault(core, deps),
         "begin_recovery_unlock" => setup::begin_recovery_unlock(core, frame, deps),
+        "change_master_password" if frame.get("mode").and_then(Value::as_str) == Some("reset") => {
+            rk_ops::reset_master_password(core, deps)
+        }
         "change_master_password" => change_mp::change_master_password(core, deps),
+        "rotate_recovery_key" => rk_ops::rotate_recovery_key(core, deps),
         "list_items" => items::list_items(core),
         "add_item" => items::add_item(core, frame, deps),
         "update_item" => items::update_item(core, frame, deps),

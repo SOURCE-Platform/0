@@ -12,7 +12,7 @@
 #      (metadata only) → update → reveal allow → delete
 #   6. capture_check reverse flow: reveal with the client's capture handler
 #      answering "unsafe" → CAPTURE_UNSAFE + capture_unsafe event, no secret
-#   7. recovery-key kind → UNKNOWN_OP (RK is Phase D)
+#   7. unknown unlock kind → UNKNOWN_OP
 #   8. auto-lock minutes op: 4 rejected, 5 accepted
 #   9. panel events: secure_panel_visible true→false bracket with title
 #  10. change_master_password: old MP → WRONG_CREDENTIAL after restart,
@@ -168,7 +168,7 @@ OUT_LIST=$(c list)
 OUT_UPD=$(c update "$REF" password "$PW2")
 OUT_REV=$(c reveal "$REF" allow)
 OUT_DENY=$(c reveal "$REF" deny)
-OUT_RK=$(c unlock-rk-expect-unknown); RC_RK=$?
+OUT_RK=$(c unlock-kind-expect-unknown); RC_RK=$?
 OUT_AL4=$(c set-autolock 4); OUT_AL5=$(c set-autolock 5)
 OUT_DEL=$(c delete "$REF"); OUT_LIST2=$(c list)
 stop_helper
@@ -193,7 +193,7 @@ has "$OUT_DENY" '"event":"capture_unsafe"' || WHY+="no-capture_unsafe-event "
 verdict "capture_check reverse flow fails closed (CS-06 analog)" \
     "$(first "$OUT_DENY"); $(echo "$OUT_DENY" | grep -o '"event":"capture_unsafe"[^}]*}')"
 
-check "recovery-key unlock kind → UNKNOWN_OP (RK is Phase D)" "$OUT_RK" [ $RC_RK -eq 0 ]
+check "unknown unlock kind → UNKNOWN_OP" "$OUT_RK" [ $RC_RK -eq 0 ]
 
 WHY=""
 has "$OUT_AL4" "OP_ERROR=INVALID_INPUT" || WHY+="4:$(first "$OUT_AL4") "

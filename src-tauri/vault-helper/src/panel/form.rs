@@ -37,6 +37,14 @@ pub(super) fn validate(mode: u8, values: &[Zeroizing<String>]) -> Result<(), &'s
             }
             Ok(())
         }
+        3 => {
+            // Word count only; the checksum is verified by the op (§2.4)
+            // so a typo gets the same answer as a wrong key.
+            if values.first().map_or(0, |v| v.split_whitespace().count()) != 24 {
+                return Err("Enter all 24 words of your Recovery Key.");
+            }
+            Ok(())
+        }
         _ => {
             if values.first().is_some_and(|v| v.is_empty()) {
                 return Err("Enter your master password.");
@@ -66,6 +74,7 @@ pub(super) fn field_plan(req: &PanelRequest) -> (Vec<&'static str>, u8) {
     match req {
         PanelRequest::MpEntry => (vec!["Master password"], 0),
         PanelRequest::MpCreate => (vec!["New master password", "Confirm master password"], 1),
+        PanelRequest::RkEntry => (vec!["Recovery Key — all 24 words, separated by spaces"], 3),
         PanelRequest::MpChange => (
             vec!["Current master password", "New master password", "Confirm new password"],
             2,
@@ -89,6 +98,25 @@ pub(super) fn write_probe(title: &str, app_active: bool, panel_key: bool) {
         "secure_event_input_active": secure_input,
         "app_active": app_active,
         "panel_key": panel_key,
+    });
+    let _ = std::fs::write(path, body.to_string());
+}
+
+/// UI-04 evidence from the Recovery Key window's debug print path:
+/// whether the print pipeline ran, and that the window (and with it the
+/// capture-suppression bracket) was up during printing. Contains no
+/// secret. Debug builds only, path from OV0_VAULT_PANEL_PROBE.
+#[cfg(debug_assertions)]
+pub(super) fn write_sheet_probe(print_attempted: bool, print_ran: bool, on_screen: bool, window_visible: bool) {
+    let Ok(path) = std::env::var("OV0_VAULT_PANEL_PROBE") else {
+        return;
+    };
+    let body = serde_json::json!({
+        "print_attempted": print_attempted,
+        "print_ran": print_ran,
+        "sheet_on_screen": on_screen,
+        "window_visible": window_visible,
+        "sharing_type": "NSWindowSharingNone",
     });
     let _ = std::fs::write(path, body.to_string());
 }

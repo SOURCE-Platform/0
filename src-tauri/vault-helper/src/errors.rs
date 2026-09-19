@@ -1,4 +1,4 @@
-//! §15 error codes (Phase C subset) as a closed enum. Error frames carry
+//! §15 error codes (Phase C + D subset) as a closed enum. Error frames carry
 //! only the code string — never secret material, never usernames/URLs
 //! (§15 universal rules).
 
@@ -31,6 +31,17 @@ pub enum ErrorCode {
     /// the §15 catalog names no code for a refused presence prompt; this
     /// one is documented in the Phase C verification report.
     PresenceDenied,
+    // Registry / recovery (Phase D)
+    SignatureInvalid,
+    DeviceNotAuthorized,
+    RegistryFork,
+    RegistryTruncated,
+    RotationFailed,
+    RecoveryIncomplete,
+    FinalizeConflict,
+    BackupObjectMissing,
+    BackupConflict,
+    BackupUnavailable,
     // Generic
     InvalidInput,
     Internal,
@@ -57,6 +68,16 @@ impl ErrorCode {
             ErrorCode::PanelCancelled => "PANEL_CANCELLED",
             ErrorCode::PresenceDenied => "PRESENCE_DENIED",
             ErrorCode::InvalidInput => "INVALID_INPUT",
+            ErrorCode::SignatureInvalid => "SIGNATURE_INVALID",
+            ErrorCode::DeviceNotAuthorized => "DEVICE_NOT_AUTHORIZED",
+            ErrorCode::RegistryFork => "REGISTRY_FORK",
+            ErrorCode::RegistryTruncated => "REGISTRY_TRUNCATED",
+            ErrorCode::RotationFailed => "ROTATION_FAILED",
+            ErrorCode::RecoveryIncomplete => "RECOVERY_INCOMPLETE",
+            ErrorCode::FinalizeConflict => "FINALIZE_CONFLICT",
+            ErrorCode::BackupObjectMissing => "BACKUP_OBJECT_MISSING",
+            ErrorCode::BackupConflict => "BACKUP_CONFLICT",
+            ErrorCode::BackupUnavailable => "BACKUP_UNAVAILABLE",
             ErrorCode::Internal => "INTERNAL",
         }
     }

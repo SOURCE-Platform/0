@@ -65,10 +65,12 @@ fn main() -> ExitCode {
         // Phase C flows
         "setup" => op(socket, json!({"op": "setup_vault"})),
         "unlock-mp" => op(socket, json!({"op": "begin_recovery_unlock", "kind": "mp"})),
-        "unlock-rk-expect-unknown" => expect_unknown_op(
-            socket,
-            json!({"op": "begin_recovery_unlock", "kind": "rk"}),
-        ),
+        "unlock-kind-expect-unknown" => {
+            expect_unknown_op(socket, json!({"op": "begin_recovery_unlock", "kind": "device"}))
+        }
+        // Phase D flows (the helper's own panels hold every secret)
+        "unlock-rk" => op(socket, json!({"op": "begin_recovery_unlock", "kind": "rk"})),
+        "rotate-rk" => op(socket, json!({"op": "rotate_recovery_key"})),
         "change-mp" => op(socket, json!({"op": "change_master_password"})),
         "add-login" => {
             let &[title, user, host, password] = expect_args(&rest, 4, "add-login") else { unreachable!() };

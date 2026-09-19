@@ -10,6 +10,7 @@
 //! no cryptography, and no ops beyond the three above. Anything else is
 //! answered `UNKNOWN_OP` (see `ops`).
 
+pub mod backup;
 pub mod crypto;
 pub mod errors;
 pub mod ffi;
@@ -21,6 +22,8 @@ pub mod log;
 pub mod notify;
 pub mod ops;
 pub mod panel;
+pub mod recovery;
+pub mod registry;
 pub mod state;
 pub mod storage;
 pub mod vault;

@@ -37,7 +37,7 @@ fn as_any(object: &NSObject) -> &AnyObject {
 }
 
 use super::form::{field_plan, read_field, to_secret, validate};
-use super::watchdog::Watchdog;
+use super::watchdog::{Hooks, Watchdog};
 #[cfg(debug_assertions)]
 use super::form::write_probe;
 use crate::vault::{PanelOutcome, PanelRequest};
@@ -151,6 +151,10 @@ static ON_SCREEN: AtomicBool = AtomicBool::new(false);
 
 pub fn panel_on_screen() -> bool {
     ON_SCREEN.load(Ordering::SeqCst)
+}
+
+pub(super) fn set_on_screen(on: bool) {
+    ON_SCREEN.store(on, Ordering::SeqCst);
 }
 
 /// Dismiss the visible panel, zeroizing its fields (§1.7 close). Called
@@ -281,7 +285,16 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
 
     // Blocks until the delegate stops the modal session or the watchdog
     // aborts it; the watchdog is torn down before the session state is.
-    let watchdog = Watchdog::start(abort);
+    let watchdog = Watchdog::start(
+        abort,
+        Hooks {
+            abort: abort_current,
+            #[cfg(debug_assertions)]
+            probe: probe_current,
+            #[cfg(not(debug_assertions))]
+            probe: || {},
+        },
+    );
     unsafe { app.runModalForWindow(&panel) };
     drop(watchdog);
     panel.orderOut(None);
@@ -297,7 +310,7 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
             let old = v.pop().unwrap_or_default();
             PanelOutcome::SubmittedChange(to_secret(old), to_secret(new))
         }
-        (PanelRequest::MpCreate, Some(v)) | (PanelRequest::MpEntry, Some(v)) => {
+        (PanelRequest::MpCreate, Some(v)) | (PanelRequest::MpEntry, Some(v)) | (PanelRequest::RkEntry, Some(v)) => {
             PanelOutcome::Submitted(to_secret(v.into_iter().next().unwrap_or_default()))
         }
     }

@@ -200,7 +200,7 @@ pub fn apply_revision(conn: &Connection, rev: &RevisionRow) -> Result<MergeOutco
     Ok(MergeOutcome::FastForward)
 }
 
-fn insert_rev(conn: &Connection, rev: &RevisionRow) -> Result<(), ErrorCode> {
+pub(super) fn insert_rev(conn: &Connection, rev: &RevisionRow) -> Result<(), ErrorCode> {
     let mut parents = Vec::with_capacity(rev.parent_revs.len() * 32);
     for p in &rev.parent_revs {
         parents.extend_from_slice(p);

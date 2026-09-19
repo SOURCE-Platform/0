@@ -23,7 +23,7 @@ pub use vault_helper::state::VaultState;
 pub use vault_helper::storage::store::{MANIFEST_NAME, PASSWORD_WRAP_NAME};
 pub use vault_helper::vault::{
     dispatch, CaptureChecker, Deps, EventSink, LockReason, PanelOutcome, PanelRequest,
-    PanelRunner, PresenceChecker, VaultCore,
+    PanelRunner, PresenceChecker, RecoverySheet, VaultCore,
 };
 pub use vault_helper::VAULT_HEADER_NAME;
 
@@ -37,16 +37,36 @@ pub const PASSWORD2: &str = "synthetic-login-password-v2 (test fixture, not real
 pub struct Panel {
     pub queue: Mutex<VecDeque<PanelOutcome>>,
     pub seen: Mutex<Vec<PanelRequest>>,
+    /// Checkpoint lines of every Recovery Key window shown.
+    pub sheets: Mutex<Vec<String>>,
+    pub shown_rk: Mutex<Option<String>>,
+    pub refuse_sheet: Mutex<bool>,
 }
 
 impl PanelRunner for Panel {
     fn run(&self, req: PanelRequest, _timeout: Duration) -> PanelOutcome {
         self.seen.lock().unwrap().push(req);
+        if req == PanelRequest::RkEntry {
+            // Type back the last Recovery Key shown (in-process only).
+            if let Some(words) = self.shown_rk.lock().unwrap().clone() {
+                return PanelOutcome::Submitted(SecretVec::new(words.into_bytes()));
+            }
+        }
         self.queue
             .lock()
             .unwrap()
             .pop_front()
             .unwrap_or(PanelOutcome::Cancelled)
+    }
+
+    /// Acknowledge by default and remember the words (never printed).
+    fn show_recovery_key(&self, sheet: &RecoverySheet, _timeout: Duration) -> PanelOutcome {
+        self.sheets.lock().unwrap().push(sheet.checkpoint.clone());
+        if *self.refuse_sheet.lock().unwrap() {
+            return PanelOutcome::Cancelled;
+        }
+        *self.shown_rk.lock().unwrap() = Some(sheet.words.to_string());
+        PanelOutcome::Acknowledged
     }
 }
 
@@ -127,6 +147,9 @@ pub fn fx() -> Fx {
     let panel = Arc::new(Panel {
         queue: Mutex::new(VecDeque::new()),
         seen: Mutex::new(Vec::new()),
+        sheets: Mutex::new(Vec::new()),
+        shown_rk: Mutex::new(None),
+        refuse_sheet: Mutex::new(false),
     });
     let la = Arc::new(La {
         allow: true,

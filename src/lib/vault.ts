@@ -67,6 +67,21 @@ export async function vaultChangeMasterPassword(): Promise<void> {
   await invoke("vault_change_master_password");
 }
 
+/** Helper panel collects the 24 Recovery Key words (LOCKED only). */
+export async function vaultUnlockWithRecoveryKey(): Promise<void> {
+  await invoke("vault_unlock_with_recovery_key");
+}
+
+/** New Recovery Key + key rotation; the helper shows/prints the words. */
+export async function vaultRotateRecoveryKey(): Promise<void> {
+  await invoke("vault_rotate_recovery_key");
+}
+
+/** New master password for an unlocked vault (old one forgotten). */
+export async function vaultResetMasterPassword(): Promise<void> {
+  await invoke("vault_reset_master_password");
+}
+
 export async function vaultLock(): Promise<void> {
   await invoke("vault_lock");
 }
@@ -147,6 +162,10 @@ export function vaultErrorMessage(code: string): string {
       return "This data was written by a newer version of Source — update the app.";
     case "DB_CORRUPT":
       return "The vault database is damaged. Restore from a backup.";
+    case "RECOVERY_KEY_INVALID":
+      return "That isn't a valid Recovery Key. Check the 24 words and try again.";
+    case "ROTATION_FAILED":
+      return "The security update didn't finish. The vault is locked; unlock to retry.";
     case "INVALID_INPUT":
       return "That input isn't valid.";
     default:

@@ -17,6 +17,7 @@ pub use super::manifest::MANIFEST_NAME;
 pub const WRAPS_DIR: &str = "wraps";
 pub const IMPORT_DIR: &str = "import";
 pub const PASSWORD_WRAP_NAME: &str = "wraps/password.wrap";
+pub const RECOVERY_WRAP_NAME: &str = "wraps/recovery.wrap";
 
 /// Field tag for the single per-revision list-metadata blob sealed into
 /// `meta_ct` (§2.6 `meta_aad` field_tag). Phase C seals one JSON blob
@@ -76,6 +77,9 @@ impl VaultStore {
     /// → §3.5 manifest/header consistency → manifest objects == DB revs.
     /// Pure ciphertext operations; VK is not involved here.
     pub fn open(dir: &Path) -> Result<VaultStore, ErrorCode> {
+        // Finish or discard an interrupted VK rotation first (§2.10):
+        // an opened vault is never half-rotated.
+        super::rotation_journal::recover_pending(dir)?;
         let header_bytes =
             std::fs::read(dir.join(VAULT_HEADER_NAME)).map_err(|_| ErrorCode::DbCorrupt)?;
         let header = header::parse_header(&header_bytes)?;
@@ -97,6 +101,7 @@ impl VaultStore {
 
     /// Parse just the header (boot path; no DB touch).
     pub fn read_header(dir: &Path) -> Result<Header, ErrorCode> {
+        super::rotation_journal::recover_pending(dir)?;
         let bytes = std::fs::read(dir.join(VAULT_HEADER_NAME)).map_err(|_| ErrorCode::DbCorrupt)?;
         header::parse_header(&bytes)
     }
@@ -167,30 +172,8 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Live records: non-deleted tips, plus conflicted records that have
-    /// at least one non-deleted conflict branch (§3.4 item-count leak).
     fn live_item_count(&self) -> Result<u64, ErrorCode> {
-        let n: i64 = self
-            .conn
-            .query_row(
-                "SELECT count(DISTINCT t.record_id) FROM record_tips t
-                 JOIN record_revs r ON r.rev_hash = t.tip_rev WHERE r.deleted = 0",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        let conflicted: i64 = self
-            .conn
-            .query_row(
-                "SELECT count(DISTINCT c.record_id) FROM record_conflicts c
-                 JOIN record_revs r ON r.rev_hash = c.rev_hash
-                 WHERE r.deleted = 0 AND (SELECT tip_rev FROM record_tips
-                                          WHERE record_id = c.record_id) IS NULL",
-                [],
-                |r| r.get(0),
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        Ok((n + conflicted) as u64)
+        super::revision_rows::live_count(&self.conn)
     }
 }
 

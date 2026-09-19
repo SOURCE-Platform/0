@@ -23,17 +23,25 @@ use core_foundation::runloop::{
     CFRunLoopTimerInvalidate, CFRunLoopTimerRef,
 };
 
-use super::appkit;
-
 const TICK_SECS: f64 = 0.05;
 
 /// Debug autoshow: dismiss after this long, sampling the UI-02 probe first.
 #[cfg(debug_assertions)]
 const AUTOSHOW_AFTER: Duration = Duration::from_millis(400);
 
+/// What the watchdog calls on the main thread for the window it guards.
+#[derive(Clone, Copy)]
+pub(super) struct Hooks {
+    /// Dismiss the window (zeroize fields, order out, abortModal).
+    pub abort: fn(),
+    /// Debug autoshow: sample evidence before the automatic dismissal.
+    pub probe: fn(),
+}
+
 struct Ctx {
     abort: Arc<AtomicBool>,
     fired: AtomicBool,
+    hooks: Hooks,
     #[cfg(debug_assertions)]
     autoshow_since: Option<Instant>,
 }
@@ -47,12 +55,15 @@ pub(super) struct Watchdog {
 
 impl Watchdog {
     /// Install on the main run loop. Main-thread only.
-    pub(super) fn start(abort: Arc<AtomicBool>) -> Watchdog {
+    pub(super) fn start(abort: Arc<AtomicBool>, hooks: Hooks) -> Watchdog {
         let ctx = Box::new(Ctx {
             abort,
             fired: AtomicBool::new(false),
+            hooks,
             #[cfg(debug_assertions)]
-            autoshow_since: (std::env::var("OV0_VAULT_PANEL_SCRIPT").as_deref() == Ok("autoshow"))
+            autoshow_since: ["OV0_VAULT_PANEL_SCRIPT", "OV0_VAULT_SHEET_SCRIPT"]
+                .iter()
+                .any(|k| std::env::var(k).is_ok_and(|s| s.starts_with("autoshow")))
                 .then(Instant::now),
         });
         let mut context = CFRunLoopTimerContext {
@@ -85,11 +96,11 @@ extern "C" fn tick(_timer: CFRunLoopTimerRef, info: *mut c_void) {
     #[cfg(debug_assertions)]
     if let Some(since) = ctx.autoshow_since {
         if since.elapsed() >= AUTOSHOW_AFTER && !ctx.abort.load(Ordering::SeqCst) {
-            appkit::probe_current();
+            (ctx.hooks.probe)();
             ctx.abort.store(true, Ordering::SeqCst);
         }
     }
     if ctx.abort.load(Ordering::SeqCst) && !ctx.fired.swap(true, Ordering::SeqCst) {
-        appkit::abort_current();
+        (ctx.hooks.abort)();
     }
 }

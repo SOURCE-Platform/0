@@ -17,9 +17,12 @@ import {
   vaultChangeMasterPassword,
   vaultErrorMessage,
   vaultLock,
+  vaultResetMasterPassword,
+  vaultRotateRecoveryKey,
   vaultSetup,
   vaultState,
   vaultUnlock,
+  vaultUnlockWithRecoveryKey,
   type VaultState,
 } from "@/lib/vault";
 import { ItemList } from "./ItemList";
@@ -95,11 +98,25 @@ export function VaultPage() {
           <p className="mt-1 max-w-[60ch] text-sm leading-6 text-muted-foreground">
             Credentials live in a separate, code-signed helper process. Secrets are typed
             into the helper's own secure panel and never pass through this window's
-            JavaScript. Phase C uses synthetic credentials only.
+            JavaScript. Use synthetic credentials only until the vault is released.
           </p>
         </div>
         {(state === "unlocked" || state === "authorizing") && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => run(vaultRotateRecoveryKey)}
+              disabled={busy || state !== "unlocked"}
+              className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <KeyRound className="h-4 w-4" /> Replace Recovery Key
+            </button>
+            <button
+              onClick={() => run(vaultResetMasterPassword)}
+              disabled={busy || state !== "unlocked"}
+              className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <KeyRound className="h-4 w-4" /> Forgot master password
+            </button>
             <button
               onClick={() => run(vaultChangeMasterPassword)}
               disabled={busy || state !== "unlocked"}
@@ -174,6 +191,13 @@ export function VaultPage() {
               className="mt-4 cursor-pointer rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy || state === "unlocking" ? "Waiting for the secure panel…" : "Unlock"}
+            </button>
+            <button
+              onClick={() => run(vaultUnlockWithRecoveryKey)}
+              disabled={busy || state === "unlocking"}
+              className="ml-2 mt-4 cursor-pointer rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Use Recovery Key
             </button>
           </div>
         )}

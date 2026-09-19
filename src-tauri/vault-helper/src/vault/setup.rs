@@ -16,11 +16,10 @@ use crate::crypto::secret;
 use crate::crypto::wrap::{self, PasswordWrapFile, RecoveryWrapPayload};
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
-use crate::storage::header::{Header, Hex16};
-use crate::storage::store::{write_atomic, PASSWORD_WRAP_NAME};
+use crate::storage::header::Header;
+use crate::storage::store::PASSWORD_WRAP_NAME;
 use crate::storage::VaultStore;
 use crate::keychain;
-use crate::VAULT_HEADER_NAME;
 
 /// §13.3: UNLOCKING aborts after 120 s (also bounds panel waits).
 const PANEL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -31,26 +30,6 @@ pub const PANEL_TITLE: &str = "Source Vault";
 
 pub(super) fn emit_panel(deps: &Deps, visible: bool, req: PanelRequest) {
     deps.events.emit(ev_panel(visible, visible.then(|| req.title())));
-}
-
-/// Remove exactly the files `setup_vault` may have created, when a later
-/// step fails. Never touches helper.sock (the live IPC endpoint shares
-/// the directory) and never recurses beyond the known Phase C set.
-fn cleanup_partial_vault(dir: &std::path::Path) {
-    use crate::storage::{db::DB_NAME, manifest, store};
-    for name in [
-        VAULT_HEADER_NAME,
-        DB_NAME,
-        "vault.db-wal",
-        "vault.db-shm",
-        manifest::MANIFEST_NAME,
-        crate::VAULT_REGISTRY_NAME,
-        store::PASSWORD_WRAP_NAME,
-    ] {
-        let _ = std::fs::remove_file(dir.join(name));
-    }
-    let _ = std::fs::remove_dir(dir.join(store::WRAPS_DIR));
-    let _ = std::fs::remove_dir(dir.join(store::IMPORT_DIR));
 }
 
 /// §5.4 Phase C subset: VK + vault_id + MP wrap + empty registry + first
@@ -71,18 +50,23 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         return OpOutcome::err(ErrorCode::PanelCancelled);
     };
     let vault_dir = lock_core(core).vault_dir.clone();
-    let result = create_vault_files(&vault_dir, &mp);
+    let rk = secret::random_secret();
+    let result = super::create::create_vault(&vault_dir, &mp, &rk);
     drop(mp); // SecretVec zeroizes
-    let (header, wrap_json) = match result {
-        Ok(v) => v,
-        Err(e) => {
-            cleanup_partial_vault(&vault_dir);
-            return OpOutcome::err(e);
+    let header = match result {
+        Ok((header, vk)) => {
+            drop(vk); // setup ends LOCKED (§13.1)
+            header
         }
+        Err(e) => return OpOutcome::err(e),
     };
-    if write_atomic(&vault_dir.join(PASSWORD_WRAP_NAME), &wrap_json).is_err() {
-        cleanup_partial_vault(&vault_dir);
-        return OpOutcome::err(ErrorCode::Internal);
+    // §5.4: the user must see (and may print) the RK. No vault survives
+    // without an acknowledged RK.
+    let sheet = super::rk_ops::make_sheet(&rk, &header.vault_id.0, header.manifest_generation, &header.registry_head.0);
+    drop(rk);
+    if !super::rk_ops::show_sheet(deps, &sheet) {
+        super::create::cleanup_partial_vault(&vault_dir);
+        return OpOutcome::err(ErrorCode::PanelCancelled);
     }
     // Rollback-evidence bookkeeping (§2.8). Keychain failure is not fatal
     // to creation; the vault opens without it (first-seen semantics).
@@ -92,31 +76,6 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     c.state = VaultState::Locked;
     deps.events.emit(ev_state(VaultState::Locked));
     OpOutcome::ok(json!({"state": "locked"}))
-}
-
-/// Build all vault bytes before touching the directory: header, DB schema,
-/// manifest, registry, and the sealed MP wrap. Returns the header plus the
-/// wrap file JSON (written by the caller last).
-fn create_vault_files(
-    vault_dir: &std::path::Path,
-    mp: &[u8],
-) -> Result<(Header, Vec<u8>), ErrorCode> {
-    let vault_id = Hex16::random();
-    let vk = secret::random_secret().mlock_best_effort();
-    let header = Header::fresh(vault_id);
-    let salt = header.kdf.salt_bytes()?;
-    let pk = kdf::derive_pk(mp, &salt, header.kdf.params()).map_err(|_| ErrorCode::Internal)?;
-    let payload = RecoveryWrapPayload {
-        vk,
-        wrapped_at: crate::storage::store::now_epoch(),
-        vk_generation: 1,
-    };
-    let wrap_file = wrap::seal_wrap_mp(&payload, &pk, &vault_id.0, Argon2Params::V1, &salt)
-        .map_err(|_| ErrorCode::Internal)?;
-    drop(pk);
-    let wrap_json = serde_json::to_vec_pretty(&wrap_file).map_err(|_| ErrorCode::Internal)?;
-    VaultStore::create(vault_dir, header.clone())?;
-    Ok((header, wrap_json))
 }
 
 /// §1.5 `begin_recovery_unlock` with `kind:"mp"`: the panel-based unlock
@@ -129,6 +88,7 @@ pub fn begin_recovery_unlock(
 ) -> OpOutcome {
     match frame.get("kind").and_then(Value::as_str) {
         Some("mp") => {}
+        Some("rk") => return super::rk_ops::begin_rk_unlock(core, deps),
         Some(_) => return OpOutcome::err(ErrorCode::UnknownOp),
         None => return OpOutcome::err(ErrorCode::InvalidInput),
     }
@@ -210,7 +170,7 @@ fn finish_mp_unlock(
 }
 
 /// Wrong-credential class failures stay LOCKED and retryable.
-fn unlock_failed_nonfatal(
+pub(super) fn unlock_failed_nonfatal(
     core: &Arc<Mutex<VaultCore>>,
     code: ErrorCode,
     deps: &Deps,
@@ -229,7 +189,7 @@ fn unlock_failed_fatal(core: &Arc<Mutex<VaultCore>>, code: ErrorCode, deps: &Dep
     OpOutcome::err(code)
 }
 
-fn install_unlock(
+pub(super) fn install_unlock(
     core: &Arc<Mutex<VaultCore>>,
     header: &Header,
     vault_dir: &std::path::Path,
@@ -272,7 +232,7 @@ fn install_unlock(
 }
 
 /// The wrap's own kdf block (§2.5 JSON shape), strictly parsed.
-pub(super) fn wrap_kdf(file: &PasswordWrapFile) -> Result<([u8; 16], Argon2Params), ErrorCode> {
+pub(crate) fn wrap_kdf(file: &PasswordWrapFile) -> Result<([u8; 16], Argon2Params), ErrorCode> {
     if file.v != 1 || file.kind != "mp" || file.kdf_version != kdf::KDF_VERSION_V1 {
         // §15: unknown/future wrap kdf_version fails closed.
         return Err(ErrorCode::FormatTooNew);
