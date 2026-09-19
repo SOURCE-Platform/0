@@ -98,18 +98,23 @@ export function VaultPage() {
             JavaScript. Phase C uses synthetic credentials only.
           </p>
         </div>
-        {state === "unlocked" && (
+        {(state === "unlocked" || state === "authorizing") && (
           <div className="flex items-center gap-2">
             <button
               onClick={() => run(vaultChangeMasterPassword)}
-              disabled={busy}
+              disabled={busy || state !== "unlocked"}
               className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <KeyRound className="h-4 w-4" /> Change master password
             </button>
+            {/* Never disabled: Lock must work while a panel/presence op is
+                in flight — the helper applies it immediately (§13.3). */}
             <button
-              onClick={() => run(vaultLock)}
-              disabled={busy}
+              onClick={() => {
+                vaultLock()
+                  .then(refreshState)
+                  .catch((e) => setError(vaultErrorMessage(String(e))));
+              }}
               className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Lock className="h-4 w-4" /> Lock now

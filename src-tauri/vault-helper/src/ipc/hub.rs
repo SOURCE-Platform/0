@@ -88,7 +88,7 @@ impl Hub {
         inner.next_conn_id += 1;
         let conn_id = inner.next_conn_id;
         if let Some(old) = inner.slots.remove(&class) {
-            eprintln!("vault-helper: replacing {} connection", class.as_str());
+            crate::hlog!("vault-helper: replacing {} connection", class.as_str());
             let _ = old.writer.lock().map(|w| w.shutdown(Shutdown::Both));
             if class == ClientClass::App {
                 drop(inner);

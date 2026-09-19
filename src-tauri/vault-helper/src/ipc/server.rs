@@ -134,7 +134,7 @@ impl Server {
                 return self.drain_and_exit();
             }
             if self.idle_expired() {
-                eprintln!("vault-helper: idle timeout with zero clients, exiting");
+                crate::hlog!("vault-helper: idle timeout with zero clients, exiting");
                 return 0;
             }
             match self.listener.accept() {
@@ -148,7 +148,7 @@ impl Server {
                 }
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => std::thread::sleep(TICK),
                 Err(e) => {
-                    eprintln!("vault-helper: accept error: {e}");
+                    crate::hlog!("vault-helper: accept error: {e}");
                     std::thread::sleep(TICK);
                 }
             }
@@ -173,7 +173,7 @@ impl Server {
                 return 0;
             }
             if Instant::now() >= deadline {
-                eprintln!("vault-helper: shutdown grace expired with clients attached");
+                crate::hlog!("vault-helper: shutdown grace expired with clients attached");
                 return 0;
             }
             std::thread::sleep(Duration::from_millis(50));

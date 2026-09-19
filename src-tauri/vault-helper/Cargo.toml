@@ -94,3 +94,10 @@ path = "src/main.rs"
 [[bin]]
 name = "vault-test-client"
 path = "src/bin/vault-test-client.rs"
+
+# Real AppKit panel + real socket: needs the process main thread, so it
+# runs without the libtest harness (skips unless OV0_VAULT_APPKIT_TESTS=1).
+[[test]]
+name = "lock_preempts_panel"
+path = "tests/lock_preempts_panel.rs"
+harness = false

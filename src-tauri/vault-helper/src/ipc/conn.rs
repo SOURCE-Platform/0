@@ -9,9 +9,15 @@
 //!   capture-check reply — routing it from the op loop would deadlock
 //!   until the 500 ms check timed out (every reveal → CAPTURE_UNSAFE).
 //!   Late replies (after the timeout) are consumed, never run as ops.
-//! - `get_state` / `lock` → answered inline (read-only / zeroize-only;
-//!   `lock` must preempt in-flight ops, §13.3, so it never queues behind
-//!   a 120 s panel).
+//! - `lock` → **applied on the read side the moment it arrives** (§13.3
+//!   preemption): set the panel-cancel flag, zeroize, enter LOCKED, emit
+//!   the events. Only its *response* queues behind the in-flight op, so
+//!   replies stay in request order and the wire protocol is unchanged.
+//!   The in-flight panel op then ends PANEL_CANCELLED once the panel has
+//!   actually left the screen (the runner waits for the real dismissal
+//!   before the executor emits `secure_panel_visible:false`, which is what
+//!   releases the app's capture suppression).
+//! - `get_state` → answered inline by the op loop (read-only).
 //! - everything else → the single ops executor; the reader blocks on the
 //!   response, which preserves per-connection request/response ordering.
 
@@ -41,11 +47,11 @@ pub struct ConnCtx {
 
 pub fn handle_connection(mut stream: UnixStream, ctx: Arc<ConnCtx>) {
     if let Err(e) = (ctx.verifier)(&stream) {
-        eprintln!("vault-helper: peer authentication failed: {e}");
+        crate::hlog!("vault-helper: peer authentication failed: {e}");
         return;
     }
     let Some((class, hello_ok)) = read_hello(&mut stream, &ctx) else {
-        eprintln!("vault-helper: first frame was not a valid hello; closing");
+        crate::hlog!("vault-helper: first frame was not a valid hello; closing");
         return;
     };
     let conn_id = ctx.hub.register(class, &stream);
@@ -64,7 +70,7 @@ fn read_hello(stream: &mut UnixStream, ctx: &ConnCtx) -> Option<(ClientClass, Va
     let frame = framing::read_frame(stream).ok()?;
     let hello = ops::parse_hello(&frame)?;
     if hello.proto != crate::PROTO_VERSION {
-        eprintln!(
+        crate::hlog!(
             "vault-helper: protocol major mismatch ({}), closing",
             hello.proto
         );
@@ -86,7 +92,8 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
         let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
         let response = match op {
             "get_state" => ops::ok_with_state(lock_core(&ctx.core).state),
-            "lock" => do_lock(ctx),
+            // Already applied by the read side on arrival; answer in order.
+            "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
             _ => match forward(ctx, frame) {
                 Some(response) => response,
                 None => break, // executor gone: server is shutting down
@@ -110,13 +117,16 @@ fn read_loop(mut stream: UnixStream, class: ClientClass, ctx: &ConnCtx, frames: 
             Ok(frame) => frame,
             Err(FrameError::Eof) => return,
             Err(e) => {
-                eprintln!("vault-helper: framing violation ({e}); closing connection");
+                crate::hlog!("vault-helper: framing violation ({e}); closing connection");
                 return;
             }
         };
         if class == ClientClass::App && frame.get("reply_to").is_some() {
             ctx.hub.route_reply(&frame);
             continue;
+        }
+        if frame.get("op").and_then(Value::as_str) == Some("lock") {
+            do_lock(ctx);
         }
         if frames.send(frame).is_err() {
             return;
@@ -125,14 +135,13 @@ fn read_loop(mut stream: UnixStream, class: ClientClass, ctx: &ConnCtx, frames: 
 }
 
 /// Explicit `lock` (§1.5): preempt any visible panel, zeroize (§13.3),
-/// emit the events live, answer with the resulting state.
-fn do_lock(ctx: &ConnCtx) -> Value {
+/// emit the events live. Runs on the read side, never behind the queue.
+fn do_lock(ctx: &ConnCtx) {
     ctx.panel_cancel.store(true, Ordering::SeqCst);
     let events = lock_core(&ctx.core).lock(LockReason::Explicit);
     for event in events {
         ctx.hub.emit(event);
     }
-    ops::ok_with_state(lock_core(&ctx.core).state)
 }
 
 /// Hand one op to the single executor and wait for its response. The

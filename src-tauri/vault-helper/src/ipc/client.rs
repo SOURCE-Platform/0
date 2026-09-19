@@ -10,12 +10,16 @@
 //!
 //! After the handshake a reader thread demultiplexes the connection,
 //! because three frame kinds now interleave on it (§1.5/§14.4):
-//! - **op responses** → the one outstanding request (ops serialize);
+//! - **op responses** → the oldest outstanding request. Requests may
+//!   overlap (an explicit `lock` must not wait behind an in-flight panel
+//!   op, §13.3); the helper answers each connection's ops in request
+//!   order, so waiters are a FIFO registered in wire order;
 //! - **events** (`{"event": ...}`) → the event queue the caller polls;
 //! - **`capture_check`** reverse queries → answered through the
 //!   registered handler; with no handler the answer is
 //!   `suppressed: false` (fail-closed, §14.4).
 
+use std::collections::VecDeque;
 use std::io;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -77,8 +81,11 @@ impl From<FrameError> for ClientError {
 /// verifiably active for this surface? Must answer fast (< 500 ms).
 pub type CaptureHandler = Arc<dyn Fn(&str) -> bool + Send + Sync>;
 
+type Waiter = SyncSender<Result<Value, ClientError>>;
+
 struct ReaderShared {
-    pending: Mutex<Option<SyncSender<Result<Value, ClientError>>>>,
+    /// Outstanding requests, oldest first (= helper response order).
+    pending: Mutex<VecDeque<Waiter>>,
     capture_handler: Mutex<Option<CaptureHandler>>,
 }
 
@@ -90,8 +97,6 @@ pub struct VaultClient {
     /// Mutex-wrapped so the client stays Sync; exactly one consumer (the
     /// event pump) is the intended pattern.
     events: Mutex<Receiver<Value>>,
-    /// Serializes requests: one outstanding op per connection.
-    op_lock: Mutex<()>,
 }
 
 impl VaultClient {
@@ -124,7 +129,7 @@ impl VaultClient {
 
         let writer = Arc::new(Mutex::new(stream.try_clone()?));
         let shared = Arc::new(ReaderShared {
-            pending: Mutex::new(None),
+            pending: Mutex::new(VecDeque::new()),
             capture_handler: Mutex::new(None),
         });
         let (events_tx, events_rx) = sync_channel(256);
@@ -138,7 +143,6 @@ impl VaultClient {
             state: Mutex::new(state),
             shared,
             events: Mutex::new(events_rx),
-            op_lock: Mutex::new(()),
         })
     }
 
@@ -188,21 +192,24 @@ impl VaultClient {
     /// enforcing the `{ok, error}` shape (spec §1.4). Events and reverse
     /// queries arriving in between are handled by the reader thread.
     pub fn request(&self, frame: Value) -> Result<Value, ClientError> {
-        let _guard = self.op_lock.lock().unwrap_or_else(|e| e.into_inner());
         let (tx, rx) = sync_channel::<Result<Value, ClientError>>(1);
-        *self
-            .shared
-            .pending
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(tx);
-        let write_result = self
-            .writer
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let mut writer = write_result;
-        let sent = framing::write_frame(&mut *writer, &frame);
-        drop(writer);
-        sent?;
+        {
+            // Register the waiter and write the frame under the writer
+            // lock, so the FIFO order is exactly the wire order.
+            let mut writer = self.writer.lock().unwrap_or_else(|e| e.into_inner());
+            let mut pending = self.shared.pending.lock().unwrap_or_else(|e| e.into_inner());
+            pending.push_back(tx);
+            drop(pending);
+            if let Err(e) = framing::write_frame(&mut *writer, &frame) {
+                // Nobody else could register while we held the writer.
+                self.shared
+                    .pending
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pop_back();
+                return Err(e.into());
+            }
+        }
         let resp = rx.recv().map_err(|_| ClientError::Disconnected)??;
         if let Some(state) = resp.get("state").and_then(Value::as_str) {
             *self.shared_state() = state.to_string();
@@ -257,23 +264,21 @@ fn reader_loop(
                 .pending
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
-                .take();
+                .pop_front();
             match waiter {
                 Some(waiter) => {
                     let _ = waiter.send(Ok(frame));
                 }
                 None => {
-                    eprintln!("vault-client: unsolicited frame dropped: no pending op");
+                    crate::hlog!("vault-client: unsolicited frame dropped: no pending op");
                 }
             }
         }
     }
-    let waiter = shared
-        .pending
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .take();
-    if let Some(waiter) = waiter {
+    let waiters = std::mem::take(
+        &mut *shared.pending.lock().unwrap_or_else(|e| e.into_inner()),
+    );
+    for waiter in waiters {
         let _ = waiter.send(Err(ClientError::Disconnected));
     }
 }

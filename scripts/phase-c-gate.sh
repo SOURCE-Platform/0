@@ -23,6 +23,10 @@
 #      window with native secure fields shown, dismissed by the watchdog
 #      within seconds (not the 120 s timeout), cancel brackets, no partial
 #      vault; focus/secure-input probe values recorded for UI-02
+#  13a. (C.1) explicit lock preempts an in-flight REAL panel on the same
+#      connection (tests/lock_preempts_panel.rs, OV0_VAULT_APPKIT_TESTS=1)
+#  13b. (C.1) SIGTERM with a signed client attached and stderr a broken
+#      pipe (the orphaned-helper incident) → exits within 10 s
 #  14. main app: cargo check + capture wiring/decision tests (panel events
 #      → suppression, helper-frontmost → no keystrokes)
 #  15. frontend: npm run build
@@ -49,7 +53,7 @@ PW2="synthetic-gate-login-password-v2"
 
 cleanup() {
     [ -n "${HELPER_PID:-}" ] && kill "$HELPER_PID" 2>/dev/null
-    for v in v1 v2 v3 v4 v5; do
+    for v in v1 v2 v3 v4 v5 bp; do
         for svc in com.racker.zero.vault.state com.racker.zero.vault.helper-prefs; do
             security delete-generic-password -s "${KC_PREFIX}${v}-${svc}" >/dev/null 2>&1
         done
@@ -270,6 +274,30 @@ has "$OUT_UI" '"visible":false' || WHY+="no-visible:false "
 # SOURCE does (macOS 14 cooperative activation). UI-02 is closed by the
 # in-app manual check in docs/security/phase-c-verification.md.
 verdict "live panel shown + dismissed, native secure fields (UI-01/03)" "$PROBE_BODY"
+
+# --- 13a. lock preempts a live panel (C.1) --------------------------------------------------
+if (cd "$SRC_TAURI" && OV0_VAULT_APPKIT_TESTS=1 cargo test -q -p source-vault-helper --test lock_preempts_panel) >"$T/lockp.log" 2>&1 \
+    && grep -q "lock_preempts_panel: PASS" "$T/lockp.log"; then
+    record "explicit lock preempts live panel, same connection (C.1)" PASS "$(grep -o 'locked event[^;]*;[^;]*' "$T/lockp.log" | head -1)"
+else
+    fail "explicit lock preempts live panel, same connection (C.1)" "$(grep -E 'FAIL|panicked|timed out' "$T/lockp.log" | head -2 | tr '\n' ' ')"
+fi
+
+# --- 13b. SIGTERM: signed client attached + broken stderr (C.1) -------------------------------
+# stderr goes to a pipe whose reader exits after the first line (the
+# `tauri dev`-parent-killed incident); every later log write hits EPIPE.
+BP="$T/bp"; mkdir -p "$BP"
+( env OV0_VAULT_SOCKET_PATH="$BP/s" OV0_VAULT_DIR="$BP/v" OV0_VAULT_KEYCHAIN_PREFIX="${KC_PREFIX}bp-" \
+    "$HELPER_BIN" 2>&1 >/dev/null & echo $! >"$BP/pid"; wait ) | head -1 >/dev/null &
+for _ in $(seq 100); do [ -S "$BP/s" ] && break; sleep 0.05; done
+BP_PID=$(cat "$BP/pid" 2>/dev/null)
+"$CLIENT" "$BP/s" hold 60 >/dev/null 2>&1 & BP_HOLD=$!
+sleep 1; kill -TERM "$BP_PID" 2>/dev/null; BP_START=$SECONDS; BP_ALIVE=1
+for _ in $(seq 100); do kill -0 "$BP_PID" 2>/dev/null || { BP_ALIVE=0; break; }; sleep 0.1; done
+[ $BP_ALIVE -eq 1 ] && kill -9 "$BP_PID" 2>/dev/null
+kill "$BP_HOLD" 2>/dev/null; wait "$BP_HOLD" 2>/dev/null
+check "SIGTERM with client attached + broken stderr exits (C.1)" \
+    "$([ $BP_ALIVE -eq 0 ] && echo "exited in $((SECONDS - BP_START))s" || echo "still alive after 10s")" [ $BP_ALIVE -eq 0 ]
 
 # --- 14. main app ---------------------------------------------------------------------------
 if (cd "$SRC_TAURI" && cargo check -q -p SOURCE && cargo test -q -p SOURCE --lib -- capture_exclusions vault_client) >"$T/main.log" 2>&1; then

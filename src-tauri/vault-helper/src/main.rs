@@ -58,7 +58,7 @@ fn main() -> ExitCode {
     // AppKit takes the main thread before any worker spawns; panel jobs
     // dispatched to the main queue require this event loop.
     let Some(mtm) = MainThreadMarker::new() else {
-        eprintln!("vault-helper: must start on the main thread");
+        vault_helper::hlog!("vault-helper: must start on the main thread");
         return ExitCode::from(2);
     };
     let app = NSApplication::sharedApplication(mtm);
@@ -85,19 +85,22 @@ fn main() -> ExitCode {
     let server = match Server::new(config, shutdown) {
         Ok(server) => server,
         Err(e) => {
-            eprintln!("vault-helper: startup failed: {e}");
+            vault_helper::hlog!("vault-helper: startup failed: {e}");
             return ExitCode::from(2);
         }
     };
-    eprintln!(
+    vault_helper::hlog!(
         "vault-helper: listening (state: {})",
         server.boot_state().as_str()
     );
     std::thread::spawn(move || {
-        let code = server.run();
         // The server has finished its drain (which includes the §1.6
         // lock/zeroize); end the process from here — the AppKit loop on
-        // the main thread has no other exit path.
+        // the main thread has no other exit path. A panic on this thread
+        // must still end the process: otherwise the helper would ignore
+        // SIGTERM and never idle-exit (70 = EX_SOFTWARE).
+        let code = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| server.run()))
+            .unwrap_or(70);
         std::process::exit(code);
     });
     // SAFETY: called once on the main thread after full initialization;

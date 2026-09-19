@@ -16,6 +16,11 @@ corrected (§11.4); `update_password` approvals require `credential_ref`
 (§6.5); `header.json` gains `import_fp_salt` (§3.1); RFC 9106 attribution
 corrected (§2.3); Secure Notes added as an explicit owner decision
 checkpoint (§10.8); new test families BA/RF/SC and extensions (§16).
+**v0.3 correction (2026-09-19, Phase C.1):** total-loss recovery order
+fixed. The recovering helper generates a fresh VK and re-encrypts the
+vault **before** `recovery-finalize`; finalize installs the already-rotated
+state and the vault enters UNLOCKED. There is no post-finalize VK rotation
+(§4.5, §11.8, §12 scenario 3, §13.1–13.2, RF-08).
 **macOS floor:** macOS 14+ (CryptoKit HPKE availability, §2.12).
 **Canonical architecture:** `docs/security/credential-vault-security-architecture.md`
 v0.3. Where this specification and v0.3 conflict, v0.3 controls and this
@@ -921,9 +926,12 @@ recovery_proof = HMAC-SHA256(recovery_key,
   derivation above is that recovered VK.)
 - Altering any bound field — including the new device's public keys —
   invalidates the proof (test RG-08).
-- The valid entry itself installs the new device (rule 6); the recovering
-  device immediately rotates VK (§12 scenario 3/4) so the proof key is
-  retired with the old generation.
+- The valid entry itself installs the new device (rule 6). The recovering
+  device has already generated a fresh VK and re-encrypted the vault
+  before finalize (§12 scenario 3/4), so the manifest that finalize
+  installs is sealed under the new `vk_generation`: the proof key (the
+  old VK) is retired at the moment the epoch commits, with no window in
+  which the new epoch runs on the old VK.
 - An attacker holding an *old* VK/RK can forge an epoch bound only to the
   *old* `manifest_hash`; devices that have seen a newer manifest reject it
   (§4.6 rollback), and the recovery UI shows the bound manifest generation
@@ -2013,7 +2021,7 @@ process transports it verbatim):
 | 0x05 | `expected_old_registry_head` | 32 B; CAS precondition |
 | 0x06 | `recovery_credential_class` | u8: 1 mp, 2 rk |
 | 0x07 | `recovery_epoch_entry` | full TLV bytes of the v2 entry (kind=4), §4.3 |
-| 0x08 | `new_manifest` | full bytes; generation = expected_old+1, `vk_generation` = new |
+| 0x08 | `new_manifest` | full bytes; generation = expected_old+1, `vk_generation` = new; every record and wrap it references is already sealed under the fresh VK |
 | 0x09 | `new_registry_head` | 32 B; entry_hash of the appended recovery_epoch entry |
 | 0x0A | `new_vk_generation` | u32; = old + 1 |
 | 0x0B | `new_device_backup_credential` | 32 B OsRng from the recovering device |
@@ -2037,8 +2045,8 @@ parties and accidents from corrupting the account. The provider must:
    `new_registry_head` equals the entry_hash of the registry extended
    with exactly this entry;
 5. require every object referenced by `new_manifest` to already exist in
-   the store (objects are uploaded first, still under the recovery
-   credential's `object_put` allowance);
+   the store (the re-encrypted objects and new wraps are uploaded first,
+   still under the recovery credential's `object_put` allowance);
 6. refuse a second concurrent or repeated finalize for the same
    `expected_old_generation` (one active transaction per vault per
    generation).
@@ -2064,10 +2072,18 @@ future-finalize rights; the new device's credential performs ordinary
 publication under the normal §11.4 rules; the epoch transition is
 permanent registry history visible to every other device.
 
-**Client side:** the recovering helper builds the body (it has all the
-fields), gets the header from `sign_backup_request`, hands both to the
-main process for transport, and on success transitions
-RECOVERING → ROTATING_KEYS → UNLOCKED (§13). Other devices learn the
+**Client side:** in RECOVERING the helper recovers the old VK, builds the
+recovery_epoch entry, generates a fresh VK, re-encrypts the current vault
+under it (§2.10 re-seal rules, including `import_log` fingerprints),
+writes new MP/RK wraps, and has the main process upload the new objects
+and wraps. Only then does it build the finalize body (it has all the
+fields), get the header from `sign_backup_request`, and hand both to the
+main process for transport. Finalize atomically installs the
+already-rotated manifest, registry head, and device credential; on
+success the helper transitions RECOVERING → UNLOCKED (§13). The old VK is
+zeroized once the re-encryption completes and is never used after
+finalize. **There is no post-finalize VK rotation**: finalize never
+installs old-VK state. Other devices learn the
 new epoch on their next poll and verify the proof and chain
 independently (§4.4/§4.5).
 
@@ -2127,16 +2143,22 @@ rejected from that moment (`DEVICE_NOT_AUTHORIZED`).
    generation, date, and item count and offers the recovery-sheet
    comparison (§11.7) — freshness here is user-checked, not assumed.
 4. Create new device identity (SE keys) → build the `recovery_epoch`
-   entry with `recovery_proof` (§4.5) binding the downloaded manifest
-   hash — the entry itself installs the new device (§4.4 rule 6) →
-   upload new-epoch objects, then commit the §11.8 `recovery-finalize`
-   transaction (new manifest + registry head + new device credential in
-   one atomic CAS; the only mutation a recovery credential may
-   authorize).
-5. Rotate VK (the recovered VK authorized a registry transition; retire
-   it) → re-encrypt → new wraps (MP unchanged material, RK unchanged
-   unless user requests replacement) → publish.
-6. Enroll the user's other replacement devices per §5 (each gets its own
+   entry with `recovery_proof` (§4.5, keyed by the recovered old VK)
+   binding the downloaded manifest hash — the entry itself installs the
+   new device (§4.4 rule 6).
+5. Generate a fresh VK (`vk_generation` = old + 1) → re-encrypt the
+   current vault under it (§2.10 re-seal rules) → new wraps (MP
+   unchanged material, RK unchanged unless the user requests
+   replacement) → zeroize the old VK.
+6. Build and upload the new objects and wraps, then commit the §11.8
+   `recovery-finalize` transaction, which atomically installs the
+   already-rotated manifest + registry head + new device credential in
+   one CAS (the only mutation a recovery credential may authorize) →
+   enter UNLOCKED. Required order: recover old VK → create
+   recovery_epoch → generate fresh VK → re-encrypt → build/upload new
+   objects and wraps → recovery-finalize → UNLOCKED. Finalize never
+   installs old-VK state, and nothing rotates after it.
+7. Enroll the user's other replacement devices per §5 (each gets its own
    backup credential from the authorizer).
 
 ### Scenario 4 — both devices lost, Recovery Key retained
@@ -2216,7 +2238,8 @@ UNINITIALIZED ──setup──▶ LOCKED ◀───────────�
 UNLOCKED ──▶ SYNCING ──▶ UNLOCKED      (helper-side merge)
 UNLOCKED ──▶ BACKING_UP ──▶ UNLOCKED   (helper seals; main uploads)
 UNLOCKED ──▶ ROTATING_KEYS ──▶ UNLOCKED
-LOCKED ──▶ RECOVERING ──▶ ROTATING_KEYS ──▶ UNLOCKED
+LOCKED ──▶ RECOVERING ──▶ UNLOCKED   (fresh-VK re-encryption happens
+                                      inside RECOVERING, before finalize)
 any ──fatal──▶ ERROR ──retry/restore──▶ LOCKED
 registry fork / confirmed tamper ──▶ COMPROMISED (writes frozen until
                                       user resolves)
@@ -2234,7 +2257,7 @@ registry fork / confirmed tamper ──▶ COMPROMISED (writes frozen until
 | SYNCING | resident | never | none (ciphertext merge) | reads blocked ≤ 5 s, presence ops continue | peer/backup active | sync badge |
 | BACKING_UP | resident | never | none (seal only) | all (snapshot is consistent) | upload active | backup badge |
 | ROTATING_KEYS | old+new transient, old zeroized at flip | never | per-record transient re-seal | fill ops queue ≤ 30 s; high-risk ops refused | publish at end | blocking banner |
-| RECOVERING | transient post-unwrap | transient during entry | verify-only transient | recovery ops only, incl. `sign_backup_request` (recovery classes + finalize, §11.4 table) | download active | recovery wizard |
+| RECOVERING | old VK transient post-unwrap; fresh VK generated before finalize; old zeroized once re-encryption completes | transient during entry | verify + per-record transient re-seal | recovery ops only, incl. `sign_backup_request` (recovery classes + finalize, §11.4 table) | download, then upload of re-encrypted objects/wraps | recovery wizard |
 | ERROR | none (zeroized on entry) | none | none | `get_state`, `lock`, restore ops | restore download | error + restore path |
 | COMPROMISED | unchanged but writes frozen | none | reads allowed, writes frozen | read ops, `revoke_device`, recovery | as unlocked | fork/tamper resolution UI |
 
@@ -2247,11 +2270,13 @@ registry fork / confirmed tamper ──▶ COMPROMISED (writes frozen until
   current state → `BAD_STATE` error, no side effects.
 - Timeout behavior: UNLOCKING/RECOVERING ops abort after 120 s →
   LOCKED/ERROR; AUTHORIZING expires with the challenge (120 s);
-  ROTATING_KEYS has no timeout but is resumable-idempotent after crash
-  (§2.10).
+  ROTATING_KEYS, and the fresh-VK re-encryption phase inside RECOVERING,
+  have no timeout but are resumable-idempotent after crash (§2.10).
 - Crash behavior: process death in any state → LOCKED on next start
   (except interrupted rotation, which resumes, and interrupted recovery,
-  which restarts from downloaded state re-verification).
+  which restarts from downloaded state re-verification with a newly
+  generated fresh VK; objects uploaded by the abandoned attempt are
+  unreferenced and GC'd).
 - Zeroization on every transition into LOCKED/ERROR and at the end of
   every transient use (§2.11).
 
@@ -2595,6 +2620,7 @@ commit.
 | RF-05 | byte-identical replay of committed finalize → idempotent success; different body for a passed generation → `FINALIZE_CONFLICT` | no duplicate state either way |
 | RF-06 | provider crash/failure injected mid-transaction | old head remains authoritative; no half-applied finalize observable |
 | RF-07 | immediately after success: publish with new device credential; attempt normal mutation with the recovery credential | publish succeeds; recovery credential refused |
+| RF-08 | recovery ordering: inspect the finalize body and post-finalize state | `new_manifest.vk_generation` = old + 1; every referenced record/wrap opens only under the fresh VK (old VK → `INTEGRITY_FAILURE`); helper enters UNLOCKED directly from RECOVERING; no ROTATING_KEYS transition or second rotation follows finalize |
 
 ### 16.16 Schema consistency lints (SC, CI)
 
@@ -2791,7 +2817,7 @@ Every item must be verifiably green, with the named evidence:
 | 9 | tamper tests green | CR-05/06/10, RG-01/02, BK-02 |
 | 10 | registry tests green | RG-01…RG-17, XV-TLV v2 vectors |
 | 11 | key rotation tests green | CR-08/12, RC-01/02/06/07 |
-| 12 | recovery tests green | RC-01…RC-08, FR-01…FR-03, RF-01…RF-07 |
+| 12 | recovery tests green | RC-01…RC-08, FR-01…FR-03, RF-01…RF-08 |
 | 13 | remote backup restore tested | BK-01…BK-16 + Phase F rehearsal log |
 | 14 | no bulk-secret API | IPC catalog audit vs §1.5 — any new op reviewed against the never-list; SC-01…SC-04 lints green |
 | 15 | no agent vault API | route/command audit: `/v1/agent`, Tauri commands, nm ops |

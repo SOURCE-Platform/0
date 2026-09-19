@@ -142,6 +142,17 @@ thread_local! {
     static CURRENT: RefCell<Option<SessionPtrs>> = const { RefCell::new(None) };
 }
 
+/// True from the moment a panel is ordered front until it is ordered out.
+/// Readable from any thread — the main queue is blocked while a panel's
+/// modal loop runs, so it cannot be asked. Used by the lock-preemption
+/// regression test to prove the panel is gone before
+/// `secure_panel_visible:false` is emitted.
+static ON_SCREEN: AtomicBool = AtomicBool::new(false);
+
+pub fn panel_on_screen() -> bool {
+    ON_SCREEN.load(Ordering::SeqCst)
+}
+
 /// Dismiss the visible panel, zeroizing its fields (§1.7 close). Called
 /// from the watchdog timer inside the modal session, where `abortModal`
 /// (not `stopModal`) is the call that ends the loop. Main-thread only.
@@ -153,6 +164,7 @@ pub(super) fn abort_current() {
             let (delegate, panel) = unsafe { (&*ptrs.delegate, &*ptrs.panel) };
             delegate.zeroize_fields();
             panel.orderOut(None);
+            ON_SCREEN.store(false, Ordering::SeqCst);
             let mtm = MainThreadMarker::new().expect("panel code runs on the main thread");
             // SAFETY: main thread, inside the modal session being ended.
             unsafe { NSApplication::sharedApplication(mtm).abortModal() };
@@ -265,6 +277,7 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
         panel.makeFirstResponder(Some(as_responder(&field)));
     }
     panel.makeKeyAndOrderFront(None);
+    ON_SCREEN.store(true, Ordering::SeqCst);
 
     // Blocks until the delegate stops the modal session or the watchdog
     // aborts it; the watchdog is torn down before the session state is.
@@ -272,6 +285,7 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
     unsafe { app.runModalForWindow(&panel) };
     drop(watchdog);
     panel.orderOut(None);
+    ON_SCREEN.store(false, Ordering::SeqCst);
     CURRENT.with(|c| *c.borrow_mut() = None);
 
     let submitted = delegate.ivars().submitted.borrow_mut().take();

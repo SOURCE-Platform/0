@@ -16,6 +16,8 @@ pub mod ffi;
 pub mod ipc;
 pub mod keychain;
 pub mod la;
+#[macro_use]
+pub mod log;
 pub mod notify;
 pub mod ops;
 pub mod panel;
