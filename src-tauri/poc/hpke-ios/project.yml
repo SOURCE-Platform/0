@@ -1,0 +1,17 @@
+name: HpkeSePoC
+options:
+  bundleIdPrefix: test.synthetic.ov0
+  deploymentTarget: { iOS: "17.0" }
+targets:
+  HpkeSePoC:
+    type: application
+    platform: iOS
+    sources: [App]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: test.synthetic.ov0.hpkepoc
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 9RGW34CMA2

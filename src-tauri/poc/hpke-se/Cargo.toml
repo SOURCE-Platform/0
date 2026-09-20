@@ -1,0 +1,17 @@
+# Phase E0 PoC only (spec §2.12). Deliberately NOT a member of the
+# src-tauri workspace: it must not change the shipping helper's
+# dependency graph or supply-chain surface. Phase E vets `hpke` properly
+# if and when production code adopts it.
+[workspace]
+
+[package]
+name = "ov0-hpke-poc"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+hpke = { version = "0.12", default-features = false, features = ["p256", "std"] }
+rand = "0.8"
+hex = "0.4"
+serde_json = "1"
