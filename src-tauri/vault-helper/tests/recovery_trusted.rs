@@ -27,7 +27,7 @@ fn rc05_mp_forgotten_trusted_device_retained() {
     assert!(recovery_ops::prove_mp(&store, MP).is_err(), "old MP dead locally");
     recovery_ops::prove_mp(&store, MP_NEW).unwrap();
     // Publish + re-register (the §12 step-2 provider calls).
-    snapshot::publish(&w.backup, &store, &w.registry, Some(&w.manifest), &w.mac, w.auth_mac()).unwrap();
+    snapshot::publish(&w.backup, &store, &w.registry, Some(&w.manifest), &w.mac, &w.vk, w.auth_mac()).unwrap();
     let pk = kdf::derive_pk(MP_NEW, &salt, Argon2Params::V1).unwrap();
     let c = creds::mp_creds(&pk, &store.header.locator_salt_mp.0).unwrap();
     w.backup.update_kdf_salt(&w.vault_id, salt, w.auth_mac()).unwrap();
@@ -50,7 +50,7 @@ fn rk_replacement(incident: bool) {
     let new_vk = out.rotation.new_vk;
     let store = VaultStore::open(&w.a_dir).unwrap();
     assert_eq!(store.header.vk_generation, out.rotation.vk_generation);
-    let head = snapshot::publish(&w.backup, &store, &w.registry, Some(&old_manifest), &w.mac, w.auth_mac()).unwrap();
+    let head = snapshot::publish(&w.backup, &store, &w.registry, Some(&old_manifest), &w.mac, &new_vk, w.auth_mac()).unwrap();
     let c = creds::rk_creds(&out.new_rk, &store.header.locator_salt_rk.0).unwrap();
     w.backup.register_recovery(&w.vault_id, RecoveryKind::Rk, &c.locator, c.cred.expose(), w.auth_mac()).unwrap();
 

@@ -16,6 +16,15 @@ corrected (§11.4); `update_password` approvals require `credential_ref`
 (§6.5); `header.json` gains `import_fp_salt` (§3.1); RFC 9106 attribution
 corrected (§2.3); Secure Notes added as an explicit owner decision
 checkpoint (§10.8); new test families BA/RF/SC and extensions (§16).
+**v0.3.1 corrections (2026-09-20, Phase D.1):** current-VK registry
+checkpoint (§4.8) replaces the requirement that a fresh device hold
+historical VK-derived proof keys; the landed Phase D mechanics are now
+normative here — rotation commit journal and revision-hash remap (§2.10),
+backup-object flags/trailer (§3.7), object index covering header/registry/
+wraps (§11.2), RK replacement collecting the current MP (§12 scenario 6),
+MP-only recovery issuing a new RK and RK-only recovery setting a new MP
+(§12 scenarios 3–4), `change_master_password {mode:"reset"}` (§1.5), and
+the acknowledged Recovery Key sheet before setup commits (§1.7, §5.4).
 **v0.3 correction (2026-09-19, Phase C.1):** total-loss recovery order
 fixed. The recovering helper generates a fresh VK and re-encrypts the
 vault **before** `recovery-finalize`; finalize installs the already-rotated
@@ -184,7 +193,8 @@ human-safe context.
 | `resolve_conflict` | pick/merge a conflicted record | UNLOCKED + fresh presence | `{ref, chosen_rev, edits?}` → new merge revision (§3.2) |
 | `reveal` | show one password in capture-suppressed UI | UNLOCKED + fresh presence + capture check | one-shot, §14 fail-closed |
 | `change_master_password` | re-wrap VK under new PK | UNLOCKED + fresh presence | helper panel collects old+new MP; main sees status only |
-| `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel displays/prints the new RK; main sees status only |
+| `change_master_password {mode:"reset"}` | set a new MP without the old one | UNLOCKED + fresh presence | §12 scenario 5 on this device (e.g. after an RK unlock): the panel collects new+confirm only; no VK rotation; `password.wrap` is replaced atomically |
+| `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel collects the **current MP** (the MP wrap is re-sealed under the new VK, §12 scenario 6), then displays/prints the new RK and only commits once the user acknowledges it; main sees status only |
 | `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | revocation triggers VK rotation + provider credential revocation (§11.4) |
 | `begin_enrollment` | start §5 flow | UNLOCKED + fresh presence | returns QR payload for rendering |
 | `relay_to_device` / `relay_from_device` | opaque vault-protocol frames for iPhone | any | main is a dumb pipe (§5, §6) |
@@ -278,9 +288,20 @@ Mechanics:
 - The main process receives status codes only: `success`, `cancelled`,
   `wrong_credential`, `recovery_complete`. It never receives MP, PK, RK
   plaintext, RK words, RecoveryWrapPayload/DeviceEnvelopePayload bytes, or VK.
+- The Recovery Key window is **acknowledgement-gated**: it offers only
+  "Print…" and "I've saved it"; the calling op commits nothing until the
+  user acknowledges (a dismissed or aborted window leaves no vault at
+  setup and no rotation at RK replacement). It is excluded from screen
+  capture by the OS (`NSWindowSharingNone`) in addition to §14
+  suppression, and the capture bracket stays up for the whole window
+  lifetime including the print dialog.
 - Printing: the recovery sheet is rendered by the helper and sent
   directly to `NSPrintOperation` (never via the WebView, never written to
-  a temp PDF). The sheet includes the vault_id, current manifest
+  a temp PDF). v1 keeps the **standard** macOS print dialog; no custom
+  print panel is built to remove its PDF menu. The window carries this
+  copy verbatim: *"Print to paper. Saving as PDF creates an unencrypted
+  copy of your Recovery Key."* Spooled print data is outside the helper's
+  control and no erasure is claimed for it. The sheet includes the vault_id, current manifest
   generation, and an 8-hex-char prefix of the registry head hash as a
   user-held freshness checkpoint (§11.7).
 - iOS has no process split: the Source iOS app itself is the vault
@@ -528,11 +549,28 @@ new_device_id || enrollment_nonce`.
   all wraps rewritten → **all `import_log` fingerprints recomputed under
   the new VK-derived key (§10.3), same SQLite transaction** → new
   manifest generation → old VK zeroized.
-  Rotation is atomic at the manifest flip: records are re-encrypted in a
-  SQLite transaction; a crash mid-rotation leaves the old manifest
-  pointing at old records (still valid), and the next launch detects
-  `vk_generation` mismatch between header and manifest and re-runs
-  rotation from scratch (idempotent).
+  **Rotation is staged and committed through a journal (normative):** the
+  engine writes the complete rotated vault beside the live one
+  (`vault.db.next`, `wraps/*.next`, `header.json.next`,
+  `manifest.json.next`), then writes one commit marker
+  (`rotation.commit`, atomic rename) naming the new `vk_generation`, the
+  new manifest generation, and any wrap to remove — that marker is the
+  commit point — and only then renames the staged files over the live
+  ones. Every open runs recovery first: a marker present → roll forward
+  (finish the renames, idempotent, then delete the marker); staged files
+  without a marker → roll back (delete them). An opened vault is
+  therefore entirely pre-rotation or entirely post-rotation. Re-running a
+  rotation "from scratch" after a crash is **not** possible and must not
+  be specified: the new VK exists only in the staged wraps.
+- **Revision-hash remap (normative).** `rev_hash` is content-committed
+  over the ciphertext (§3.2), so re-sealing changes every revision's
+  hash. The rotation transaction re-derives them in topological order
+  (parents first) and remaps `parent_revs`, `record_tips`, and
+  `record_conflicts` to the new hashes, preserving the graph shape
+  exactly. Object keys (`objects/rec/<record_id>/<rev_hash>`) therefore
+  change at rotation; the pre-rotation objects stay in the backup's
+  retained generations and remain decryptable with the matching
+  historical key material (§12 scenario 7 limitation, BK-10).
 - Old VK/new state: AEAD failure everywhere; there is no fallback path.
 
 ### 2.11 Memory-lifetime rules
@@ -773,7 +811,8 @@ Each revision's backup object is a byte-exact, self-describing binary
 offset  size    field
 0       8       magic "OV0OBJ01"  — trailing "01" is the object-format version
 8       1       kind_tag (1=login, 2=card)
-9       1       flags (0x00; reserved)
+9       1       flags: bit0 = tombstone (this revision is a deletion);
+                bits 1–7 reserved, must be 0 — any other value is refused
 10      4       vk_generation, u32 BE
 14      8       revision counter, u64 BE
 22      16      author device_id (uuid bytes)
@@ -787,9 +826,17 @@ offset  size    field
 …       …       meta_ct
 ```
 
+- After `meta_ct` the object carries a fixed **16-byte trailer**:
+  `schema_version` (u32 BE), `created_at` (u64 BE), `updated_at` (u64
+  BE). `schema_version` is part of the record AAD (§2.6), so a restored
+  revision cannot be opened without it; the timestamps are
+  plaintext-classified metadata (§3.4) that a restore must preserve.
 - Fixed header before the variable parent list is **39 bytes**; total
   object size is bounded at 1 MiB; parsers must enforce `parent_count ≤
-  8`, length consistency, and no trailing bytes.
+  8`, length consistency, the reserved flag bits, and no trailing bytes.
+- `deleted` and `schema_version` are inputs to `rev_hash` (§3.2), so a
+  parser recomputes the hash from the decoded object and refuses any
+  mismatch with the key it was fetched under (content addressing).
 - Unknown magic (including a different version suffix) → `FORMAT_TOO_NEW`,
   never a best-effort parse.
 - All header fields are plaintext-classified (§3.4). Object key:
@@ -963,6 +1010,88 @@ requirement is nil; its integrity requirement is total.
 
 ---
 
+### 4.8 Registry checkpoint (normative, v0.3.1 Phase D.1)
+
+A `recovery_epoch` proof is keyed by the VK that protected the manifest it
+binds (§4.5). That VK is retired by the rotation the same recovery
+performs, so a *later* fresh device — which only ever learns the current
+VK from MP or RK — cannot verify historical epochs. Devices must not keep
+old VKs or old proof keys to work around this, and unverifiable epochs
+must never be accepted on trust. The current-VK **registry checkpoint**
+closes the gap:
+
+```text
+checkpoint_key = HKDF-SHA256(ikm=current_VK, salt=vault_id,
+                             info="ov0/registry-checkpoint/v1")
+registry_checkpoint = HMAC-SHA256(checkpoint_key,
+    "ov0/registry-checkpoint/v1" ‖ tlv(checkpoint_body))
+```
+
+`checkpoint_body` is canonical TLV (§4.2 rules) with exactly these
+fields, ascending:
+
+| Tag | Field | Type |
+|---|---|---|
+| 0x01 | `version` | u32 = 1 |
+| 0x02 | `vault_id` | 16 B |
+| 0x03 | `epoch` | u64 — current registry epoch |
+| 0x04 | `registry_head` | 32 B — `entry_hash` of the current tip |
+| 0x05 | `manifest_core_hash` | 32 B (below) |
+| 0x06 | `manifest_generation` | u64 |
+| 0x07 | `vk_generation` | u32 |
+
+The stored object appends tag 0x08 `mac` (32 B) to the same entry.
+
+```text
+manifest_core_hash = SHA-256("ov0/manifest/core/v1" ‖ tlv(SignedManifest
+                              without field 0x10 signature))
+```
+
+**No recursion:** the manifest never contains the checkpoint, the object
+index never lists it (§11.2), and `manifest_core_hash` excludes the
+manifest signature — so nothing the checkpoint commits to is computed
+over the checkpoint.
+
+**Regeneration (normative).** The checkpoint is rebuilt, under the VK
+then current, whenever any bound field changes: a recovery-epoch
+transition, any registry mutation (enroll/revoke), a VK rotation, and any
+manifest change covered by `manifest_core_hash` (which includes every
+publication, since `generation` is bound). A publication or
+recovery-finalize that does not carry a checkpoint describing exactly the
+state being installed is refused by the provider (structurally — the
+provider holds no VK and cannot verify the MAC).
+
+**Fresh-device recovery (normative order).** A device with no prior state:
+
+1. recovers the current VK through MP or RK (§12 scenarios 3/4);
+2. verifies the served checkpoint's MAC under that VK;
+3. requires its `registry_head` to equal the head of the downloaded
+   registry exactly, and its `manifest_core_hash`, `manifest_generation`,
+   `vk_generation`, `vault_id`, and `epoch` to equal the served
+   manifest's — any mismatch → `MANIFEST_MISMATCH`;
+4. only then treats that registry as the authorization anchor;
+5. verifies ordinary device signatures and structural/hash-chain
+   integrity as usual (§4.4 rules 1–5, 7, 8), and the manifest signature
+   under a non-revoked device the chain installs.
+
+Historical `recovery_epoch` entries remain **audit evidence**: a device
+that holds the relevant transition state verifies their proofs when they
+are created and whenever it holds that VK (§4.5); a later fresh device
+must not need an extinct VK once the current checkpoint validates.
+
+**Threat notes.** The checkpoint is a MAC, not a signature: only a holder
+of the current VK can produce one, which is exactly the party the
+recovering user has just proven to be. A provider that substitutes a
+different registry (even with a manifest it signs with a device of its
+own) cannot produce the matching checkpoint, and the served one will not
+bind the substituted head. Altering historical epoch bytes changes the
+registry object hash (caught by the index) and the head (caught by the
+checkpoint). Rolling the whole account back to an older *complete,
+internally consistent* state remains undetectable on a fresh device — the
+§11.7 limitation is unchanged, and the printed recovery sheet remains the
+user-held comparison. An attacker who holds the current VK already holds
+the vault; the checkpoint adds no new exposure.
+
 ## 5. Mac ↔ iPhone enrollment protocol
 
 Reuses the proven Source pairing UX (`core/mobile/qr.rs`,
@@ -1047,7 +1176,10 @@ sequenceDiagram
 
 Vault creation on the first Mac: helper generates VK, vault_id, writes
 genesis registry entry (self-signed), creates MP wrap (user sets MP),
-RK wrap (user prints RK), first manifest. The iPhone then enrolls via
+RK wrap, first manifest. The RK is shown in the §1.7 window and the
+vault is committed **only** once the user acknowledges it; a dismissed
+window removes everything created (no vault may exist whose Recovery Key
+was never shown). The iPhone then enrolls via
 §5.1 with the Mac as authorizer.
 
 ---
@@ -1739,7 +1871,18 @@ vault/<vault_id>/
 
 The full object index is itself an object (`objects/index/<generation>`,
 JSON, plaintext-classified fields only) so restoring doesn't require
-listing thousands of keys.
+listing thousands of keys. **The index names every object the state
+consists of — record objects plus `header.json`, the registry, and each
+wrap — with key, SHA-256, and size**, so the manifest's
+`object_index_hash` authenticates all of them; those four are stored
+content-addressed under `objects/header/…`, `objects/registry/…`,
+`objects/wrap/…`. `header.json` is part of the backed-up state because a
+recovering device needs its `meta_salt`, `import_fp_salt`, and locator
+salts to read anything.
+The §4.8 registry checkpoint is the one object the index never lists: it
+commits to the manifest, so listing it would make the hashes recursive.
+It is stored at `objects/checkpoint/<generation>` and served with the
+recovery bundle.
 
 ### 11.3 Publication protocol (atomic)
 
@@ -1940,7 +2083,10 @@ attempt pattern is logged as a tamper signal).
 
 1. Fetch head manifest → verify signature (registry), generation > last
    seen (else `MANIFEST_ROLLBACK`), `registry_head` matches a valid
-   registry (fetch + verify chain per §4.4).
+   registry (fetch + verify chain per §4.4). A device with no prior state
+   (fresh-device recovery) additionally follows the §4.8 order: recover
+   VK → verify the current-VK checkpoint → require it to bind the served
+   registry head and manifest → then trust that registry.
 2. Fetch index object; for each record object: verify SHA-256 from index,
    hand to helper; helper verifies AEAD at decrypt time (lazy) — restore
    completes on hash verification, corruption surfaces per-record later.
@@ -2025,6 +2171,7 @@ process transports it verbatim):
 | 0x09 | `new_registry_head` | 32 B; entry_hash of the appended recovery_epoch entry |
 | 0x0A | `new_vk_generation` | u32; = old + 1 |
 | 0x0B | `new_device_backup_credential` | 32 B OsRng from the recovering device |
+| 0x0C | `new_checkpoint` | §4.8 registry checkpoint for the state being installed, MAC'd under the fresh VK |
 
 **Provider validation (structural — explicitly not root of trust).** The
 provider **cannot verify `recovery_proof`**: the proof key derives from
@@ -2047,6 +2194,10 @@ parties and accidents from corrupting the account. The provider must:
 5. require every object referenced by `new_manifest` to already exist in
    the store (the re-encrypted objects and new wraps are uploaded first,
    still under the recovery credential's `object_put` allowance);
+5a. require `new_checkpoint` to parse and to bind exactly `new_manifest`
+   (vault_id, registry head, `manifest_core_hash`, generation,
+   `vk_generation`) and the entry's `epoch` (§4.8); the provider stores it
+   as `objects/checkpoint/<generation>` inside the same transaction;
 6. refuse a second concurrent or repeated finalize for the same
    `expected_old_generation` (one active transaction per vault per
    generation).
@@ -2147,9 +2298,14 @@ rejected from that moment (`DEVICE_NOT_AUTHORIZED`).
    binding the downloaded manifest hash — the entry itself installs the
    new device (§4.4 rule 6).
 5. Generate a fresh VK (`vk_generation` = old + 1) → re-encrypt the
-   current vault under it (§2.10 re-seal rules) → new wraps (MP
-   unchanged material, RK unchanged unless the user requests
-   replacement) → zeroize the old VK.
+   current vault under it (§2.10 re-seal rules) → rebuild both wraps →
+   zeroize the old VK. The MP wrap is re-sealed under the same MP (its
+   PK is in hand). **The RK wrap can only be re-sealed by a party holding
+   `RK_bytes`** (§2.5: its wrap key is derived from the RK): the recovery
+   UI therefore offers to enter the existing Recovery Key — entered, it
+   is kept; not entered, the helper **issues a new Recovery Key**, shows
+   it in the §1.7 window, and re-registers the RK locator/credential
+   (§11.4). A vault is never left with a `recovery.wrap` of a retired VK.
 6. Build and upload the new objects and wraps, then commit the §11.8
    `recovery-finalize` transaction, which atomically installs the
    already-rotated manifest + registry head + new device credential in
@@ -2165,6 +2321,10 @@ rejected from that moment (`DEVICE_NOT_AUTHORIZED`).
 
 Identical to scenario 3 with `kind:"rk"` locator/wrap. The 24-word RK is
 entered on the new device; checksum validates before any network call.
+Symmetrically, the MP wrap cannot be re-sealed without PK, so this path
+**requires the user to set a new master password** during recovery; the
+MP locator/credential and `header.kdf` salt are re-registered on success.
+The entered RK is kept.
 
 ### Scenario 5 — MP forgotten, trusted device retained
 
@@ -2179,10 +2339,12 @@ entered on the new device; checksum validates before any network call.
 
 ### Scenario 6 — RK lost (no theft suspicion), trusted device retained
 
-1. Fresh LA presence → generate RK′ → **rotate VK** (v0.3 C12: re-wrap
-   alone is insufficient) → re-encrypt records → new wraps for MP, RK′,
-   all devices → publish → re-register the RK recovery locator and RK
-   recovery credential (§11.4) → print
+1. Fresh LA presence → the helper panel collects the **current MP**
+   (the MP wrap must be re-sealed under the new VK and only PK can do
+   that) → generate RK′ → show RK′ and require acknowledgement (§1.7) →
+   **rotate VK** (v0.3 C12: re-wrap alone is insufficient) → re-encrypt
+   records → new wraps for MP, RK′, all devices → publish → re-register
+   the RK recovery locator and RK recovery credential (§11.4) → print
    new recovery sheet (print path never
    renders RK words to the screen longer than the print dialog requires;
    the words are shown once, in a capture-suppressed window, §14).
@@ -2622,6 +2784,19 @@ commit.
 | RF-07 | immediately after success: publish with new device credential; attempt normal mutation with the recovery credential | publish succeeds; recovery credential refused |
 | RF-08 | recovery ordering: inspect the finalize body and post-finalize state | `new_manifest.vk_generation` = old + 1; every referenced record/wrap opens only under the fresh VK (old VK → `INTEGRITY_FAILURE`); helper enters UNLOCKED directly from RECOVERING; no ROTATING_KEYS transition or second rotation follows finalize |
 
+### 16.17 Registry checkpoint (CP, v0.3.1)
+
+| ID | Test | Expected |
+|---|---|---|
+| CP-01 | second and third total-loss recovery on fresh devices | each succeeds; one rotation and one generation per recovery; contents preserved; all epochs present as audit history |
+| CP-02 | provider substitutes a different registry (its own device, its own manifest signature) | refused: the served checkpoint cannot bind the substituted head |
+| CP-03 | provider alters historical `recovery_epoch` bytes | refused: object hash fails against the index; rebuilt index/manifest still fails the checkpoint binding |
+| CP-04 | checkpoint for the wrong registry head | refused |
+| CP-05 | checkpoint for the wrong manifest generation / wrong epoch | refused |
+| CP-06 | checkpoint MAC'd under an old VK after rotation | refused; the freshly published checkpoint verifies under the new VK only |
+| CP-07 | stale-but-valid complete state served to a fresh device | still recovers (the §11.7 limitation is unchanged); sheet comparison classifies it as older |
+| CP-08 | existing device with the relevant VK | still verifies epoch proofs; rollback and fork detection unchanged |
+
 ### 16.16 Schema consistency lints (SC, CI)
 
 | ID | Test | Expected |
@@ -2834,6 +3009,8 @@ Every item must be verifiably green, with the named evidence:
 | 26 | helper panel isolation proven | UI-01…UI-05; MP/RK never observable in the WebView (CS-03 analog + webview snapshot) |
 | 27 | independent envelope-path review | §17.4 step 5 report attached (covers `hpke` usage + the shipped Path A bridge or Path B adapter) |
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
+| 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
+| 30 | Argon2id tuple frozen with cross-device evidence | §2.3 calibration table covering every supported Mac class **and an iPhone at the supported floor (A12/iOS 17)**; median and worst latency, memory-pressure behavior, and the freeze decision recorded |
 
 Only then may the first real credential be imported.
 

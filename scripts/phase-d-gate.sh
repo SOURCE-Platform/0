@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Phase D gate (credential-vault-implementation-spec.md v0.3 §18 Phase D,
-# with the dated recovery-order correction): recovery layer.
+# Phase D gate (credential-vault-implementation-spec.md v0.3.1 §18 Phase
+# D, incl. the Phase C.1 recovery-order and Phase D.1 checkpoint
+# corrections): recovery layer.
 #
 #   1. Phase D helper tests: rotation engine (CR-08 store level, crash
 #      matrix, import fingerprints, BK-10), registry + recovery_epoch
-#      (RG-03…RG-17), FsBackupStore rehearsals RC-03…RC-07, RF-01…RF-08,
+#      (RG-03…RG-17), the §4.8 registry checkpoint + repeated recovery
+#      (CP-01…CP-08), FsBackupStore rehearsals RC-03…RC-07, RF-01…RF-08,
 #      FR-01…FR-03, BK-10/13/14/16, RK IPC ops + UI-05 transcript audit
 #   2. full helper suite (all phases, no fail-fast)
 #   3. file-length audit
@@ -81,7 +83,7 @@ echo "== Phase D gate (workdir $T)"
 cd "$SRC_TAURI" || exit 1
 
 # --- 1. Phase D tests ------------------------------------------------------------------------
-D_TESTS="--test vault_rotation --test registry_epoch --test recovery_total_loss --test recovery_finalize --test recovery_trusted --test vault_rk_ops"
+D_TESTS="--test vault_rotation --test registry_epoch --test registry_checkpoint --test recovery_total_loss --test recovery_finalize --test recovery_trusted --test vault_rk_ops"
 # shellcheck disable=SC2086
 cargo test -p source-vault-helper --no-fail-fast $D_TESTS >"$T/d-tests.log" 2>&1
 D_PASS=$(grep -E "^test result" "$T/d-tests.log" | awk '{s+=$4} END {print s+0}')

@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use super::checkpoint::RegistryCheckpoint;
 use super::fs_store::{Auth, FsBackupStore};
 use super::index::{self, IndexRef, ObjectIndex};
 use super::manifest::SignedManifest;
@@ -24,6 +25,9 @@ pub struct Snapshot {
     pub objects: Vec<(String, Vec<u8>)>,
     pub index: ObjectIndex,
     pub manifest: SignedManifest,
+    /// §4.8: MAC'd under the current VK; its own object, never in the
+    /// index (that would make the hashes recursive).
+    pub checkpoint: RegistryCheckpoint,
 }
 
 /// Build (not upload) a snapshot at backup `generation`.
@@ -33,6 +37,7 @@ pub fn build(
     generation: u64,
     prev_manifest_hash: [u8; 32],
     signer: &dyn DeviceIdentity,
+    vk: &crate::crypto::secret::SecretBytes<32>,
 ) -> Result<Snapshot, ErrorCode> {
     let mut objects = Vec::new();
     let mut add = |key: String, bytes: Vec<u8>| -> IndexRef {
@@ -75,7 +80,10 @@ pub fn build(
     }
     .sign(signer)?;
     objects.push((ObjectIndex::key(generation), index.encode()));
-    Ok(Snapshot { objects, index, manifest })
+    let epoch = registry_entries.last().map_or(0, |e| e.epoch);
+    let checkpoint = RegistryCheckpoint::create(vk, &manifest, epoch)?;
+    objects.push((RegistryCheckpoint::key(generation), checkpoint.encode()));
+    Ok(Snapshot { objects, index, manifest, checkpoint })
 }
 
 pub fn upload(backup: &FsBackupStore, vault_id: &[u8; 16], snap: &Snapshot, auth: Auth<'_>) -> Result<(), ErrorCode> {
@@ -92,19 +100,23 @@ pub fn publish(
     registry_entries: &[RegistryEntry],
     prev: Option<&SignedManifest>,
     signer: &dyn DeviceIdentity,
+    vk: &crate::crypto::secret::SecretBytes<32>,
     auth: Auth<'_>,
 ) -> Result<SignedManifest, ErrorCode> {
     let (gen, prev_hash) = prev.map(|m| (m.generation, m.hash())).unwrap_or((0, [0u8; 32]));
-    let snap = build(store, registry_entries, gen + 1, prev_hash, signer)?;
+    let snap = build(store, registry_entries, gen + 1, prev_hash, signer, vk)?;
     let vault_id = store.header.vault_id.0;
     upload(backup, &vault_id, &snap, auth)?;
-    backup.publish(&vault_id, gen, &snap.manifest.encode(), auth)?;
+    backup.publish(&vault_id, gen, &snap.manifest.encode(), &snap.checkpoint.encode(), auth)?;
     Ok(snap.manifest)
 }
 
 /// A downloaded, hash-verified backup state (§11.5 steps 1–2).
 pub struct Downloaded {
     pub manifest: SignedManifest,
+    /// The §4.8 checkpoint served with this state (verified by the caller
+    /// against the recovered VK before the registry is trusted).
+    pub checkpoint: RegistryCheckpoint,
     pub index: ObjectIndex,
     pub header_bytes: Vec<u8>,
     pub registry: Vec<RegistryEntry>,
@@ -121,6 +133,9 @@ pub fn download(backup: &FsBackupStore, manifest_bytes: &[u8], auth: Auth<'_>) -
         index::check(r, &bytes)?;
         Ok(bytes)
     };
+    let checkpoint = RegistryCheckpoint::decode(
+        &backup.get_object(&vid, &RegistryCheckpoint::key(manifest.generation), auth)?,
+    )?;
     let index = ObjectIndex::decode(&backup.get_object(&vid, &ObjectIndex::key(manifest.generation), auth)?)?;
     if index.hash() != manifest.object_index_hash || index.generation != manifest.generation {
         return Err(ErrorCode::ManifestMismatch);
@@ -137,6 +152,7 @@ pub fn download(backup: &FsBackupStore, manifest_bytes: &[u8], auth: Auth<'_>) -
         wrap_rk: index.wrap_rk.as_ref().map(fetch).transpose()?,
         rows,
         manifest,
+        checkpoint,
         index,
     })
 }

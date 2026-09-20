@@ -155,6 +155,8 @@ impl FsBackupStore {
             return Err(ErrorCode::InvalidInput);
         }
         m.verify(&entry.sign_pub.ok_or(ErrorCode::InvalidInput)?)?; // RF-04
+        // §4.8: the new state must arrive with a checkpoint describing it.
+        super::fs_store::check_checkpoint_binding(&body.new_checkpoint, &m, entry.epoch)?;
         // 5: every referenced object already uploaded; registry = old + entry.
         let idx = self.check_index(vault_id, &m)?;
         let entries = registry_file::decode(&self.read_object(vault_id, &idx.registry.key)?)?;
@@ -167,6 +169,9 @@ impl FsBackupStore {
         // Atomic commit: head + registry + device credential + result.
         let key = index::meta_key("manifest", &body.new_manifest);
         self.put_raw(vault_id, &key, &body.new_manifest)?;
+        let cp_key = super::checkpoint::RegistryCheckpoint::key(m.generation);
+        self.put_raw(vault_id, &cp_key, &body.new_checkpoint)?;
+        head.checkpoint_key = Some(cp_key);
         self.advance(&mut head, key, &m, entry.epoch);
         head.device_creds.insert(
             hex::encode(entry.device_id),

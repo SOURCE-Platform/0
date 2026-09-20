@@ -24,7 +24,7 @@ use crate::crypto::secret::{random_secret, SecretBytes};
 use crate::crypto::wrap::{self, PasswordWrapFile, RecoveryWrapFile};
 use crate::errors::ErrorCode;
 use crate::registry::build;
-use crate::registry::chain::{self, EpochContext, RegistryState};
+use crate::registry::chain::{self, EpochPolicy, RegistryState};
 use crate::registry::device::DeviceIdentity;
 use crate::registry::file as registry_file;
 use crate::storage::rotation::{self, MpWrap, RkWrap};
@@ -60,21 +60,6 @@ pub struct RecoverySession<'b> {
     registry: RegistryState,
 }
 
-/// Only the recovered manifest's VK is available on a fresh device.
-struct FreshDeviceCtx<'a> {
-    manifest_hash: [u8; 32],
-    vk: &'a SecretBytes<32>,
-}
-
-impl EpochContext for FreshDeviceCtx<'_> {
-    fn vk_for_manifest(&self, h: &[u8; 32]) -> Option<SecretBytes<32>> {
-        (h == &self.manifest_hash).then(|| SecretBytes::new(*self.vk.expose()))
-    }
-    fn manifest_acceptable(&self, _h: &[u8; 32]) -> bool {
-        true // no remembered state on a fresh device (§11.7)
-    }
-}
-
 /// Steps 1–3: locate, derive recovery creds, download, unwrap, verify.
 pub fn begin<'b>(backup: &'b FsBackupStore, email: &str, credential: Credential<'_>) -> Result<RecoverySession<'b>, ErrorCode> {
     let locate = backup.recover_locate(email).map_err(|_| ErrorCode::WrongCredential)?;
@@ -107,10 +92,18 @@ pub fn begin<'b>(backup: &'b FsBackupStore, email: &str, credential: Credential<
         }
         (None, None) => return Err(ErrorCode::Internal),
     };
-    // Verify the registry chain and the manifest signature under it.
-    let ctx = FreshDeviceCtx { manifest_hash: downloaded.manifest.hash(), vk: &old_vk };
-    let registry = chain::verify_chain(&downloaded.registry, &vault_id, &ctx)?;
-    if registry.head != downloaded.manifest.registry_head {
+    // §4.8 steps 2–4: the current-VK checkpoint authorizes *this* registry
+    // head and manifest; only then is the registry the authorization
+    // anchor. Historical recovery_epoch proofs (keyed by extinct VKs this
+    // device never held) stay audit evidence — nothing on this path needs
+    // them, and no old VK or proof key is persisted anywhere.
+    let epoch = downloaded.registry.last().map_or(0, |e| e.epoch);
+    downloaded
+        .checkpoint
+        .verify_binding(&old_vk, &downloaded.manifest, &downloaded.manifest.registry_head, epoch)?;
+    // Step 5: ordinary signature and hash-chain integrity, as always.
+    let registry = chain::verify_chain_with(&downloaded.registry, &vault_id, &EpochPolicy::CheckpointAnchored)?;
+    if registry.head != downloaded.manifest.registry_head || registry.epoch != epoch {
         return Err(ErrorCode::ManifestMismatch);
     }
     let signer = registry
@@ -212,7 +205,7 @@ impl RecoverySession<'_> {
         // (e) build + upload the rotated snapshot with the recovery credential.
         write_atomic(&dir.join(VAULT_REGISTRY_NAME), &registry_file::encode(&entries)?)?;
         let store = VaultStore::open(dir)?;
-        let snap = snapshot::build(&store, &entries, old.generation + 1, old_hash, new_device)?;
+        let snap = snapshot::build(&store, &entries, old.generation + 1, old_hash, new_device, &rotated.new_vk)?;
         let auth = Auth::Recovery { kind: self.kind, cred: self.creds.cred.expose() };
         snapshot::upload(self.backup, &vault_id, &snap, auth)?;
         // (f) recovery-finalize installs the already-rotated state.
@@ -229,6 +222,9 @@ impl RecoverySession<'_> {
             new_registry_head: registry::entry_hash(&epoch).map_err(|_| ErrorCode::Internal)?,
             new_vk_generation: rotated.vk_generation,
             new_device_backup_credential: device_cred,
+            // §4.8: the checkpoint for the state finalize installs, MAC'd
+            // under the fresh VK the user can recover with MP/RK.
+            new_checkpoint: snap.checkpoint.encode(),
         };
         let mut body = body;
         if let Some(hook) = plan.on_body {

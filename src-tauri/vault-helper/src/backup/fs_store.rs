@@ -67,6 +67,8 @@ pub struct Head {
     pub locator_salt_rk: String,
     pub generation: u64,
     pub manifest_key: Option<String>,
+    /// §4.8 checkpoint object for the current generation.
+    pub checkpoint_key: Option<String>,
     pub manifest_hash: String,
     pub registry_head: String,
     pub registry_epoch: u64,
@@ -82,6 +84,19 @@ pub struct Head {
 
 pub struct FsBackupStore {
     root: PathBuf,
+}
+
+/// The checkpoint a publisher/finalizer supplies must describe exactly
+/// the manifest and epoch being installed (§4.8).
+pub fn check_checkpoint_binding(bytes: &[u8], m: &SignedManifest, epoch: u64) -> Result<(), ErrorCode> {
+    let c = super::checkpoint::RegistryCheckpoint::decode(bytes)?;
+    let ok = c.vault_id == m.vault_id
+        && c.registry_head == m.registry_head
+        && c.manifest_core_hash == m.core_hash()
+        && c.manifest_generation == m.generation
+        && c.vk_generation == m.vk_generation
+        && c.epoch == epoch;
+    if ok { Ok(()) } else { Err(ErrorCode::ManifestMismatch) }
 }
 
 pub fn sha_hex(b: &[u8]) -> String {
@@ -238,7 +253,14 @@ impl FsBackupStore {
     /// checks only (the provider is not a root of trust): generation
     /// +1, chained to the current head, index complete, and the signature
     /// verifies under the signer's key in the uploaded registry.
-    pub fn publish(&self, vault_id: &[u8; 16], expected_gen: u64, manifest: &[u8], auth: Auth<'_>) -> Result<(), ErrorCode> {
+    pub fn publish(
+        &self,
+        vault_id: &[u8; 16],
+        expected_gen: u64,
+        manifest: &[u8],
+        checkpoint: &[u8],
+        auth: Auth<'_>,
+    ) -> Result<(), ErrorCode> {
         let mut head = self.load(vault_id)?;
         self.authorize(&head, auth, false)?;
         let m = SignedManifest::decode(manifest)?;
@@ -259,9 +281,16 @@ impl FsBackupStore {
             return Err(ErrorCode::DeviceNotAuthorized);
         }
         m.verify(&signer)?;
+        let epoch = entries.last().map_or(0, |e| e.epoch);
+        // Structural only: the provider holds no VK and cannot verify the
+        // checkpoint MAC — it just refuses one that does not describe the
+        // state being published (§4.8).
+        check_checkpoint_binding(checkpoint, &m, epoch)?;
         let key = index::meta_key("manifest", manifest);
         self.put_raw(vault_id, &key, manifest)?;
-        self.advance(&mut head, key, &m, entries.iter().map(|e| e.epoch).max().unwrap_or(0));
+        self.put_raw(vault_id, &super::checkpoint::RegistryCheckpoint::key(m.generation), checkpoint)?;
+        head.checkpoint_key = Some(super::checkpoint::RegistryCheckpoint::key(m.generation));
+        self.advance(&mut head, key, &m, epoch);
         self.save(vault_id, &head)
     }
 

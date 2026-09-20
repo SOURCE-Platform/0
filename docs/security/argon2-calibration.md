@@ -2,14 +2,13 @@
 
 Date: 2026-09-18. Author: Phase B gate run on the development machine.
 
-> **Status (2026-09-18, owner correction):** `m = 64 MiB, t = 3, p = 1`
-> is the **current/provisional** v1 tuple, not a frozen one. The §2.3
-> calibration gate is only partially closed: the committed evidence below
-> covers one machine class (MacBook Air M2). Final parameter freeze still
-> requires benchmark measurements on the supported iPhone floor and every
-> other supported hardware class the spec enumerates (§2.3: "every
-> supported Mac class and iPhone class"). The tuple must not be weakened
-> or changed in the meantime; this open item does not block Phase C.
+> **Status (2026-09-20, Phase D.1):** `m = 64 MiB, t = 3, p = 1` remains
+> the **current/provisional** v1 tuple. iPhone evidence now exists (below)
+> and is comfortably inside the §2.3 budget, but the *oldest supported*
+> iPhone class (A12 / iPhone XS–XR, the iOS 17 floor) is still unmeasured,
+> so the owner decision is: **do not freeze yet** — freeze only once an
+> A12-class device has been measured (release-gate item 30). The tuple must
+> not be weakened in the meantime. This open item does not block Phase E.
 
 ## Rule being satisfied
 
@@ -86,3 +85,42 @@ behavior for our usage.
 ```bash
 cd src-tauri && cargo run -p source-vault-helper --release --bin kdf_bench
 ```
+
+## iPhone measurement (2026-09-20, Phase D.1)
+
+Device: **iPhone 13 mini (iPhone14,4, A15 Bionic)**, iOS 27.0, 3674 MB RAM,
+on charge, screen on, no other foreground app.
+
+Code: the **production crate and parameters** (`argon2` 0.6, Argon2id,
+`Version::V0x13`, 32-byte output — the same call `crypto::kdf::derive_pk`
+makes), cross-compiled to `aarch64-apple-ios` (release, LTO) and linked
+into a throwaway SwiftUI harness. Synthetic password and a fixed salt; no
+credential material. Harness kept outside the repos; not committed.
+
+| Run | Latency (ms) |
+|---|---|
+| 1 (cold) | 124 |
+| 2 | 91 |
+| 3–7 | 89, 89, 89, 89, 89 |
+
+- **Median: 89 ms. Worst observed: 124 ms** (first run, cold allocation).
+- Budget (§2.3): ≤ 2 s on the oldest supported iPhone. The measured device
+  is ~22× inside that budget at the median.
+- **Memory pressure:** the 64 MiB block allocated and freed on every run
+  with no `didReceiveMemoryWarning` and no jetsam kill across 7 runs on a
+  4 GB device. Note the vault on iOS is the **app** (§1.7), not an
+  extension, so the tighter extension memory limits do not apply.
+- **Extrapolation is not evidence:** an A12 (iPhone XS/XR) is roughly
+  2–3× slower than an A15 on memory-hard work, which would still land far
+  inside 2 s — but that is an estimate, not a measurement, and the freeze
+  decision waits for a real A12-class run.
+
+### Remaining for the §2.3 freeze
+
+| Class | Status |
+|---|---|
+| MacBook Air M2 (Mac14,2) | measured 2026-09-18 |
+| iPhone 13 mini (A15) | measured 2026-09-20 |
+| iPhone XS/XR class (A12, iOS 17 floor) | **not measured** — blocks the freeze |
+| Other supported Mac classes (Intel? older Apple silicon) | not enumerated/measured |
+

@@ -48,6 +48,21 @@ impl RegistryState {
     }
 }
 
+/// How recovery_epoch entries are authorized for this verification
+/// (spec §4.4 rule 6, §4.8).
+pub enum EpochPolicy<'a> {
+    /// Devices that hold the VK protecting the bound manifest verify the
+    /// proof itself (the transition's own authorization).
+    RequireProof(&'a dyn EpochContext),
+    /// A fresh recovery device that has already verified the current-VK
+    /// registry checkpoint (§4.8): the checkpoint authorizes *this*
+    /// registry head, so historical epochs — whose proof keys are extinct
+    /// VKs this device never held — are structural audit evidence only.
+    /// Every other rule (seq, hash chain, signatures, key encoding,
+    /// single installation) still applies.
+    CheckpointAnchored,
+}
+
 /// What the verifier knows that the chain cannot prove by itself.
 pub trait EpochContext {
     /// The VK that protected the manifest `manifest_hash` names, if this
@@ -66,9 +81,18 @@ pub fn verify_chain(
     vault_id: &[u8; 16],
     ctx: &dyn EpochContext,
 ) -> Result<RegistryState, ErrorCode> {
+    verify_chain_with(entries, vault_id, &EpochPolicy::RequireProof(ctx))
+}
+
+/// Verify a full chain under an explicit epoch policy.
+pub fn verify_chain_with(
+    entries: &[RegistryEntry],
+    vault_id: &[u8; 16],
+    policy: &EpochPolicy<'_>,
+) -> Result<RegistryState, ErrorCode> {
     let mut st = RegistryState::empty();
     for entry in entries {
-        apply(&mut st, entry, vault_id, ctx)?;
+        apply_with(&mut st, entry, vault_id, policy)?;
     }
     Ok(st)
 }
@@ -80,6 +104,15 @@ pub fn apply(
     vault_id: &[u8; 16],
     ctx: &dyn EpochContext,
 ) -> Result<(), ErrorCode> {
+    apply_with(st, e, vault_id, &EpochPolicy::RequireProof(ctx))
+}
+
+pub fn apply_with(
+    st: &mut RegistryState,
+    e: &RegistryEntry,
+    vault_id: &[u8; 16],
+    policy: &EpochPolicy<'_>,
+) -> Result<(), ErrorCode> {
     e.validate_presence().map_err(|_| ErrorCode::SignatureInvalid)?;
     e.validate_pubkeys().map_err(|_| ErrorCode::SignatureInvalid)?; // rule 8
     // Rules 1–2: contiguous seq, hash-linked.
@@ -90,7 +123,7 @@ pub fn apply(
         EntryKind::Genesis => genesis(st, e)?,
         EntryKind::Enroll => enroll(st, e)?,
         EntryKind::Revoke => revoke(st, e)?,
-        EntryKind::RecoveryEpoch => recovery_epoch(st, e, vault_id, ctx)?,
+        EntryKind::RecoveryEpoch => recovery_epoch(st, e, vault_id, policy)?,
     }
     st.head = registry::entry_hash(e).map_err(|_| ErrorCode::SignatureInvalid)?;
     st.entries.push(e.clone());
@@ -165,7 +198,7 @@ fn recovery_epoch(
     st: &mut RegistryState,
     e: &RegistryEntry,
     vault_id: &[u8; 16],
-    ctx: &dyn EpochContext,
+    policy: &EpochPolicy<'_>,
 ) -> Result<(), ErrorCode> {
     if e.seq == 0 || e.vault_id.as_ref() != Some(vault_id) {
         return Err(ErrorCode::DeviceNotAuthorized);
@@ -175,11 +208,13 @@ fn recovery_epoch(
         return Err(ErrorCode::DeviceNotAuthorized);
     }
     let manifest_hash = e.manifest_hash.ok_or(ErrorCode::SignatureInvalid)?;
-    if !ctx.manifest_acceptable(&manifest_hash) {
-        return Err(ErrorCode::ManifestRollback);
+    if let EpochPolicy::RequireProof(ctx) = policy {
+        if !ctx.manifest_acceptable(&manifest_hash) {
+            return Err(ErrorCode::ManifestRollback);
+        }
+        let vk = ctx.vk_for_manifest(&manifest_hash).ok_or(ErrorCode::DeviceNotAuthorized)?;
+        registry::verify_recovery_proof(&vk, &manifest_hash, e).map_err(|_| ErrorCode::SignatureInvalid)?;
     }
-    let vk = ctx.vk_for_manifest(&manifest_hash).ok_or(ErrorCode::DeviceNotAuthorized)?;
-    registry::verify_recovery_proof(&vk, &manifest_hash, e).map_err(|_| ErrorCode::SignatureInvalid)?;
     install(st, e)?;
     st.epoch = e.epoch;
     Ok(())

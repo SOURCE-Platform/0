@@ -82,7 +82,7 @@ pub fn world() -> World {
     backup.register_recovery(&header.vault_id.0, RecoveryKind::Mp, &c.locator, c.cred.expose(), auth).unwrap();
     let c = creds::rk_creds(&rk, &header.locator_salt_rk.0).unwrap();
     backup.register_recovery(&header.vault_id.0, RecoveryKind::Rk, &c.locator, c.cred.expose(), auth).unwrap();
-    let manifest = snapshot::publish(&backup, &store, &registry, None, &mac, auth).unwrap();
+    let manifest = snapshot::publish(&backup, &store, &registry, None, &mac, &vk, auth).unwrap();
     World {
         backup,
         roots: vec![backup_root, a_dir.clone()],
@@ -138,7 +138,7 @@ impl World {
         let pt = format!(r#"{{"password":"synthetic-{text}"}}"#);
         store.write_successor(&self.vk, &self.refs[1], 1, 1, pt.as_bytes(), br#"{"title":"Synthetic 1"}"#, 0).unwrap();
         let auth = Auth::Device { device_id: self.mac.device_id(), cred: &self.mac_cred };
-        snapshot::publish(&self.backup, &store, &self.registry, Some(prev), &self.mac, auth).unwrap()
+        snapshot::publish(&self.backup, &store, &self.registry, Some(prev), &self.mac, &self.vk, auth).unwrap()
     }
 
     pub fn cleanup(&self, extra: &[&PathBuf]) {

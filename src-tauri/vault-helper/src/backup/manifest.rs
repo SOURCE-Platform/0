@@ -66,6 +66,16 @@ impl SignedManifest {
         h.finalize().into()
     }
 
+    /// SHA-256("ov0/manifest/core/v1" ‖ tlv(manifest without signature)) —
+    /// what the §4.8 registry checkpoint binds. Signature excluded so the
+    /// checkpoint never depends on a value computed over itself.
+    pub fn core_hash(&self) -> [u8; 32] {
+        let mut h = Sha256::new();
+        h.update(b"ov0/manifest/core/v1");
+        h.update(self.tlv(false));
+        h.finalize().into()
+    }
+
     pub fn hash(&self) -> [u8; 32] {
         Sha256::digest(self.encode()).into()
     }

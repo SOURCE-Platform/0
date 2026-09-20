@@ -125,13 +125,14 @@ fn rf07_new_device_publishes_recovery_credential_cannot() {
     let head = SignedManifest::decode(&w.backup.head_manifest(&w.vault_id, auth).unwrap().unwrap()).unwrap();
     let store = VaultStore::open(&dir).unwrap();
     let registry = snapshot::download(&w.backup, &head.encode(), auth).unwrap().registry;
-    snapshot::publish(&w.backup, &store, &registry, Some(&head), &dev, auth).expect("new device publishes");
+    snapshot::publish(&w.backup, &store, &registry, Some(&head), &dev, &out.vk, auth).expect("new device publishes");
     // BK-14: the recovery credential can read + finalize only.
     let loc = w.backup.recover_locate(EMAIL).unwrap();
     let pk = vault_helper::crypto::kdf::derive_pk(MP, &loc.kdf_salt, vault_helper::crypto::kdf::Argon2Params::V1).unwrap();
     let c = creds::mp_creds(&pk, &loc.locator_salt_mp).unwrap();
     let rec = Auth::Recovery { kind: RecoveryKind::Mp, cred: c.cred.expose() };
-    assert_eq!(w.backup.publish(&w.vault_id, head.generation + 1, &head.encode(), rec).err(), Some(ErrorCode::DeviceNotAuthorized));
+    let cp = snapshot::download(&w.backup, &head.encode(), auth).unwrap().checkpoint.encode();
+    assert_eq!(w.backup.publish(&w.vault_id, head.generation + 1, &head.encode(), &cp, rec).err(), Some(ErrorCode::DeviceNotAuthorized));
     assert!(w.backup.register_recovery(&w.vault_id, RecoveryKind::Mp, &[0; 32], &[0; 32], rec).is_err());
     // BK-13: a revoked device credential is refused before anything runs.
     w.backup.revoke_device(&w.vault_id, w.mac.device_id(), auth).unwrap();

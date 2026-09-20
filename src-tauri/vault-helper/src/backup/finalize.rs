@@ -17,6 +17,8 @@ mod tag {
     pub const NEW_REGISTRY_HEAD: u8 = 0x09;
     pub const NEW_VK_GENERATION: u8 = 0x0A;
     pub const NEW_DEVICE_BACKUP_CREDENTIAL: u8 = 0x0B;
+    /// §4.8 registry checkpoint for the state being installed.
+    pub const NEW_CHECKPOINT: u8 = 0x0C;
 }
 
 pub const CLASS_MP: u8 = 1;
@@ -34,6 +36,7 @@ pub struct FinalizeBody {
     pub new_registry_head: [u8; 32],
     pub new_vk_generation: u32,
     pub new_device_backup_credential: [u8; 32],
+    pub new_checkpoint: Vec<u8>,
 }
 
 impl FinalizeBody {
@@ -50,6 +53,7 @@ impl FinalizeBody {
             .and_then(|b| b.field_bytes(tag::NEW_REGISTRY_HEAD, &self.new_registry_head))
             .and_then(|b| b.field_uint(tag::NEW_VK_GENERATION, u64::from(self.new_vk_generation)))
             .and_then(|b| b.field_bytes(tag::NEW_DEVICE_BACKUP_CREDENTIAL, &self.new_device_backup_credential))
+            .and_then(|b| b.field_bytes(tag::NEW_CHECKPOINT, &self.new_checkpoint))
             .expect("ascending fields")
             .build()
     }
@@ -79,6 +83,7 @@ impl FinalizeBody {
             new_registry_head: arr32(tag::NEW_REGISTRY_HEAD)?,
             new_vk_generation: u32::try_from(uint(tag::NEW_VK_GENERATION)?).map_err(|_| ErrorCode::InvalidInput)?,
             new_device_backup_credential: arr32(tag::NEW_DEVICE_BACKUP_CREDENTIAL)?,
+            new_checkpoint: get(tag::NEW_CHECKPOINT)?.to_vec(),
         };
         if body.encode() != bytes {
             return Err(ErrorCode::InvalidInput);

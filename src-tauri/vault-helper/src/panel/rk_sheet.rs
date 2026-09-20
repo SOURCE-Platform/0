@@ -10,6 +10,9 @@
 //! - The only exit is "I've saved it" (or a lock/timeout abort through
 //!   the watchdog). There is no cancel: callers commit nothing until the
 //!   user acknowledged.
+//! - v1 keeps the standard macOS print dialog (owner decision, Phase
+//!   D.1): no custom print panel is built merely to remove "Save as
+//!   PDF". The window carries the normative warning copy instead.
 //! - Honest limits: AppKit copies the words into NSString/label storage
 //!   the helper cannot zeroize (labels are cleared on close); the macOS
 //!   print system may spool the job (CUPS) outside this process — the
@@ -120,8 +123,10 @@ fn content_view(sheet: &RecoverySheet, delegate: &RkSheetDelegate, mtm: MainThre
             add(&format!("{:>2}. {word}", i + 1), 24.0 + col * 130.0, H - 110.0 - row * 26.0, 124.0);
         }
         add(&sheet.checkpoint, 24.0, 118.0, 520.0);
-        add("Anyone with these words can open your vault. Don't photograph them", 24.0, 92.0, 520.0);
-        add("or save them as a PDF; the print system may keep a spooled copy.", 24.0, 74.0, 520.0);
+        add("Anyone with these words can open your vault.", 24.0, 92.0, 520.0);
+        // Normative copy (spec §1.7, Phase D.1 owner decision).
+        add("Print to paper. Saving as PDF creates an unencrypted copy of your", 24.0, 74.0, 520.0);
+        add("Recovery Key. The print system may also keep a spooled copy.", 24.0, 56.0, 520.0);
         view
     }
 }

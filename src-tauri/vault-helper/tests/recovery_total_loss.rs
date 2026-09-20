@@ -1,6 +1,7 @@
 //! RC-03 / RC-04 (§12 scenarios 3–4) + RF-01 / RF-08 + FR-01 against
 //! FsBackupStore: both devices lost, recovery on a fresh device in the
-//! corrected order, no post-finalize rotation.
+//! corrected order, no post-finalize rotation. Repeated recovery and the
+//! §4.8 registry checkpoint live in `registry_checkpoint.rs`.
 
 mod recovery_fx;
 
@@ -130,20 +131,4 @@ fn wrong_credentials_yield_no_decryption_result() {
     assert_eq!(begin(&w.backup, EMAIL, Credential::Rk(&bogus)).err(), Some(ErrorCode::WrongCredential));
     assert_eq!(begin(&w.backup, "nobody@example.test", Credential::Mp(MP)).err(), Some(ErrorCode::WrongCredential));
     w.cleanup(&[]);
-}
-
-/// NEW BLOCKER (reported, not silently patched): after one total-loss
-/// recovery the registry holds a recovery_epoch whose proof is keyed by
-/// the pre-recovery VK. A second fresh device only ever holds the current
-/// VK, so it cannot verify that proof, and strict verification refuses.
-/// Accepting it on trust would let a provider inject epochs; a spec
-/// decision is needed before Phase E (see phase-d-verification.md).
-#[test]
-fn second_recovery_blocked_pending_spec_decision() {
-    let w = world();
-    let c_dir = tmp("recovered");
-    let newdev = SoftwareDevice::generate("Replacement Mac", PLATFORM_MACOS);
-    begin(&w.backup, EMAIL, Credential::Mp(MP)).unwrap().complete(&c_dir, &newdev, plan()).unwrap();
-    assert_eq!(begin(&w.backup, EMAIL, Credential::Mp(MP)).err(), Some(ErrorCode::DeviceNotAuthorized));
-    w.cleanup(&[&c_dir]);
 }
