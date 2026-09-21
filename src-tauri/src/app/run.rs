@@ -137,6 +137,7 @@ pub fn run() {
             vault_state,
             vault_setup,
             vault_unlock,
+            vault_unlock_with_master_password,
             vault_change_master_password,
             vault_lock,
             vault_unlock_with_recovery_key,

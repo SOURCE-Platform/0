@@ -16,7 +16,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::{lock_core, OpOutcome, VaultCore};
 use crate::crypto::hex;

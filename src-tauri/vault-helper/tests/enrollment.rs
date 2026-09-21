@@ -73,6 +73,25 @@ fn enrollment_end_to_end() {
     manifest.verify(&mac_sign_pub).expect("manifest signature");
     assert!(!bundle["objects"].as_array().unwrap().is_empty());
 
+    // The §4.8 checkpoint travels with the bundle and must authenticate
+    // under the VK the envelope just yielded, binding the same head the
+    // phone is about to verify. This is what lets a device enroll into a
+    // vault that has been through recovery (Phase E.1): without it the
+    // phone would have to verify recovery_epoch proofs keyed by extinct
+    // VKs. The assertions below are exactly the ones the Swift client
+    // makes, so a drift on either side fails here.
+    let checkpoint = vault_helper::backup::checkpoint::RegistryCheckpoint::decode(
+        &hex::decode(bundle["checkpoint"].as_str().unwrap()).unwrap(),
+    )
+    .expect("checkpoint decodes");
+    checkpoint
+        .verify(&payload.vk)
+        .expect("checkpoint authenticates under the envelope's VK");
+    assert_eq!(checkpoint.vault_id, vault_id, "checkpoint binds this vault");
+    assert_eq!(checkpoint.registry_head, head, "checkpoint binds the bundle's head");
+    assert_eq!(checkpoint.vk_generation, payload.vk_generation);
+    assert_eq!(checkpoint.epoch, after_entries_epoch(&fx.dir, &head));
+
     // ...and proves its signing key exists by ACKing the head.
     let digest = transcript::ack_digest(&head, &hex::decode_array::<16>(reply["mac_device_id"].as_str().unwrap()).unwrap());
     let sig = phone.dev.sign_prehash(&digest).unwrap();
@@ -240,4 +259,14 @@ fn presence_denial_stops_confirmation() {
     let resp = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(err_code(&resp), "PRESENCE_DENIED", "{resp}");
     assert_eq!(log::read_entries(&fx.dir).unwrap().len(), 1);
+}
+
+/// The epoch the chain ends at, as both sides compute it: the last
+/// entry's declared epoch.
+fn after_entries_epoch(dir: &std::path::Path, head: &[u8; 32]) -> u64 {
+    // The enroll entry is not on disk until the ACK lands, so the epoch
+    // is the one the pending entry carries — which, for a vault that has
+    // never been recovered, is the genesis epoch.
+    let _ = head;
+    log::read_entries(dir).unwrap().last().map_or(0, |e| e.epoch)
 }

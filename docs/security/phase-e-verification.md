@@ -304,6 +304,94 @@ into one message will eventually tell the user something they can see is
 untrue. It now distinguishes "too old to answer", "no vault", and
 "couldn't answer".
 
+## 7c. Phase E.1 closure pass (2026-09-21)
+
+Three items, at the manager's direction, with no new architecture beyond
+what the spec already required.
+
+### Argon2id wording corrected
+
+An earlier revision recorded the v1 hardware floor as raised to
+A15-class and the tuple as frozen. That was not an explicit owner
+decision — it read an exploratory conversation as a settled one — and
+§19 item 30 requires one, or an A12-class measurement, to close.
+Reverted across the spec (§2.3, §21 OQ-3, §19 item 30), the calibration
+notes, this report and the review summary. The tuple `m=64 MiB, t=3,
+p=1` is provisional again, no A12 performance is estimated, and the
+tuple is not weakened while the gate is open.
+
+### §2.8 device-envelope unlock — implemented
+
+Presence check → the Secure Enclave decapsulates
+`wraps/devices/<self>.wrap` → the VK and this device's
+`device_backup_cred` come back together → the vault opens, with no
+master password. The agreement private key never leaves the Enclave.
+
+The refusals carry the security weight, because **an envelope on disk is
+not authority to open a vault**:
+
+| Condition | Result | Why |
+|---|---|---|
+| No SE key (restored device, wiped key) | `DEVICE_NOT_AUTHORIZED`, vault stays LOCKED | §2.8 calls this documented behavior; the MP path remains, which is what makes it recoverable |
+| Device revoked in the registry | refused even though its envelope is on disk | the registry decides, not the file |
+| Envelope from before a VK rotation | `WRAP_CORRUPT` | it holds a key retired by §2.10 |
+| Another device's envelope planted in this slot | refused | sealed to an Enclave this Mac does not have |
+| Presence denied | LOCKED, **not** counted as a wrong credential | a refusal is the user declining, not a failed guess |
+
+Six regression tests (DU-01…DU-06) cover exactly those rows, against
+real Secure Enclave keys and real envelopes. The main app now takes this
+path by default and falls back to the master password **only** when the
+device has no usable envelope — never on a denied presence check, which
+would turn "cancel" into "try harder".
+
+### iOS `recovery_epoch` compatibility — closed, no protocol circularity
+
+A vault that has been through total-loss recovery could not enroll an
+iPhone: the registry contains `recovery_epoch` entries whose §4.5 proofs
+are keyed by VKs retired at the moment each epoch committed, so no newly
+enrolled device can ever verify one. The phone refused the chain rather
+than trusting it, which was correct and unusable.
+
+The resolution was already in the Phase D.1 design and needed no new
+architecture — a fresh enrolling device is in exactly the position §4.8
+was written for. The **order of the bundle checks is what resolves it**,
+and is now normative in §4.8:
+
+1. open the envelope → the current VK;
+2. verify the §4.8 checkpoint under that VK — only the vault itself can
+   produce it, so this is what says "this registry head is mine";
+3. verify the chain anchored on that head: §4.4 rules in full, signed
+   entries still verifying under their authorizer, `recovery_epoch`
+   entries checked structurally rather than by an extinct proof key;
+4. confirm the head matches the checkpoint and the bundle, and that the
+   entry installing this device carries the keys this device generated.
+
+§4.4 was not weakened, and one rule was **added** that the Swift side
+had been missing: every entry declares the epoch it belongs to, only a
+`recovery_epoch` may advance it, and an entry claiming any other epoch
+is rejected. That surfaced as a test failure it would have been easy to
+dismiss as a bad fixture.
+
+Tests — 13 on the phone (all green), plus a Rust cross-check:
+
+| Case | Result |
+|---|---|
+| Ordinary enrollment, no epochs, still works without any checkpoint | pass |
+| An epoch is refused when no checkpoint is in hand | pass |
+| A recovered vault enrolls a new iPhone under a valid checkpoint | pass |
+| A checkpoint MAC'd under the wrong VK is rejected | pass |
+| An authentic checkpoint for a different head cannot be replayed | pass |
+| Tampered recovery history is rejected | pass |
+| Epoch must advance by exactly one | pass |
+| Rollback/fork rules still enforced under anchoring | pass |
+| No vault key, current or extinct, is ever persisted on the phone | pass |
+
+The Rust cross-check lives in the enrollment end-to-end test: it decodes
+the bundle's checkpoint, authenticates it under the VK the envelope
+yielded, and asserts it binds the same head, vault and key generation
+the Swift client demands. A drift on either side now fails there rather
+than on a user's phone.
+
 ## 8. Tests and vectors
 
 | Suite | Tests |
@@ -344,6 +432,26 @@ PASS  Phase D gate regression (incl. C, B, A)                        PHASE D GAT
 
 PHASE E GATE: PASS (12 checks)
 ```
+
+**Re-run after the Phase E.1 closure pass**, 21 September 2026 — same
+12 checks, all green, with the suites grown by the new work:
+
+```text
+PASS  Phase E tests (SE identity, envelopes, enrollment, revocation)   32 passed  (was 26: +6 device unlock)
+PASS  full helper suite (Phases A–E)                                  187 passed, 0 failed
+PASS  iPhone: XV-ENROLL vectors + revocation-status rules              35 tests   (was 25: +10 epoch/checkpoint)
+PASS  Phase D gate regression (incl. C, B, A)                         PHASE D GATE: PASS (12 checks)
+
+PHASE E GATE: PASS (12 checks)
+```
+
+The first attempt at this run failed one check, and the failure was
+worth having: a Phase A test asserted that `unlock` answers `UNKNOWN_OP`,
+which was true for as long as nothing implemented it. Implementing §2.8
+made it answer `BAD_STATE` on an uninitialized vault instead — the
+correct refusal. The expectation was updated and the test extended to
+keep covering a genuinely unknown op, so the original coverage did not
+quietly disappear with the fix.
 
 Run of record, 21 September 2026, ~70 minutes including the nested
 regression (Phase D → C → B → A, of which 10 minutes is Phase B's fuzz

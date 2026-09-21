@@ -74,6 +74,37 @@ pub async fn vault_setup(app: tauri::AppHandle) -> Result<Value, String> {
 /// kind "mp" — the LA/device-envelope `unlock` op is Phase E).
 #[tauri::command]
 pub async fn vault_unlock(app: tauri::AppHandle) -> Result<Value, String> {
+    // §2.8: the ordinary path is this device's own envelope — presence,
+    // then the Secure Enclave hands back the vault key. The master
+    // password is the fallback, for a device with no usable envelope
+    // (no SE key, not enrolled, or an envelope left behind by a
+    // rotation), not the default.
+    yield_activation(app.clone()).await;
+    match call(json!({"op": "unlock"})).await {
+        Ok(resp) if resp["ok"] == Value::Bool(true) => Ok(resp),
+        Ok(resp) if uses_master_password_instead(&resp) => {
+            call_with_panel(app, json!({"op": "begin_recovery_unlock", "kind": "mp"})).await
+        }
+        // A refused presence check is the user saying no. Falling through
+        // to a password prompt would turn "cancel" into "try harder".
+        other => other,
+    }
+}
+
+/// Envelope unlock is unavailable on this device — fall back to the
+/// master password. Anything else (a denied presence check, damaged
+/// vault data) is reported as itself.
+fn uses_master_password_instead(resp: &Value) -> bool {
+    matches!(
+        resp["error"].as_str(),
+        Some("DEVICE_NOT_AUTHORIZED") | Some("WRAP_CORRUPT") | Some("NOT_FOUND")
+    )
+}
+
+/// Explicitly unlock with the master password, whatever this device's
+/// envelope says (§1.5 `begin_recovery_unlock`).
+#[tauri::command]
+pub async fn vault_unlock_with_master_password(app: tauri::AppHandle) -> Result<Value, String> {
     call_with_panel(app, json!({"op": "begin_recovery_unlock", "kind": "mp"})).await
 }
 

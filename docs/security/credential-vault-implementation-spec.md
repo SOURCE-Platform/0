@@ -534,7 +534,20 @@ nonces.
 The Keychain never stores VK, wrap payloads, MP, RK, or backup
 credentials. Unlock uses the
 device envelope: HPKE-decapsulate `devices/<self>.wrap` with the SE
-agreement key after an LA presence check. The same decapsulation also
+agreement key after an LA presence check.
+
+**Implemented in Phase E.1 (`unlock`, §1.5).** The refusals are
+normative, because an envelope on disk is not authority to open a vault:
+
+- the **registry** decides whether this device may still unlock — a
+  revoked device keeps its envelope file and is refused;
+- an envelope whose `vk_generation` is not the header's is refused: it
+  holds a key retired by a rotation (§2.10);
+- a denied presence check leaves the vault LOCKED and is **not** counted
+  as a wrong credential, so it never drives the §15 backoff;
+- the master-password path is the fallback for a device with no usable
+  envelope, and the main app falls back only on that condition — never
+  on a refused presence check, which is the user declining. The same decapsulation also
 yields the device's current `device_backup_cred` (§2.2), so the
 credential needs no independent Keychain slot and is re-issued at
 enrollment/rotation. If the SE key is missing
@@ -1112,6 +1125,30 @@ trust. A UI states what it has verified and when, distinguishing
 ---
 
 ### 4.8 Registry checkpoint (normative, v0.3.1 Phase D.1)
+
+**Second consumer: enrollment (normative, Phase E.1).** A device joining
+a vault that has been through total-loss recovery faces the same problem
+as a recovering device, for the same reason: the registry contains
+`recovery_epoch` entries whose §4.5 proofs are keyed by VKs retired at
+the moment each epoch committed, so no newly enrolled device can ever
+verify one. It resolves it the same way, and the **order of the §5.2
+bundle checks is therefore normative**:
+
+1. open the device envelope with the SE agreement key → current VK;
+2. verify the §4.8 checkpoint under that VK;
+3. verify the registry chain **anchored** on the checkpoint's head —
+   §4.4 rules 1–5, 7 and 8 in full, signed entries still verifying under
+   their authorizer, and `recovery_epoch` entries checked structurally
+   (no authorizer, no signature, `epoch == prior_epoch + 1`, all §4.3
+   recovery fields present, keys on-curve) rather than by a proof whose
+   key is extinct;
+4. confirm the chain head is the one the checkpoint and the bundle both
+   name, and that the entry installing this device carries exactly the
+   public keys this device generated.
+
+No extinct VK is transmitted, used or stored at any point. Every entry
+also declares the epoch it belongs to, and only a `recovery_epoch` may
+advance it; an entry claiming any other epoch is rejected.
 
 A `recovery_epoch` proof is keyed by the VK that protected the manifest it
 binds (§4.5). That VK is retired by the rotation the same recovery

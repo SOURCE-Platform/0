@@ -24,6 +24,7 @@ use crate::storage::VaultStore;
 
 pub mod change_mp;
 pub mod create;
+pub mod device_unlock;
 pub mod devices;
 pub mod enroll_commit;
 pub mod enroll_ops;
@@ -247,6 +248,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
     match op {
         "setup_vault" => setup::setup_vault(core, deps),
+        "unlock" => device_unlock::unlock(core, deps),
         "begin_recovery_unlock" => setup::begin_recovery_unlock(core, frame, deps),
         "change_master_password" if frame.get("mode").and_then(Value::as_str) == Some("reset") => {
             rk_ops::reset_master_password(core, deps)

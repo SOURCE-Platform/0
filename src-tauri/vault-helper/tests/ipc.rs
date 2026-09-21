@@ -89,7 +89,16 @@ fn hello_then_ops_over_socket() {
     assert_eq!(resp["ok"], true);
     assert_eq!(resp["state"], "uninitialized");
 
+    // `unlock` is the §2.8 device-envelope path. It exists, so the
+    // refusal here is about state, not about the op being unknown:
+    // there is no vault to unlock yet.
     let resp = op(&mut stream, "unlock");
+    assert_eq!(resp["ok"], false);
+    assert_eq!(resp["error"], "BAD_STATE");
+
+    // An op that genuinely does not exist still answers UNKNOWN_OP, so
+    // this test keeps covering that path too.
+    let resp = op(&mut stream, "no_such_op");
     assert_eq!(resp["ok"], false);
     assert_eq!(resp["error"], "UNKNOWN_OP");
 

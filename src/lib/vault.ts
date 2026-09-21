@@ -58,8 +58,18 @@ export async function vaultSetup(): Promise<void> {
   await invoke("vault_setup");
 }
 
+/**
+ * Unlock. Uses this device's own envelope — a presence check and the
+ * Secure Enclave — and falls back to the master password only when this
+ * device has no usable envelope (§2.8).
+ */
 export async function vaultUnlock(): Promise<void> {
   await invoke("vault_unlock");
+}
+
+/** Unlock with the master password regardless of the device envelope. */
+export async function vaultUnlockWithMasterPassword(): Promise<void> {
+  await invoke("vault_unlock_with_master_password");
 }
 
 /** Helper panel collects current + new master password (UNLOCKED only). */

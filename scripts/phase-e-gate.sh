@@ -4,7 +4,8 @@
 #
 #   1. Phase E helper tests: Secure Enclave identity + envelopes (DV/EV),
 #      §5 enrollment end to end (EN-01…EN-08), revocation + mandatory VK
-#      rotation (RC-01/RC-02), cross-language vectors incl. XV-ENROLL
+#      rotation (RC-01/RC-02), §2.8 device-envelope unlock (DU-01…DU-06),
+#      cross-language vectors incl. XV-ENROLL
 #   2. full helper suite (Phases A–E, no fail-fast)
 #   3. file-length audit, plus the §2.12 bridge cap (≤ 200 lines)
 #   4. debug helper build + sign + verify (now links the Swift bridge)
@@ -71,7 +72,7 @@ echo "== Phase E gate (workdir $T)"
 cd "$SRC_TAURI" || exit 1
 
 # --- 1. Phase E tests ---------------------------------------------------------------------------
-E_TESTS="--test device_identity --test enrollment --test revocation --test xv_vectors"
+E_TESTS="--test device_identity --test enrollment --test revocation --test device_unlock --test xv_vectors"
 # shellcheck disable=SC2086
 cargo test -p source-vault-helper --no-fail-fast $E_TESTS >"$T/e-tests.log" 2>&1
 E_PASS=$(grep -E "^test result" "$T/e-tests.log" | awk '{s+=$4} END {print s+0}')

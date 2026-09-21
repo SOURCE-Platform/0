@@ -22,6 +22,7 @@ import {
   vaultSetup,
   vaultState,
   vaultUnlock,
+  vaultUnlockWithMasterPassword,
   vaultUnlockWithRecoveryKey,
   type VaultState,
 } from "@/lib/vault";
@@ -192,6 +193,13 @@ export function VaultPage() {
               className="mt-4 cursor-pointer rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy || state === "unlocking" ? "Waiting for the secure panel…" : "Unlock"}
+            </button>
+            <button
+              onClick={() => run(vaultUnlockWithMasterPassword)}
+              disabled={busy || state === "unlocking"}
+              className="ml-2 mt-4 cursor-pointer rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Use master password
             </button>
             <button
               onClick={() => run(vaultUnlockWithRecoveryKey)}
