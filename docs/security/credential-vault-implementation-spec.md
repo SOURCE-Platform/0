@@ -399,13 +399,20 @@ DeviceEnvelopePayload (devices/<id>.wrap only):
   chosen tuple. Recovery security must not be weakened for speed — if a
   device class can't meet the latency target at `m=64 MiB`, prefer
   raising its latency budget over lowering memory cost, and document the
-  choice. **Timing (owner decision 2026-09-20):** the
-  support-floor (A12-class iPhone) measurement is a **release gate** (§19
-  item 30), not a phase blocker; the tuple stays **provisional** until it
-  closes and is never weakened in the meantime. Closing it requires
-  either the A12-class measurement or an **explicit** owner change to the
-  v1 support floor — raising the floor to A15-class has been *discussed*
-  but not confirmed, and is not recorded here as decided.
+  choice. **Hardware floor (owner decision, confirmed 2026-09-21):** the v1
+  minimum is **A15-class or newer** — the iPhone 13 family, iPhone SE
+  3rd generation, and later. The owner's words were "we're not going to
+  cover anything before iPhone 13"; it is recorded as a **chip** rather
+  than a model year so the SE 3rd generation, which carries an A15, is
+  included and the iPhone 12 (A14) is not. Rationale: no A12-class
+  device was ever measured, and an untested support claim was not
+  acceptable to ship.
+  The slowest supported device is therefore the iPhone 13 mini measured
+  at median 89 ms / worst 124 ms (`argon2-calibration.md`), inside the
+  budget above, so `m=64 MiB, t=3, p=1` is **frozen** rather than
+  provisional. The tuple was not weakened to reach this — the supported
+  device set was narrowed instead. Older hardware may be added later
+  only by measuring it against these same parameters.
 - Storage: `header.json` carries `{kdf: "argon2id", kdf_version: 1, m, t,
   p, salt}`. `password.wrap` carries a copy of the same parameter block.
 - Upgrade: parameter changes bump `kdf_version`; the next successful MP
@@ -3165,7 +3172,8 @@ Every item must be verifiably green, with the named evidence:
 | 27 | independent envelope-path review | §17.4 step 5 report attached (covers `hpke` usage + the shipped Path A bridge or Path B adapter) |
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
-| 30 | Argon2id tuple frozen with cross-device evidence | **Open. Hard gate (owner decision 2026-09-20).** Either (a) the exact production Argon2id implementation measured on an **A12-class iPhone** (XS/XR generation, the iOS 17 floor) meeting the §2.3 budget, or (b) the minimum supported hardware class **explicitly** raised by the owner and the product/runtime support policy updated. Median/worst latency, memory-pressure behavior and the decision recorded in `argon2-calibration.md`. The tuple is never weakened to pass; A15 evidence alone does not close this. Raising the floor to A15-class was discussed on 2026-09-21 but is **not** recorded as an owner decision, so this gate remains open |
+| 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Remaining before the first real credential: enforce the floor at runtime** — today it is documentation, and the app would run on hardware nobody has measured |
+
 
 Only then may the first real credential be imported.
 
@@ -3237,13 +3245,14 @@ floor, and the §2.12 PoC verifies the exact CryptoKit calls on the
 oldest supported versions. Revisit older OSes only with measured user
 need and a dedicated review.
 
-**Open: the hardware floor may still narrow.** iOS 17 runs on A12
-devices, but no A12 device has been measured against the production
-Argon2id parameters (§2.3, §19 item 30). Closing that gate either
-measures one or explicitly narrows the v1 support floor. Raising the
-floor to A15-class has been discussed and not confirmed; until an owner
-confirms it, the v1 floor remains iOS 17 / macOS 14 with no additional
-hardware restriction.
+**Hardware floor added (owner decision, confirmed 2026-09-21).** The OS
+floor is no longer the binding constraint: v1 additionally requires an
+**A15-class or newer** iPhone (§2.3). iOS 17 runs on A12 devices, but
+none was measured against the production Argon2id parameters, and the
+owner declined to ship an untested support claim. The constraint is the
+chip, not the model year, so the SE 3rd generation is supported. Older
+hardware is addable later by measuring it; the memory cost is not
+reduced to accommodate it.
 
 ---
 
