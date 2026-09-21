@@ -129,23 +129,19 @@ credential material. Harness kept outside the repos; not committed.
 | iPhone XS/XR class (A12, iOS 17 floor) | **not measured** — hard release gate (§19 item 30), no longer a Phase E blocker |
 | Other supported Mac classes (Intel? older Apple silicon) | not enumerated/measured |
 
-## Status — closed (owner decision, 2026-09-21)
+## Status — open
 
-The supported-hardware floor was raised to **A15-class or newer**
-(iPhone 13 family, iPhone SE 3rd generation, and later) instead of
-measuring an A12-class device. The reasoning was the owner's: no A12
-device had been tested, and shipping a support claim that has not been
-verified is not acceptable.
+The supported-hardware floor question is **not resolved**. Two routes
+close §19 item 30: measure the production Argon2id parameters on an
+A12-class iPhone, or have the owner **explicitly** narrow the v1 support
+floor. Raising the floor to A15-class was discussed on 2026-09-21 and an
+earlier revision of these documents recorded it as decided; that was a
+misreading of an exploratory conversation and has been reverted.
 
-That makes the **iPhone 13 mini measured here the slowest supported
-device** — median 89 ms, worst 124 ms, well inside the §2.3 budget — so
-these figures are the floor evidence rather than one data point among
-several. The tuple `m = 64 MiB, t = 3, p = 1` is **frozen**.
+Until one of those routes completes:
 
-The tuple was not weakened to reach this result; the supported-device
-set was narrowed instead. Older hardware may be supported later only by
-measuring it against these same parameters.
-
-Outstanding: the floor is currently documentation. Before the first real
-credential, the app must **enforce** it at runtime and refuse the vault
-on pre-A15 hardware.
+- the tuple `m = 64 MiB, t = 3, p = 1` remains **provisional**;
+- the iPhone 13 mini figures above are evidence for **A15 hardware
+  only** and do not close the gate;
+- the tuple is not weakened in the meantime, and no A12 performance is
+  estimated.
