@@ -2,6 +2,11 @@
 
 Date: 2026-09-18. Author: Phase B gate run on the development machine.
 
+> **[SUPERSEDED — see "Status" at the end of this document.](#status--closed-owner-decision-confirmed-2026-09-21)**
+> The owner raised the v1 minimum to **A15-class or newer** on
+> 2026-09-21, which closed this gate. The block below is kept as the
+> record of where things stood on 2026-09-20.
+>
 > **Status (2026-09-20, owner decision at Phase E authorization):**
 > `m = 64 MiB, t = 3, p = 1` remains the **provisional** v1 tuple. The
 > support-floor calibration is **not complete** and must not be described
