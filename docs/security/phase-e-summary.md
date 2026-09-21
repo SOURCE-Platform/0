@@ -9,7 +9,7 @@ Full detail in `phase-e-verification.md`; this is the short version.
 | Gate | PASS, 12 checks, including the nested D → C → B → A regression |
 | Hardware | MacBook Air (M2) + iPhone 13 mini — 4 enrollments, 3 revocations |
 | Data | Synthetic vault, synthetic credentials only |
-| Commits | `3550680`, `e0e8c7a`, `9d12d33` (desktop) · `3acb7ac`, `d6fe885` (SourceMobile) — **not pushed** |
+| Code | `3550680` + `9d12d33` (desktop) · `3acb7ac` + `d6fe885` (SourceMobile) — **not pushed** |
 | Phase F | Not started |
 
 ## What was built
@@ -135,10 +135,13 @@ Three items, no new architecture — two were already specified and the
 third was a correction.
 
 **Argon2id wording.** An earlier revision recorded the v1 hardware floor
-as raised to A15-class and the tuple as frozen. That was not an explicit
-owner decision, and §19 item 30 requires one (or an A12-class
-measurement) to close. Reverted everywhere; the tuple is provisional
-again and the gate is open.
+as raised to A15-class and the tuple as frozen on the strength of an
+exploratory conversation. §19 item 30 requires an explicit owner
+decision (or an A12-class measurement), so that was reverted everywhere
+and the gate reopened. The owner then **confirmed** the floor
+explicitly — "we're not going to cover anything before iPhone 13" — and
+it is now recorded as a decision, with the gate closed on that basis
+(open item 1).
 
 **§2.8 device-envelope unlock — implemented.** Presence check, the
 Secure Enclave decapsulates this device's envelope, and the VK and
@@ -200,16 +203,33 @@ covered.
    decrypts nothing, since revocation rotated the VK. Guaranteed delivery
    needs a push channel, which Phase E does not have.
 5. **Delivering a re-sealed envelope to an offline device is Phase F.**
-6. **iOS registry verification** covers §4.4 rules 1–5 and 8. A
-   `recovery_epoch` entry is refused rather than trusted, so a vault that
-   has been through total-loss recovery cannot enroll a phone yet.
-7. **Envelope-based unlock is not wired** (§2.8). The envelope exists and
-   the decapsulation path is proven; unlock is still the master-password
-   flow. Left out deliberately rather than half-done.
+6. **iOS fork surfacing.** The phone applies §4.4 rules 1–6 and 8 and
+   the §4.6 rollback rule, and refuses a forked chain — but it reports a
+   fork as a generic verification failure rather than surfacing both
+   tips the way §4.6 asks. `recovery_epoch` is no longer on this list:
+   E.1 authorizes it through the §4.8 checkpoint.
 
 ## State of the tree
 
-Committed separately and **not pushed**: `3550680` and `5a23ef4` in the
-`0` repo (helper, macOS app, frontend, spec, verification report, gate),
-`3acb7ac` in `source mobile` (the iPhone vault client). Both working
-trees are clean. Phase F has not been started.
+Nothing has been pushed. Both working trees are clean.
+
+**`0` (desktop)** — Phase E and E.1 span `3550680..HEAD`, seven commits,
+of which two carry code:
+
+| Commit | |
+|---|---|
+| `3550680` | Phase E: device identity, enrollment, revocation |
+| `9d12d33` | Phase E.1: envelope unlock, recovered-vault enrollment |
+| `5a23ef4`, `e0e8c7a`, `63d54ae`, `82fd240`, `ce9b627` | documentation — including the Argon2 floor being recorded, reverted, and recorded again once the owner confirmed it |
+
+The branch is 29 commits ahead of `origin/main` in total; the rest is
+Phase C and D history from earlier work.
+
+**`source mobile`** — two commits, both code, both unpushed:
+
+| Commit | |
+|---|---|
+| `3acb7ac` | Phase E vault client with the revocation-status refresh |
+| `d6fe885` | E.1: enrolling into a vault that has been through recovery |
+
+Phase F has not been started.

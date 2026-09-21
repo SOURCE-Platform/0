@@ -1,6 +1,7 @@
 # Phase E Verification Report — device identity + enrollment
 
-Date: 2026-09-20. Spec: `credential-vault-implementation-spec.md` v0.3.1
+Date: 2026-09-20; E.1 closure pass 2026-09-21 (§7c).
+Spec: `credential-vault-implementation-spec.md` v0.3.1
 §2.7, §2.8, §2.9, §2.12, §4, §5, §11.4, §12 scenario 8, §18 Phase E.
 
 Scope: Secure Enclave device identity, device envelopes over the proven
@@ -12,10 +13,12 @@ only.** Nothing from Phase F (remote production backup), Phase G
 (iPhone approval), the Chrome extension or the Dashlane importer was
 started, and no real credential was handled.
 
-Status: **gate green, and verified on two real devices** — a MacBook Air
-(M2) and an iPhone 13 mini, each using its own Secure Enclave keys,
-through four enrollments and three revocations (§7b). Remaining open
-items are release-gate work, not Phase E work (§10).
+Status: **complete, including the E.1 closure pass (§7c)** — gate green
+and verified on two real devices, a MacBook Air (M2) and an iPhone 13
+mini, each using its own Secure Enclave keys, through four enrollments
+and three revocations (§7b). What remains open (§10) is release-gate
+work, later-phase work, or named limits — nothing outstanding in
+Phase E itself.
 
 ---
 
@@ -314,11 +317,17 @@ what the spec already required.
 An earlier revision recorded the v1 hardware floor as raised to
 A15-class and the tuple as frozen. That was not an explicit owner
 decision — it read an exploratory conversation as a settled one — and
-§19 item 30 requires one, or an A12-class measurement, to close.
-Reverted across the spec (§2.3, §21 OQ-3, §19 item 30), the calibration
-notes, this report and the review summary. The tuple `m=64 MiB, t=3,
-p=1` is provisional again, no A12 performance is estimated, and the
-tuple is not weakened while the gate is open.
+§19 item 30 requires one, or an A12-class measurement, to close. It was
+reverted across the spec (§2.3, §21 OQ-3, §19 item 30), the calibration
+notes, this report and the review summary.
+
+The owner then confirmed the floor explicitly on 2026-09-21 — "we're not
+going to cover anything before iPhone 13" — so it is now recorded as a
+decision and the gate is closed on that basis (§10 item 1). Recorded as
+a chip rather than a model year, so the iPhone SE 3rd generation (A15)
+is supported and the iPhone 12 (A14) is not. The tuple was never
+weakened at any point in this sequence; the supported device set was
+narrowed instead.
 
 ### §2.8 device-envelope unlock — implemented
 
@@ -491,20 +500,15 @@ absent or zero**. The run above is from after that fix.
    After a rotation the surviving device's new envelope sits on the
    authorizing Mac; until sync exists, that device cannot open the new
    state. Stated rather than papered over.
-6. **iOS registry verification covers §4.4 rules 1–5 and 8.** A
-   `recovery_epoch` entry (rule 6) is *refused* rather than trusted,
-   because authorizing one needs a VK the phone does not hold at
-   enrollment time. A vault that has been through total-loss recovery
-   therefore cannot enroll a phone until that path is implemented.
-7. **Envelope-based unlock is not wired.** §2.8 describes unlock as
-   "HPKE-decapsulate `devices/<self>.wrap` with the SE agreement key
-   after an LA presence check". This Mac's envelope now exists and
-   carries its backup credential, and the decapsulation path is proven
-   (EV-01), but the unlock path is still the Phase C master-password
-   flow. Switching it is a change to the lock state machine (§13) rather
-   than to envelope code, and was left out of Phase E deliberately rather
-   than half-done.
-8. **Keychain concurrency.** SE key blobs live in the login keychain
+6. **iOS registry verification covers §4.4 rules 1–5, 6 and 8.** A
+   `recovery_epoch` is authorized through the §4.8 checkpoint rather
+   than through a proof keyed by an extinct VK (Phase E.1, §7c), so a
+   vault that has been through total-loss recovery enrolls a phone
+   normally. What remains unimplemented on the phone is §4.6 *fork*
+   surfacing: two valid tips sharing a `prev_hash` are refused, but the
+   phone reports it as a verification failure rather than showing both
+   tips to the user.
+7. **Keychain concurrency.** SE key blobs live in the login keychain
    (the data-protection keychain needs an entitlement the gate and test
    binaries do not carry). That keychain's global lock stalls under
    concurrent access from several threads; the helper serializes vault
