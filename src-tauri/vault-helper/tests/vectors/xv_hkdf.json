@@ -67,6 +67,12 @@
       "info": "ov0/enroll/sas/v1",
       "okm32": "fec490fc9893ea671a9c6a6be13b53c9c1f2390881f3cb9bd5ecdd60c4ad4dfc",
       "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/device-creds/v1",
+      "okm32": "91a1835e6a2d099c0f24a80f03b5e1282cb11d1ccb8dec3c51fa983f0a41c0e6",
+      "salt": "202122232425262728292a2b2c2d2e2f"
     }
   ]
 }

@@ -14,6 +14,7 @@ use super::{
 use crate::crypto::kdf::{self, Argon2Params};
 use crate::crypto::secret;
 use crate::crypto::wrap::{self, PasswordWrapFile, RecoveryWrapPayload};
+use crate::device::identity::{self, SeDevice};
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
 use crate::storage::header::Header;
@@ -23,6 +24,8 @@ use crate::keychain;
 
 /// §13.3: UNLOCKING aborts after 120 s (also bounds panel waits).
 const PANEL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Same bound, visible to the other op modules.
+pub const PANEL_TIMEOUT_PUB: Duration = PANEL_TIMEOUT;
 
 /// Helper-panel window title prefix (§14.2: the main app registers this
 /// title in the capture-exclusion registry on `secure_panel_visible`).
@@ -32,9 +35,9 @@ pub(super) fn emit_panel(deps: &Deps, visible: bool, req: PanelRequest) {
     deps.events.emit(ev_panel(visible, visible.then(|| req.title())));
 }
 
-/// §5.4 Phase C subset: VK + vault_id + MP wrap + empty registry + first
-/// manifest (RK wrap/display is Phase D; the genesis registry entry is
-/// Phase E — no device key exists yet). Ends LOCKED per §13.1; VK is
+/// §5.4: VK + vault_id + MP wrap + RK wrap + first manifest + the
+/// genesis registry entry signed by this Mac's Secure Enclave identity,
+/// plus its own device envelope (Phase E). Ends LOCKED per §13.1; VK is
 /// never installed by this op.
 pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     {
@@ -51,21 +54,38 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     };
     let vault_dir = lock_core(core).vault_dir.clone();
     let rk = secret::random_secret();
-    let result = super::create::create_vault(&vault_dir, &mp, &rk);
+    // The creating device's identity is minted first: the genesis entry
+    // is signed by it (§4.4 rule 4), and a failure anywhere below takes
+    // the Secure Enclave keys with it.
+    let dev = match SeDevice::create(&vault_dir, &identity::default_mac_name(), identity::DEFAULT_PLATFORM) {
+        Ok(d) => d,
+        Err(e) => return OpOutcome::err(e),
+    };
+    let result = super::create::create_vault(&vault_dir, &mp, &rk, &dev);
     drop(mp); // SecretVec zeroizes
     let header = match result {
         Ok((header, vk)) => {
             drop(vk); // setup ends LOCKED (§13.1)
             header
         }
-        Err(e) => return OpOutcome::err(e),
+        Err(e) => {
+            dev.destroy(&vault_dir);
+            return OpOutcome::err(e);
+        }
     };
     // §5.4: the user must see (and may print) the RK. No vault survives
     // without an acknowledged RK.
-    let sheet = super::rk_ops::make_sheet(&rk, &header.vault_id.0, header.manifest_generation, &header.registry_head.0);
+    let sheet = super::rk_ops::make_sheet(
+        &rk,
+        &header.vault_id.0,
+        header.manifest_generation,
+        &header.registry_head.0,
+        super::SheetReason::VaultCreated,
+    );
     drop(rk);
     if !super::rk_ops::show_sheet(deps, &sheet) {
         super::create::cleanup_partial_vault(&vault_dir);
+        dev.destroy(&vault_dir);
         return OpOutcome::err(ErrorCode::PanelCancelled);
     }
     // Rollback-evidence bookkeeping (§2.8). Keychain failure is not fatal

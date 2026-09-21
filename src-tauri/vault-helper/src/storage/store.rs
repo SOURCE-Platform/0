@@ -55,7 +55,10 @@ impl VaultStore {
     /// the caller removes the directory on any later failure.
     pub fn create(dir: &Path, header: Header) -> Result<VaultStore, ErrorCode> {
         let conn = db::open_db(&dir.join(DB_NAME), true)?;
-        let manifest = Manifest::fresh(header.vault_id);
+        let mut manifest = Manifest::fresh(header.vault_id);
+        // The genesis registry entry exists before the first manifest, so
+        // the two heads agree from the start (§3.5 consistency check).
+        manifest.registry_head = header.registry_head.clone();
         write_atomic(&dir.join(VAULT_HEADER_NAME), &header::write_header(&header)?)?;
         write_atomic(&dir.join(MANIFEST_NAME), &manifest::write_manifest(&manifest)?)?;
         write_atomic(&dir.join(VAULT_REGISTRY_NAME), b"[]")?;
@@ -170,6 +173,16 @@ impl VaultStore {
             &manifest::write_manifest(&self.manifest)?,
         )?;
         Ok(())
+    }
+
+    /// Move both heads to a new registry head (an appended enroll/revoke
+    /// entry, §4). Header and manifest stay in lockstep, so a directory
+    /// carrying a registry from a different point in time is caught by
+    /// §3.5 rather than silently accepted.
+    pub fn set_registry_head(&mut self, head: [u8; 32]) -> Result<(), ErrorCode> {
+        self.header.registry_head = crate::storage::header::Hex32(head);
+        self.manifest.registry_head = crate::storage::header::Hex32(head);
+        self.persist_head()
     }
 
     fn live_item_count(&self) -> Result<u64, ErrorCode> {

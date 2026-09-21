@@ -109,7 +109,7 @@ fn main() -> ExitCode {
             let Ok(frame) = serde_json::from_str::<Value>(payload) else {
                 return harness("raw payload is not valid JSON");
             };
-            op(socket, frame)
+            op_with(socket, frame, true)
         }
         _ => {
             eprintln!("unknown mode: {mode}");
@@ -136,6 +136,12 @@ fn connect(socket: &Path) -> Result<VaultClient, ExitCode> {
 /// One op, printing OP_OK / OP_ERROR=<code> plus the state; secrets in
 /// responses are printed only in `reveal` (synthetic data, gate binary).
 fn op(socket: &Path, frame: Value) -> ExitCode {
+    op_with(socket, frame, false)
+}
+
+/// `verbose` also prints the whole response frame: what `raw` is for, and
+/// where the Phase E gate reads device lists and enrollment secrets from.
+fn op_with(socket: &Path, frame: Value, verbose: bool) -> ExitCode {
     let client = match connect(socket) {
         Ok(c) => c,
         Err(code) => return code,
@@ -143,6 +149,9 @@ fn op(socket: &Path, frame: Value) -> ExitCode {
     match client.request(frame) {
         Ok(resp) => {
             println!("OP_OK state={}", resp["state"].as_str().unwrap_or("-"));
+            if verbose {
+                println!("RESP={resp}");
+            }
             if let Some(items) = resp.get("items") {
                 println!("LIST={items}");
             }

@@ -40,18 +40,40 @@ private func emit(_ src: Data, _ out: UnsafeMutablePointer<UInt8>?, _ cap: Int, 
 
 // MARK: - Secure Enclave key storage (opaque blob, keyed by tag)
 
-private func query(_ tag: String) -> [String: Any] {
+/// Same (login) keychain the helper's Rust Keychain code uses; the
+/// data-protection keychain would need a `keychain-access-groups`
+/// entitlement the gate/test binaries do not carry (Phase E report).
+private func query(_ tag: String, _ role: String) -> [String: Any] {
     [kSecClass as String: kSecClassGenericPassword,
-     kSecAttrService as String: "com.racker.zero.vault.se-agreement",
+     kSecAttrService as String: "com.racker.zero.vault.se-\(role)",
      kSecAttrAccount as String: tag]
 }
 
-private func loadKey(_ tag: String) -> SecureEnclave.P256.KeyAgreement.PrivateKey? {
-    var q = query(tag)
+/// Store an SE key's opaque, device-bound representation under `tag`.
+private func store(_ blob: Data, _ tag: String, _ role: String) -> Int32 {
+    SecItemDelete(query(tag, role) as CFDictionary)
+    var add = query(tag, role)
+    add[kSecValueData as String] = blob
+    add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    return SecItemAdd(add as CFDictionary, nil) == errSecSuccess ? OK : ERR_KEYCHAIN
+}
+
+private func loadBlob(_ tag: String, _ role: String) -> Data? {
+    var q = query(tag, role)
     q[kSecReturnData as String] = true
     var item: CFTypeRef?
-    guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess, let blob = item as? Data else { return nil }
+    guard SecItemCopyMatching(q as CFDictionary, &item) == errSecSuccess else { return nil }
+    return item as? Data
+}
+
+private func loadAgree(_ tag: String) -> SecureEnclave.P256.KeyAgreement.PrivateKey? {
+    guard let blob = loadBlob(tag, "agreement") else { return nil }
     return try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: blob)
+}
+
+private func loadSign(_ tag: String) -> SecureEnclave.P256.Signing.PrivateKey? {
+    guard let blob = loadBlob(tag, "signing") else { return nil }
+    return try? SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
 }
 
 /// Create an SE-resident P-256 key agreement key, store its opaque blob
@@ -61,35 +83,79 @@ public func ov0_se_key_create(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutable
     guard let tag, SecureEnclave.isAvailable else { return ERR_SE }
     let name = String(cString: tag)
     guard let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey() else { return ERR_SE }
-    SecItemDelete(query(name) as CFDictionary)
-    var add = query(name)
-    add[kSecValueData as String] = key.dataRepresentation
-    add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-    guard SecItemAdd(add as CFDictionary, nil) == errSecSuccess else { return ERR_KEYCHAIN }
+    let rc = store(key.dataRepresentation, name, "agreement")
+    guard rc == OK else { return rc }
     return emit(key.publicKey.x963Representation, out, 65, outLen)
 }
 
 @_cdecl("ov0_se_key_public")
 public func ov0_se_key_public(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePointer<UInt8>?, _ outLen: UnsafeMutablePointer<Int>?) -> Int32 {
-    guard let tag, let key = loadKey(String(cString: tag)) else { return ERR_SE }
+    guard let tag, let key = loadAgree(String(cString: tag)) else { return ERR_SE }
     return emit(key.publicKey.x963Representation, out, 65, outLen)
 }
 
 @_cdecl("ov0_se_key_delete")
 public func ov0_se_key_delete(_ tag: UnsafePointer<CChar>?) -> Int32 {
     guard let tag else { return ERR_ARG }
-    SecItemDelete(query(String(cString: tag)) as CFDictionary)
+    let name = String(cString: tag)
+    SecItemDelete(query(name, "agreement") as CFDictionary)
+    SecItemDelete(query(name, "signing") as CFDictionary)
     return OK
 }
 
-/// Evidence helper (PoC only): the stored representation of an SE key.
-/// It is an opaque, device-bound blob — not a private scalar — and there
-/// is no API on `SecureEnclave.P256.KeyAgreement.PrivateKey` returning
-/// raw key bytes (`rawRepresentation` exists only on software keys).
-@_cdecl("ov0_se_key_blob")
-public func ov0_se_key_blob(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePointer<UInt8>?, _ cap: Int, _ outLen: UnsafeMutablePointer<Int>?) -> Int32 {
-    guard let tag, let key = loadKey(String(cString: tag)) else { return ERR_SE }
-    return emit(key.dataRepresentation, out, cap, outLen)
+// MARK: - Secure Enclave signing key (§2.7 device identity)
+
+/// Create an SE-resident P-256 *signing* key under `tag`; returns the
+/// 65-byte public key. Separate key, separate role from the agreement
+/// key (§2.7: one identity key pair per role).
+@_cdecl("ov0_se_sign_create")
+public func ov0_se_sign_create(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePointer<UInt8>?, _ outLen: UnsafeMutablePointer<Int>?) -> Int32 {
+    guard let tag, SecureEnclave.isAvailable else { return ERR_SE }
+    guard let key = try? SecureEnclave.P256.Signing.PrivateKey() else { return ERR_SE }
+    let rc = store(key.dataRepresentation, String(cString: tag), "signing")
+    guard rc == OK else { return rc }
+    return emit(key.publicKey.x963Representation, out, 65, outLen)
+}
+
+@_cdecl("ov0_se_sign_public")
+public func ov0_se_sign_public(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePointer<UInt8>?, _ outLen: UnsafeMutablePointer<Int>?) -> Int32 {
+    guard let tag, let key = loadSign(String(cString: tag)) else { return ERR_SE }
+    return emit(key.publicKey.x963Representation, out, 65, outLen)
+}
+
+/// A SHA-256 digest the caller already computed. CryptoKit's
+/// `signature(for: some Digest)` signs those bytes as-is, while
+/// `signature(for: Data)` would hash them a second time — §2.7 signs a
+/// domain-separated prehash, so the digest path is the correct one.
+struct PrehashedSHA256: Digest {
+    static var byteCount: Int { 32 }
+    private let bytes: [UInt8]
+    init?(_ d: Data) {
+        guard d.count == 32 else { return nil }
+        bytes = Array(d)
+    }
+    func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
+        try bytes.withUnsafeBytes(body)
+    }
+    func makeIterator() -> Array<UInt8>.Iterator { bytes.makeIterator() }
+    static func == (a: PrehashedSHA256, b: PrehashedSHA256) -> Bool { a.bytes == b.bytes }
+    func hash(into hasher: inout Hasher) { hasher.combine(bytes) }
+    var description: String { "PrehashedSHA256(32 bytes)" }
+}
+
+/// Sign a 32-byte digest with the SE signing key; returns r‖s (64 bytes).
+/// The caller normalizes to low-S (§2.7 canonical wire form).
+@_cdecl("ov0_se_sign_digest")
+public func ov0_se_sign_digest(
+    _ tag: UnsafePointer<CChar>?,
+    _ digest: UnsafePointer<UInt8>?, _ digestLen: Int,
+    _ out: UnsafeMutablePointer<UInt8>?, _ outLen: UnsafeMutablePointer<Int>?
+) -> Int32 {
+    guard let tag, let d = data(digest, digestLen), d.count == 32 else { return ERR_ARG }
+    guard let key = loadSign(String(cString: tag)) else { return ERR_SE }
+    guard let digest = PrehashedSHA256(d) else { return ERR_ARG }
+    guard let sig = try? key.signature(for: digest) else { return ERR_CRYPTO }
+    return emit(sig.rawRepresentation, out, 64, outLen)
 }
 
 // MARK: - HPKE (CryptoKit)
@@ -127,26 +193,7 @@ public func ov0_hpke_open_se(
 ) -> Int32 {
     guard let tag, let infoData = data(info, infoLen), let aadData = data(aad, aadLen),
           let encData = data(enc, encLen), let ctData = data(ct, ctLen) else { return ERR_ARG }
-    guard let key = loadKey(String(cString: tag)) else { return ERR_SE }
-    guard var recipient = try? HPKE.Recipient(privateKey: key, ciphersuite: suite, info: infoData, encapsulatedKey: encData),
-          let pt = try? recipient.open(ctData, authenticating: aadData) else { return ERR_CRYPTO }
-    return emit(pt, outPt, ptCap, outPtLen)
-}
-
-/// Software-key variant, used only for known-answer tests against the
-/// published RFC 9180 vectors (no SE key can be imported from a vector).
-@_cdecl("ov0_hpke_open_sw")
-public func ov0_hpke_open_sw(
-    _ sk32: UnsafePointer<UInt8>?, _ skLen: Int,
-    _ info: UnsafePointer<UInt8>?, _ infoLen: Int,
-    _ enc: UnsafePointer<UInt8>?, _ encLen: Int,
-    _ ct: UnsafePointer<UInt8>?, _ ctLen: Int,
-    _ aad: UnsafePointer<UInt8>?, _ aadLen: Int,
-    _ outPt: UnsafeMutablePointer<UInt8>?, _ ptCap: Int, _ outPtLen: UnsafeMutablePointer<Int>?
-) -> Int32 {
-    guard let skData = data(sk32, skLen), let infoData = data(info, infoLen), let aadData = data(aad, aadLen),
-          let encData = data(enc, encLen), let ctData = data(ct, ctLen) else { return ERR_ARG }
-    guard let key = try? P256.KeyAgreement.PrivateKey(rawRepresentation: skData) else { return ERR_ARG }
+    guard let key = loadAgree(String(cString: tag)) else { return ERR_SE }
     guard var recipient = try? HPKE.Recipient(privateKey: key, ciphersuite: suite, info: infoData, encapsulatedKey: encData),
           let pt = try? recipient.open(ctData, authenticating: aadData) else { return ERR_CRYPTO }
     return emit(pt, outPt, ptCap, outPtLen)

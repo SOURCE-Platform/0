@@ -126,6 +126,11 @@ pub fn serial() -> MutexGuard<'static, ()> {
 }
 
 pub fn fx() -> Fx {
+    fx_with_presence(true)
+}
+
+/// Same fixture with the LA presence check scripted to refuse.
+pub fn fx_with_presence(allow: bool) -> Fx {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     static PREFIX: OnceLock<()> = OnceLock::new();
     PREFIX.get_or_init(|| {
@@ -152,7 +157,7 @@ pub fn fx() -> Fx {
         refuse_sheet: Mutex::new(false),
     });
     let la = Arc::new(La {
-        allow: true,
+        allow,
         calls: AtomicUsize::new(0),
     });
     let capture = Arc::new(Capture {
@@ -178,7 +183,35 @@ pub fn fx() -> Fx {
     }
 }
 
+/// Each fixture vault owns a Secure Enclave identity (Phase E); tearing
+/// the fixture down destroys those keys so test runs leave no SE state.
+impl Drop for Fx {
+    fn drop(&mut self) {
+        vault_helper::device::identity::wipe(&self.dir);
+    }
+}
+
 impl Fx {
+    /// Swap the LA presence stub in place. (Rebuilding the whole fixture
+    /// is not possible: `Fx` owns Secure Enclave keys and therefore has a
+    /// `Drop`.)
+    pub fn set_presence(&mut self, la: Arc<La>) {
+        self.deps.la = la.clone();
+        self.la = la;
+    }
+
+    /// Re-boot the core against the same directory (a "helper restarted"
+    /// scenario), keeping the fixture's stubs and its SE identity.
+    pub fn reboot(&mut self) {
+        self.core = Arc::new(Mutex::new(VaultCore::boot(self.dir.clone())));
+    }
+
+    /// Swap the capture-suppression stub in place.
+    pub fn set_capture(&mut self, capture: Arc<Capture>) {
+        self.deps.capture = capture.clone();
+        self.capture = capture;
+    }
+
     pub fn push_panel(&self, outcome: PanelOutcome) {
         self.panel.queue.lock().unwrap().push_back(outcome);
     }

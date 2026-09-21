@@ -22,10 +22,8 @@ fn format_too_new_header_enters_error() {
     header["version"] = json!(99);
     std::fs::write(&header_path, header.to_string()).unwrap();
 
-    let fx = Fx {
-        core: Arc::new(Mutex::new(VaultCore::boot(fx.dir.clone()))),
-        ..fx
-    };
+    let mut fx = fx;
+    fx.reboot();
     let resp = unlock(&fx, MP);
     assert_eq!(err_code(&resp), "FORMAT_TOO_NEW", "{resp}");
     assert_eq!(fx.state(), VaultState::Error);

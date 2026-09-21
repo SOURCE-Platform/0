@@ -24,12 +24,11 @@ async fn call(_frame: Value) -> Result<Value, String> {
     Err("vault is not available on this platform".to_string())
 }
 
-/// An op that presents the helper's secure panel. SOURCE is the active app
-/// when the user clicks, so it yields activation to the helper first
-/// (macOS 14 cooperative activation); otherwise the panel opens unfocused
-/// and its secure field never receives keystrokes until clicked (UI-02).
-/// The yield completes on the main thread before the op is sent.
-async fn call_with_panel(app: tauri::AppHandle, frame: Value) -> Result<Value, String> {
+/// Yield activation to the helper and **wait for it to happen** on the
+/// main thread. SOURCE is the active app when the user clicks; without
+/// this the helper's panel — or its Touch ID sheet — opens unfocused and
+/// can sit behind our own window (UI-02).
+async fn yield_activation(app: tauri::AppHandle) {
     let (tx, rx) = std::sync::mpsc::channel();
     let queued = app.run_on_main_thread(move || {
         crate::platform::activation::yield_activation_to(
@@ -43,6 +42,11 @@ async fn call_with_panel(app: tauri::AppHandle, frame: Value) -> Result<Value, S
         })
         .await;
     }
+}
+
+/// An op that presents the helper's secure panel.
+async fn call_with_panel(app: tauri::AppHandle, frame: Value) -> Result<Value, String> {
+    yield_activation(app).await;
     call(frame).await
 }
 
@@ -166,4 +170,83 @@ pub async fn vault_reveal(reference: String) -> Result<Value, String> {
 #[tauri::command]
 pub async fn vault_set_auto_lock_minutes(minutes: u32) -> Result<Value, String> {
     call(json!({"op": "set_auto_lock_minutes", "minutes": minutes})).await
+}
+
+// --- Phase E: devices and enrollment (§5, §11.4) ---------------------------
+
+/// Start an enrollment: ephemeral TLS server, helper-minted single-use
+/// secret, QR for the screen (§5.1).
+#[tauri::command]
+pub async fn vault_begin_enrollment() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::core::vault_enroll::begin("SOURCE").await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("vault is not available on this platform".to_string())
+    }
+}
+
+/// Poll while the QR is on screen: reports the SAS once the phone's
+/// hello has been authenticated, and whether the ACK has landed.
+#[tauri::command]
+pub async fn vault_enrollment_status() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        Ok(crate::core::vault_enroll::status())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(json!({"ok": true, "active": false}))
+    }
+}
+
+/// The user compared the SAS on both screens and confirmed. The helper
+/// runs its own presence check before it builds anything (§5.1).
+#[tauri::command]
+pub async fn vault_confirm_enrollment(app: tauri::AppHandle) -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        // The helper raises a Touch ID sheet before it signs anything, so
+        // this waits for activation to reach it exactly like the panel
+        // ops do. Firing and forgetting leaves the sheet behind our
+        // window and the enrollment looks hung (observed on hardware).
+        yield_activation(app).await;
+        let result = crate::core::vault_enroll::confirm().await;
+        if let Err(ref e) = result {
+            eprintln!("vault: enrollment confirm failed: {e}");
+        }
+        result
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("vault is not available on this platform".to_string())
+    }
+}
+
+#[tauri::command]
+pub async fn vault_cancel_enrollment() -> Result<Value, String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::core::vault_enroll::cancel().await;
+    }
+    Ok(json!({"ok": true}))
+}
+
+#[tauri::command]
+pub async fn vault_list_devices() -> Result<Value, String> {
+    call(json!({"op": "list_devices"})).await
+}
+
+/// Revoke a device: registry entry + mandatory VK rotation. The helper
+/// asks for presence, the master password, and shows a new Recovery Key
+/// before anything is committed (§11.4, §12 scenario 8).
+#[tauri::command]
+pub async fn vault_revoke_device(
+    app: tauri::AppHandle,
+    device_id: String,
+) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "revoke_device", "device_id": device_id})).await
 }

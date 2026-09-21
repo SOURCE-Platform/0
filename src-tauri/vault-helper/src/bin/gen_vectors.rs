@@ -9,7 +9,6 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use vault_helper::crypto::vectors;
 
 fn vectors_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -21,7 +20,7 @@ fn main() -> ExitCode {
     let check = std::env::args().nth(1).as_deref() == Some("--check");
     let dir = vectors_dir();
     let mut stale = Vec::new();
-    for (stem, doc) in vectors::all() {
+    for (stem, doc) in vault_helper::all_vectors() {
         let rendered = serde_json::to_string_pretty(&doc).unwrap() + "\n";
         let path = dir.join(format!("{stem}.json"));
         let existing = std::fs::read_to_string(&path).ok();

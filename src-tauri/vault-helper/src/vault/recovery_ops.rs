@@ -61,6 +61,6 @@ pub struct RkRotation {
 /// caller reopens it under the new VK).
 pub fn rotate_recovery_key(store: VaultStore, vk: &SecretBytes<32>, pk: &SecretBytes<32>) -> Result<RkRotation, ErrorCode> {
     let new_rk = random_secret();
-    let rotation = rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::Seal(&new_rk), None)?;
+    let rotation = rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::Seal(&new_rk), None, None)?;
     Ok(RkRotation { new_rk, rotation })
 }

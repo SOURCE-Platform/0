@@ -1,4 +1,12 @@
 fn main() {
+    // The vault helper links the §2.12 Swift bridge (Secure Enclave +
+    // CryptoKit HPKE), and the Swift runtime dylibs it pulls in have
+    // `@rpath` install names. Link arguments do not propagate from a
+    // dependency's build script, so this crate — which links
+    // `vault_helper` for the IPC client — adds the runtime search path
+    // for its own binaries and test binaries.
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     #[cfg(target_os = "macos")]
     build_desktop_audio_helper();
     #[cfg(target_os = "macos")]

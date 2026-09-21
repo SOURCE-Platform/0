@@ -19,9 +19,12 @@ pub const INFO_BACKUP_AUTH_MP: &[u8] = b"ov0/backup-auth/mp/v1";
 pub const INFO_BACKUP_AUTH_RK: &[u8] = b"ov0/backup-auth/rk/v1";
 pub const INFO_IMPORT_FINGERPRINT: &[u8] = b"ov0/import-fingerprint/v1";
 pub const INFO_ENROLL_SAS: &[u8] = b"ov0/enroll/sas/v1";
+/// Key for the authorizing device's record of the per-device backup
+/// credentials it has issued (§11.4; added in Phase E).
+pub const INFO_DEVICE_CREDS: &[u8] = b"ov0/device-creds/v1";
 
 /// All §2.9 strings; XV-HKDF vectors cover every one of them.
-pub const ALL_INFO_STRINGS: [&[u8]; 11] = [
+pub const ALL_INFO_STRINGS: [&[u8]; 12] = [
     INFO_WRAP_MP,
     INFO_WRAP_RK,
     INFO_RECORD,
@@ -33,6 +36,7 @@ pub const ALL_INFO_STRINGS: [&[u8]; 11] = [
     INFO_BACKUP_AUTH_RK,
     INFO_IMPORT_FINGERPRINT,
     INFO_ENROLL_SAS,
+    INFO_DEVICE_CREDS,
 ];
 
 /// HKDF-SHA-256 extract+expand to a 32-byte secret.
@@ -106,6 +110,15 @@ pub fn locator_mp(pk: &SecretBytes<32>, salt: &[u8; 16]) -> Result<SecretBytes<3
 
 pub fn locator_rk(rk: &SecretBytes<32>, salt: &[u8; 16]) -> Result<SecretBytes<32>, CryptoError> {
     hkdf32(rk.expose(), salt, INFO_LOCATE_RK)
+}
+
+/// Key sealing the issued-credential record (§11.4): HKDF(ikm=VK,
+/// salt=vault_id). Rotates with the VK, like every other VK-derived key.
+pub fn device_creds_key(
+    vk: &SecretBytes<32>,
+    vault_id: &[u8; 16],
+) -> Result<SecretBytes<32>, CryptoError> {
+    hkdf32(vk.expose(), vault_id, INFO_DEVICE_CREDS)
 }
 
 /// Import idempotency HMAC key from VK (§10.3).

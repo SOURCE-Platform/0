@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use crate::crypto::secret::{SecretBytes, SecretVec};
+use crate::crypto::secret::SecretBytes;
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
 use crate::storage::header::Header;
@@ -24,73 +24,20 @@ use crate::storage::VaultStore;
 
 pub mod change_mp;
 pub mod create;
+pub mod devices;
+pub mod enroll_commit;
+pub mod enroll_ops;
 pub mod gate;
 pub mod items;
 pub mod recovery_ops;
+pub mod registry_status;
 pub mod rk_ops;
+pub mod secure_ui;
 pub mod setup;
 
-/// What the helper-owned panel is asking for (§1.7). Secrets cross back
-/// exactly once, inside zeroizing buffers, helper-internal only.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PanelRequest {
-    /// Initial MP creation with confirmation field (§5.4).
-    MpCreate,
-    /// MP entry for the panel-based unlock path (§6 fallback).
-    MpEntry,
-    /// MP change: old + new + confirmation (§1.5 change_master_password).
-    MpChange,
-    /// Recovery Key entry: one secure field, 24 words (§1.7, §2.4).
-    RkEntry,
-}
-
-impl PanelRequest {
-    /// Window title naming the requesting flow (§1.7 focus-theft rule).
-    /// Carried in `secure_panel_visible` so the main app registers the
-    /// exact title in the capture-exclusion registry (§14.2).
-    pub fn title(self) -> &'static str {
-        match self {
-            PanelRequest::MpCreate => "Source Vault — Create Master Password",
-            PanelRequest::MpEntry => "Source Vault — Unlock",
-            PanelRequest::MpChange => "Source Vault — Change Master Password",
-            PanelRequest::RkEntry => "Source Vault — Enter Recovery Key",
-        }
-    }
-}
-
-/// Title of the Recovery Key display/print window (§1.7).
-pub const RK_SHEET_TITLE: &str = "Source Vault — Recovery Key";
-
-/// What the helper's Recovery Key window shows and prints. Built and
-/// consumed inside the helper only; never crosses IPC (§1.5 never-list).
-pub struct RecoverySheet {
-    /// The 24 words, space separated.
-    pub words: zeroize::Zeroizing<String>,
-    /// Non-secret freshness checkpoint line (§11.7): vault id, manifest
-    /// generation, registry head prefix.
-    pub checkpoint: String,
-}
-
-pub enum PanelOutcome {
-    Cancelled,
-    /// Recovery Key window closed through "I've saved it".
-    Acknowledged,
-    /// MpCreate / MpEntry submission.
-    Submitted(SecretVec),
-    /// MpChange submission: (old, new).
-    SubmittedChange(SecretVec, SecretVec),
-}
-
-/// Runs a secure panel to completion (blocks the calling executor
-/// thread; production impl marshals to the AppKit main thread).
-pub trait PanelRunner: Send + Sync {
-    fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome;
-    /// Show (and offer to print) a Recovery Key. `Acknowledged` only when
-    /// the user confirmed they saved it; anything else is `Cancelled`.
-    fn show_recovery_key(&self, _sheet: &RecoverySheet, _timeout: Duration) -> PanelOutcome {
-        PanelOutcome::Cancelled
-    }
-}
+pub use secure_ui::{
+    PanelOutcome, PanelRequest, PanelRunner, RecoverySheet, SheetReason, RK_SHEET_TITLE,
+};
 
 /// One LA `deviceOwnerAuthentication` evaluation (§6.4 step 2 — the same
 /// single policy for Touch-ID and clamshell Macs; never biometrics-only).
@@ -193,6 +140,9 @@ pub struct VaultCore {
     pub last_authorization: Option<Instant>,
     pub auto_lock_minutes: u32,
     pub vault_dir: PathBuf,
+    /// The one in-flight device enrollment, if any (§5: one session at
+    /// a time, torn down on lock, cancel, expiry or failure).
+    pub enroll: Option<crate::enroll::EnrollSession>,
 }
 
 impl VaultCore {
@@ -219,6 +169,7 @@ impl VaultCore {
             last_authorization: None,
             auto_lock_minutes: crate::keychain::read_auto_lock_minutes(),
             vault_dir,
+            enroll: None,
         }
     }
 
@@ -228,6 +179,9 @@ impl VaultCore {
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)
         self.store = None;
+        // An enrollment in flight does not survive a lock: its secret is
+        // zeroized and the phone must rescan (§5.3).
+        self.enroll = None;
         self.last_authorization = None;
         let mut events = Vec::new();
         if had_vault_state {
@@ -304,6 +258,14 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         "update_item" => items::update_item(core, frame, deps),
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),
+        "begin_enrollment" => enroll_ops::begin_enrollment(core, frame),
+        "enroll_hello" => enroll_ops::enroll_hello(core, frame),
+        "enroll_confirm" => enroll_ops::enroll_confirm(core, deps),
+        "enroll_ack" => enroll_commit::enroll_ack(core, frame),
+        "cancel_enrollment" => enroll_ops::cancel_enrollment(core),
+        "list_devices" => devices::list_devices(core),
+        "registry_status" => registry_status::registry_status(core),
+        "revoke_device" => devices::revoke_device(core, frame, deps),
         "set_auto_lock_minutes" => set_auto_lock_minutes(core, frame),
         _ => OpOutcome::err(ErrorCode::UnknownOp),
     }

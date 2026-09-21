@@ -12,6 +12,8 @@
 
 pub mod backup;
 pub mod crypto;
+pub mod device;
+pub mod enroll;
 pub mod errors;
 pub mod ffi;
 pub mod ipc;
@@ -27,6 +29,14 @@ pub mod registry;
 pub mod state;
 pub mod storage;
 pub mod vault;
+
+/// Every committed cross-language vector family (§16.8): the Phase B
+/// crypto families plus Phase E's enrollment/envelope contracts.
+pub fn all_vectors() -> Vec<(&'static str, serde_json::Value)> {
+    let mut all = crypto::vectors::all();
+    all.push(("xv_enroll", enroll::vectors::xv_enroll()));
+    all
+}
 
 /// IPC protocol major version (spec §1.4). Peers with a different major
 /// version are disconnected at `hello`.

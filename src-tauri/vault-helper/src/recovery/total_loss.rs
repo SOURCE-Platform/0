@@ -200,7 +200,7 @@ impl RecoverySession<'_> {
                 fresh
             }
         };
-        let rotated = rotation::rotate(store, &self.old_vk, mp_plan, RkWrap::Seal(&rk_for_wrap), None)?;
+        let rotated = rotation::rotate(store, &self.old_vk, mp_plan, RkWrap::Seal(&rk_for_wrap), None, None)?;
         drop(self.old_vk); // old VK zeroized once the re-encryption completed
         // (e) build + upload the rotated snapshot with the recovery credential.
         write_atomic(&dir.join(VAULT_REGISTRY_NAME), &registry_file::encode(&entries)?)?;

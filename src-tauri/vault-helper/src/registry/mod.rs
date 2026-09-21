@@ -7,3 +7,4 @@ pub mod build;
 pub mod chain;
 pub mod device;
 pub mod file;
+pub mod log;

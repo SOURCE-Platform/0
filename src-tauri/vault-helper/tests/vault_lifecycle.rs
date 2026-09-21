@@ -122,16 +122,8 @@ fn op03_presence_denied_blocks_mutation() {
         allow: false,
         calls: AtomicUsize::new(0),
     });
-    let fx = Fx {
-        deps: Deps {
-            panel: fx.panel.clone(),
-            la: denied.clone(),
-            capture: fx.capture.clone(),
-            events: fx.events.clone(),
-        },
-        la: denied,
-        ..fx
-    };
+    let mut fx = fx;
+    fx.set_presence(denied);
     let resp = fx.op(json!({
         "op": "add_item",
         "kind": "login",
@@ -170,16 +162,8 @@ fn op06_reveal_capture_unsafe_is_fail_closed() {
         suppressed: false,
         calls: AtomicUsize::new(0),
     });
-    let fx = Fx {
-        deps: Deps {
-            panel: fx.panel.clone(),
-            la: fx.la.clone(),
-            capture: unsafe_capture.clone(),
-            events: fx.events.clone(),
-        },
-        capture: unsafe_capture,
-        ..fx
-    };
+    let mut fx = fx;
+    fx.set_capture(unsafe_capture);
     let resp = fx.op(json!({"op": "reveal", "ref": r}));
     assert_eq!(err_code(&resp), "CAPTURE_UNSAFE", "{resp}");
     // §14.4: the refusal happens BEFORE the presence prompt.

@@ -196,8 +196,13 @@ human-safe context.
 | `change_master_password {mode:"reset"}` | set a new MP without the old one | UNLOCKED + fresh presence | §12 scenario 5 on this device (e.g. after an RK unlock): the panel collects new+confirm only; no VK rotation; `password.wrap` is replaced atomically |
 | `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel collects the **current MP** (the MP wrap is re-sealed under the new VK, §12 scenario 6), then displays/prints the new RK and only commits once the user acknowledges it; main sees status only |
 | `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | revocation triggers VK rotation + provider credential revocation (§11.4) |
-| `begin_enrollment` | start §5 flow | UNLOCKED + fresh presence | returns QR payload for rendering |
-| `relay_to_device` / `relay_from_device` | opaque vault-protocol frames for iPhone | any | main is a dumb pipe (§5, §6) |
+| `registry_status` | signed registry for a paired device's status refresh (§4.7) | LOCKED or UNLOCKED | read-only; returns the registry and `vault_id` and nothing else. Deliberately answers while locked: the registry involves no VK, and a revoked device must be able to find that out without the vault being unlocked. |
+| `begin_enrollment` | start §5 flow | UNLOCKED | `{fp}` (the ephemeral server's certificate fingerprint) → `{secret, mac_device_id, vault_id, expires_in}`; main renders the QR (§5.2) |
+| `enroll_hello` | the phone's ENROLL_HELLO, relayed | UNLOCKED | helper verifies the single-use secret, assigns the new `device_id`, fixes the transcript → `{reply, sas}`; the SAS is shown on the Mac and **never** sent to the phone |
+| `enroll_confirm` | the user compared the SAS | UNLOCKED + fresh presence | signs the enroll entry and seals the envelope → `{bundle}` (all ciphertext); nothing is written to the registry yet |
+| `enroll_ack` | the phone's ENROLL_ACK, relayed | UNLOCKED | `{signature}` over §5.2's ACK digest; verifying it is what appends the entry |
+| `cancel_enrollment` | tear the session down | any | secret zeroized; a cancelled attempt leaves no registry trace |
+| `relay_to_device` / `relay_from_device` | opaque vault-protocol frames for iPhone approvals | any | main is a dumb pipe (§6). **v0.3.1 Phase E:** enrollment uses the typed ops above instead — the helper has to route those frames into its session state machine anyway, and a typed schema is something it can validate; approvals keep the opaque relay. |
 | `backup_snapshot_prepare` | produce encrypted objects + signed manifest + this device's backup credential id | UNLOCKED | main then uploads (§11) |
 | `backup_state_apply` | verify + import downloaded state | UNLOCKED/RECOVERING | rollback/fork checked in helper |
 | `sign_backup_request` | authorize one provider request | per §11.4 policy table | `{credential_class, provider_operation, typed params, body_sha256}` → `{cred_label, t, n, s}`; helper canonicalizes and MACs internally; **the raw credential never leaves the helper** (§11.4) |
@@ -222,11 +227,16 @@ the sensitive-surface counter so Source capture suppresses while a
 helper-owned secret panel is up, §14.2).
 
 **Never across IPC, in either direction, in any op:** VK, PK, MP, RK
-plaintext, RK words, RecoveryWrapPayload/DeviceEnvelopePayload bytes, device
-private keys, backup credentials, bulk record export, password-history
+plaintext, RK words, RecoveryWrapPayload/DeviceEnvelopePayload **plaintext**
+bytes, device private keys, backup credentials, bulk record export, password-history
 dumps, decrypted-notes search,
 any "dump all" operation, any op returning more than one record's secret
 fields. MP/RK enter and leave only through helper-owned native UI (§1.7).
+The *sealed* device envelope is not payload bytes and does cross IPC
+inside the §5 enrollment bundle (v0.3.1 Phase E): it is HPKE ciphertext
+addressed to another device's Secure Enclave key, which neither the main
+process nor this Mac can open. The helper never touches the network, so
+there is no other way for it to reach the enrolling device.
 There is intentionally **no** `export_vault` op in v1. Provider-request
 authorization is mediated exclusively through `sign_backup_request`
 (§11.4): the helper MACs canonical, typed request descriptions and returns
@@ -389,7 +399,10 @@ DeviceEnvelopePayload (devices/<id>.wrap only):
   chosen tuple. Recovery security must not be weakened for speed — if a
   device class can't meet the latency target at `m=64 MiB`, prefer
   raising its latency budget over lowering memory cost, and document the
-  choice.
+  choice. **Timing (owner decision 2026-09-20):** the
+  support-floor (A12-class iPhone) measurement is a **release gate** (§19
+  item 30), not a phase blocker; the tuple stays provisional until it
+  closes and is never weakened in the meantime.
 - Storage: `header.json` carries `{kdf: "argon2id", kdf_version: 1, m, t,
   p, salt}`. `password.wrap` carries a copy of the same parameter block.
 - Upgrade: parameter changes bump `kdf_version`; the next successful MP
@@ -430,6 +443,21 @@ recovery.wrap: identical shape, kind="rk",
   wrap_key = HKDF-SHA256(ikm=RK_bytes, salt=random16-stored,
                          info="ov0/wrap/rk/v1")
   aad = "ov0/wrap" || vault_id || "rk"
+```
+
+```text
+wraps/devices/<device_id>.wrap (JSON, Phase E):
+{ "v":1, "kind":"device", "device_id":hex16, "enrollment_nonce":hex16,
+  "enc":hex65, "ct":hex }
+
+  HPKE base mode, suite per §2.12, sealed to the device's Secure Enclave
+  agreement key; plaintext = DeviceEnvelopePayload (§2.2);
+  info = "ov0/envelope/v1" || vault_id || device_id || enrollment_nonce
+
+wraps/devices/creds.bin (JSON, Phase E): the authorizing device's record
+of the per-device backup credentials it has issued (§11.4), sealed with
+XChaCha20-Poly1305 under HKDF(ikm=VK, salt=vault_id,
+info="ov0/device-creds/v1"), aad = "ov0/device-creds/v1".
 ```
 
 - Nonces: 24 bytes, OsRng, per seal operation. 192-bit random nonces make
@@ -523,6 +551,7 @@ recover — documented behavior, not an error.
 | `ov0/backup-auth/mp/v1`, `ov0/backup-auth/rk/v1` | recovery-class backup credentials from PK / RK-derived key (§11.4) |
 | `ov0/import-fingerprint/v1` | import idempotency HMAC key from VK (§10.3) |
 | `ov0/enroll/sas/v1` | SAS display bytes from enrollment transcript |
+| `ov0/device-creds/v1` | key sealing the issuer's record of issued device backup credentials (§11.4, Phase E) |
 | `ov0/approval/…` | not used — approvals are plain ECDSA over TLV (§6.5) |
 
 HPKE `info` strings (envelopes): `"ov0/envelope/v1" || vault_id ||
@@ -571,6 +600,17 @@ new_device_id || enrollment_nonce`.
   change at rotation; the pre-rotation objects stay in the backup's
   retained generations and remain decryptable with the matching
   historical key material (§12 scenario 7 limitation, BK-10).
+- **Device envelopes rotate with the VK (normative, v0.3.1 Phase E).**
+  The per-device envelopes (§2.5) and the issuer's credential record are
+  staged in the same journal as the wraps, listed in the commit marker's
+  `stage` array, and rolled forward in the same pass. A rotation can
+  therefore never commit a new VK while leaving an enrolled device
+  holding a wrap of the dead one. Each envelope keeps the credential its
+  device was issued and the enrollment nonce it was first bound to
+  (§11.4), so only the VK inside changes. A device that is offline at
+  rotation time has a re-sealed envelope waiting on the authorizing Mac;
+  delivering it is Phase F sync, and until then that device cannot open
+  the new state.
 - Old VK/new state: AEAD failure everywhere; there is no fallback path.
 
 ### 2.11 Memory-lifetime rules
@@ -615,14 +655,30 @@ ChaCha20-Poly1305 (KEM 0x0010, KDF 0x0001, AEAD 0x0003).
   `SecureEnclave.P256.KeyAgreement.PrivateKey`.
 - **macOS helper (Rust):** same API through a tiny in-house Swift bridge,
   `vault-apple-crypto` (static library, C ABI, target ≤ 200 lines of
-  Swift): `ov0_hpke_seal(pubkey65, info, plaintext) → (enc, ct)` and
-  `ov0_hpke_open_se(key_tag, info, enc, ct) → plaintext`, plus SE key
-  load by Keychain tag. The bridge is the only Swift linked into the
-  helper; it holds no policy and no key material beyond SE references.
+  Swift). Production surface (v0.3.1 Phase E, 8 symbols): key lifecycle
+  per role — `ov0_se_key_create` / `ov0_se_key_public` /
+  `ov0_se_sign_create` / `ov0_se_sign_public` / `ov0_se_key_delete`
+  (deletes both roles for a tag) — `ov0_se_sign_digest(tag, digest32) →
+  r‖s` (randomized; the caller normalizes to low-S per §2.7),
+  `ov0_hpke_seal(pubkey65, info, plaintext, aad) → (enc, ct)` and
+  `ov0_hpke_open_se(key_tag, info, enc, ct, aad) → plaintext`. `aad` is
+  a v0.3.1 addition: RFC 9180 authenticates additional data per message,
+  and the published vectors use it. The bridge is the only Swift linked
+  into the helper; it holds no policy and no key material beyond SE
+  references. The PoC-only software-open and blob-inspection entry points
+  live in the PoC crate's own shim, not in the shipping bridge.
+  Keychain note: the bridge stores SE key blobs in the same login
+  keychain the helper's Rust Keychain code uses. The data-protection
+  keychain would need a `keychain-access-groups` entitlement the gate and
+  test binaries do not carry; the legacy keychain's global lock means
+  callers must not hit it from several threads at once (see the Phase E
+  verification report).
   A minimal bridge into Apple's reviewed implementation is strictly
   preferable to reimplementing HPKE's key schedule in Rust.
-- **Rust `hpke` crate** remains for seal-side operations on the Rust
-  side and for the software open path used by tests/vectors.
+- **Rust `hpke` crate** is used by the §2.12 PoC only. The shipping
+  helper adds **no** Rust HPKE dependency: both directions go through
+  the CryptoKit bridge, so the helper's dependency graph is unchanged by
+  Phase E (v0.3.1).
 
 **Path B — only if A is impossible: external-DH adapter.** If the PoC
 shows Path A cannot interoperate with the exact suite (byte-level
@@ -667,10 +723,16 @@ predates that floor, but no vault code path may rely on HPKE below it.
 ├── vault.db-wal / vault.db-shm       0600  never leaves this directory
 ├── manifest.json                     0600  signed state head (§11.3)
 ├── registry.json                     0600  append-only device log (§4)
+├── device.json                       0600  this device's public identity
+│                                           (id, name, platform, SE key
+│                                           tag, both 65-byte public keys)
 ├── wraps/
 │   ├── password.wrap                 0600  §2.5
 │   ├── recovery.wrap                 0600  §2.5
-│   └── devices/<device_id>.wrap      0600  HPKE envelope per device
+│   └── devices/
+│       ├── <device_id>.wrap          0600  HPKE envelope per device
+│       └── creds.bin                 0600  issued backup credentials,
+│                                           VK-sealed (§2.5, §11.4)
 └── import/                           0700  transient; empty between imports
 ```
 
@@ -1008,6 +1070,42 @@ The registry is public verification state: it is uploaded with every
 backup manifest (§11) and exchanged during peer sync. Its confidentiality
 requirement is nil; its integrity requirement is total.
 
+**Revocation-status refresh (normative, v0.3.1 Phase E, owner decision
+2026-09-21).** Revocation is a local registry write on the authorizing
+device, and the §5 enrollment channel is gone by the time it happens, so
+an enrolled device has no way to learn it was revoked. It therefore
+*asks*:
+
+- The Mac serves the signed registry (and `vault_id`) read-only to an
+  already-paired device, over the existing authenticated, certificate-
+  pinned channel: `GET /v1/vault/registry`, backed by `registry_status`
+  (§1.5). No vault records, no VK, no wraps, no recovery material, no
+  backup credentials, no write operations, and no general sync.
+- The asking device verifies the chain itself under §4.4 before changing
+  any local state, and applies the §4.6 rollback rule against what it has
+  already accepted: a registry with less history than it holds, or with
+  different history at a seq it has accepted, is rejected as tampering.
+- **Only a cryptographically valid `revoke` entry naming that exact
+  device** may clear its local enrollment state, envelope and SE key
+  references. An unreachable authorizer, a failed verification, or the
+  device's own absence from an otherwise valid chain must never be read
+  as revocation and must never delete key material.
+- Event-driven: app launch/foreground, opening a screen that reports
+  vault standing, reconnection, and manual refresh. **No background
+  polling.**
+- It is a *status refresh*, not a notification: delivery is not
+  guaranteed and the authorizer never pushes. A device that never asks
+  goes on holding a key that decrypts nothing, because revocation
+  rotated the VK (§11.4).
+- **The authorizer remains authoritative.** Nothing a device says alters
+  the registry; in particular no device can cause a VK rotation, or
+  invalidate a Recovery Key, remotely.
+
+Devices that hold enrollment material must not present it as current
+trust. A UI states what it has verified and when, distinguishing
+"verified recently", "not recently verified", "unable to verify" and
+"revoked".
+
 ---
 
 ### 4.8 Registry checkpoint (normative, v0.3.1 Phase D.1)
@@ -1152,6 +1250,9 @@ sequenceDiagram
 | SAS | 8 chars, alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (repo's existing unambiguous alphabet), from `HKDF-SHA256(transcript, salt=nil, info="ov0/enroll/sas/v1")` → 5 bytes → 40 bits → 8×5-bit indices. Longer than the legacy 4-char pair tag on purpose. |
 | SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned |
 | Key exchange | iPhone sends only public keys (65-byte uncompressed, §2.7); private keys never leave SE |
+| `device_id` assignment (v0.3.1 Phase E) | the **Mac** assigns the new device's id and returns it in the hello reply, together with `nonce_e` and `mac_device_id`; a new device cannot choose its own registry identity or collide with an enrolled one. The phone derives the SAS from that reply — the SAS itself is never transmitted. |
+| Transport shape (v0.3.1 Phase E) | three routes on the ephemeral server: `POST /v1/vault/enroll/hello`, `GET /v1/vault/enroll/bundle` (the phone waits here while the user compares the SAS and confirms on the Mac), `POST /v1/vault/enroll/ack`. Per-message timeout 30 s; the bundle wait is bounded by the 300 s session. |
+| Bundle contents (v0.3.1 Phase E) | exactly a §11.2 snapshot — objects, signed manifest and §4.8 checkpoint — plus this device's envelope, delivered over the enrollment channel instead of through a provider |
 | Envelope | HPKE base (§2.7/§2.9), plaintext = `DeviceEnvelopePayload` = VK + a fresh random per-device backup credential, `info` per §2.9 |
 | Backup credential registration | after ENROLL ACK, the authorizer registers `{vault_id, new device_id, device_backup_cred}` at the provider, authenticated with its own device credential (§11.4) |
 | Initial vault transfer | registry JSONL to head + all current record objects (§3.7) + wraps; all ciphertext; sent only after SAS + LA confirm |
@@ -1932,6 +2033,11 @@ credentials make revocation precise without touching recovery wraps.
    provider as `{vault_id, device_id, credential}` when the enrollment
    ACK lands (§5). New VK rotations do not change it; it rotates only by
    re-enrollment.
+   The authorizing device keeps its own VK-sealed record of the
+   credentials it has issued (`wraps/devices/creds.bin`, §2.5), because
+   re-sealing an envelope at VK rotation must preserve the credential the
+   device already holds. That record contains no other device's keys and
+   never leaves the helper.
 2. **Recovery credentials** (`cred_mp` / `cred_rk`): derived on demand —
    `cred_mp = HKDF-SHA256(PK, salt=locator_salt_mp, info="ov0/backup-auth/mp/v1")`,
    `cred_rk` likewise under `…/rk/v1`. **They are never persisted on any
@@ -1950,6 +2056,15 @@ credentials make revocation precise without touching recovery wraps.
    semi-trusted for availability; request authentication exists to keep
    *third parties* from vandalizing the account, not to keep secrets
    from the provider.
+
+**Revocation issues a new Recovery Key (normative, v0.3.1 Phase E).**
+The VK rotation that revocation mandates has to rewrite `recovery.wrap`
+under the new VK, and the helper never retains the Recovery Key. So
+`revoke_device` collects the master password, shows a **new** Recovery
+Key in the §1.7 window, and commits nothing — not the registry entry,
+not the rotation — until the user acknowledges it. A vault whose
+Recovery Key no longer works is not an acceptable outcome of removing a
+device.
 
 **Revocation (normative):** when a device is revoked, the revoking
 device — after writing the registry `revoke` entry — sends
@@ -3010,7 +3125,7 @@ Every item must be verifiably green, with the named evidence:
 | 27 | independent envelope-path review | §17.4 step 5 report attached (covers `hpke` usage + the shipped Path A bridge or Path B adapter) |
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
-| 30 | Argon2id tuple frozen with cross-device evidence | §2.3 calibration table covering every supported Mac class **and an iPhone at the supported floor (A12/iOS 17)**; median and worst latency, memory-pressure behavior, and the freeze decision recorded |
+| 30 | Argon2id tuple frozen with cross-device evidence | **Hard gate (owner decision 2026-09-20).** Either (a) the exact production Argon2id implementation measured on an **A12-class iPhone** (XS/XR generation, the iOS 17 floor) meeting the §2.3 budget, or (b) the minimum supported hardware class explicitly raised and the product/runtime support policy updated. Median/worst latency, memory-pressure behavior and the decision recorded in `argon2-calibration.md`. The tuple is never weakened to pass; A15 evidence alone does not close this |
 
 Only then may the first real credential be imported.
 

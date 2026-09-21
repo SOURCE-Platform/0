@@ -18,6 +18,19 @@ fn main() {
     println!("cargo:rerun-if-changed={}", pkg.join("Sources/VaultAppleCrypto/Bridge.swift").display());
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=VaultAppleCrypto");
+    // PoC-only Swift surfaces (kept out of the production bridge).
+    let shim = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("swift/PocShim.swift");
+    let out = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR"));
+    let status = Command::new("swiftc")
+        .args(["-O", "-parse-as-library", "-emit-library", "-static", "-o"])
+        .arg(out.join("libov0pocshim.a"))
+        .arg(&shim)
+        .status()
+        .expect("swiftc shim");
+    assert!(status.success(), "shim build failed");
+    println!("cargo:rerun-if-changed={}", shim.display());
+    println!("cargo:rustc-link-search=native={}", out.display());
+    println!("cargo:rustc-link-lib=static=ov0pocshim");
     // Swift runtime + frameworks the bridge uses.
     println!("cargo:rustc-link-search=native=/usr/lib/swift");
     // The OS-provided Swift runtime lives outside the default search set.

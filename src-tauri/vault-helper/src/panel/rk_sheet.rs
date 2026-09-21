@@ -117,10 +117,12 @@ fn content_view(sheet: &RecoverySheet, delegate: &RkSheetDelegate, mtm: MainThre
             delegate.ivars().labels.borrow_mut().push(l);
         };
         add("Source Vault — Recovery Key", 24.0, H - 40.0, 500.0);
-        add("Write these 24 words down or print this page, and keep it offline.", 24.0, H - 66.0, 520.0);
+        // Why this window is here, before the words themselves (§1.7).
+        add(sheet.reason.line(), 24.0, H - 62.0, 520.0);
+        add("Write these 24 words down or print this page, and keep it offline.", 24.0, H - 82.0, 520.0);
         for (i, word) in sheet.words.split_whitespace().enumerate() {
             let (col, row) = ((i / 6) as f64, (i % 6) as f64);
-            add(&format!("{:>2}. {word}", i + 1), 24.0 + col * 130.0, H - 110.0 - row * 26.0, 124.0);
+            add(&format!("{:>2}. {word}", i + 1), 24.0 + col * 130.0, H - 122.0 - row * 26.0, 124.0);
         }
         add(&sheet.checkpoint, 24.0, 118.0, 520.0);
         add("Anyone with these words can open your vault.", 24.0, 92.0, 520.0);

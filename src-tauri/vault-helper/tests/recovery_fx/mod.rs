@@ -54,7 +54,12 @@ pub fn world() -> World {
     std::fs::create_dir_all(&a_dir).unwrap();
     let backup = FsBackupStore::new(&backup_root);
     let rk = random_secret();
-    let (header, vk) = create_vault(&a_dir, MP, &rk).unwrap();
+    // Rehearsal identities (§16.7 "simulated devices"): the vault is
+    // created by the synthetic Mac, so its genesis entry is the one the
+    // header's registry head names.
+    let mac = SoftwareDevice::generate("Synthetic Mac", PLATFORM_MACOS);
+    let phone = SoftwareDevice::generate("Synthetic iPhone", PLATFORM_IOS);
+    let (header, vk) = create_vault(&a_dir, MP, &rk, &mac).unwrap();
     let mut store = VaultStore::open(&a_dir).unwrap();
     let mut refs = Vec::new();
     for i in 0..3 {
@@ -64,11 +69,10 @@ pub fn world() -> World {
     store.write_successor(&vk, &refs[0], 1, 1, br#"{"password":"synthetic-pw-0-v2"}"#, br#"{"title":"Synthetic 0 (edited)"}"#, 0).unwrap();
     store.tombstone(&vk, &refs[2]).unwrap();
 
-    let mac = SoftwareDevice::generate("Synthetic Mac", PLATFORM_MACOS);
-    let phone = SoftwareDevice::generate("Synthetic iPhone", PLATFORM_IOS);
-    let g = build::genesis(&mac).unwrap();
+    let g = vault_helper::registry::log::read_entries(&a_dir).unwrap().remove(0);
     let st = verify_chain(&[g.clone()], &header.vault_id.0, &NoEpochs).unwrap();
     let registry = vec![g, build::enroll(&st, &mac, &phone).unwrap()];
+    vault_helper::registry::log::write_all(&a_dir, &registry).unwrap();
 
     let mut mac_cred = [0u8; 32];
     mac_cred.copy_from_slice(random_secret().expose());

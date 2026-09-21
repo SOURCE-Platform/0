@@ -7,7 +7,7 @@
 use serde_json::Value;
 use vault_helper::crypto::hkdf;
 use vault_helper::crypto::secret::SecretBytes;
-use vault_helper::crypto::{bip39, ecdsa, hex, registry, vectors};
+use vault_helper::crypto::{bip39, ecdsa, hex, registry};
 
 fn committed(stem: &str) -> Value {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/vectors/");
@@ -19,7 +19,7 @@ fn committed(stem: &str) -> Value {
 /// equality; byte-exact staleness is enforced by `gen_vectors --check`).
 #[test]
 fn xv_vectors_match_committed_files() {
-    for (stem, doc) in vectors::all() {
+    for (stem, doc) in vault_helper::all_vectors() {
         assert_eq!(
             doc,
             committed(stem),

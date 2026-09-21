@@ -131,7 +131,11 @@ impl PanelRunner for HelperPanel {
         let (tx, rx) = channel();
         let abort = Arc::new(AtomicBool::new(false));
         let job = SheetJob {
-            sheet: crate::vault::RecoverySheet { words: sheet.words.clone(), checkpoint: sheet.checkpoint.clone() },
+            sheet: crate::vault::RecoverySheet {
+                words: sheet.words.clone(),
+                checkpoint: sheet.checkpoint.clone(),
+                reason: sheet.reason,
+            },
             reply: tx,
             abort: abort.clone(),
         };

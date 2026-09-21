@@ -9,6 +9,7 @@ use vault_helper::crypto::kdf;
 use vault_helper::crypto::record::{self, RecordCiphertext};
 use vault_helper::crypto::secret::{random_secret, SecretBytes};
 use vault_helper::crypto::wrap::{self, PasswordWrapFile, RecoveryWrapFile};
+use vault_helper::registry::device::{SoftwareDevice, PLATFORM_MACOS};
 use vault_helper::storage::import_log;
 use vault_helper::storage::revision_rows::{all_rows, topo_order};
 use vault_helper::storage::revisions::uuid_bytes;
@@ -49,7 +50,8 @@ fn rk_wrap(dir: &Path) -> Option<RecoveryWrapFile> {
 fn seeded() -> (PathBuf, SecretBytes<32>, SecretBytes<32>, Vec<String>) {
     let d = dir();
     let rk = random_secret();
-    let (_, vk) = create_vault(&d, MP, &rk).unwrap();
+    let dev = SoftwareDevice::generate("Synthetic Mac", PLATFORM_MACOS);
+    let (_, vk) = create_vault(&d, MP, &rk, &dev).unwrap();
     let mut store = VaultStore::open(&d).unwrap();
     let mut refs = Vec::new();
     for i in 0..3 {
@@ -91,7 +93,7 @@ fn rotation_reseals_everything_and_old_vk_fails_everywhere() {
     let before = VaultStore::open(&d).unwrap();
     let (rev_count, tips, gen_before) = (all_rows(&before.conn).unwrap().len(), before.manifest.item_count, before.header.manifest_generation);
     let pk = pk_for(&d, MP);
-    let out = rotate(before, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None).unwrap();
+    let out = rotate(before, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, None).unwrap();
     assert_ne!(out.new_vk.expose(), old_vk.expose());
     assert_eq!(out.vk_generation, 2);
 
@@ -148,7 +150,7 @@ fn crash_at_every_step_leaves_old_or_new_never_half() {
         let store = VaultStore::open(&d).unwrap();
         let revs = all_rows(&store.conn).unwrap().len();
         let pk = pk_for(&d, MP);
-        assert!(rotate(store, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), Some(fail)).is_err());
+        assert!(rotate(store, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, Some(fail)).is_err());
 
         let reopened = VaultStore::open(&d).unwrap_or_else(|e| panic!("{fail:?}: open failed {e:?}"));
         assert!(!d.join(COMMIT_MARKER).exists(), "{fail:?}: marker left behind");
@@ -187,7 +189,7 @@ fn fresh_mp_new_rk_and_historical_snapshot() {
     }
     let new_rk = random_secret();
     let store = VaultStore::open(&d).unwrap();
-    let out = rotate(store, &old_vk, MpWrap::Fresh(MP_NEW), RkWrap::Seal(&new_rk), None).unwrap();
+    let out = rotate(store, &old_vk, MpWrap::Fresh(MP_NEW), RkWrap::Seal(&new_rk), None, None).unwrap();
     let after = VaultStore::open(&d).unwrap();
     let id = after.header.vault_id.0;
     assert!(wrap::open_wrap_mp(&mp_wrap(&d), &pk_for(&d, MP), &id).is_err(), "old MP dead");
@@ -207,7 +209,7 @@ fn rk_remove_plan_deletes_recovery_wrap() {
     let (d, old_vk, _, _) = seeded();
     let pk = pk_for(&d, MP);
     let store = VaultStore::open(&d).unwrap();
-    rotate(store, &old_vk, MpWrap::Reseal(&pk), RkWrap::Remove, None).unwrap();
+    rotate(store, &old_vk, MpWrap::Reseal(&pk), RkWrap::Remove, None, None).unwrap();
     assert!(rk_wrap(&d).is_none(), "no wrap of the old VK survives");
     VaultStore::open(&d).unwrap();
     std::fs::remove_dir_all(&d).ok();
@@ -218,7 +220,7 @@ fn reseal_with_wrong_pk_refuses_before_staging_anything() {
     let (d, old_vk, rk, _) = seeded();
     let store = VaultStore::open(&d).unwrap();
     let wrong = random_secret();
-    assert!(rotate(store, &old_vk, MpWrap::Reseal(&wrong), RkWrap::Seal(&rk), None).is_err());
+    assert!(rotate(store, &old_vk, MpWrap::Reseal(&wrong), RkWrap::Seal(&rk), None, None).is_err());
     let reopened = VaultStore::open(&d).unwrap();
     assert_eq!(reopened.header.vk_generation, 1);
     std::fs::remove_dir_all(&d).ok();

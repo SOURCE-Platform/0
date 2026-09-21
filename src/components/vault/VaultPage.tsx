@@ -25,6 +25,7 @@ import {
   vaultUnlockWithRecoveryKey,
   type VaultState,
 } from "@/lib/vault";
+import { DevicesPanel } from "./DevicesPanel";
 import { ItemList } from "./ItemList";
 import { AddLoginForm } from "./AddLoginForm";
 
@@ -242,6 +243,7 @@ export function VaultPage() {
               />
             )}
             <ItemList refreshKey={refreshKey} onError={(m) => setError(m)} />
+            <DevicesPanel onError={(m) => setError(m)} />
           </div>
         )}
         {(state === "unknown" || state === "compromised") && (

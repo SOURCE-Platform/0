@@ -30,8 +30,15 @@ use crate::storage::VaultStore;
 const PANEL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// The Recovery Key window content for `rk` (words + §11.7 checkpoint).
-pub fn make_sheet(rk: &SecretBytes<32>, vault_id: &[u8; 16], generation: u64, registry_head: &[u8; 32]) -> RecoverySheet {
+pub fn make_sheet(
+    rk: &SecretBytes<32>,
+    vault_id: &[u8; 16],
+    generation: u64,
+    registry_head: &[u8; 32],
+    reason: super::SheetReason,
+) -> RecoverySheet {
     RecoverySheet {
+        reason,
         words: Zeroizing::new(bip39::encode_rk(rk)),
         checkpoint: format!(
             "Vault {}  ·  generation {generation}  ·  registry {}",
@@ -103,6 +110,23 @@ fn authorize(core: &Arc<Mutex<VaultCore>>, deps: &Deps, reason: &str) -> Result<
 }
 
 /// Back to UNLOCKED unless a lock preempted the op.
+pub(super) fn finish_pub(
+    core: &Arc<Mutex<VaultCore>>,
+    deps: &Deps,
+    result: Result<(), ErrorCode>,
+) -> OpOutcome {
+    finish(core, deps, result)
+}
+
+/// Presence gate shared with the device ops.
+pub(super) fn authorize_pub(
+    core: &Arc<Mutex<VaultCore>>,
+    deps: &Deps,
+    reason: &str,
+) -> Result<(), ErrorCode> {
+    authorize(core, deps, reason)
+}
+
 fn finish(core: &Arc<Mutex<VaultCore>>, deps: &Deps, result: Result<(), ErrorCode>) -> OpOutcome {
     let mut c = lock_core(core);
     if c.state == VaultState::Authorizing {
@@ -146,7 +170,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
     };
     drop(mp);
     let rk = random_secret();
-    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head)) {
+    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, super::SheetReason::Replaced)) {
         return finish(core, deps, Err(ErrorCode::PanelCancelled)); // nothing committed
     }
     let mut c = lock_core(core);
@@ -157,7 +181,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
         return OpOutcome::err(ErrorCode::BadState);
     };
     let dir = store.dir.clone();
-    let rotated = rotation::rotate(store, &vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None);
+    let rotated = rotation::rotate(store, &vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, None);
     drop(vk);
     let reopened = rotated.and_then(|r| VaultStore::open(&dir).map(|s| (r, s)));
     match reopened {

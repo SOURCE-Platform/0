@@ -172,3 +172,60 @@ export function vaultErrorMessage(code: string): string {
       return code;
   }
 }
+
+// --- Phase E: devices and enrollment (§5, §11.4) ---------------------------
+
+export interface VaultDevice {
+  device_id: string;
+  device_name: string;
+  platform: number;
+  revoked: boolean;
+  installed_seq: number;
+  /// Unix seconds from the registry entry that enrolled it.
+  enrolled_at: number | null;
+  self: boolean;
+}
+
+export interface EnrollmentStart {
+  qr: string;
+  host: string;
+  port: number;
+  fp: string;
+  expires_in: number;
+}
+
+export interface EnrollmentStatus {
+  active: boolean;
+  /** The 8-character code to compare with the phone's screen (§5.2). */
+  sas: string | null;
+  acked: boolean;
+  expires_in?: number;
+}
+
+export async function vaultListDevices(): Promise<VaultDevice[]> {
+  const resp = await invoke<{ devices: VaultDevice[] }>("vault_list_devices");
+  return resp.devices ?? [];
+}
+
+/** Show the QR: ephemeral TLS server + single-use secret, 5-minute life. */
+export async function vaultBeginEnrollment(): Promise<EnrollmentStart> {
+  return await invoke<EnrollmentStart>("vault_begin_enrollment");
+}
+
+export async function vaultEnrollmentStatus(): Promise<EnrollmentStatus> {
+  return await invoke<EnrollmentStatus>("vault_enrollment_status");
+}
+
+/** Only after the codes match on both screens. */
+export async function vaultConfirmEnrollment(): Promise<void> {
+  await invoke("vault_confirm_enrollment");
+}
+
+export async function vaultCancelEnrollment(): Promise<void> {
+  await invoke("vault_cancel_enrollment");
+}
+
+/** Revoking rotates the vault key and issues a new Recovery Key. */
+export async function vaultRevokeDevice(deviceId: string): Promise<void> {
+  await invoke("vault_revoke_device", { deviceId });
+}

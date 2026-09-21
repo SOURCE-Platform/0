@@ -46,6 +46,12 @@ pub struct CommitMarker {
     /// Live files the rotation deletes (e.g. a recovery.wrap that could
     /// not be re-sealed because the caller did not hold the RK).
     pub remove: Vec<String>,
+    /// Staged files beyond `STAGED`: the per-device envelopes and the
+    /// device-credential store, whose names depend on which devices are
+    /// enrolled (§11.4). Rolled forward in the same pass, so a rotation
+    /// can never commit the new VK while leaving envelopes on the old one.
+    #[serde(default)]
+    pub stage: Vec<String>,
 }
 
 pub fn next_path(dir: &Path, name: &str) -> PathBuf {
@@ -66,6 +72,15 @@ pub fn discard_staged(dir: &Path) {
     for name in STAGED {
         let _ = std::fs::remove_file(next_path(dir, name));
     }
+    // Device envelopes are staged under names that depend on which
+    // devices are enrolled; sweep the directory rather than a fixed list.
+    if let Ok(entries) = std::fs::read_dir(dir.join("wraps").join("devices")) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().ends_with(".next") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
     let _ = std::fs::remove_file(next_path(dir, DB_NAME).with_extension("next-journal"));
 }
 
@@ -74,7 +89,7 @@ pub fn discard_staged(dir: &Path) {
 /// must go before the new DB takes its name (a stale WAL would otherwise
 /// be replayed onto the new file).
 fn roll_forward(dir: &Path, marker: &CommitMarker) -> Result<(), ErrorCode> {
-    for name in STAGED {
+    for name in STAGED.iter().copied().chain(marker.stage.iter().map(String::as_str)) {
         let next = next_path(dir, name);
         if !next.exists() {
             continue; // already renamed by an earlier, interrupted pass

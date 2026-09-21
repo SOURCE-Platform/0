@@ -45,6 +45,19 @@ fn signature_from_bytes(bytes: &[u8]) -> Option<Signature> {
     Signature::from_slice(array).ok()
 }
 
+/// Normalize a raw 64-byte `r‖s` ECDSA signature to canonical low-S
+/// (§2.7 producer rule). Secure Enclave / CryptoKit signing is randomized
+/// and may return either form, so every SE signature passes through here
+/// before it is embedded in a hash-chained object.
+pub fn normalize_low_s(raw: &[u8; SIGNATURE_LEN]) -> Result<[u8; SIGNATURE_LEN], CryptoError> {
+    let sig = signature_from_bytes(raw).ok_or(CryptoError::InvalidKeyEncoding)?;
+    let sig = sig.normalize_s();
+    let mut out = [0u8; SIGNATURE_LEN];
+    out[..32].copy_from_slice(&sig.r().to_bytes());
+    out[32..].copy_from_slice(&sig.s().to_bytes());
+    Ok(out)
+}
+
 /// Verify an ECDSA signature over a domain-separated digest. High-S
 /// signatures are rejected before verification (§2.7 canonical wire form).
 pub fn verify_prehash(
@@ -142,5 +155,25 @@ mod tests {
             verify_prehash(&pubkey, &digest(b"b"), &sig),
             Err(CryptoError::SignatureInvalid)
         );
+    }
+
+    #[test]
+    fn normalize_low_s_canonicalizes_high_s() {
+        let (signing, pubkey) = dev_keypair_from_scalar([11u8; 32]);
+        let sig = dev_sign_prehash(&signing, &digest(b"se"));
+        let parsed = Signature::from_slice(&sig).unwrap();
+        let flipped_s: p256::Scalar = -*parsed.s();
+        let high: [u8; SIGNATURE_LEN] =
+            Signature::from_scalars(parsed.r().to_bytes(), flipped_s.to_bytes())
+                .unwrap()
+                .to_bytes()
+                .into();
+        assert!(!is_low_s(&high));
+        let fixed = normalize_low_s(&high).unwrap();
+        assert!(is_low_s(&fixed));
+        assert_eq!(fixed, sig, "both forms normalize to the same canonical bytes");
+        assert!(verify_prehash(&pubkey, &digest(b"se"), &fixed).is_ok());
+        // Already-canonical input is unchanged.
+        assert_eq!(normalize_low_s(&sig).unwrap(), sig);
     }
 }

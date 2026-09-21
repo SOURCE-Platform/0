@@ -1,0 +1,37 @@
+{
+  "ack": {
+    "digest_sha256": "071790f72337c9cdb67712ac6f9ff3e571270c3ea40d35e15e1ebf84d481e2f8",
+    "mac_device_id": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "prefix": "ov0/enroll/ack/v1",
+    "registry_head": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7"
+  },
+  "envelope_info": {
+    "device_id": "c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5",
+    "enrollment_nonce": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "info": "6f76302f656e76656c6f70652f7631c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "prefix": "ov0/envelope/v1",
+    "vault_id": "c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6"
+  },
+  "family": "XV-ENROLL",
+  "suite": {
+    "aead": "0x0003 ChaCha20-Poly1305",
+    "kdf": "0x0001 HKDF-SHA256",
+    "kem": "0x0010 DHKEM(P-256, HKDF-SHA256)",
+    "mode": "base (0)",
+    "public_key_encoding": "65-byte uncompressed X9.63 (0x04 || X || Y)"
+  },
+  "transcript": {
+    "agree_pub": "0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+    "fp": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+    "mac_device_id": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+    "new_device_id": "c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5",
+    "nonce_e": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "nonce_n": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+    "prefix": "ov0/enroll/transcript/v1",
+    "sas": "67C7XAZE",
+    "secret": "c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+    "secret_base32": "S92W5JG3S92W5JG3S92W5JG3S6",
+    "sign_pub": "040217e617f0b6443928278f96999e69a23a4f2c152bdf6d6cdf66e5b80282d4ed194a7debcb97712d2dda3ca85aa8765a56f45fc758599652f2897c65306e5794",
+    "transcript_sha256": "50bd6924eb6b1148763439d2a4519a2e1c24a3cd47795efb6e1b57394230e540"
+  }
+}

@@ -49,6 +49,19 @@ pub enum RkWrap<'a> {
     Remove,
 }
 
+/// Files a rotation must re-seal that the storage layer does not own:
+/// the per-device HPKE envelopes and the credential store (§2.2, §11.4).
+/// Implemented in `device::rotate`; staged under the same journal so the
+/// new VK and the new envelopes commit together.
+pub trait ExtraStaging {
+    fn stage(
+        &self,
+        dir: &std::path::Path,
+        new_vk: &SecretBytes<32>,
+        new_vk_generation: u32,
+    ) -> Result<Vec<String>, ErrorCode>;
+}
+
 pub struct RotationOutcome {
     pub new_vk: SecretBytes<32>,
     pub vk_generation: u32,
@@ -68,6 +81,7 @@ pub fn rotate(
     old_vk: &SecretBytes<32>,
     mp: MpWrap<'_>,
     rk: RkWrap<'_>,
+    extra: Option<&dyn ExtraStaging>,
     fail: Option<FailAt>,
 ) -> Result<RotationOutcome, ErrorCode> {
     let dir = store.dir.clone();
@@ -96,6 +110,10 @@ pub fn rotate(
     // 2. Stage the wraps.
     let mut new_header = old.clone();
     stage_wraps(&dir, &mut new_header, &new_vk, new_gen, mp, &rk)?;
+    let staged_extra = match extra {
+        Some(e) => e.stage(&dir, &new_vk, new_gen)?,
+        None => Vec::new(),
+    };
     if fail == Some(FailAt::AfterWrapsStaged) {
         return Err(ErrorCode::Internal);
     }
@@ -129,6 +147,7 @@ pub fn rotate(
             RkWrap::Remove => vec![RECOVERY_WRAP_NAME.to_string()],
             RkWrap::Seal(_) => Vec::new(),
         },
+        stage: staged_extra,
     };
     journal::commit(&dir, &marker, fail)?;
     Ok(RotationOutcome {

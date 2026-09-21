@@ -2,13 +2,19 @@
 
 Date: 2026-09-18. Author: Phase B gate run on the development machine.
 
-> **Status (2026-09-20, Phase D.1):** `m = 64 MiB, t = 3, p = 1` remains
-> the **current/provisional** v1 tuple. iPhone evidence now exists (below)
-> and is comfortably inside the §2.3 budget, but the *oldest supported*
-> iPhone class (A12 / iPhone XS–XR, the iOS 17 floor) is still unmeasured,
-> so the owner decision is: **do not freeze yet** — freeze only once an
-> A12-class device has been measured (release-gate item 30). The tuple must
-> not be weakened in the meantime. This open item does not block Phase E.
+> **Status (2026-09-20, owner decision at Phase E authorization):**
+> `m = 64 MiB, t = 3, p = 1` remains the **provisional** v1 tuple. The
+> support-floor calibration is **not complete** and must not be described
+> as complete or waived. No A12-class device is currently available, so
+> the measurement moves from a pre-Phase-E blocker to a **hard
+> first-real-credential / release gate** (§19 item 30): before release or
+> any real credential, either (1) measure the exact production Argon2
+> implementation on an A12-class iPhone and confirm the documented budget,
+> or (2) explicitly raise the minimum supported hardware class and update
+> the product/runtime support policy. The tuple must not be weakened
+> merely because the oldest device is unmeasured. The iPhone 13 mini
+> numbers below are valid evidence for **A15 hardware only**; no A12
+> estimate is claimed.
 
 ## Rule being satisfied
 
@@ -110,10 +116,9 @@ credential material. Harness kept outside the repos; not committed.
   with no `didReceiveMemoryWarning` and no jetsam kill across 7 runs on a
   4 GB device. Note the vault on iOS is the **app** (§1.7), not an
   extension, so the tighter extension memory limits do not apply.
-- **Extrapolation is not evidence:** an A12 (iPhone XS/XR) is roughly
-  2–3× slower than an A15 on memory-hard work, which would still land far
-  inside 2 s — but that is an estimate, not a measurement, and the freeze
-  decision waits for a real A12-class run.
+- **No A12 estimate is made.** These numbers are evidence for A15
+  hardware only. The support-floor measurement is a release gate (§19
+  item 30); see the status note above.
 
 ### Remaining for the §2.3 freeze
 
@@ -121,6 +126,6 @@ credential material. Harness kept outside the repos; not committed.
 |---|---|
 | MacBook Air M2 (Mac14,2) | measured 2026-09-18 |
 | iPhone 13 mini (A15) | measured 2026-09-20 |
-| iPhone XS/XR class (A12, iOS 17 floor) | **not measured** — blocks the freeze |
+| iPhone XS/XR class (A12, iOS 17 floor) | **not measured** — hard release gate (§19 item 30), no longer a Phase E blocker |
 | Other supported Mac classes (Intel? older Apple silicon) | not enumerated/measured |
 
