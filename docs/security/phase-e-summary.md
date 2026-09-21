@@ -20,10 +20,14 @@ the Path A CryptoKit bridge proven in Phase E0, the §5 enrollment
 protocol with its ephemeral TLS server, SAS verification, registry
 enrollment, per-device backup credential issuance, revocation with the VK
 rotation it mandates, and the macOS and iPhone surfaces for all of it.
+The E.1 closure pass added §2.8 device-envelope unlock and enrollment
+into a vault that has been through recovery — see that section below;
+this list is not the whole picture on its own.
 
-Phase E added **no Rust dependency**. HPKE comes from Apple CryptoKit
-through the §2.12 bridge, so the helper's dependency graph is unchanged
-at 96 crates and the `hpke` crate stays confined to the PoC workspace.
+Phase E and E.1 added **no Rust dependency**. HPKE comes from Apple
+CryptoKit through the §2.12 bridge, so the helper's dependency graph is
+unchanged at 96 crates and the `hpke` crate stays confined to the PoC
+workspace.
 
 ## The revocation-status gap, and what shipped
 
@@ -213,17 +217,20 @@ covered.
 
 Nothing has been pushed. Both working trees are clean.
 
-**`0` (desktop)** — Phase E and E.1 span `3550680..HEAD`, seven commits,
-of which two carry code:
+**`0` (desktop)** — Phase E and E.1 begin at `3550680` and run to the
+branch tip. Two commits carry code; the rest are documentation, and
+their number grows with each correction, so it is deliberately not
+quoted here:
 
 | Commit | |
 |---|---|
 | `3550680` | Phase E: device identity, enrollment, revocation |
 | `9d12d33` | Phase E.1: envelope unlock, recovered-vault enrollment |
-| `5a23ef4`, `e0e8c7a`, `63d54ae`, `82fd240`, `ce9b627` | documentation — including the Argon2 floor being recorded, reverted, and recorded again once the owner confirmed it |
+| the rest | documentation: this summary, the verification report, spec sync, and the Argon2 floor being recorded, reverted as unfounded, then recorded again once the owner confirmed it |
 
-The branch is 29 commits ahead of `origin/main` in total; the rest is
-Phase C and D history from earlier work.
+The branch is also well ahead of `origin/main` for reasons predating
+this phase — Phase C and D history — so the span above should not be
+read as the whole backlog.
 
 **`source mobile`** — two commits, both code, both unpushed:
 
