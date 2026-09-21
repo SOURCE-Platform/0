@@ -5,11 +5,11 @@ Full detail in `phase-e-verification.md`; this is the short version.
 
 | | |
 |---|---|
-| Phase | E — device identity + enrollment. **Complete** |
+| Phase | E + E.1 closure pass. **Complete** |
 | Gate | PASS, 12 checks, including the nested D → C → B → A regression |
 | Hardware | MacBook Air (M2) + iPhone 13 mini — 4 enrollments, 3 revocations |
 | Data | Synthetic vault, synthetic credentials only |
-| Commits | `3550680`, `5a23ef4` (desktop) · `3acb7ac` (SourceMobile) — **not pushed** |
+| Commits | `3550680`, `e0e8c7a`, `9d12d33` (desktop) · `3acb7ac`, `d6fe885` (SourceMobile) — **not pushed** |
 | Phase F | Not started |
 
 ## What was built
@@ -128,6 +128,56 @@ line was meaningless. The counter now reads the test-run summary and
 **fails the check when the count is absent or zero** — a gate that cannot
 evidence a pass should not claim one. The recorded run is from after that
 fix.
+
+## The E.1 closure pass
+
+Three items, no new architecture — two were already specified and the
+third was a correction.
+
+**Argon2id wording.** An earlier revision recorded the v1 hardware floor
+as raised to A15-class and the tuple as frozen. That was not an explicit
+owner decision, and §19 item 30 requires one (or an A12-class
+measurement) to close. Reverted everywhere; the tuple is provisional
+again and the gate is open.
+
+**§2.8 device-envelope unlock — implemented.** Presence check, the
+Secure Enclave decapsulates this device's envelope, and the VK and
+`device_backup_cred` come back together. No master password. The
+substance is in the refusals, because an envelope on disk is not
+authority to open a vault: the registry decides whether the device may
+still unlock, a pre-rotation envelope is refused as a retired key,
+another device's envelope cannot be planted into this slot, and a
+missing Secure Enclave key yields the §2.8 re-enroll-or-recover
+condition rather than looking like corruption. A denied presence check
+leaves the vault locked and does not fall through to a password prompt —
+that would turn "cancel" into "try harder". Six tests against real
+Secure Enclave keys.
+
+**Recovered vaults can now enroll a phone — and there is no protocol
+circularity.** The problem was real: `recovery_epoch` proofs are keyed
+by VKs retired the moment each epoch commits, so a newly enrolled device
+can never verify one. But the Phase D.1 checkpoint already covers this
+case; what was wrong was the order of operations. The phone now opens
+its envelope first (yielding the current VK), verifies the §4.8
+checkpoint under that VK, and only then verifies the chain anchored on a
+head the vault itself vouched for. Historical epochs are audit evidence,
+checked structurally, never re-proved. No extinct VK is transmitted,
+used or stored.
+
+§4.4 was not weakened — it was strengthened on the phone. Every entry
+must declare the epoch it belongs to, only a `recovery_epoch` may
+advance it, and an entry claiming any other epoch is rejected. That rule
+surfaced as a test failure that would have been easy to write off as a
+bad fixture. The Rust enrollment test now authenticates the bundle's
+checkpoint exactly as the phone does, so a drift on either side fails
+there rather than on a user's device.
+
+**One gate check failed on the first attempt**, and it was worth having:
+a Phase A test asserted `unlock` answers `UNKNOWN_OP` — true for as long
+as nothing implemented it. Implementing §2.8 made it answer `BAD_STATE`
+on an uninitialized vault, which is the correct refusal. The expectation
+was corrected and the test extended so a genuinely unknown op is still
+covered.
 
 ## Open items
 
