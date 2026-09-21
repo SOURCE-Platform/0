@@ -359,11 +359,17 @@ absent or zero**. The run above is from after that fix.
 
 ## 10. Open items, stated as open
 
-1. **Argon2id support-floor calibration remains open** (owner decision,
-   this session). The tuple `m=64 MiB, t=3, p=1` stays **provisional**;
-   the A12-class measurement is a hard first-real-credential / release
-   gate (§19 item 30). iPhone 13 mini (A15) numbers remain valid evidence
-   for A15 hardware only.
+1. **Argon2id support floor — closed** (owner decision, 2026-09-21).
+   The minimum supported iPhone was raised to **A15-class or newer**
+   (iPhone 13 family, SE 3rd gen, later) rather than measuring an
+   A12-class device: none had been tested, and an unverified support
+   claim was not acceptable to ship. The slowest supported device is
+   then the iPhone 13 mini already measured at median 89 ms / worst
+   124 ms, so the tuple `m=64 MiB, t=3, p=1` is **frozen**. It was not
+   weakened — the supported-device set was narrowed instead.
+   **Still to do before the first real credential:** enforce the floor
+   at runtime. Today it is documentation, and the app would happily run
+   on an A12 device it has never been tested on.
 2. **Real-printer exercise** (§19 item 29) is unchanged and still open.
 3. **CS-03 keystroke suppression** stays vacuous until macOS keystroke
    capture exists.
