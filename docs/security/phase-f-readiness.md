@@ -4,8 +4,8 @@
 |---|---|
 | **Date** | 2026-09-24 |
 | **Status** | **Phase F NOT AUTHORIZED / NOT STARTED** |
-| **Desktop repo inspected** | `~/Documents/0`, `main` @ `b7a434f` (baseline `31957d7` + two `docs/`-only commits), 0 ahead / 0 behind `origin/main`, clean |
-| **iPhone repo inspected** | `~/Documents/source mobile`, `main` @ `d6fe885` (= baseline), 0 ahead / 0 behind `origin/main`, clean |
+| **Desktop repo inspected** | desktop repo (`0`), `main` @ `b7a434f` (baseline `31957d7` + two `docs/`-only commits), 0 ahead / 0 behind `origin/main`, clean |
+| **iPhone repo inspected** | iPhone repo (`source mobile`), `main` @ `d6fe885` (= baseline), 0 ahead / 0 behind `origin/main`, clean |
 | **Phase E baseline gate** | `scripts/phase-e-gate.sh` → **`PHASE E GATE: PASS (12 checks)`**, exit 0, incl. nested `PHASE D GATE: PASS (12 checks)` (→ C → B → A). Required one manual Keychain approval — see §2 |
 
 **This document is a readiness review, not a normative document.**
@@ -26,7 +26,7 @@ contradictions it lists, and nothing here authorizes implementation.
 | Non-`docs/` changes since baseline | **none** | **none** |
 
 The only desktop change since the baseline was
-`docs/security/opus-5-to-opus-5.5-handoff.md`.
+the Opus 5 → Opus 5.5 handoff notes (internal, not published).
 
 ## 2. Baseline gate result
 
@@ -217,7 +217,7 @@ re-verified against current documentation before deciding.
 - The spec header's "pre-implementation" wording is stale (already noted in
   the handoff).
 
-Everything else in `opus-5-to-opus-5.5-handoff.md` matched the repositories.
+Everything else in the handoff notes matched the repositories.
 
 ---
 
