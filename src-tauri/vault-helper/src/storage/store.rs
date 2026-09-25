@@ -48,7 +48,7 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), ErrorCode> {
 
 impl VaultStore {
     /// Create a brand-new vault directory's storage (§5.4 Phase C subset):
-    /// header.json, vault.db (schema v1), manifest.json, registry.json
+    /// header.json, vault.db (schema v2), manifest.json, registry.json
     /// (empty log — no enrolled device yet), wraps/ and import/ dirs.
     /// Caller writes the wrap files afterwards so a failed wrap leaves no
     /// half-usable vault: this function runs before any wrap exists and
@@ -109,13 +109,25 @@ impl VaultStore {
         header::parse_header(&bytes)
     }
 
-    /// §3.5: the manifest's object list must equal the set of revision
-    /// hashes in `record_revs`; anything else is a swapped/tampered
-    /// directory → MANIFEST_MISMATCH.
+    /// §3.5: the manifest's object list must equal the set of admitted
+    /// revision ids in `record_revs`, and every revision must be sealed
+    /// under the header's `vk_generation`; anything else is a
+    /// swapped/tampered directory → MANIFEST_MISMATCH.
     pub fn verify_objects(&self) -> Result<(), ErrorCode> {
+        let stale: i64 = self
+            .conn
+            .query_row(
+                "SELECT count(*) FROM record_revs WHERE vk_generation != ?1",
+                [i64::from(self.header.vk_generation)],
+                |r| r.get(0),
+            )
+            .map_err(|_| ErrorCode::DbCorrupt)?;
+        if stale != 0 {
+            return Err(ErrorCode::ManifestMismatch);
+        }
         let mut stmt = self
             .conn
-            .prepare("SELECT record_id, rev_hash FROM record_revs")
+            .prepare("SELECT record_id, revision_id FROM record_revs")
             .map_err(|_| ErrorCode::DbCorrupt)?;
         let rows = stmt
             .query_map([], |r| {
@@ -131,7 +143,7 @@ impl VaultStore {
             .manifest
             .objects
             .iter()
-            .map(|o| (o.record_id.clone(), o.rev_hash.clone()))
+            .map(|o| (o.record_id.clone(), o.revision_id.clone()))
             .collect();
         db_set.sort();
         manifest_set.sort();
@@ -149,7 +161,7 @@ impl VaultStore {
         self.header.manifest_generation = self.manifest.manifest_generation;
         let mut stmt = self
             .conn
-            .prepare("SELECT record_id, rev_hash FROM record_revs")
+            .prepare("SELECT record_id, revision_id FROM record_revs")
             .map_err(|_| ErrorCode::DbCorrupt)?;
         let objects = stmt
             .query_map([], |r| {
@@ -157,9 +169,9 @@ impl VaultStore {
             })
             .map_err(|_| ErrorCode::DbCorrupt)?
             .filter_map(|r| r.ok())
-            .map(|(record_id, hash)| manifest::ManifestObject {
+            .map(|(record_id, id)| manifest::ManifestObject {
                 record_id,
-                rev_hash: crate::crypto::hex::encode(hash),
+                revision_id: crate::crypto::hex::encode(id),
             })
             .collect();
         self.manifest.objects = objects;
@@ -183,6 +195,28 @@ impl VaultStore {
         self.header.registry_head = crate::storage::header::Hex32(head);
         self.manifest.registry_head = crate::storage::header::Hex32(head);
         self.persist_head()
+    }
+
+    /// The registry `device_id` this vault authors revisions as (§3.2),
+    /// recorded in `kv` at creation or recovery.
+    pub fn author_device(&self) -> Result<String, ErrorCode> {
+        let v: Vec<u8> = self
+            .conn
+            .query_row("SELECT value FROM kv WHERE key='author_device'", [], |r| r.get(0))
+            .map_err(|_| ErrorCode::DeviceNotAuthorized)?;
+        String::from_utf8(v).map_err(|_| ErrorCode::DbCorrupt)
+    }
+
+    pub fn set_author_device(&self, device_id: &[u8; 16]) -> Result<(), ErrorCode> {
+        let id = super::revisions::uuid_string(device_id);
+        self.conn
+            .execute(
+                "INSERT INTO kv (key, value) VALUES ('author_device', ?1)
+                 ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                [id.into_bytes()],
+            )
+            .map(|_| ())
+            .map_err(|_| ErrorCode::DbCorrupt)
     }
 
     fn live_item_count(&self) -> Result<u64, ErrorCode> {

@@ -11,7 +11,7 @@ use vault_helper::crypto::secret::{random_secret, SecretBytes};
 use vault_helper::crypto::wrap::{self, PasswordWrapFile, RecoveryWrapFile};
 use vault_helper::registry::device::{SoftwareDevice, PLATFORM_MACOS};
 use vault_helper::storage::import_log;
-use vault_helper::storage::revision_rows::{all_rows, topo_order};
+use vault_helper::storage::revision_rows::all_rows;
 use vault_helper::storage::revisions::uuid_bytes;
 use vault_helper::storage::rotation::{rotate, MpWrap, RkWrap};
 use vault_helper::storage::rotation_journal::{FailAt, COMMIT_MARKER};
@@ -79,7 +79,7 @@ fn rows_open_under(store: &VaultStore, vk: &SecretBytes<32>) -> (usize, usize) {
     for row in all_rows(&store.conn).unwrap() {
         let rid = uuid_bytes(&row.record_id).unwrap();
         let sealed = RecordCiphertext { nonce: row.nonce, ct: row.ct.clone() };
-        match record::open_record(vk, &store.header.vault_id.0, &rid, row.schema_version, row.vk_generation, &sealed) {
+        match record::open_record(vk, &store.header.vault_id.0, &rid, &row.bind().unwrap(), row.schema_version, row.vk_generation, &sealed) {
             Ok(_) => ok += 1,
             Err(_) => fail += 1,
         }
@@ -91,7 +91,8 @@ fn rows_open_under(store: &VaultStore, vk: &SecretBytes<32>) -> (usize, usize) {
 fn rotation_reseals_everything_and_old_vk_fails_everywhere() {
     let (d, old_vk, rk, refs) = seeded();
     let before = VaultStore::open(&d).unwrap();
-    let (rev_count, tips, gen_before) = (all_rows(&before.conn).unwrap().len(), before.manifest.item_count, before.header.manifest_generation);
+    let graph_before: Vec<_> = all_rows(&before.conn).unwrap().iter().map(|r| (r.revision_id, r.parent_ids.clone(), r.counter)).collect();
+    let (rev_count, tips, gen_before) = (graph_before.len(), before.manifest.item_count, before.header.manifest_generation);
     let pk = pk_for(&d, MP);
     let out = rotate(before, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, None).unwrap();
     assert_ne!(out.new_vk.expose(), old_vk.expose());
@@ -103,7 +104,10 @@ fn rotation_reseals_everything_and_old_vk_fails_everywhere() {
     let rows = all_rows(&after.conn).unwrap();
     assert_eq!(rows.len(), rev_count, "history shape preserved");
     assert!(rows.iter().all(|r| r.vk_generation == 2));
-    topo_order(&rows).expect("remapped graph is intact");
+    // SY-10 (v0.4): ids, parents and counters are unchanged — only the
+    // ciphertexts and vk_generation moved.
+    let graph_after: Vec<_> = rows.iter().map(|r| (r.revision_id, r.parent_ids.clone(), r.counter)).collect();
+    assert_eq!(graph_after, graph_before, "rotation never renames the revision graph");
     assert_eq!(after.manifest.item_count, tips);
     assert_eq!(rows_open_under(&after, &out.new_vk), (rev_count, 0), "every revision opens under the new VK");
     assert_eq!(rows_open_under(&after, &old_vk), (0, rev_count), "old VK fails on every revision");

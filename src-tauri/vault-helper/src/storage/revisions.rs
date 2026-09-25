@@ -1,23 +1,32 @@
-//! Content-committed revision graph (spec §3.2). Merge rules are
-//! deterministic and timestamp-free: fast-forward, concurrent→conflict,
-//! tombstone conservatism, equivocation detection.
+//! Revision identity and row storage (spec v0.4 §3.2).
+//!
+//! A revision's logical identity is a random 256-bit `revision_id`,
+//! created when it is authored and never changed; parents are
+//! `revision_id`s. Storage and backup addressing use a separate
+//! `blob_hash` (§3.7), so a VK rotation re-seals a revision without
+//! renaming the graph. The per-revision `graph_digest` is bound into the
+//! record/meta AAD (§2.6). The merge rules live in `storage::merge`.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
 
+use crate::crypto::record::RevBinding;
 use crate::errors::ErrorCode;
 
-/// Phase C has no enrolled device identity (Phase E). Locally authored
-/// revisions carry the all-zero device id until enrollment assigns the
-/// real one; the id is content-committed into `rev_hash`, so existing
-/// revisions stay valid when the real id appears.
-pub const LOCAL_DEVICE_ID: &str = "00000000-0000-0000-0000-000000000000";
+/// Tag byte for `record_flags` evidence and `refused_revs` reasons.
+pub const REFUSED_COUNTER_REGRESSION: u8 = 1;
+pub const REFUSED_REVOKED_AUTHOR: u8 = 2;
+pub const REFUSED_ZERO_AUTHOR: u8 = 3;
+pub const REFUSED_MALFORMED: u8 = 4;
 
-#[derive(Debug, Clone)]
+pub const MAX_PARENTS: usize = 8;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevisionRow {
-    pub rev_hash: [u8; 32],
+    pub revision_id: [u8; 32],
     pub record_id: String,
-    pub parent_revs: Vec<[u8; 32]>,
+    /// Parent revision_ids, sorted ascending, unique.
+    pub parent_ids: Vec<[u8; 32]>,
     pub author_device: String,
     pub counter: u64,
     pub deleted: bool,
@@ -32,35 +41,78 @@ pub struct RevisionRow {
     pub updated_at: u64,
 }
 
-/// §3.2: SHA-256("ov0/rev/v1" ‖ record_id ‖ parent_revs ‖ author_device
-/// ‖ u64be(counter) ‖ u8(deleted) ‖ SHA-256(ct) ‖ SHA-256(meta_ct)).
-/// `record_id`/`author_device` are the 16 raw uuid bytes.
-pub fn rev_hash(
+impl RevisionRow {
+    /// The AAD binding for this revision's ciphertexts (§2.6).
+    pub fn bind(&self) -> Result<RevBinding, ErrorCode> {
+        let rid = uuid_bytes(&self.record_id).ok_or(ErrorCode::DbCorrupt)?;
+        let author = uuid_bytes(&self.author_device).ok_or(ErrorCode::DbCorrupt)?;
+        Ok(RevBinding {
+            revision_id: self.revision_id,
+            graph_digest: graph_digest(
+                &rid,
+                &self.revision_id,
+                &author,
+                self.counter,
+                self.deleted,
+                self.kind_tag,
+                &self.parent_ids,
+            ),
+        })
+    }
+
+    /// Everything but the ciphertexts, nonces and `vk_generation`: two
+    /// representations of one revision (before/after a rotation) agree here.
+    pub fn same_graph(&self, other: &RevisionRow) -> bool {
+        self.revision_id == other.revision_id
+            && self.record_id == other.record_id
+            && self.parent_ids == other.parent_ids
+            && self.author_device == other.author_device
+            && self.counter == other.counter
+            && self.deleted == other.deleted
+            && self.kind_tag == other.kind_tag
+            && self.schema_version == other.schema_version
+    }
+}
+
+/// §2.6: SHA-256("ov0/rev-graph/v2" ‖ record_id ‖ revision_id ‖ author ‖
+/// u64be(counter) ‖ u8(flags) ‖ u8(kind) ‖ u8(n) ‖ parents(sorted)).
+pub fn graph_digest(
     record_id: &[u8; 16],
-    parent_revs: &[[u8; 32]],
-    author_device: &[u8; 16],
+    revision_id: &[u8; 32],
+    author: &[u8; 16],
     counter: u64,
     deleted: bool,
-    ct: &[u8],
-    meta_ct: &[u8],
+    kind_tag: u8,
+    parents: &[[u8; 32]],
 ) -> [u8; 32] {
     let mut h = Sha256::new();
-    h.update(b"ov0/rev/v1");
+    h.update(b"ov0/rev-graph/v2");
     h.update(record_id);
-    for p in parent_revs {
-        h.update(p);
-    }
-    h.update(author_device);
+    h.update(revision_id);
+    h.update(author);
     h.update(counter.to_be_bytes());
     h.update([u8::from(deleted)]);
-    h.update(Sha256::digest(ct));
-    h.update(Sha256::digest(meta_ct));
+    h.update([kind_tag]);
+    h.update([parents.len() as u8]);
+    for p in parents {
+        h.update(p);
+    }
     h.finalize().into()
+}
+
+/// Parents must be sorted ascending, unique, and at most 8 (§3.7).
+pub fn parents_canonical(parents: &[[u8; 32]]) -> bool {
+    parents.len() <= MAX_PARENTS && parents.windows(2).all(|w| w[0] < w[1])
 }
 
 pub fn uuid_bytes(uuid: &str) -> Option<[u8; 16]> {
     let hex: String = uuid.chars().filter(|c| *c != '-').collect();
     crate::crypto::hex::decode_array(&hex)
+}
+
+pub fn uuid_string(b: &[u8; 16]) -> String {
+    let h = crate::crypto::hex::encode(b);
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
 }
 
 /// Random UUIDv4 text (§3.3: content-independent).
@@ -69,152 +121,38 @@ pub fn new_record_id() -> String {
     getrandom::fill(&mut b).expect("OS CSPRNG failure is unrecoverable");
     b[6] = (b[6] & 0x0f) | 0x40; // version 4
     b[8] = (b[8] & 0x3f) | 0x80; // variant 10
-    format!(
-        "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13],
-        b[14], b[15]
-    )
+    uuid_string(&b)
 }
 
-/// Next counter for (record_id, author_device) — §3.2 monotonic rule.
-pub fn next_counter(
-    conn: &Connection,
-    record_id: &str,
-    author_device: &str,
-) -> Result<u64, ErrorCode> {
-    let max: Option<i64> = conn
-        .query_row(
-            "SELECT MAX(counter) FROM record_revs WHERE record_id=?1 AND author_device=?2",
-            params![record_id, author_device],
-            |r| r.get(0),
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?;
-    Ok(max.map(|m| m as u64 + 1).unwrap_or(1))
+/// §3.2: 256 bits from the OS RNG, created once per authored revision.
+pub fn new_revision_id() -> [u8; 32] {
+    let mut b = [0u8; 32];
+    getrandom::fill(&mut b).expect("OS CSPRNG failure is unrecoverable");
+    b
 }
 
-pub fn current_tip(conn: &Connection, record_id: &str) -> Result<Option<[u8; 32]>, ErrorCode> {
-    conn.query_row(
-        "SELECT tip_rev FROM record_tips WHERE record_id=?1",
-        params![record_id],
-        |r| r.get::<_, Option<Vec<u8>>>(0),
-    )
-    .map(|opt| {
-        opt.and_then(|v| <[u8; 32]>::try_from(v.as_slice()).ok())
-    })
-    .or_else(|e| match e {
-        rusqlite::Error::QueryReturnedNoRows => Ok(None),
-        _ => Err(ErrorCode::DbCorrupt),
-    })
+fn join_ids(ids: &[[u8; 32]]) -> Vec<u8> {
+    ids.iter().flat_map(|p| p.iter().copied()).collect()
 }
 
-pub fn is_deleted(conn: &Connection, rev_hash: &[u8; 32]) -> Result<bool, ErrorCode> {
-    conn.query_row(
-        "SELECT deleted FROM record_revs WHERE rev_hash=?1",
-        params![rev_hash.as_slice()],
-        |r| r.get::<_, i64>(0),
-    )
-    .map(|d| d != 0)
-    .map_err(|_| ErrorCode::DbCorrupt)
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum MergeOutcome {
-    /// Revision fast-forwarded and is now the tip.
-    FastForward,
-    /// Exact duplicate of a known revision — idempotent no-op.
-    AlreadyKnown,
-    /// Concurrent edit, tombstone race, or equivocation: tip NULLed,
-    /// revisions in `record_conflicts`.
-    Conflict,
-}
-
-/// Apply one revision under the §3.2 merge rules. Caller supplies a
-/// transaction. Phase C authors only fast-forwards locally; the full rule
-/// set is here (and unit-tested) so Phase F sync adds no new merge code.
-pub fn apply_revision(conn: &Connection, rev: &RevisionRow) -> Result<MergeOutcome, ErrorCode> {
-    let exists: bool = conn
-        .query_row(
-            "SELECT count(*) FROM record_revs WHERE rev_hash=?1",
-            params![rev.rev_hash.as_slice()],
-            |r| r.get::<_, i64>(0),
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?
-        > 0;
-    if exists {
-        return Ok(MergeOutcome::AlreadyKnown);
+pub fn split_ids(blob: &[u8]) -> Result<Vec<[u8; 32]>, ErrorCode> {
+    if !blob.len().is_multiple_of(32) {
+        return Err(ErrorCode::DbCorrupt);
     }
-    // Equivocation: same (record, author, counter), different hash.
-    let equivocation: bool = conn
-        .query_row(
-            "SELECT count(*) FROM record_revs
-             WHERE record_id=?1 AND author_device=?2 AND counter=?3 AND rev_hash != ?4",
-            params![
-                rev.record_id,
-                rev.author_device,
-                rev.counter as i64,
-                rev.rev_hash.as_slice()
-            ],
-            |r| r.get::<_, i64>(0),
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?
-        > 0;
-    insert_rev(conn, rev)?;
-    let tip = current_tip(conn, &rev.record_id)?;
-    let fast_forward = match tip {
-        None => rev.parent_revs.is_empty(),
-        Some(t) => rev.parent_revs.contains(&t),
-    };
-    // Conservative tombstone rule: an edit claiming causal ancestry
-    // after a tombstone is a conflict, never a resurrection (§3.2).
-    let resurrecting = !rev.deleted
-        && rev
-            .parent_revs
-            .iter()
-            .any(|p| is_deleted(conn, p).unwrap_or(false));
-    if equivocation || !fast_forward || resurrecting {
-        conn.execute(
-            "UPDATE record_tips SET tip_rev=NULL WHERE record_id=?1",
-            params![rev.record_id],
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?;
-        conn.execute(
-            "INSERT OR IGNORE INTO record_conflicts (record_id, rev_hash) VALUES (?1, ?2)",
-            params![rev.record_id, rev.rev_hash.as_slice()],
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?;
-        if let Some(t) = tip {
-            conn.execute(
-                "INSERT OR IGNORE INTO record_conflicts (record_id, rev_hash) VALUES (?1, ?2)",
-                params![rev.record_id, t.as_slice()],
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        }
-        return Ok(MergeOutcome::Conflict);
-    }
+    blob.chunks(32).map(|c| c.try_into().map_err(|_| ErrorCode::DbCorrupt)).collect()
+}
+
+pub fn insert_rev(conn: &Connection, rev: &RevisionRow) -> Result<(), ErrorCode> {
     conn.execute(
-        "INSERT INTO record_tips (record_id, tip_rev) VALUES (?1, ?2)
-         ON CONFLICT(record_id) DO UPDATE SET tip_rev=excluded.tip_rev",
-        params![rev.record_id, rev.rev_hash.as_slice()],
-    )
-    .map_err(|_| ErrorCode::DbCorrupt)?;
-    Ok(MergeOutcome::FastForward)
-}
-
-pub(super) fn insert_rev(conn: &Connection, rev: &RevisionRow) -> Result<(), ErrorCode> {
-    let mut parents = Vec::with_capacity(rev.parent_revs.len() * 32);
-    for p in &rev.parent_revs {
-        parents.extend_from_slice(p);
-    }
-    conn.execute(
-        "INSERT INTO record_revs
-         (rev_hash, record_id, parent_revs, author_device, counter, deleted,
+        "INSERT OR REPLACE INTO record_revs
+         (revision_id, record_id, parent_ids, author_device, counter, deleted,
           kind_tag, vk_generation, schema_version, nonce, ct, meta_nonce,
           meta_ct, created_at, updated_at)
          VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
         params![
-            rev.rev_hash.as_slice(),
+            rev.revision_id.as_slice(),
             rev.record_id,
-            parents,
+            join_ids(&rev.parent_ids),
             rev.author_device,
             rev.counter as i64,
             i64::from(rev.deleted),
@@ -230,5 +168,83 @@ pub(super) fn insert_rev(conn: &Connection, rev: &RevisionRow) -> Result<(), Err
         ],
     )
     .map_err(|_| ErrorCode::DbCorrupt)?;
+    Ok(())
+}
+
+pub const ROW_COLUMNS: &str = "revision_id, record_id, parent_ids, author_device, counter, deleted,
+    kind_tag, vk_generation, schema_version, nonce, ct, meta_nonce, meta_ct, created_at, updated_at";
+
+pub fn row_from(r: &rusqlite::Row<'_>) -> rusqlite::Result<RevisionRow> {
+    let id: Vec<u8> = r.get(0)?;
+    let parents: Vec<u8> = r.get(2)?;
+    let nonce: Vec<u8> = r.get(9)?;
+    let meta_nonce: Vec<u8> = r.get(11)?;
+    let bad = |_| rusqlite::Error::InvalidQuery;
+    Ok(RevisionRow {
+        revision_id: id.as_slice().try_into().map_err(bad)?,
+        record_id: r.get(1)?,
+        parent_ids: split_ids(&parents).map_err(|_| rusqlite::Error::InvalidQuery)?,
+        author_device: r.get(3)?,
+        counter: r.get::<_, i64>(4)? as u64,
+        deleted: r.get::<_, i64>(5)? != 0,
+        kind_tag: r.get::<_, i64>(6)? as u8,
+        vk_generation: r.get::<_, i64>(7)? as u32,
+        schema_version: r.get::<_, i64>(8)? as u32,
+        nonce: nonce.as_slice().try_into().map_err(bad)?,
+        ct: r.get(10)?,
+        meta_nonce: meta_nonce.as_slice().try_into().map_err(bad)?,
+        meta_ct: r.get(12)?,
+        created_at: r.get::<_, i64>(13)? as u64,
+        updated_at: r.get::<_, i64>(14)? as u64,
+    })
+}
+
+pub fn get_row(conn: &Connection, id: &[u8; 32]) -> Result<Option<RevisionRow>, ErrorCode> {
+    conn.query_row(
+        &format!("SELECT {ROW_COLUMNS} FROM record_revs WHERE revision_id=?1"),
+        params![id.as_slice()],
+        row_from,
+    )
+    .optional()
+    .map_err(|_| ErrorCode::DbCorrupt)
+}
+
+/// Current heads of a record: the single tip, or the conflict set.
+pub fn heads(conn: &Connection, record_id: &str) -> Result<Vec<[u8; 32]>, ErrorCode> {
+    let tip: Option<Option<Vec<u8>>> = conn
+        .query_row("SELECT tip_rev FROM record_tips WHERE record_id=?1", params![record_id], |r| r.get(0))
+        .optional()
+        .map_err(|_| ErrorCode::DbCorrupt)?;
+    match tip {
+        None => Ok(Vec::new()),
+        Some(Some(t)) => Ok(vec![t.as_slice().try_into().map_err(|_| ErrorCode::DbCorrupt)?]),
+        Some(None) => {
+            let mut stmt = conn
+                .prepare("SELECT revision_id FROM record_conflicts WHERE record_id=?1 ORDER BY revision_id")
+                .map_err(|_| ErrorCode::DbCorrupt)?;
+            let ids = stmt
+                .query_map(params![record_id], |r| r.get::<_, Vec<u8>>(0))
+                .map_err(|_| ErrorCode::DbCorrupt)?;
+            ids.map(|b| b.map_err(|_| ErrorCode::DbCorrupt)?.as_slice().try_into().map_err(|_| ErrorCode::DbCorrupt))
+                .collect()
+        }
+    }
+}
+
+/// Replace a record's heads (one → tip; several → conflict set).
+pub fn set_heads(conn: &Connection, record_id: &str, heads: &[[u8; 32]]) -> Result<(), ErrorCode> {
+    let q = |sql: &str, p: &[&dyn rusqlite::ToSql]| conn.execute(sql, p).map(|_| ()).map_err(|_| ErrorCode::DbCorrupt);
+    q("DELETE FROM record_conflicts WHERE record_id=?1", &[&record_id])?;
+    let tip: Option<Vec<u8>> = (heads.len() == 1).then(|| heads[0].to_vec());
+    q(
+        "INSERT INTO record_tips (record_id, tip_rev) VALUES (?1, ?2)
+         ON CONFLICT(record_id) DO UPDATE SET tip_rev=excluded.tip_rev",
+        &[&record_id, &tip],
+    )?;
+    if heads.len() > 1 {
+        for h in heads {
+            q("INSERT INTO record_conflicts (record_id, revision_id) VALUES (?1, ?2)", &[&record_id, &h.to_vec()])?;
+        }
+    }
     Ok(())
 }

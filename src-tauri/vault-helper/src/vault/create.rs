@@ -66,7 +66,8 @@ fn build_vault(
         .map_err(|_| ErrorCode::Internal)?;
     drop(pk);
     let rk_wrap = wrap::seal_wrap_rk(&payload(), rk, &vault_id.0).map_err(|_| ErrorCode::Internal)?;
-    VaultStore::create(dir, header.clone())?;
+    // §3.2: this vault authors revisions as the creating device.
+    VaultStore::create(dir, header.clone())?.set_author_device(&dev.device_id())?;
     // Wraps last: until both exist the directory is not an openable vault.
     write_atomic(
         &dir.join(RECOVERY_WRAP_NAME),

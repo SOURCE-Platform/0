@@ -3,7 +3,7 @@
 //! the crypto core CR-08 exercises: every record and both recovery wraps
 //! re-sealed under a new VK with `vk_generation` bumped, in memory.
 
-use super::record::{self, RecordCiphertext, RecordId};
+use super::record::{self, RecordCiphertext, RecordId, RevBinding};
 use super::secret::SecretBytes;
 use super::wrap::{self, PasswordWrapFile, RecoveryWrapFile, RecoveryWrapPayload, VaultId};
 use super::CryptoError;
@@ -11,6 +11,7 @@ use super::CryptoError;
 /// A record as the rotation engine sees it: identity + sealed bytes.
 pub struct SealedRecord {
     pub record_id: RecordId,
+    pub bind: RevBinding,
     pub schema_version: u32,
     pub vk_generation: u32,
     pub ciphertext: RecordCiphertext,
@@ -29,6 +30,7 @@ pub fn rotate_record(
         old_vk,
         vault_id,
         &record.record_id,
+        &record.bind,
         record.schema_version,
         record.vk_generation,
         &record.ciphertext,
@@ -37,12 +39,14 @@ pub fn rotate_record(
         new_vk,
         vault_id,
         &record.record_id,
+        &record.bind,
         record.schema_version,
         new_generation,
         &plaintext,
     )?;
     Ok(SealedRecord {
         record_id: record.record_id,
+        bind: record.bind,
         schema_version: record.schema_version,
         vk_generation: new_generation,
         ciphertext,

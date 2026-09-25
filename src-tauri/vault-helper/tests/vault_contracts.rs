@@ -18,6 +18,7 @@ fn op04_bad_state_matrix() {
         json!({"op": "update_item", "ref": "r"}),
         json!({"op": "delete_item", "ref": "r"}),
         json!({"op": "reveal", "ref": "r"}),
+        json!({"op": "resolve_conflict", "ref": "r", "chosen_rev": "00".repeat(32)}),
         json!({"op": "change_master_password"}),
         json!({"op": "begin_recovery_unlock", "kind": "mp"}),
         json!({"op": "begin_recovery_unlock", "kind": "rk"}),

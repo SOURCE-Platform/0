@@ -32,7 +32,7 @@ fn assert_head_sealed_only_under(w: &World, fresh: &SecretBytes<32>, auth: Auth<
     for row in &d.rows {
         let rid = uuid_bytes(&row.record_id).unwrap();
         let sealed = RecordCiphertext { nonce: row.nonce, ct: row.ct.clone() };
-        let open = |vk: &SecretBytes<32>| record::open_record(vk, &w.vault_id, &rid, row.schema_version, row.vk_generation, &sealed);
+        let open = |vk: &SecretBytes<32>| record::open_record(vk, &w.vault_id, &rid, &row.bind().unwrap(), row.schema_version, row.vk_generation, &sealed);
         assert!(open(fresh).is_ok(), "record opens under fresh VK");
         assert!(open(&w.vk).is_err(), "old VK → INTEGRITY_FAILURE");
         assert_eq!(row.vk_generation, head.vk_generation);

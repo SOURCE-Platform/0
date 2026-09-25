@@ -205,6 +205,8 @@ impl RecoverySession<'_> {
         // (e) build + upload the rotated snapshot with the recovery credential.
         write_atomic(&dir.join(VAULT_REGISTRY_NAME), &registry_file::encode(&entries)?)?;
         let store = VaultStore::open(dir)?;
+        // §3.2: the recovered vault authors as the device the epoch installs.
+        store.set_author_device(&new_device.device_id())?;
         let snap = snapshot::build(&store, &entries, old.generation + 1, old_hash, new_device, &rotated.new_vk)?;
         let auth = Auth::Recovery { kind: self.kind, cred: self.creds.cred.expose() };
         snapshot::upload(self.backup, &vault_id, &snap, auth)?;

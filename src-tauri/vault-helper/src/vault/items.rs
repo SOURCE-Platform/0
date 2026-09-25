@@ -141,7 +141,7 @@ pub fn delete_item(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
 /// present, editable fields merge over it (update); otherwise a fresh
 /// record is created. Only whitelisted editable keys are taken from the
 /// wire; `created_at`/`password_history` are helper-managed.
-fn build_record(
+pub(super) fn build_record(
     kind_tag: u8,
     fields: &Value,
     old: Option<&Value>,

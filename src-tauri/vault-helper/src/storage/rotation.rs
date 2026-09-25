@@ -2,18 +2,13 @@
 //! revision re-sealed → every wrap rewritten → every `import_log`
 //! fingerprint recomputed → new manifest generation → old VK dropped.
 //!
-//! Content-committed revision hashes (§3.2) include SHA-256 of the
-//! ciphertext, so re-sealing changes every `rev_hash`. The engine
-//! re-derives them deterministically in topological order and remaps
-//! `parent_revs`, `record_tips`, and `record_conflicts` to the new hashes,
-//! so the rotated graph has exactly the old shape. (Spec clarification,
-//! documented Phase D deviation: §2.10 does not mention the remap.)
+//! v0.4: revisions keep their `revision_id`, parents, author and counter
+//! (§3.2); only ciphertexts, nonces and `vk_generation` change, so the
+//! logical graph is never renamed and heads/conflicts need no remap.
 //!
 //! Everything is staged beside the live vault and committed through
 //! `rotation_journal` — a crash leaves the vault entirely old or entirely
 //! new, never half-rotated.
-
-use std::collections::HashMap;
 
 use rusqlite::{params, Connection};
 
@@ -26,6 +21,7 @@ use super::rotation_journal::{self as journal, CommitMarker, FailAt};
 use super::store::{write_atomic, VaultStore, PASSWORD_WRAP_NAME, RECOVERY_WRAP_NAME};
 use crate::crypto::kdf;
 use crate::crypto::record::{self, RecordCiphertext};
+use super::revisions::insert_rev;
 use crate::crypto::secret::{random_secret, SecretBytes};
 use crate::crypto::wrap::{self, RecoveryWrapPayload};
 use crate::errors::ErrorCode;
@@ -66,11 +62,6 @@ pub struct RotationOutcome {
     pub new_vk: SecretBytes<32>,
     pub vk_generation: u32,
     pub manifest_generation: u64,
-}
-
-struct Rotated {
-    old_hash: [u8; 32],
-    row: revisions::RevisionRow,
 }
 
 /// Rotate the open vault. Consumes the store (the live DB must be closed
@@ -168,17 +159,16 @@ fn reseal_db(
 ) -> Result<Vec<ManifestObject>, ErrorCode> {
     let tx = conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
     let rows = revision_rows::all_rows(&tx)?;
-    let order = revision_rows::topo_order(&rows)?;
-    let mut remap: HashMap<[u8; 32], [u8; 32]> = HashMap::new();
-    let mut rotated = Vec::with_capacity(rows.len());
-    for idx in order {
-        let mut row = rows[idx].clone();
+    let mut objects = Vec::with_capacity(rows.len());
+    for mut row in rows {
         let rid = revisions::uuid_bytes(&row.record_id).ok_or(ErrorCode::DbCorrupt)?;
-        let dev = revisions::uuid_bytes(&row.author_device).ok_or(ErrorCode::DbCorrupt)?;
+        let bind = row.bind()?;
+        let vid = &h.vault_id.0;
         let pt = record::open_record(
             old_vk,
-            &h.vault_id.0,
+            vid,
             &rid,
+            &bind,
             row.schema_version,
             row.vk_generation,
             &RecordCiphertext { nonce: row.nonce, ct: row.ct.clone() },
@@ -186,65 +176,29 @@ fn reseal_db(
         .map_err(|_| ErrorCode::RecordCorrupt)?;
         let meta = record::open_meta(
             old_vk,
-            &h.vault_id.0,
+            vid,
             &h.meta_salt.0,
             &rid,
+            &bind,
             super::store::META_FIELD_TAG,
             &RecordCiphertext { nonce: row.meta_nonce, ct: row.meta_ct.clone() },
         )
         .map_err(|_| ErrorCode::RecordCorrupt)?;
-        let ct = record::seal_record(new_vk, &h.vault_id.0, &rid, row.schema_version, new_gen, &pt)
+        let ct = record::seal_record(new_vk, vid, &rid, &bind, row.schema_version, new_gen, &pt)
             .map_err(|_| ErrorCode::Internal)?;
-        let meta_ct = record::seal_meta(
-            new_vk,
-            &h.vault_id.0,
-            &h.meta_salt.0,
-            &rid,
-            super::store::META_FIELD_TAG,
-            &meta,
-        )
-        .map_err(|_| ErrorCode::Internal)?;
-        let old_hash = row.rev_hash;
-        row.parent_revs = row
-            .parent_revs
-            .iter()
-            .map(|p| remap.get(p).copied().ok_or(ErrorCode::DbCorrupt))
-            .collect::<Result<_, _>>()?;
-        row.rev_hash = revisions::rev_hash(
-            &rid, &row.parent_revs, &dev, row.counter, row.deleted, &ct.ct, &meta_ct.ct,
-        );
+        let meta_ct = record::seal_meta(new_vk, vid, &h.meta_salt.0, &rid, &bind, super::store::META_FIELD_TAG, &meta)
+            .map_err(|_| ErrorCode::Internal)?;
         row.vk_generation = new_gen;
-        row.nonce = ct.nonce;
-        row.ct = ct.ct;
-        row.meta_nonce = meta_ct.nonce;
-        row.meta_ct = meta_ct.ct;
-        remap.insert(old_hash, row.rev_hash);
-        rotated.push(Rotated { old_hash, row });
-    }
-    for r in &rotated {
-        revision_rows::replace_row(&tx, &r.old_hash, &r.row)?;
-    }
-    for (old_hash, new_hash) in &remap {
-        tx.execute(
-            "UPDATE record_tips SET tip_rev=?2 WHERE tip_rev=?1",
-            params![old_hash.as_slice(), new_hash.as_slice()],
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?;
-        tx.execute(
-            "UPDATE record_conflicts SET rev_hash=?2 WHERE rev_hash=?1",
-            params![old_hash.as_slice(), new_hash.as_slice()],
-        )
-        .map_err(|_| ErrorCode::DbCorrupt)?;
+        (row.nonce, row.ct, row.meta_nonce, row.meta_ct) = (ct.nonce, ct.ct, meta_ct.nonce, meta_ct.ct);
+        insert_rev(&tx, &row)?; // same revision_id: replaced in place
+        objects.push(ManifestObject {
+            record_id: row.record_id.clone(),
+            revision_id: crate::crypto::hex::encode(row.revision_id),
+        });
     }
     super::import_log::recompute(&tx, h, old_vk, new_vk)?;
     tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
-    Ok(rotated
-        .into_iter()
-        .map(|r| ManifestObject {
-            record_id: r.row.record_id,
-            rev_hash: crate::crypto::hex::encode(r.row.rev_hash),
-        })
-        .collect())
+    Ok(objects)
 }
 
 fn stage_wraps(

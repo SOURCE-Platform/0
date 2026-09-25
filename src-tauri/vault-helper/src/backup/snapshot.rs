@@ -17,7 +17,7 @@ use crate::registry::device::DeviceIdentity;
 use crate::registry::file as registry_file;
 use crate::storage::header;
 use crate::storage::revision_rows;
-use crate::storage::revisions::{self, RevisionRow};
+use crate::storage::revisions::RevisionRow;
 use crate::storage::store::{now_epoch, write_atomic, VaultStore, PASSWORD_WRAP_NAME, RECOVERY_WRAP_NAME};
 use crate::VAULT_REGISTRY_NAME;
 
@@ -47,7 +47,8 @@ pub fn build(
     };
     let mut records = Vec::new();
     for row in revision_rows::all_rows(&store.conn)? {
-        records.push(add(object::key(&row), object::encode(&row)?));
+        let bytes = object::encode(&row)?;
+        records.push(add(record_key(&row, &object::blob_hash(&bytes)), bytes));
     }
     records.sort_by(|a, b| a.key.cmp(&b.key));
     let header_bytes = header::write_header(&store.header)?;
@@ -142,8 +143,13 @@ pub fn download(backup: &FsBackupStore, manifest_bytes: &[u8], auth: Auth<'_>) -
     }
     let mut rows = Vec::with_capacity(index.records.len());
     for r in &index.records {
-        let (rid, hash) = object::parse_key(&r.key)?;
-        rows.push(object::decode(&rid, &hash, &fetch(r)?)?);
+        let (rid, id) = parse_record_key(&r.key)?;
+        let bytes = fetch(r)?;
+        let row = object::decode(&bytes)?;
+        if row.record_id != rid || row.revision_id != id {
+            return Err(ErrorCode::ManifestMismatch);
+        }
+        rows.push(row);
     }
     Ok(Downloaded {
         header_bytes: fetch(&index.header)?,
@@ -170,9 +176,7 @@ pub fn materialize(dir: &Path, d: &Downloaded) -> Result<VaultStore, ErrorCode> 
     store.manifest.registry_head = store.header.registry_head;
     {
         let tx = store.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
-        for i in revision_rows::topo_order(&d.rows)? {
-            revisions::apply_revision(&tx, &d.rows[i])?;
-        }
+        crate::storage::merge::apply_batch(&tx, &d.rows, &crate::storage::merge::NoCompare)?;
         tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
     }
     store.persist_head()?;
@@ -182,4 +186,23 @@ pub fn materialize(dir: &Path, d: &Downloaded) -> Result<VaultStore, ErrorCode> 
     }
     write_atomic(&dir.join(VAULT_REGISTRY_NAME), &registry_file::encode(&d.registry)?)?;
     Ok(store)
+}
+
+/// Interim snapshot key for a record object (superseded by the v2 index
+/// later in Phase F): `objects/rec/<record_id>/<revision_id>/<blob_hash>`.
+/// The blob hash is part of the name (§3.7): a rotation re-seal is a new
+/// blob and never overwrites the one a retained manifest points at.
+pub fn record_key(row: &RevisionRow, blob_hash: &[u8; 32]) -> String {
+    let hex = crate::crypto::hex::encode;
+    format!("objects/rec/{}/{}/{}", row.record_id, hex(row.revision_id), hex(*blob_hash))
+}
+
+fn parse_record_key(key: &str) -> Result<(String, [u8; 32]), ErrorCode> {
+    let rest = key.strip_prefix("objects/rec/").ok_or(ErrorCode::BackupObjectMissing)?;
+    let mut parts = rest.split('/');
+    let (Some(rid), Some(id), Some(_blob), None) = (parts.next(), parts.next(), parts.next(), parts.next()) else {
+        return Err(ErrorCode::BackupObjectMissing);
+    };
+    let id = crate::crypto::hex::decode_array::<32>(id).ok_or(ErrorCode::BackupObjectMissing)?;
+    Ok((rid.to_string(), id))
 }

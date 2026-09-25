@@ -131,6 +131,7 @@ fn the_revoked_devices_old_key_cannot_read_new_state() {
             &old_vk,
             &vault_id,
             &rid,
+            &row.bind().unwrap(),
             row.schema_version,
             row.vk_generation,
             &vault_helper::crypto::record::RecordCiphertext {

@@ -5,7 +5,7 @@ mod common;
 
 use common::*;
 use std::collections::HashSet;
-use vault_helper::crypto::record::{self, RecordCiphertext};
+use vault_helper::crypto::record::{self, RecordCiphertext, RevBinding};
 use vault_helper::crypto::rotate::{self, SealedRecord};
 use vault_helper::crypto::secret::random_secret;
 use vault_helper::crypto::wrap;
@@ -13,8 +13,11 @@ use vault_helper::crypto::CryptoError;
 
 const PLAINTEXT: &[u8] = br#"{"kind":"login","title":"synthetic","password":"not-real"}"#;
 
+/// Synthetic revision binding (§2.6 v0.4): revision_id + graph_digest.
+const BIND: RevBinding = RevBinding { revision_id: [0x11; 32], graph_digest: [0x22; 32] };
+
 fn seal(vk: &vault_helper::crypto::secret::SecretBytes<32>, gen: u32) -> RecordCiphertext {
-    record::seal_record(vk, &VAULT_ID, &RECORD_ID, 1, gen, PLAINTEXT).unwrap()
+    record::seal_record(vk, &VAULT_ID, &RECORD_ID, &BIND, 1, gen, PLAINTEXT).unwrap()
 }
 
 /// CR-05: record ciphertext 1-byte tamper → integrity failure, no
@@ -24,13 +27,13 @@ fn cr05_record_tamper_fails() {
     let vk = random_secret();
     let mut sealed = seal(&vk, 0);
     sealed.ct[0] ^= 1;
-    let result = record::open_record(&vk, &VAULT_ID, &RECORD_ID, 1, 0, &sealed);
+    let result = record::open_record(&vk, &VAULT_ID, &RECORD_ID, &BIND, 1, 0, &sealed);
     assert_eq!(result.err(), Some(CryptoError::IntegrityFailure));
     // tag tamper too (last 16 bytes are the Poly1305 tag)
     let mut sealed = seal(&vk, 0);
     let n = sealed.ct.len();
     sealed.ct[n - 1] ^= 1;
-    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, 1, 0, &sealed).is_err());
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &BIND, 1, 0, &sealed).is_err());
 }
 
 /// CR-06: AAD tamper — record_id, generation, schema swapped — decryption
@@ -39,11 +42,17 @@ fn cr05_record_tamper_fails() {
 fn cr06_aad_tamper_fails() {
     let vk = random_secret();
     let sealed = seal(&vk, 0);
-    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, 1, 0, &sealed).is_ok());
-    assert!(record::open_record(&vk, &VAULT_ID, &[0xB1; 16], 1, 0, &sealed).is_err());
-    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, 2, 0, &sealed).is_err());
-    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, 1, 1, &sealed).is_err());
-    assert!(record::open_record(&vk, &[0xA1; 16], &RECORD_ID, 1, 0, &sealed).is_err());
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &BIND, 1, 0, &sealed).is_ok());
+    assert!(record::open_record(&vk, &VAULT_ID, &[0xB1; 16], &BIND, 1, 0, &sealed).is_err());
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &BIND, 2, 0, &sealed).is_err());
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &BIND, 1, 1, &sealed).is_err());
+    assert!(record::open_record(&vk, &[0xA1; 16], &RECORD_ID, &BIND, 1, 0, &sealed).is_err());
+    // v0.4: moving a ciphertext to another revision id or graph position
+    // (parents, author, counter, flags, kind) fails too.
+    let other_id = RevBinding { revision_id: [0x12; 32], ..BIND };
+    let other_graph = RevBinding { graph_digest: [0x23; 32], ..BIND };
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &other_id, 1, 0, &sealed).is_err());
+    assert!(record::open_record(&vk, &VAULT_ID, &RECORD_ID, &other_graph, 1, 0, &sealed).is_err());
 }
 
 /// CR-07: nonce strategy audit — 2^20 seals, no nonce/key pair repeats.
@@ -77,9 +86,10 @@ fn cr08_vk_rotation_reseals_everything() {
     let records: Vec<SealedRecord> = (0u8..3)
         .map(|i| SealedRecord {
             record_id: [0xE0 + i; 16],
+            bind: BIND,
             schema_version: 1,
             vk_generation: 0,
-            ciphertext: record::seal_record(&old_vk, &VAULT_ID, &[0xE0 + i; 16], 1, 0, PLAINTEXT)
+            ciphertext: record::seal_record(&old_vk, &VAULT_ID, &[0xE0 + i; 16], &BIND, 1, 0, PLAINTEXT)
                 .unwrap(),
         })
         .collect();
@@ -104,11 +114,11 @@ fn cr08_vk_rotation_reseals_everything() {
     for r in &rotated {
         assert_eq!(r.vk_generation, 1);
         assert!(
-            record::open_record(&old_vk, &VAULT_ID, &r.record_id, 1, 1, &r.ciphertext).is_err(),
+            record::open_record(&old_vk, &VAULT_ID, &r.record_id, &BIND, 1, 1, &r.ciphertext).is_err(),
             "old VK must fail on rotated records"
         );
         let opened =
-            record::open_record(&new_vk, &VAULT_ID, &r.record_id, 1, 1, &r.ciphertext).unwrap();
+            record::open_record(&new_vk, &VAULT_ID, &r.record_id, &BIND, 1, 1, &r.ciphertext).unwrap();
         assert_eq!(&*opened, PLAINTEXT, "new VK opens every rotated record");
     }
     let from_mp = wrap::open_wrap_mp(&mp_rot, &pk, &VAULT_ID).unwrap();

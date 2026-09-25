@@ -12,12 +12,15 @@ pub mod db;
 pub mod header;
 pub mod import_log;
 pub mod manifest;
+pub mod merge;
 pub mod records;
+pub mod rev_state;
 pub mod revision_rows;
 pub mod revisions;
 pub mod rotation;
 pub mod rotation_journal;
 pub mod store;
+pub mod store_list;
 pub mod store_records;
 
 pub use store::VaultStore;

@@ -1,16 +1,17 @@
-//! Record CRUD on an open `VaultStore` (§3.2 revision model, §2.6
-//! encryption). Every mutation is one content-committed revision inside
-//! a SQLite transaction, followed by the manifest flip (§2.10).
+//! Record authoring on an open `VaultStore` (spec v0.4 §3.2 revision
+//! model, §2.6 encryption). Every mutation is one revision with a fresh
+//! 256-bit `revision_id`, authored under this device's registry id, whose
+//! parents are the record's current heads; it is applied through the §3.2
+//! merge rules inside one SQLite transaction, then the manifest flips.
 
-use rusqlite::params;
-use serde_json::{json, Value};
-
-use super::revisions::{self, MergeOutcome, RevisionRow, LOCAL_DEVICE_ID};
+use super::merge::{self, MergeOutcome, NoCompare};
+use super::rev_state;
+use super::revisions::{self, get_row, heads, new_record_id, new_revision_id, RevisionRow};
 use super::store::{now_epoch, VaultStore, META_FIELD_TAG};
-use super::{records, revisions::new_record_id};
 use crate::crypto::record::{self, RecordCiphertext};
 use crate::crypto::secret::{SecretBytes, SecretVec};
 use crate::errors::ErrorCode;
+use zeroize::Zeroizing;
 
 pub struct TipPlaintext {
     pub kind_tag: u8,
@@ -18,161 +19,163 @@ pub struct TipPlaintext {
     pub plaintext: SecretVec,
 }
 
+/// What a `resolve_conflict` revision carries (§1.5, §3.2).
+pub enum Resolution<'a> {
+    /// Keep the content of one of the current heads.
+    Chosen([u8; 32]),
+    /// New content supplied by the user (record JSON + metadata JSON).
+    Edited { kind_tag: u8, schema_version: u32, plaintext: &'a [u8], meta: &'a [u8] },
+}
+
+pub struct NewRevision<'a> {
+    pub record_id: &'a str,
+    pub parents: Vec<[u8; 32]>,
+    pub deleted: bool,
+    pub kind_tag: u8,
+    pub schema_version: u32,
+    pub plaintext: &'a [u8],
+    pub meta: &'a [u8],
+    pub created_at: u64,
+}
+
 impl VaultStore {
-    fn seal_pair(
-        &self,
-        vk: &SecretBytes<32>,
-        record_id: &[u8; 16],
-        schema_version: u32,
-        plaintext: &[u8],
-        meta: &[u8],
-    ) -> Result<(RecordCiphertext, RecordCiphertext), ErrorCode> {
-        let ct = record::seal_record(
-            vk,
-            &self.header.vault_id.0,
-            record_id,
-            schema_version,
-            self.header.vk_generation,
-            plaintext,
-        )
-        .map_err(|_| ErrorCode::Internal)?;
-        let meta_ct = record::seal_meta(
-            vk,
-            &self.header.vault_id.0,
-            &self.header.meta_salt.0,
-            record_id,
-            META_FIELD_TAG,
-            meta,
-        )
-        .map_err(|_| ErrorCode::Internal)?;
-        Ok((ct, meta_ct))
+    /// Seal and assemble a revision authored by this device.
+    fn author(&self, vk: &SecretBytes<32>, n: NewRevision<'_>) -> Result<RevisionRow, ErrorCode> {
+        let rid = revisions::uuid_bytes(n.record_id).ok_or(ErrorCode::InvalidInput)?;
+        let author = self.author_device()?;
+        let mut parents = n.parents;
+        parents.sort();
+        parents.dedup();
+        let mut row = RevisionRow {
+            revision_id: new_revision_id(),
+            record_id: n.record_id.to_string(),
+            parent_ids: parents,
+            counter: rev_state::next_counter(&self.conn, n.record_id, &author)?,
+            author_device: author,
+            deleted: n.deleted,
+            kind_tag: n.kind_tag,
+            vk_generation: self.header.vk_generation,
+            schema_version: n.schema_version,
+            nonce: [0; 24],
+            ct: Vec::new(),
+            meta_nonce: [0; 24],
+            meta_ct: Vec::new(),
+            created_at: n.created_at,
+            updated_at: now_epoch(),
+        };
+        let bind = row.bind()?;
+        let vid = self.header.vault_id.0;
+        let ct = record::seal_record(vk, &vid, &rid, &bind, n.schema_version, row.vk_generation, n.plaintext)
+            .map_err(|_| ErrorCode::Internal)?;
+        let meta_ct = record::seal_meta(vk, &vid, &self.header.meta_salt.0, &rid, &bind, META_FIELD_TAG, n.meta)
+            .map_err(|_| ErrorCode::Internal)?;
+        (row.nonce, row.ct, row.meta_nonce, row.meta_ct) = (ct.nonce, ct.ct, meta_ct.nonce, meta_ct.ct);
+        Ok(row)
     }
 
-    fn commit_revision(&mut self, rev: RevisionRow) -> Result<(), ErrorCode> {
+    /// Apply a locally authored revision; it must leave exactly one head.
+    fn commit_local(&mut self, rev: RevisionRow, unfreeze: bool) -> Result<(), ErrorCode> {
         let tx = self.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
-        let outcome = revisions::apply_revision(&tx, &rev);
-        match outcome {
-            Ok(MergeOutcome::FastForward) => {
-                tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
-                self.persist_head()
-            }
-            // Local single-writer ops must always fast-forward; anything
-            // else means the merge rules fired unexpectedly.
+        let obj = crate::backup::object::encode(&rev)?;
+        match merge::apply_revision(&tx, &rev, &obj, &NoCompare) {
+            Ok(MergeOutcome::Applied { conflicted: false }) => {}
             Ok(_) => {
                 let _ = tx.rollback();
-                Err(ErrorCode::Internal)
+                return Err(ErrorCode::Internal);
             }
             Err(e) => {
                 let _ = tx.rollback();
-                Err(e)
+                return Err(e);
             }
         }
-    }
-
-    fn build_rev(
-        &self,
-        record_id: &str,
-        parents: &[[u8; 32]],
-        deleted: bool,
-        kind_tag: u8,
-        schema_version: u32,
-        ct: RecordCiphertext,
-        meta_ct: RecordCiphertext,
-        created_at: u64,
-        updated_at: u64,
-    ) -> Result<RevisionRow, ErrorCode> {
-        let rid = revisions::uuid_bytes(record_id).ok_or(ErrorCode::InvalidInput)?;
-        let dev = revisions::uuid_bytes(LOCAL_DEVICE_ID).ok_or(ErrorCode::Internal)?;
-        let counter = revisions::next_counter(&self.conn, record_id, LOCAL_DEVICE_ID)?;
-        let rev_hash = revisions::rev_hash(
-            &rid,
-            parents,
-            &dev,
-            counter,
-            deleted,
-            &ct.ct,
-            &meta_ct.ct,
-        );
-        Ok(RevisionRow {
-            rev_hash,
-            record_id: record_id.to_string(),
-            parent_revs: parents.to_vec(),
-            author_device: LOCAL_DEVICE_ID.to_string(),
-            counter,
-            deleted,
-            kind_tag,
-            vk_generation: self.header.vk_generation,
-            schema_version,
-            nonce: ct.nonce,
-            ct: ct.ct,
-            meta_nonce: meta_ct.nonce,
-            meta_ct: meta_ct.ct,
-            created_at,
-            updated_at,
-        })
-    }
-
-    /// Insert a new validated record. Returns the record ref (uuid).
-    pub fn add_record(
-        &mut self,
-        vk: &SecretBytes<32>,
-        kind_tag: u8,
-        plaintext: &[u8],
-        meta: &[u8],
-    ) -> Result<String, ErrorCode> {
-        let record_id = new_record_id();
-        let rid = revisions::uuid_bytes(&record_id).ok_or(ErrorCode::Internal)?;
-        let now = now_epoch();
-        let (ct, meta_ct) = self.seal_pair(vk, &rid, 1, plaintext, meta)?;
-        let rev = self.build_rev(&record_id, &[], false, kind_tag, 1, ct, meta_ct, now, now)?;
-        self.commit_revision(rev)?;
-        Ok(record_id)
-    }
-
-    /// Read and decrypt the current tip of a record (for update merges
-    /// and `reveal`). AEAD failure → RECORD_CORRUPT (§3.6 quarantine:
-    /// the record is never partially returned).
-    pub fn read_tip(
-        &self,
-        vk: &SecretBytes<32>,
-        record_id: &str,
-    ) -> Result<TipPlaintext, ErrorCode> {
-        let tip = revisions::current_tip(&self.conn, record_id)?.ok_or(ErrorCode::NotFound)?;
-        let (kind_tag, schema_version, deleted, nonce, ct): (i64, i64, i64, Vec<u8>, Vec<u8>) = self
-            .conn
-            .query_row(
-                "SELECT kind_tag, schema_version, deleted, nonce, ct FROM record_revs
-                 WHERE rev_hash=?1",
-                params![tip.as_slice()],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        if deleted != 0 {
-            return Err(ErrorCode::NotFound);
+        rev_state::bump_hwm(&tx, &rev.record_id, rev.counter)?;
+        if unfreeze {
+            rev_state::unfreeze(&tx, &rev.record_id)?;
         }
-        let rid = revisions::uuid_bytes(record_id).ok_or(ErrorCode::InvalidInput)?;
-        let nonce: [u8; 24] = nonce.try_into().map_err(|_| ErrorCode::DbCorrupt)?;
-        let plaintext = record::open_record(
+        tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
+        self.persist_head()
+    }
+
+    /// The single current head of an editable record. Conflicted or frozen
+    /// records → CONFLICT_PENDING; absent or tombstoned → NOT_FOUND.
+    fn editable_head(&self, record_id: &str) -> Result<RevisionRow, ErrorCode> {
+        if rev_state::is_frozen(&self.conn, record_id)? {
+            return Err(ErrorCode::ConflictPending);
+        }
+        let hs = heads(&self.conn, record_id)?;
+        match hs.as_slice() {
+            [] => Err(ErrorCode::NotFound),
+            [one] => {
+                let row = get_row(&self.conn, one)?.ok_or(ErrorCode::DbCorrupt)?;
+                if row.deleted {
+                    Err(ErrorCode::NotFound)
+                } else {
+                    Ok(row)
+                }
+            }
+            _ => Err(ErrorCode::ConflictPending),
+        }
+    }
+
+    /// Decrypt one revision's record plaintext.
+    pub fn open_row(&self, vk: &SecretBytes<32>, row: &RevisionRow) -> Result<SecretVec, ErrorCode> {
+        let rid = revisions::uuid_bytes(&row.record_id).ok_or(ErrorCode::DbCorrupt)?;
+        record::open_record(
             vk,
             &self.header.vault_id.0,
             &rid,
-            schema_version as u32,
-            self.header.vk_generation,
-            &RecordCiphertext { nonce, ct },
+            &row.bind()?,
+            row.schema_version,
+            row.vk_generation,
+            &RecordCiphertext { nonce: row.nonce, ct: row.ct.clone() },
         )
-        .map_err(|_| ErrorCode::RecordCorrupt)?;
-        Ok(TipPlaintext {
-            kind_tag: kind_tag as u8,
-            schema_version: schema_version as u32,
-            plaintext,
-        })
+        .map_err(|_| ErrorCode::RecordCorrupt)
     }
 
-    pub fn tip_parent(&self, record_id: &str) -> Result<[u8; 32], ErrorCode> {
-        revisions::current_tip(&self.conn, record_id)?.ok_or(ErrorCode::NotFound)
+    /// Decrypt one revision's metadata plaintext.
+    pub fn open_row_meta(&self, vk: &SecretBytes<32>, row: &RevisionRow) -> Result<SecretVec, ErrorCode> {
+        let rid = revisions::uuid_bytes(&row.record_id).ok_or(ErrorCode::DbCorrupt)?;
+        record::open_meta(
+            vk,
+            &self.header.vault_id.0,
+            &self.header.meta_salt.0,
+            &rid,
+            &row.bind()?,
+            META_FIELD_TAG,
+            &RecordCiphertext { nonce: row.meta_nonce, ct: row.meta_ct.clone() },
+        )
+        .map_err(|_| ErrorCode::RecordCorrupt)
     }
 
-    /// Write the successor revision of the current tip.
+    /// Insert a new validated record. Returns the record ref (uuid).
+    pub fn add_record(&mut self, vk: &SecretBytes<32>, kind_tag: u8, plaintext: &[u8], meta: &[u8]) -> Result<String, ErrorCode> {
+        let record_id = new_record_id();
+        let rev = self.author(
+            vk,
+            NewRevision {
+                record_id: &record_id,
+                parents: Vec::new(),
+                deleted: false,
+                kind_tag,
+                schema_version: 1,
+                plaintext,
+                meta,
+                created_at: now_epoch(),
+            },
+        )?;
+        self.commit_local(rev, false)?;
+        Ok(record_id)
+    }
+
+    /// Read and decrypt the single current head (for update merges and
+    /// `reveal`). AEAD failure → RECORD_CORRUPT (§3.6 quarantine).
+    pub fn read_tip(&self, vk: &SecretBytes<32>, record_id: &str) -> Result<TipPlaintext, ErrorCode> {
+        let row = self.editable_head(record_id)?;
+        Ok(TipPlaintext { kind_tag: row.kind_tag, schema_version: row.schema_version, plaintext: self.open_row(vk, &row)? })
+    }
+
+    /// Write the successor revision of the single current head.
+    #[allow(clippy::too_many_arguments)]
     pub fn write_successor(
         &mut self,
         vk: &SecretBytes<32>,
@@ -183,130 +186,70 @@ impl VaultStore {
         meta: &[u8],
         created_at: u64,
     ) -> Result<(), ErrorCode> {
-        let parent = self.tip_parent(record_id)?;
-        let rid = revisions::uuid_bytes(record_id).ok_or(ErrorCode::InvalidInput)?;
-        let (ct, meta_ct) = self.seal_pair(vk, &rid, schema_version, plaintext, meta)?;
-        let rev = self.build_rev(
-            record_id,
-            &[parent],
-            false,
-            kind_tag,
-            schema_version,
-            ct,
-            meta_ct,
-            created_at,
-            now_epoch(),
+        let head = self.editable_head(record_id)?;
+        let rev = self.author(
+            vk,
+            NewRevision {
+                record_id,
+                parents: vec![head.revision_id],
+                deleted: false,
+                kind_tag,
+                schema_version,
+                plaintext,
+                meta,
+                created_at,
+            },
         )?;
-        self.commit_revision(rev)
+        self.commit_local(rev, false)
     }
 
     /// Tombstone revision (§3.2). Ciphertexts seal an empty JSON object:
-    /// no plaintext remnant of the deleted record survives in the new tip.
+    /// no plaintext remnant of the deleted record survives in the new head.
     pub fn tombstone(&mut self, vk: &SecretBytes<32>, record_id: &str) -> Result<(), ErrorCode> {
-        let tip = self.read_tip(vk, record_id)?; // 404s when absent/deleted
-        let parent = self.tip_parent(record_id)?;
-        let rid = revisions::uuid_bytes(record_id).ok_or(ErrorCode::InvalidInput)?;
-        let (ct, meta_ct) = self.seal_pair(vk, &rid, tip.schema_version, b"{}", b"{}")?;
-        let rev = self.build_rev(
-            record_id,
-            &[parent],
-            true,
-            tip.kind_tag,
-            tip.schema_version,
-            ct,
-            meta_ct,
-            now_epoch(),
-            now_epoch(),
-        )?;
-        self.commit_revision(rev)
-    }
-
-    /// §1.5 `list_items`: metadata only, never secrets. Corrupt records
-    /// surface as `{ref, corrupt:true}` (§3.6); conflicted records as
-    /// `{ref, conflicted:true}` (§15 CONFLICT_PENDING badge class).
-    pub fn list_records(&self, vk: &SecretBytes<32>) -> Result<Vec<Value>, ErrorCode> {
-        let mut items = Vec::new();
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT t.record_id, r.kind_tag, r.meta_nonce, r.meta_ct
-                 FROM record_tips t JOIN record_revs r ON r.rev_hash = t.tip_rev
-                 WHERE r.deleted = 0 ORDER BY t.record_id",
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        let rows = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get::<_, Vec<u8>>(2)?,
-                    r.get::<_, Vec<u8>>(3)?,
-                ))
-            })
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        for row in rows {
-            let (rid_text, kind_tag, meta_nonce, meta_ct) = row.map_err(|_| ErrorCode::DbCorrupt)?;
-            items.push(self.meta_entry(vk, &rid_text, kind_tag as u8, meta_nonce, meta_ct)?);
-        }
-        // Conflicted records (tip NULL): kind known from any branch.
-        let mut cstmt = self
-            .conn
-            .prepare(
-                "SELECT t.record_id, (SELECT kind_tag FROM record_revs r
-                  JOIN record_conflicts c ON c.rev_hash = r.rev_hash
-                  WHERE c.record_id = t.record_id LIMIT 1)
-                 FROM record_tips t WHERE t.tip_rev IS NULL",
-            )
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        let crows = cstmt
-            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        for row in crows {
-            let (rid_text, kind_tag) = row.map_err(|_| ErrorCode::DbCorrupt)?;
-            items.push(json!({
-                "ref": rid_text,
-                "kind": records::kind_name(kind_tag as u8),
-                "conflicted": true,
-            }));
-        }
-        Ok(items)
-    }
-
-    fn meta_entry(
-        &self,
-        vk: &SecretBytes<32>,
-        rid_text: &str,
-        kind_tag: u8,
-        meta_nonce: Vec<u8>,
-        meta_ct: Vec<u8>,
-    ) -> Result<Value, ErrorCode> {
-        let rid = revisions::uuid_bytes(rid_text).ok_or(ErrorCode::DbCorrupt)?;
-        let nonce: [u8; 24] = meta_nonce.try_into().map_err(|_| ErrorCode::DbCorrupt)?;
-        let meta = record::open_meta(
+        let head = self.editable_head(record_id)?;
+        let rev = self.author(
             vk,
-            &self.header.vault_id.0,
-            &self.header.meta_salt.0,
-            &rid,
-            META_FIELD_TAG,
-            &RecordCiphertext { nonce, ct: meta_ct },
-        );
-        let meta = match meta {
-            Ok(m) => m,
-            Err(_) => {
-                return Ok(json!({
-                    "ref": rid_text,
-                    "kind": records::kind_name(kind_tag),
-                    "corrupt": true,
-                }))
+            NewRevision {
+                record_id,
+                parents: vec![head.revision_id],
+                deleted: true,
+                kind_tag: head.kind_tag,
+                schema_version: head.schema_version,
+                plaintext: b"{}",
+                meta: b"{}",
+                created_at: head.created_at,
+            },
+        )?;
+        self.commit_local(rev, false)
+    }
+
+    /// `resolve_conflict` (§3.2): a revision whose parents are **all**
+    /// current heads, collapsing them to one; it also clears a freeze (the
+    /// op layer requires fresh presence and the user's acknowledgement).
+    pub fn resolve(&mut self, vk: &SecretBytes<32>, record_id: &str, res: Resolution<'_>) -> Result<(), ErrorCode> {
+        let hs = heads(&self.conn, record_id)?;
+        let frozen = rev_state::is_frozen(&self.conn, record_id)?;
+        if hs.is_empty() || (hs.len() < 2 && !frozen) {
+            return Err(ErrorCode::BadState);
+        }
+        let (kind_tag, schema_version, plaintext, meta, created_at, deleted) = match res {
+            Resolution::Chosen(id) => {
+                if !hs.contains(&id) {
+                    return Err(ErrorCode::InvalidInput);
+                }
+                let row = get_row(&self.conn, &id)?.ok_or(ErrorCode::DbCorrupt)?;
+                let pt = self.open_row(vk, &row)?;
+                let meta = self.open_row_meta(vk, &row)?;
+                (row.kind_tag, row.schema_version, Zeroizing::new(pt.to_vec()), meta.to_vec(), row.created_at, row.deleted)
+            }
+            Resolution::Edited { kind_tag, schema_version, plaintext, meta } => {
+                (kind_tag, schema_version, Zeroizing::new(plaintext.to_vec()), meta.to_vec(), now_epoch(), false)
             }
         };
-        let meta: Value = serde_json::from_slice(&meta).map_err(|_| ErrorCode::RecordCorrupt)?;
-        Ok(json!({
-            "ref": rid_text,
-            "kind": records::kind_name(kind_tag),
-            "title": meta.get("title").cloned().unwrap_or(Value::Null),
-            "username": meta.get("username").cloned().unwrap_or(Value::Null),
-            "hosts": meta.get("hosts").cloned().unwrap_or(json!([])),
-        }))
+        let rev = self.author(
+            vk,
+            NewRevision { record_id, parents: hs, deleted, kind_tag, schema_version, plaintext: &plaintext, meta: &meta, created_at },
+        )?;
+        self.commit_local(rev, frozen)
     }
 }

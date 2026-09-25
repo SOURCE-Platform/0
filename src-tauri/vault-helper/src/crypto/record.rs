@@ -1,6 +1,8 @@
-//! Record and metadata encryption (spec §2.6). Every record is sealed
-//! under a per-record HKDF subkey; moving ciphertext to another record_id,
-//! schema, or vk_generation fails AAD (CR-06).
+//! Record and metadata encryption (spec v0.4 §2.6). Every record is
+//! sealed under a per-record HKDF subkey, and the AAD binds each
+//! ciphertext to its logical identity and graph position (§3.2): moving a
+//! ciphertext to another record, revision, parent set, author, counter,
+//! flag, kind, schema or `vk_generation` fails AEAD (CR-06).
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
@@ -18,26 +20,52 @@ pub struct RecordCiphertext {
     pub ct: Vec<u8>,
 }
 
-/// §2.6: "ov0/record" ‖ vault_id ‖ record_id ‖ u32be(schema) ‖ u32be(gen).
+/// The revision a ciphertext belongs to (§2.6): its stable `revision_id`
+/// and the `graph_digest` over its record, author, counter, flags, kind
+/// and parents (computed by `storage::revisions::graph_digest`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RevBinding {
+    pub revision_id: [u8; 32],
+    pub graph_digest: [u8; 32],
+}
+
+/// §2.6 v0.4: "ov0/record/v2" ‖ vault_id ‖ record_id ‖ revision_id ‖
+/// u32be(schema) ‖ u32be(vk_generation) ‖ graph_digest.
 pub fn record_aad(
     vault_id: &VaultId,
     record_id: &RecordId,
+    bind: &RevBinding,
     schema_version: u32,
     vk_generation: u32,
 ) -> Vec<u8> {
-    let mut aad = b"ov0/record".to_vec();
+    let mut aad = b"ov0/record/v2".to_vec();
     aad.extend_from_slice(vault_id);
     aad.extend_from_slice(record_id);
+    aad.extend_from_slice(&bind.revision_id);
     aad.extend_from_slice(&schema_version.to_be_bytes());
     aad.extend_from_slice(&vk_generation.to_be_bytes());
+    aad.extend_from_slice(&bind.graph_digest);
     aad
 }
 
-/// §2.6: "ov0/meta" ‖ vault_id ‖ record_id ‖ field_tag.
-pub fn meta_aad(vault_id: &VaultId, record_id: &RecordId, field_tag: &[u8]) -> Vec<u8> {
-    let mut aad = b"ov0/meta".to_vec();
+/// §2.6 v0.4: "ov0/meta/v2" ‖ vault_id ‖ record_id ‖ revision_id ‖
+/// field_tag ‖ graph_digest.
+pub fn meta_aad(vault_id: &VaultId, record_id: &RecordId, bind: &RevBinding, field_tag: &[u8]) -> Vec<u8> {
+    let mut aad = b"ov0/meta/v2".to_vec();
     aad.extend_from_slice(vault_id);
     aad.extend_from_slice(record_id);
+    aad.extend_from_slice(&bind.revision_id);
+    aad.extend_from_slice(field_tag);
+    aad.extend_from_slice(&bind.graph_digest);
+    aad
+}
+
+/// Metadata AAD for sealed values that are not revisions (the §10.3
+/// import-log identity): "ov0/meta" ‖ vault_id ‖ id ‖ field_tag.
+fn unbound_meta_aad(vault_id: &VaultId, id: &RecordId, field_tag: &[u8]) -> Vec<u8> {
+    let mut aad = b"ov0/meta".to_vec();
+    aad.extend_from_slice(vault_id);
+    aad.extend_from_slice(id);
     aad.extend_from_slice(field_tag);
     aad
 }
@@ -80,16 +108,13 @@ pub fn seal_record(
     vk: &SecretBytes<32>,
     vault_id: &VaultId,
     record_id: &RecordId,
+    bind: &RevBinding,
     schema_version: u32,
     vk_generation: u32,
     plaintext: &[u8],
 ) -> Result<RecordCiphertext, CryptoError> {
     let key = hkdf::record_key(vk, record_id)?;
-    Ok(seal_with(
-        &key,
-        &record_aad(vault_id, record_id, schema_version, vk_generation),
-        plaintext,
-    ))
+    Ok(seal_with(&key, &record_aad(vault_id, record_id, bind, schema_version, vk_generation), plaintext))
 }
 
 /// Open a record; AEAD failure maps to RECORD_CORRUPT at the op layer
@@ -98,33 +123,27 @@ pub fn open_record(
     vk: &SecretBytes<32>,
     vault_id: &VaultId,
     record_id: &RecordId,
+    bind: &RevBinding,
     schema_version: u32,
     vk_generation: u32,
     sealed: &RecordCiphertext,
 ) -> Result<SecretVec, CryptoError> {
     let key = hkdf::record_key(vk, record_id)?;
-    open_with(
-        &key,
-        &record_aad(vault_id, record_id, schema_version, vk_generation),
-        sealed,
-    )
+    open_with(&key, &record_aad(vault_id, record_id, bind, schema_version, vk_generation), sealed)
 }
 
-/// Seal a metadata field under the vault meta key (§2.6).
+/// Seal a revision's metadata under the vault meta key (§2.6).
 pub fn seal_meta(
     vk: &SecretBytes<32>,
     vault_id: &VaultId,
     meta_salt: &[u8; 16],
     record_id: &RecordId,
+    bind: &RevBinding,
     field_tag: &[u8],
     plaintext: &[u8],
 ) -> Result<RecordCiphertext, CryptoError> {
     let key = hkdf::meta_key(vk, meta_salt)?;
-    Ok(seal_with(
-        &key,
-        &meta_aad(vault_id, record_id, field_tag),
-        plaintext,
-    ))
+    Ok(seal_with(&key, &meta_aad(vault_id, record_id, bind, field_tag), plaintext))
 }
 
 pub fn open_meta(
@@ -132,9 +151,35 @@ pub fn open_meta(
     vault_id: &VaultId,
     meta_salt: &[u8; 16],
     record_id: &RecordId,
+    bind: &RevBinding,
     field_tag: &[u8],
     sealed: &RecordCiphertext,
 ) -> Result<SecretVec, CryptoError> {
     let key = hkdf::meta_key(vk, meta_salt)?;
-    open_with(&key, &meta_aad(vault_id, record_id, field_tag), sealed)
+    open_with(&key, &meta_aad(vault_id, record_id, bind, field_tag), sealed)
+}
+
+/// Seal a non-revision value under the meta key (import-log identities).
+pub fn seal_meta_unbound(
+    vk: &SecretBytes<32>,
+    vault_id: &VaultId,
+    meta_salt: &[u8; 16],
+    id: &RecordId,
+    field_tag: &[u8],
+    plaintext: &[u8],
+) -> Result<RecordCiphertext, CryptoError> {
+    let key = hkdf::meta_key(vk, meta_salt)?;
+    Ok(seal_with(&key, &unbound_meta_aad(vault_id, id, field_tag), plaintext))
+}
+
+pub fn open_meta_unbound(
+    vk: &SecretBytes<32>,
+    vault_id: &VaultId,
+    meta_salt: &[u8; 16],
+    id: &RecordId,
+    field_tag: &[u8],
+    sealed: &RecordCiphertext,
+) -> Result<SecretVec, CryptoError> {
+    let key = hkdf::meta_key(vk, meta_salt)?;
+    open_with(&key, &unbound_meta_aad(vault_id, id, field_tag), sealed)
 }

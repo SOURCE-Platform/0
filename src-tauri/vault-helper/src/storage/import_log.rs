@@ -60,7 +60,7 @@ pub fn seal_identity(
         .map_err(|_| ErrorCode::Internal)?;
     mac.update(identity);
     let fp: [u8; 32] = mac.finalize().into_bytes().into();
-    let sealed = record::seal_meta(
+    let sealed = record::seal_meta_unbound(
         vk, &h.vault_id.0, &h.meta_salt.0, &IMPORT_RECORD_ID, IMPORT_IDENTITY_TAG, identity,
     )
     .map_err(|_| ErrorCode::Internal)?;
@@ -79,7 +79,7 @@ pub fn open_identity(
     }
     let mut nonce = [0u8; 24];
     nonce.copy_from_slice(&identity_ct[..24]);
-    record::open_meta(
+    record::open_meta_unbound(
         vk,
         &h.vault_id.0,
         &h.meta_salt.0,

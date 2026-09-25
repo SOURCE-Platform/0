@@ -32,6 +32,7 @@ pub mod gate;
 pub mod items;
 pub mod recovery_ops;
 pub mod registry_status;
+pub mod resolve;
 pub mod rk_ops;
 pub mod secure_ui;
 pub mod setup;
@@ -260,6 +261,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         "update_item" => items::update_item(core, frame, deps),
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),
+        "resolve_conflict" => resolve::resolve_conflict(core, frame, deps),
         "begin_enrollment" => enroll_ops::begin_enrollment(core, frame),
         "enroll_hello" => enroll_ops::enroll_hello(core, frame),
         "enroll_confirm" => enroll_ops::enroll_confirm(core, deps),

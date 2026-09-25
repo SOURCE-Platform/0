@@ -17,7 +17,7 @@ pub struct ManifestObject {
     /// uuid string (§3.3).
     pub record_id: String,
     /// hex, 32 bytes.
-    pub rev_hash: String,
+    pub revision_id: String,
 }
 
 /// Local manifest mirror. `version` governs this file's format;
@@ -86,7 +86,7 @@ mod tests {
         let mut m = Manifest::fresh(vault_id);
         m.objects.push(ManifestObject {
             record_id: "7c9e6679-7425-40de-944b-e07fc1f90ae7".to_string(),
-            rev_hash: "ab".repeat(32),
+            revision_id: "ab".repeat(32),
         });
         let parsed = parse_manifest(&write_manifest(&m).unwrap()).unwrap();
         assert_eq!(parsed.objects, m.objects);

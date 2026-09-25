@@ -1,4 +1,4 @@
-//! `vault.db` SQLite schema (spec §3.2, `user_version = 1`) and the
+//! `vault.db` SQLite schema (spec v0.4 §3.2, `user_version = 2`) and the
 //! corruption-mapping rules of §3.6.
 
 use std::path::Path;
@@ -9,13 +9,18 @@ use crate::errors::ErrorCode;
 
 pub const DB_NAME: &str = "vault.db";
 
-/// §3.2 verbatim: every revision of every record, current tips, open
-/// conflicts, import idempotency log, and helper-internal kv.
+/// The schema version this build reads and writes (v0.4 clean v2 break).
+pub const USER_VERSION: u32 = 2;
+
+/// §3.2 v0.4: admitted revisions keyed by stable `revision_id`, the heads
+/// (tip / conflict set), pending revisions, per-record freeze flags,
+/// refusal counts, this device's author high-water mark, the import log
+/// and helper-internal kv.
 const SCHEMA: &str = "
 CREATE TABLE record_revs (
-  rev_hash      BLOB PRIMARY KEY,
+  revision_id   BLOB PRIMARY KEY CHECK(length(revision_id)=32),
   record_id     TEXT NOT NULL,
-  parent_revs   BLOB NOT NULL,
+  parent_ids    BLOB NOT NULL,
   author_device TEXT NOT NULL,
   counter       INTEGER NOT NULL,
   deleted       INTEGER NOT NULL DEFAULT 0,
@@ -35,9 +40,29 @@ CREATE TABLE record_tips (
   tip_rev   BLOB
 );
 CREATE TABLE record_conflicts (
+  record_id   TEXT NOT NULL,
+  revision_id BLOB NOT NULL,
+  PRIMARY KEY (record_id, revision_id)
+);
+CREATE TABLE pending_revs (
+  revision_id BLOB PRIMARY KEY,
+  record_id   TEXT NOT NULL,
+  object      BLOB NOT NULL
+);
+CREATE TABLE record_flags (
+  record_id TEXT PRIMARY KEY,
+  frozen    INTEGER NOT NULL,
+  evidence  BLOB NOT NULL
+);
+CREATE TABLE refused_revs (
   record_id TEXT NOT NULL,
-  rev_hash  BLOB NOT NULL,
-  PRIMARY KEY (record_id, rev_hash)
+  reason    INTEGER NOT NULL,
+  count     INTEGER NOT NULL,
+  PRIMARY KEY (record_id, reason)
+);
+CREATE TABLE author_hwm (
+  record_id TEXT PRIMARY KEY,
+  counter   INTEGER NOT NULL
 );
 CREATE TABLE import_log (
   fingerprint BLOB PRIMARY KEY,
@@ -63,7 +88,7 @@ pub fn open_db(path: &Path, create: bool) -> Result<Connection, ErrorCode> {
     if create {
         conn.execute_batch(SCHEMA)
             .map_err(|_| ErrorCode::DbCorrupt)?;
-        conn.pragma_update(None, "user_version", 1u32)
+        conn.pragma_update(None, "user_version", USER_VERSION)
             .map_err(|_| ErrorCode::DbCorrupt)?;
         return Ok(conn);
     }
@@ -71,11 +96,12 @@ pub fn open_db(path: &Path, create: bool) -> Result<Connection, ErrorCode> {
     let user_version: u32 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(|_| ErrorCode::DbCorrupt)?;
-    if user_version != 1 {
-        return Err(if user_version > 1 {
+    if user_version != USER_VERSION {
+        // v0.4 is a clean break: a v1 database is refused, not migrated.
+        return Err(if user_version > USER_VERSION {
             ErrorCode::FormatTooNew
         } else {
-            ErrorCode::DbCorrupt
+            ErrorCode::FormatInvalid
         });
     }
     Ok(conn)
@@ -116,12 +142,16 @@ mod tests {
         let user_version: u32 = conn
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
-        assert_eq!(user_version, 1);
+        assert_eq!(user_version, USER_VERSION);
         // All §3.2 tables exist.
         for table in [
             "record_revs",
             "record_tips",
             "record_conflicts",
+            "pending_revs",
+            "record_flags",
+            "refused_revs",
+            "author_hwm",
             "import_log",
             "kv",
         ] {
@@ -150,7 +180,7 @@ mod tests {
         let path = tmp_db("toonew");
         {
             let conn = open_db(&path, true).unwrap();
-            conn.pragma_update(None, "user_version", 2u32).unwrap();
+            conn.pragma_update(None, "user_version", 3u32).unwrap();
         }
         assert_eq!(
             open_db(&path, false).map(|_| ()),
