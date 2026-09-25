@@ -1,8 +1,8 @@
 # O / Source Credential Vault — Security Architecture
 
-**Status:** Proposal v0.3 — owner decisions incorporated; canonical pre-implementation security reference  
+**Status:** v0.3, with v0.4 alignment notes (2026-09-24) — owner decisions incorporated; canonical security reference. The Phase F backup/sync design it constrains is specified in `credential-vault-implementation-spec.md` v0.4 (§11).  
 **Supersedes:** Proposal v0.2 and the unresolved decisions in `o-source-credential-vault-threat-model-v0.1.md`  
-**Phase:** Pre-implementation. No real credentials may be imported and no credential-vault implementation is authorized merely by this document.  
+**Phase:** Phases A–E and E.1 implemented and verified; Phase F specified (spec v0.4) but not authorized or started. No real credentials may be imported and no credential-vault implementation is authorized merely by this document.  
 **Author basis:** Adversarial review of the v0.1 threat model against the actual O/Source repository, plus owner UX/security decisions made on 2026-09-17.
 
 ---
@@ -24,7 +24,9 @@ The architecture is now:
 
 - **Direct device-to-device sync is preferred for normal operation.** Mac and
   iPhone exchange encrypted vault state over the existing pinned device
-  channel when available.
+  channel when available. *(v0.4 sequencing note: implemented in Phase
+  F.2; Phase F first delivers provider-mediated Mac sync and iPhone
+  envelope catch-up — spec v0.4 §11, §18.)*
 - **A durable remote ciphertext backup is part of the recovery architecture.**
   It stores only encrypted vault state and the minimum metadata required to
   retrieve it. It never receives plaintext, the Vault Key, the master
@@ -272,7 +274,7 @@ These changes supersede conflicting statements in v0.1/v0.2.
 | C5 | Autofill explicitly handles IDN/punycode, confusables, iframes, subdomains, HTTP downgrade, and real-domain AitM limitations. | §12 |
 | C6 | Revocation means denying future use/sync plus automatic VK rotation; it never retroactively protects secrets already exposed. | §9 |
 | C7 | Clipboard controls are mitigation only; prefer direct fill and gate copy/reveal. | §§12, 15, 17 |
-| C8 | Normal sync prefers direct peer-to-peer, but durable remote ciphertext backup is required so disaster recovery has something to restore. The backup is not trusted and cannot authorize. | §11 |
+| C8 | Normal sync prefers direct peer-to-peer, but durable remote ciphertext backup is required so disaster recovery has something to restore. The backup is not trusted and cannot authorize. **v0.4 note:** Phase F implements the provider-mediated multi-writer protocol and tests it with simulated Mac devices; a product vault in Phase F has one Mac writer, because Mac-to-Mac enrollment is not yet specified (adding a second physical Mac awaits an owner decision). Direct Mac⇄iPhone peer sync and the iPhone vault client follow in Phase F.2. The provider still cannot authorize anything: it authenticates requests with device and recovery public keys and enforces structure, but clients verify every accepted state themselves. | §11 |
 | C9 | Keychain and Secure Enclave roles are distinct; SE holds asymmetric keys, Keychain holds protected wrapped material/metadata. | §§6, 15, 16 |
 | C10 | FileVault is a strong recommendation rather than a hard vault-creation gate. Source Vault must remain independently secure at rest. | §§15, 17, 19 |
 | C11 | Recovery is fully specified: either master password or RK can recover the current backed-up vault; Source has neither. | §10 |
@@ -731,7 +733,7 @@ The remote storage is not a recovery authority. It only returns ciphertext.
 
 | Situation | Recovery path |
 |---|---|
-| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. |
+| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. *(v0.4: requires the iPhone vault client, Phase F.2; until then, total-loss recovery on a new Mac, which revokes every prior device — spec v0.4 §12 scenario 1.)* |
 | iPhone lost, Mac retained | Symmetric. |
 | Both devices lost, master password remembered | Fresh supported device downloads encrypted backup → MP unwraps current VK locally → create new device identity/recovery epoch → rotate device registry credentials → re-enroll future devices. |
 | Both devices lost, master password forgotten, RK retained | Same flow, but RK unwraps current VK. |
@@ -793,6 +795,20 @@ Mac ⇄ pinned TLS + device signatures ⇄ iPhone
 Direct sync is preferred because it minimizes infrastructure and keeps the
 security model easy to inspect.
 
+**v0.4 alignment (Phase F design closure, owner-approved):** the first
+implemented multi-writer path is **provider-mediated sync** through the
+untrusted backup provider (spec v0.4 §11), tested with simulated Mac
+devices; in Phase F a product vault has one Mac writer until Mac-to-Mac
+enrollment is specified. Direct Mac⇄iPhone
+peer sync and the iPhone record client are deferred to Phase F.2; in
+Phase F the iPhone only fetches and verifies its own device envelope from
+the provider after a key rotation (spec §4.7). This changes sequencing,
+not trust: the provider stores ciphertext and public verification data,
+authenticates requests only with device Secure Enclave public keys and
+MP/RK-derived recovery public keys (no symmetric backup secret exists),
+and cannot produce a vault state any client accepts without valid
+manifest, registry and checkpoint verification.
+
 ### 11.2 Durable remote backup: required for disaster recovery
 
 Owner decision: the system must keep a durable encrypted copy somewhere other
@@ -824,6 +840,10 @@ and number of objects. "Zero knowledge" here means no plaintext secret or
 decryption capability, not literally zero metadata.
 
 ### 11.3 Backup vs relay
+
+*(v0.4 sequencing note: in Phase F the remote service is the Mac
+multi-writer path as well as the backup; direct peer sync follows in Phase
+F.2. It remains untrusted and cannot authorize — spec v0.4 §11.)*
 
 v1 may initially treat the remote service as **backup only** while direct peer
 sync remains the normal merge path. The object format should nevertheless be

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Date** | 2026-09-24 (revision 3, incorporating D-1…D-13, S-1…S-5, O-1/O-2 and the final review corrections) |
-| **Status** | **DRAFT FOR OWNER REVIEW — uncommitted, not normative** |
+| **Status** | **APPROVED as the Phase F design baseline (owner, 2026-09-24; committed `cfc6b80`). Folded into spec v0.4, which is normative and supersedes this record where they differ — notably the v0.4 internal review amended S-5 (the shared throttle covers the MP class only; RK-class recovery is exempt) and added revocation re-keying of both recovery classes, inline `create` bootstrap blobs and `setup_retry_handle`** |
 | **Phase F** | **NOT AUTHORIZED / NOT STARTED** |
 | **Inputs** | `phase-f-readiness.md` (`72b15b0`); `credential-vault-implementation-spec.md` v0.3.1; `credential-vault-security-architecture.md`; `src-tauri/vault-helper/src/**`; `vault-apple-crypto`; SourceMobile `Vault/`; vendor documentation (§5) |
 | **Repo state** | desktop `main` @ `72b15b0`, readiness file restored to `HEAD`; iPhone `main` @ `d6fe885` |

@@ -136,3 +136,27 @@ Targets macOS, Windows, and Linux. Platform-specific code should be isolated in 
 - Split by responsibility, not by arbitrary chunks. Each file should have one clear job and stay readable in one screenful.
 - Treat monolithic files as maintenance bugs. If you encounter one, plan the refactor before continuing feature work.
 - Use the repo file-length audit during refactors so violations are visible in one command rather than by manual inspection.
+
+## Credential-Vault Review Workflow
+
+Substantial credential-vault work (spec revisions, design documents,
+implementation milestones) follows a bounded review loop using the project
+subagents in `.claude/agents/`:
+
+1. The lead produces the candidate.
+2. The candidate is frozen (no edits while it is under review).
+3. Independent reviewers inspect it in fresh contexts:
+   `security-reviewer` and `spec-reviewer` for spec/design work;
+   `verification-reviewer` (plus `security-reviewer` where relevant) after
+   implementation milestones.
+4. The lead verifies every finding against the repository rather than
+   accepting it blindly, and records a disposition for each.
+5. Accepted blockers and important findings are fixed.
+6. One bounded re-review of the fixes runs.
+7. If no security-critical or spec-blocking problem remains, the checkpoint
+   is closed. There are no unlimited review loops.
+
+Stop and ask the owner if reviewers disagree materially about cryptography
+or security, or if a proposed fix would change an owner-approved invariant.
+Optional hardening and alternative architectures are not reasons to reopen
+an approved design.
