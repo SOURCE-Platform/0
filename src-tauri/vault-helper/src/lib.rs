@@ -28,6 +28,8 @@ pub mod recovery;
 pub mod registry;
 pub mod state;
 pub mod storage;
+#[cfg(debug_assertions)]
+pub mod test_support;
 pub mod vault;
 
 /// Every committed cross-language vector family (§16.8): the Phase B

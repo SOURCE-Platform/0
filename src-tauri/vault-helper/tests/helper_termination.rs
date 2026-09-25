@@ -30,7 +30,7 @@ fn start_with_broken_stderr(tag: &str, idle_secs: Option<u64>) -> (Child, PathBu
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_source-vault-helper"));
     cmd.env("OV0_VAULT_SOCKET_PATH", &socket)
         .env("OV0_VAULT_DIR", dir.join("v"))
-        .env("OV0_VAULT_KEYCHAIN_PREFIX", format!("ov0term-{}-{tag}-", std::process::id()))
+        .env("OV0_VAULT_KEYCHAIN_PREFIX", format!("{}{tag}-", vault_helper::test_support::keychain_prefix()))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::piped());

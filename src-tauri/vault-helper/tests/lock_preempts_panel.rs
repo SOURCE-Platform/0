@@ -104,7 +104,7 @@ fn response(rx: &Receiver<Value>, within: Duration, mut on_event: impl FnMut(&Va
 }
 
 fn scenario() {
-    std::env::set_var("OV0_VAULT_KEYCHAIN_PREFIX", format!("ov0lockp-{}-", std::process::id()));
+    vault_helper::test_support::init_test_namespace();
     cleanup();
     std::fs::create_dir_all(dir()).unwrap();
     let socket = dir().join("s");

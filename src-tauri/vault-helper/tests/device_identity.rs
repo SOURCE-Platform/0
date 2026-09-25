@@ -24,6 +24,7 @@ fn serial() -> std::sync::MutexGuard<'static, ()> {
 /// One fresh synthetic vault directory per test (same pattern as the
 /// other helper test binaries).
 fn tmp() -> PathBuf {
+    vault_helper::test_support::init_test_namespace();
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = PathBuf::from(format!(
         "/tmp/vhdev-{}-{}",

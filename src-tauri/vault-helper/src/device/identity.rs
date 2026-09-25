@@ -44,6 +44,19 @@ pub struct SeDevice {
     agree_pub: [u8; PUBKEY_LEN],
 }
 
+/// SE key-tag prefix. Debug builds honour `OV0_VAULT_SE_TAG_PREFIX` so test
+/// runs mint keys under a per-run `test.<run_id>.` namespace that a cleanup
+/// can match safely; release always uses `dev.`.
+fn tag_prefix() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(prefix) = std::env::var("OV0_VAULT_SE_TAG_PREFIX") {
+        if !prefix.is_empty() {
+            return prefix;
+        }
+    }
+    "dev.".to_string()
+}
+
 fn path(dir: &Path) -> PathBuf {
     dir.join(DEVICE_FILE_NAME)
 }
@@ -53,8 +66,13 @@ impl SeDevice {
     /// roles, record written. Replaces any existing record (vault
     /// creation and re-enrollment both mint a new identity, §4.4 rule 5).
     pub fn create(dir: &Path, name: &str, platform: u8) -> Result<SeDevice, ErrorCode> {
+        // A replaced identity's SE keys are dead (§4.4 rule 5): delete them
+        // rather than orphaning them in the Keychain.
+        if exists(dir) {
+            wipe(dir);
+        }
         let id = random_uuid();
-        let key_tag = format!("dev.{}", hex::encode(id));
+        let key_tag = format!("{}{}", tag_prefix(), hex::encode(id));
         let sign_pub = se::create_signing_key(&key_tag)?;
         let agree_pub = se::create_agreement_key(&key_tag)?;
         let dev = SeDevice {

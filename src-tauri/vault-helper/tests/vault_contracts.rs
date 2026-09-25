@@ -46,7 +46,7 @@ fn op04_bad_state_matrix() {
     }
     let resp = fx.op(json!({"op": "begin_recovery_unlock"}));
     assert_eq!(err_code(&resp), "INVALID_INPUT");
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- SC-01/SC-04: no credential-bearing wire fields ----------------------------
@@ -102,7 +102,7 @@ fn sc01_sc04_op_surface_has_no_credential_fields() {
     for e in fx.events.log.lock().unwrap().iter() {
         assert!(!e.to_string().contains("synthetic-master-password"));
     }
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- auto-lock minutes op -------------------------------------------------------
@@ -120,7 +120,7 @@ fn auto_lock_minutes_op_validates_range_and_persists() {
         let resp = fx.op(json!({"op": "set_auto_lock_minutes", "minutes": bad}));
         assert_eq!(err_code(&resp), "INVALID_INPUT", "{bad}");
     }
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 /// Panel requests match the op flows (§1.7): create on setup, entry on
@@ -145,5 +145,5 @@ fn panel_requests_follow_flow_kinds() {
             PanelRequest::MpChange
         ]
     );
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }

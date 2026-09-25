@@ -82,7 +82,7 @@ fn op01_setup_unlock_crud_reveal_lifecycle() {
         .lock(LockReason::Explicit);
     assert!(events.iter().any(|e| e["event"] == "locked"));
     assert_eq!(fx.state(), VaultState::Locked);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- OP-02: wrong MP → WRONG_CREDENTIAL, backoff, retry succeeds -------------
@@ -106,7 +106,7 @@ fn op02_wrong_master_password_backoff_then_success() {
     let resp = unlock(&fx, MP);
     assert_eq!(resp["ok"], true, "{resp}");
     assert_eq!(fx.core.lock().unwrap().failed_attempts, 0);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- OP-03: presence denial blocks mutation, state restored ------------------
@@ -145,7 +145,7 @@ fn op03_presence_denied_blocks_mutation() {
     // Nothing was written.
     let resp = fx.op(json!({"op": "list_items"}));
     assert_eq!(resp["items"].as_array().unwrap().len(), 0);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- OP-06: reveal refuses when capture suppression is unverifiable ----------
@@ -172,7 +172,7 @@ fn op06_reveal_capture_unsafe_is_fail_closed() {
     assert_eq!(fx.events_named("capture_unsafe").len(), 1);
     assert!(!resp.to_string().contains(PASSWORD));
     assert_eq!(fx.state(), VaultState::Unlocked);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- OP-05: panel cancel paths ------------------------------------------------
@@ -186,7 +186,7 @@ fn op05_cancelled_panels_leave_no_partial_state() {
     assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
     assert_eq!(fx.state(), VaultState::Uninitialized);
     assert!(!fx.dir.join(VAULT_HEADER_NAME).exists());
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 
     // unlock cancel: back to LOCKED, retryable.
     let fx = vault_fx::fx(); // the local `fx` shadows the fn
@@ -195,7 +195,7 @@ fn op05_cancelled_panels_leave_no_partial_state() {
     assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
     assert_eq!(fx.state(), VaultState::Locked);
     assert_eq!(unlock(&fx, MP)["ok"], true);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- OP-07: change_master_password re-wraps, old MP dies ----------------------
@@ -226,5 +226,5 @@ fn op07_change_master_password_rewraps_vk() {
     assert_eq!(resp["ok"], true, "{resp}");
     let resp = fx.op(json!({"op": "reveal", "ref": r}));
     assert_eq!(resp["secret"]["password"], PASSWORD, "{resp}");
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }

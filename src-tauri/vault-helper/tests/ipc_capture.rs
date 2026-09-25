@@ -45,9 +45,8 @@ fn call(stream: &mut UnixStream, frame: Value, suppressed: bool) -> (Value, Vec<
 fn reveal_capture_check_is_answered_on_the_requesting_connection() {
     std::env::set_var("OV0_VAULT_PANEL_SCRIPT", format!("submit:{MP}"));
     std::env::set_var("OV0_VAULT_LA_STUB", "allow");
-    std::env::set_var("OV0_VAULT_KEYCHAIN_PREFIX", format!("ov0ipccc-{}-", std::process::id()));
-    keychain::delete_item("com.racker.zero.vault.state");
-    keychain::delete_item("com.racker.zero.vault.helper-prefs");
+    vault_helper::test_support::init_test_namespace();
+    vault_helper::test_support::wipe_test_keychain();
 
     // Short path: macOS SUN_LEN caps socket paths at ~104 bytes.
     let dir = PathBuf::from(format!("/tmp/vhcc{}", std::process::id()));
@@ -106,5 +105,6 @@ fn reveal_capture_check_is_answered_on_the_requesting_connection() {
     let _ = handle.join();
     keychain::delete_item("com.racker.zero.vault.state");
     keychain::delete_item("com.racker.zero.vault.helper-prefs");
+    vault_helper::device::identity::wipe(&dir);
     std::fs::remove_dir_all(&dir).ok();
 }

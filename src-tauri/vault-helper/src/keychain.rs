@@ -29,6 +29,8 @@ extern "C" {
     fn SecItemAdd(attributes: *const c_void, result: *mut CFTypeRef) -> OSStatus;
     fn SecItemUpdate(query: *const c_void, attributes_to_update: *const c_void) -> OSStatus;
     fn SecItemDelete(query: *const c_void) -> OSStatus;
+    #[cfg(debug_assertions)]
+    fn SecKeychainSetUserInteractionAllowed(state: u8) -> OSStatus;
     static kSecClass: CFStringRef;
     static kSecClassGenericPassword: CFStringRef;
     static kSecAttrService: CFStringRef;
@@ -144,6 +146,19 @@ pub fn upsert_item(service_base: &str, bytes: &[u8]) -> Result<(), ErrorCode> {
         Ok(())
     } else {
         Err(ErrorCode::Internal)
+    }
+}
+
+/// Test/gate fail-fast guard: disable interactive Keychain prompts for this
+/// process, so an item whose ACL trusts another binary fails
+/// (`errSecAuthFailed`) instead of raising a login-password dialog that
+/// would hang an unattended run. Debug builds only; production ACLs and
+/// behaviour are untouched.
+#[cfg(debug_assertions)]
+pub fn disable_user_interaction() {
+    // SAFETY: plain FFI call with a boolean argument; no pointers involved.
+    unsafe {
+        SecKeychainSetUserInteractionAllowed(0);
     }
 }
 

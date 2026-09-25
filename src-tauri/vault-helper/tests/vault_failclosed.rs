@@ -29,7 +29,7 @@ fn format_too_new_header_enters_error() {
     assert_eq!(fx.state(), VaultState::Error);
     // And no panel was ever presented.
     assert_eq!(fx.panel.seen.lock().unwrap().len(), 1, "setup panel only");
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn manifest_mismatch_enters_error() {
     // The helper never deletes the file (§3.6) — evidence on disk stays.
     assert!(manifest_path.exists());
     let _ = r;
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn record_corruption_fails_closed_at_read() {
     let r2 = add_login(&fx);
     let resp = fx.op(json!({"op": "reveal", "ref": r2}));
     assert_eq!(resp["secret"]["password"], PASSWORD, "{resp}");
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }
 
 // --- §2.8 rollback evidence -----------------------------------------------------
@@ -104,5 +104,5 @@ fn rollback_evidence_refuses_older_generation() {
     let resp = unlock(&fx, MP);
     assert_eq!(err_code(&resp), "MANIFEST_ROLLBACK", "{resp}");
     assert_eq!(fx.state(), VaultState::Error);
-    std::fs::remove_dir_all(&fx.dir).ok();
+    fx.remove_dir();
 }

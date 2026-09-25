@@ -28,6 +28,7 @@ pub struct Phone {
 
 impl Phone {
     pub fn new(tag: &str) -> Phone {
+        vault_helper::test_support::init_test_namespace();
         let dir = std::env::temp_dir().join(format!("vhphone-{}-{}", std::process::id(), tag));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

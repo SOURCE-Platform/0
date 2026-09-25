@@ -54,6 +54,12 @@ fn main() -> ExitCode {
     // §2.11: the helper must never dump core (VK zeroization policy).
     vault_helper::crypto::secret::disable_core_dumps();
     install_signal_handlers();
+    // Test/gate runs isolate their Keychain namespace; make any would-be
+    // interactive prompt fail fast instead of hanging the run.
+    #[cfg(debug_assertions)]
+    if std::env::var("OV0_VAULT_KEYCHAIN_PREFIX").is_ok_and(|p| !p.is_empty()) {
+        vault_helper::keychain::disable_user_interaction();
+    }
 
     // AppKit takes the main thread before any worker spawns; panel jobs
     // dispatched to the main queue require this event loop.

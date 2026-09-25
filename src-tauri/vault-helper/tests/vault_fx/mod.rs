@@ -3,9 +3,10 @@
 //! a real on-disk vault per test, and small op helpers. Synthetic
 //! credentials only.
 //!
-//! Keychain isolation: one process-unique service prefix, items deleted
-//! before every test, and each test binary serialized on a mutex (env and
-//! rollback-generation state are process-global).
+//! Keychain isolation: a random per-run namespace (`test_support`), items
+//! deleted before and after every test, interactive prompts disabled, and
+//! each test binary serialized on a mutex (env and rollback-generation
+//! state are process-global).
 //!
 //! Not every binary uses every helper; silence per-binary lints.
 #![allow(dead_code, unused_imports)]
@@ -132,16 +133,10 @@ pub fn fx() -> Fx {
 /// Same fixture with the LA presence check scripted to refuse.
 pub fn fx_with_presence(allow: bool) -> Fx {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
-    static PREFIX: OnceLock<()> = OnceLock::new();
-    PREFIX.get_or_init(|| {
-        std::env::set_var(
-            "OV0_VAULT_KEYCHAIN_PREFIX",
-            format!("ov0ops-{}-", std::process::id()),
-        );
-    });
+    // Random per-run namespace + fail-fast prompts (§18 pre-gate).
+    vault_helper::test_support::init_test_namespace();
     // Rollback/prefs items are process-global state; start clean.
-    keychain::delete_item("com.racker.zero.vault.state");
-    keychain::delete_item("com.racker.zero.vault.helper-prefs");
+    vault_helper::test_support::wipe_test_keychain();
     let dir = PathBuf::from(format!(
         "/tmp/vhops-{}-{}",
         std::process::id(),
@@ -188,6 +183,7 @@ pub fn fx_with_presence(allow: bool) -> Fx {
 impl Drop for Fx {
     fn drop(&mut self) {
         vault_helper::device::identity::wipe(&self.dir);
+        vault_helper::test_support::wipe_test_keychain();
     }
 }
 
@@ -198,6 +194,13 @@ impl Fx {
     pub fn set_presence(&mut self, la: Arc<La>) {
         self.deps.la = la.clone();
         self.la = la;
+    }
+
+    /// Remove the fixture's vault directory, destroying its Secure Enclave
+    /// keys first (Drop can no longer find them once `device.json` is gone).
+    pub fn remove_dir(&self) {
+        vault_helper::device::identity::wipe(&self.dir);
+        std::fs::remove_dir_all(&self.dir).ok();
     }
 
     /// Re-boot the core against the same directory (a "helper restarted"
