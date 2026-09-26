@@ -194,3 +194,59 @@ fn pr04_bound_fields() {
     assert_eq!(send("GET", &req.path, b"", s.now + 301), 401, "clock");
     assert_eq!(send("GET", &req.path, b"", s.now), 200);
 }
+
+/// BK-17 / BK-12 (second instance): two publishers race for one
+/// generation on two provider instances sharing the store — exactly one
+/// commits, the other gets STATE_MOVED; a nonce spent on one instance is
+/// refused by the other.
+#[test]
+fn bk17_concurrent_publishers() {
+    let mut s = Sim::created("bk17");
+    let other = SoftwareDevice::generate("Synthetic Mac B", PLATFORM_MACOS);
+    let mut d = s.next_draft();
+    let st = verify_chain_with(&d.registry, &s.vault_id, &EpochPolicy::CheckpointAnchored).unwrap();
+    d.registry.push(build::enroll(&st, &s.mac, &other).unwrap());
+    d.envs.push((other.device_id(), env_blob(&other.device_id(), 1)));
+    assert_eq!(s.publish(d).status, 200);
+    let second = provider_on(s.fs.clone());
+    let mut da = s.next_draft();
+    s.add_record(&mut da, 1);
+    let mut db = s.next_draft();
+    db.revs.push(row(&vault_proto::rev::new_record_id(), &other, 1, vec![], 1));
+    let (ta, ba) = s.build(&da, TransitionKind::Publish, &s.mac);
+    let (tb, bb) = s.build(&db, TransitionKind::Publish, &other);
+    s.put_blobs(&ba, &s.mac);
+    s.put_blobs(&bb, &other);
+    let first = s.p.clone();
+    let (ra, rb) = std::thread::scope(|sc| {
+        let a = sc.spawn(|| s.commit(&ta, Who::Dev(&s.mac)));
+        let b = sc.spawn(|| {
+            let body = tb.encode().unwrap();
+            let mut n = [0u8; 16];
+            getrandom::fill(&mut n).unwrap();
+            let key = vault_proto::crypto::recovery_auth::key_id(&other.sign_pub());
+            let req = vault_proto::request::ProviderRequest::build(
+                ORIGIN,
+                s.vault_id,
+                Operation::StateCommit,
+                None,
+                vault_proto::request::SignerId::Device { device_id: other.device_id(), key_id: key },
+                &body,
+                Some(tb.expected_state),
+                s.now,
+                n,
+            )
+            .unwrap();
+            let h = vault_proto::request::auth_header(&req.encode(), &other.sign_prehash(&req.prehash()).unwrap());
+            let r = second.handle(&vault_provider_core::Request { method: "POST", path: &req.path, auth: Some(&h), body: &body, now: s.now, client_ip: "192.0.2.2" });
+            let replay = first.handle(&vault_provider_core::Request { method: "POST", path: &req.path, auth: Some(&h), body: &body, now: s.now, client_ip: "192.0.2.2" });
+            (r, replay)
+        });
+        (a.join().unwrap(), b.join().unwrap())
+    });
+    let (rb, replay) = rb;
+    let mut codes = vec![(ra.status, Sim::error(&ra)), (rb.status, Sim::error(&rb))];
+    codes.sort();
+    assert_eq!(codes, vec![(200, String::new()), (409, "STATE_MOVED".into())]);
+    assert_eq!(Sim::error(&replay), "BACKUP_REPLAY", "nonce spent on the other instance");
+}

@@ -27,6 +27,9 @@ use vault_provider_core::{Config, Provider, Request, Response};
 pub const ORIGIN: &str = "https://provider.test";
 pub const T0: u64 = 1_900_000_000;
 
+/// Produces a request signature over its prehash.
+pub type Signer<'a> = Box<dyn Fn(&[u8; 32]) -> [u8; 64] + 'a>;
+
 pub enum Who<'a> {
     Dev(&'a SoftwareDevice),
     Rec(&'a RecoveryAuthKey, RecoveryClass),
@@ -230,7 +233,7 @@ impl Sim {
     }
 
     pub fn call_n(&self, op: Operation, blob: Option<&[u8; 32]>, body: &[u8], who: Who<'_>, expected: Option<[u8; 32]>, n: [u8; 16]) -> Response {
-        let (signer, sign): (SignerId, Box<dyn Fn(&[u8; 32]) -> [u8; 64]>) = match who {
+        let (signer, sign): (SignerId, Signer<'_>) = match who {
             Who::Dev(d) => (
                 SignerId::Device { device_id: d.device_id(), key_id: key_id(&d.sign_pub()) },
                 Box::new(move |h| d.sign_prehash(h).unwrap()),
