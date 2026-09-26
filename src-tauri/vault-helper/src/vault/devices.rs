@@ -23,17 +23,12 @@ use super::setup::{emit_panel, PANEL_TIMEOUT_PUB as PANEL_TIMEOUT};
 use super::{lock_core, Deps, OpOutcome, PanelOutcome, PanelRequest, VaultCore};
 use crate::crypto::hex;
 use crate::crypto::secret::random_secret;
-use crate::device::envelope;
 use crate::device::identity::SeDevice;
-use crate::device::rotate::EnvelopePlan;
 use crate::errors::ErrorCode;
-use crate::registry::build;
 use crate::registry::chain::EpochPolicy;
 use crate::registry::device::DeviceIdentity;
 use crate::registry::log;
 use crate::state::VaultState;
-use crate::storage::rotation::{self, MpWrap, RkWrap};
-use crate::storage::VaultStore;
 
 const POLICY: EpochPolicy<'static> = EpochPolicy::CheckpointAnchored;
 
@@ -146,7 +141,6 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
             }
         }
     };
-    drop(mp);
 
     // The rotation invalidates the current recovery wrap, so the user
     // leaves with a Recovery Key that works — or nothing is committed.
@@ -155,7 +149,8 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
         return super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled));
     }
 
-    match commit_revocation(core, &dir, &vault_id, &me, target, &pk, &rk, &state) {
+    drop(pk);
+    match commit_revocation(core, &me, target, &mp, &rk) {
         Ok(v) => {
             let out = super::rk_ops::finish_pub(core, deps, Ok(()));
             if out.response["ok"] == Value::Bool(true) {
@@ -175,71 +170,35 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn commit_revocation(
     core: &Arc<Mutex<VaultCore>>,
-    dir: &std::path::Path,
-    vault_id: &[u8; 16],
     me: &SeDevice,
     target: [u8; 16],
-    pk: &crate::crypto::secret::SecretBytes<32>,
+    mp: &[u8],
     rk: &crate::crypto::secret::SecretBytes<32>,
-    state: &crate::registry::chain::RegistryState,
 ) -> Result<Value, ErrorCode> {
-    // 1. The registry entry first (§11.4: "after writing the registry
-    //    revoke entry"), so even a failed rotation leaves the device
-    //    untrusted rather than trusted.
-    let entry = build::revoke(state, me, target)?;
-    let head = crate::crypto::registry::entry_hash(&entry).map_err(|_| ErrorCode::Internal)?;
-    let after = log::append(dir, vault_id, state, entry, &POLICY)?;
-
-    // 2. The revoked device keeps no envelope and no credential here.
-    envelope::remove_envelope(dir, &target);
-
     let mut c = lock_core(core);
     if c.state != VaultState::Authorizing {
         return Err(ErrorCode::BadState);
     }
-    let (Some(mut store), Some(vk)) = (c.store.take(), c.vk.take()) else {
+    let (Some(store), Some(vk)) = (c.store.take(), c.vk.take()) else {
         return Err(ErrorCode::BadState);
     };
-    store.set_registry_head(head)?;
-
-    // 3. Rotate. Every surviving device is re-enveloped in the same
-    //    journal transaction as the wraps (§2.10 + §11.4).
-    let devices: Vec<([u8; 16], [u8; 65])> = after
-        .devices
-        .iter()
-        .filter(|d| !d.revoked)
-        .map(|d| (d.device_id, d.agree_pub))
-        .collect();
-    let plan = EnvelopePlan {
-        vault_id: *vault_id,
-        devices,
-        fresh: Vec::new(),
-    };
-    let rotated = rotation::rotate(
-        store,
-        &vk,
-        MpWrap::Reseal(pk),
-        RkWrap::Seal(rk),
-        Some(&plan),
-        None,
-    );
-    drop(vk);
-    let (outcome, store) = match rotated.and_then(|r| VaultStore::open(dir).map(|s| (r, s))) {
-        Ok(v) => v,
+    let done = match super::revoke_core::revoke(store, &vk, me, target, mp, rk) {
+        Ok(d) => d,
+        Err(ErrorCode::WrongCredential) => return Err(ErrorCode::WrongCredential),
         Err(_) => return Err(ErrorCode::RotationFailed),
     };
-    let generation = store.header.manifest_generation;
-    c.header = Some(store.header.clone());
-    c.store = Some(store);
-    c.vk = Some(outcome.new_vk.mlock_best_effort());
+    drop(vk);
+    let generation = done.store.header.manifest_generation;
+    c.header = Some(done.store.header.clone());
+    c.store = Some(done.store);
+    c.vk = Some(done.vk.mlock_best_effort());
     let _ = crate::keychain::write_seen_generation(generation);
     Ok(json!({
         "device_id": hex::encode(target),
-        "registry_head": hex::encode(head),
-        "vk_generation": outcome.vk_generation,
-        "manifest_generation": outcome.manifest_generation,
+        "registry_head": hex::encode(done.registry_head),
+        "vk_generation": done.vk_generation,
+        "manifest_generation": generation,
     }))
 }

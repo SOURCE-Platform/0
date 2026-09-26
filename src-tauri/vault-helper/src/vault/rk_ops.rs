@@ -23,7 +23,6 @@ use crate::crypto::wrap::{self, RecoveryWrapFile};
 use crate::errors::ErrorCode;
 use crate::recovery::sheet::head_prefix;
 use crate::state::VaultState;
-use crate::storage::rotation::{self, MpWrap, RkWrap};
 use crate::storage::store::RECOVERY_WRAP_NAME;
 use crate::storage::VaultStore;
 
@@ -181,7 +180,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
         return OpOutcome::err(ErrorCode::BadState);
     };
     let dir = store.dir.clone();
-    let rotated = rotation::rotate(store, &vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, None);
+    let rotated = super::recovery_ops::rotate_with_rk(store, &vk, &pk, &rk, false);
     drop(vk);
     let reopened = rotated.and_then(|r| VaultStore::open(&dir).map(|s| (r, s)));
     match reopened {
@@ -226,11 +225,25 @@ pub fn reset_master_password(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOut
             return OpOutcome::err(ErrorCode::BadState);
         }
         let vk = c.vk.as_ref().map(|v| SecretBytes::new(*v.expose()));
-        match (c.store.as_mut(), vk) {
-            (Some(store), Some(vk)) => super::recovery_ops::set_master_password(store, &vk, &mp).map(|_| store.header.clone()),
+        match (c.store.take(), vk) {
+            (Some(store), Some(vk)) => {
+                let dir = store.dir.clone();
+                // Journaled: old or new MP state on disk; on failure the
+                // committed one is reopened.
+                match super::recovery_ops::change_mp(store, &vk, None, &mp) {
+                    Ok(store) => {
+                        c.header = Some(store.header.clone());
+                        c.store = Some(store);
+                        Ok(())
+                    }
+                    Err(e) => {
+                        c.store = crate::storage::VaultStore::open(&dir).ok();
+                        Err(e)
+                    }
+                }
+            }
             _ => Err(ErrorCode::BadState),
         }
-        .map(|h| c.header = Some(h))
     };
     drop(mp);
     finish(core, deps, result)

@@ -38,8 +38,11 @@ pub enum MpWrap<'a> {
 
 /// How the RK wrap is rebuilt under the new VK.
 pub enum RkWrap<'a> {
-    /// Seal for this RK (kept or newly generated).
+    /// Seal for this (kept) RK.
     Seal(&'a SecretBytes<32>),
+    /// Seal for a newly issued RK: the RK class is re-keyed, so its auth
+    /// salt is regenerated with it (§11.4).
+    SealNew(&'a SecretBytes<32>),
     /// Drop recovery.wrap (caller cannot re-seal it; a wrap of the old VK
     /// must not survive the rotation).
     Remove,
@@ -56,6 +59,12 @@ pub trait ExtraStaging {
         new_vk: &SecretBytes<32>,
         new_vk_generation: u32,
     ) -> Result<Vec<String>, ErrorCode>;
+
+    /// Records that must commit atomically with the rotation, written into
+    /// the staged DB once the new header (with any new salts) is known.
+    fn stage_db(&self, _conn: &Connection, _new_header: &Header) -> Result<(), ErrorCode> {
+        Ok(())
+    }
 }
 
 pub struct RotationOutcome {
@@ -112,6 +121,10 @@ pub fn rotate(
     // 3. Stage header + manifest (the accepted pair).
     new_header.vk_generation = new_gen;
     new_header.manifest_generation = old.manifest_generation + 1;
+    if let Some(e) = extra {
+        let next = Connection::open(&next_db).map_err(|_| ErrorCode::DbCorrupt)?;
+        e.stage_db(&next, &new_header)?;
+    }
     let mut new_manifest = store.manifest.clone();
     new_manifest.vk_generation = new_gen;
     new_manifest.manifest_generation = new_header.manifest_generation;
@@ -136,7 +149,7 @@ pub fn rotate(
         new_manifest_generation: new_header.manifest_generation,
         remove: match rk {
             RkWrap::Remove => vec![RECOVERY_WRAP_NAME.to_string()],
-            RkWrap::Seal(_) => Vec::new(),
+            RkWrap::Seal(_) | RkWrap::SealNew(_) => Vec::new(),
         },
         stage: staged_extra,
     };
@@ -244,7 +257,10 @@ fn stage_wraps(
         &journal::next_path(dir, PASSWORD_WRAP_NAME),
         &serde_json::to_vec_pretty(&mp_file).map_err(|_| ErrorCode::Internal)?,
     )?;
-    if let RkWrap::Seal(rk) = rk {
+    if let RkWrap::SealNew(_) = rk {
+        new_header.auth_salt_rk = header::Hex16::random();
+    }
+    if let RkWrap::Seal(rk) | RkWrap::SealNew(rk) = rk {
         let file = wrap::seal_wrap_rk(&payload(), rk, &vault_id).map_err(|_| ErrorCode::Internal)?;
         write_atomic(
             &journal::next_path(dir, RECOVERY_WRAP_NAME),

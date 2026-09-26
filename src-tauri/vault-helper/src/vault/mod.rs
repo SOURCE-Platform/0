@@ -33,6 +33,7 @@ pub mod items;
 pub mod recovery_ops;
 pub mod registry_status;
 pub mod resolve;
+pub mod revoke_core;
 pub mod rk_ops;
 pub mod secure_ui;
 pub mod setup;

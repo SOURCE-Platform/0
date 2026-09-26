@@ -99,3 +99,39 @@ pub fn adopt(store: VaultStore, a: &Adoption, reseal: Option<(&SecretBytes<32>, 
         None,
     )
 }
+
+/// A singleton change that keeps the VK (an MP change, §11.3.2): the new
+/// `password.wrap` and header plus the DB-side records `db` writes (the
+/// `pending_remote` component), in one journaled commit — the MP state is
+/// old or new with its pending record, never a mix. Consumes the store.
+pub fn commit_singleton_change(
+    store: VaultStore,
+    header: &Header,
+    wrap_mp: &[u8],
+    db: &dyn Fn(&Connection) -> Result<(), ErrorCode>,
+) -> Result<(), ErrorCode> {
+    let dir = store.dir.clone();
+    journal::discard_staged(&dir);
+    let next_db = journal::next_path(&dir, DB_NAME);
+    let path = next_db.to_str().ok_or(ErrorCode::Internal)?;
+    store.conn.execute("VACUUM INTO ?1", params![path]).map_err(|_| ErrorCode::DbCorrupt)?;
+    {
+        let next = Connection::open(&next_db).map_err(|_| ErrorCode::DbCorrupt)?;
+        next.pragma_update(None, "journal_mode", "DELETE").map_err(|_| ErrorCode::DbCorrupt)?;
+        db(&next)?;
+    }
+    write_atomic(&journal::next_path(&dir, PASSWORD_WRAP_NAME), wrap_mp)?;
+    let mut h = header.clone();
+    h.manifest_generation = store.header.manifest_generation + 1;
+    let mut m = store.manifest.clone();
+    m.manifest_generation = h.manifest_generation;
+    write_atomic(&journal::next_path(&dir, VAULT_HEADER_NAME), &header::write_header(&h)?)?;
+    write_atomic(&journal::next_path(&dir, MANIFEST_NAME), &manifest::write_manifest(&m)?)?;
+    let _ = store.conn.pragma_update(None, "wal_checkpoint", "TRUNCATE");
+    drop(store);
+    journal::commit(
+        &dir,
+        &CommitMarker { new_vk_generation: h.vk_generation, new_manifest_generation: h.manifest_generation, remove: Vec::new(), stage: Vec::new() },
+        None,
+    )
+}

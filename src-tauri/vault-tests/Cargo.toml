@@ -1,0 +1,20 @@
+[package]
+name = "vault-tests"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "End-to-end credential-vault tests: helper engine + provider core in one process (spec v0.4 Phase F). Never shipped."
+publish = false
+
+# A separate crate so vault-provider-core never enters the helper's own
+# dependency graph (§17.1a), not even as a dev-dependency.
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+source-vault-helper = { path = "../vault-helper" }
+vault-proto = { path = "../vault-proto" }
+vault-provider-core = { path = "../vault-provider-core" }
+serde_json = "1"
+sha2 = "0.11"
+getrandom = "0.4"

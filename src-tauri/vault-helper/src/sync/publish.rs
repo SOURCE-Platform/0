@@ -30,6 +30,9 @@ pub struct Staging {
     pub manifest_hash: [u8; 32],
     pub new_state_commit: [u8; 32],
     pub new_auth: Vec<RecoveryAuthEntry>,
+    /// The transition carries the pending local change (§11.3.2): its
+    /// commit is REMOTE_COMMITTED for it.
+    pub carries_pending: bool,
 }
 
 /// Finish a staged state into a transition (also used by §11.8 finalize).
@@ -61,6 +64,7 @@ pub fn finish_transition(
         new_state_commit,
         new_auth,
         blobs: staged.blobs,
+        carries_pending: false,
     })
 }
 
@@ -78,17 +82,27 @@ pub fn stage_create(
     finish_transition(TransitionKind::Create, staged, [0u8; 32], &[], updates, Some(handle_key))
 }
 
-/// A `publish` on top of the last accepted state.
+/// A `publish` on top of the last accepted state. A pending local change
+/// whose base is still current rides along with its public recovery-auth
+/// updates (§11.3.2); one that needs the user does not (its wraps were
+/// replaced by the adopted state).
 pub fn stage_publish(
     store: &VaultStore,
     registry: &RegistryState,
     vk: &SecretBytes<32>,
     signer: &dyn DeviceIdentity,
     seen: &Seen,
-    updates: Vec<RecoveryAuthEntry>,
+    mut updates: Vec<RecoveryAuthEntry>,
 ) -> Result<Staging, ErrorCode> {
+    let pending = super::pending::load(&store.conn)?.filter(|p| !p.needs_user);
+    if let Some(p) = &pending {
+        let carried = Seen { recovery_auth: p.recovery_auth_updates.clone(), ..seen.clone() }.auth_entries()?;
+        updates = merge_auth(&carried, &updates);
+    }
     let staged = stage_local(store, registry, seen.generation + 1, seen.manifest_hash.0, signer, vk, &[])?;
-    finish_transition(TransitionKind::Publish, staged, seen.state_commit.0, &seen.auth_entries()?, updates, None)
+    let mut st = finish_transition(TransitionKind::Publish, staged, seen.state_commit.0, &seen.auth_entries()?, updates, None)?;
+    st.carries_pending = pending.is_some();
+    Ok(st)
 }
 
 /// A `200` for this staging: accept it only if the provider's result is
@@ -99,5 +113,28 @@ pub fn committed(store: &VaultStore, st: &Staging, generation: u64, commit: [u8;
     }
     let s = Seen::with_auth(generation, st.manifest_hash, commit, &st.new_auth);
     seen::save(&store.conn, &s)?;
+    if st.carries_pending {
+        super::pending::clear(&store.conn)?; // REMOTE_COMMITTED
+    }
     Ok(s)
+}
+
+/// The public recovery-auth updates for the classes whose secret the
+/// caller holds right now (§11.4 D-11): derived transiently from PK /
+/// RK_bytes and the header's class salts; only public keys leave here.
+pub fn recovery_updates(
+    header: &crate::storage::header::Header,
+    pk: Option<&SecretBytes<32>>,
+    rk: Option<&SecretBytes<32>>,
+) -> Result<Vec<RecoveryAuthEntry>, ErrorCode> {
+    use crate::crypto::recovery_auth::{derive, RecoveryClass};
+    let vid = header.vault_id.0;
+    let mut out = Vec::new();
+    for (class, secret, salt) in [(RecoveryClass::Mp, pk, header.auth_salt_mp.0), (RecoveryClass::Rk, rk, header.auth_salt_rk.0)] {
+        if let Some(s) = secret {
+            let k = derive(class, s, &salt, &vid).map_err(|_| ErrorCode::Internal)?;
+            out.push(RecoveryAuthEntry { class, public: k.public, salt });
+        }
+    }
+    Ok(out)
 }

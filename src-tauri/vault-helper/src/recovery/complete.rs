@@ -18,7 +18,7 @@ use crate::registry::build;
 use crate::registry::chain::{self, EpochPolicy};
 use crate::registry::device::DeviceIdentity;
 use crate::registry::log;
-use crate::storage::header::{kdf_params, Hex16};
+use crate::storage::header::kdf_params;
 use crate::storage::merge::{apply_batch, NoCompare};
 use crate::storage::rotation::{self, MpWrap, RkWrap};
 use crate::storage::store::{write_atomic, PASSWORD_WRAP_NAME, RECOVERY_WRAP_NAME};
@@ -45,7 +45,7 @@ pub struct Completed {
 impl Recovery {
     /// Complete into the empty directory `dir`; on failure it is removed
     /// and the provider's current state stays authoritative.
-    pub fn complete(self, dir: &Path, new_device: &dyn DeviceIdentity, plan: Plan<'_>) -> Result<Completed, ErrorCode> {
+    pub fn complete(&mut self, dir: &Path, new_device: &dyn DeviceIdentity, plan: Plan<'_>) -> Result<Completed, ErrorCode> {
         let r = self.complete_inner(dir, new_device, plan);
         if r.is_err() {
             let _ = std::fs::remove_dir_all(dir);
@@ -53,7 +53,7 @@ impl Recovery {
         r
     }
 
-    fn complete_inner(mut self, dir: &Path, new_device: &dyn DeviceIdentity, plan: Plan<'_>) -> Result<Completed, ErrorCode> {
+    fn complete_inner(&mut self, dir: &Path, new_device: &dyn DeviceIdentity, plan: Plan<'_>) -> Result<Completed, ErrorCode> {
         let v = self.verified.take().ok_or(ErrorCode::BadState)?;
         let old_vk = self.old_vk.take().ok_or(ErrorCode::BadState)?;
         let vid = self.locate.vault_id;
@@ -115,15 +115,11 @@ impl Recovery {
             devices: Vec::new(),
             fresh: vec![(new_device.device_id(), new_device.agree_pub(), nonce)],
         };
-        let rotated = rotation::rotate(store, &old_vk, mp_plan, RkWrap::Seal(rk_for_wrap), Some(&env_plan), None)?;
+        // A new RK re-keys the RK class (§11.4 table): `SealNew`.
+        let rk_plan = if new_rk.is_some() { RkWrap::SealNew(rk_for_wrap) } else { RkWrap::Seal(rk_for_wrap) };
+        let rotated = rotation::rotate(store, &old_vk, mp_plan, rk_plan, Some(&env_plan), None)?;
         drop(old_vk);
-        let mut store = VaultStore::open(dir)?;
-        if new_rk.is_some() {
-            // A new RK re-keys the RK class (§11.4 table).
-            let mut h = store.header.clone();
-            h.auth_salt_rk = Hex16::random();
-            store.flip(h)?;
-        }
+        let store = VaultStore::open(dir)?;
         // Recovery-auth updates for every class whose key changed.
         let mut updates: Vec<RecoveryAuthEntry> = Vec::new();
         if let Some(mp) = plan.new_mp {

@@ -4,8 +4,10 @@
 //! never touches the network; the main process moves the bytes.
 
 pub mod apply;
+pub mod change;
 pub mod compare;
 pub mod fetch;
+pub mod join;
 pub mod local;
 pub mod pending;
 pub mod publish;
