@@ -5,7 +5,7 @@
 
 use super::finalize::FinalizeBody;
 use super::fs_store::{sha_hex, Auth, FsBackupStore, RecoveryKind};
-use super::index;
+use super::index_v1 as index;
 use super::manifest::SignedManifest;
 use crate::crypto::hex;
 use crate::crypto::registry::{self, EntryKind, RegistryEntry};

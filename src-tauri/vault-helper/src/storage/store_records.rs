@@ -23,8 +23,9 @@ pub struct TipPlaintext {
 pub enum Resolution<'a> {
     /// Keep the content of one of the current heads.
     Chosen([u8; 32]),
-    /// New content supplied by the user (record JSON + metadata JSON).
-    Edited { kind_tag: u8, schema_version: u32, plaintext: &'a [u8], meta: &'a [u8] },
+    /// New content supplied by the user (record JSON + metadata JSON),
+    /// edited from the current head `base`.
+    Edited { base: [u8; 32], kind_tag: u8, schema_version: u32, plaintext: &'a [u8], meta: &'a [u8] },
 }
 
 pub struct NewRevision<'a> {
@@ -73,12 +74,15 @@ impl VaultStore {
         Ok(row)
     }
 
-    /// Apply a locally authored revision; it must leave exactly one head.
-    fn commit_local(&mut self, rev: RevisionRow, unfreeze: bool) -> Result<(), ErrorCode> {
+    /// Apply a locally authored revision. It must leave exactly one head,
+    /// except a resolution over more heads than one revision may name
+    /// (`allow_conflict`, §3.2 partial cover).
+    fn commit_local(&mut self, rev: RevisionRow, unfreeze: bool, allow_conflict: bool) -> Result<(), ErrorCode> {
+        let next_gen = self.manifest.manifest_generation + 1;
         let tx = self.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
-        let obj = crate::backup::object::encode(&rev)?;
-        match merge::apply_revision(&tx, &rev, &obj, &NoCompare) {
+        match merge::apply_revision(&tx, &rev, self.header.vk_generation, &NoCompare) {
             Ok(MergeOutcome::Applied { conflicted: false }) => {}
+            Ok(MergeOutcome::Applied { conflicted: true }) if allow_conflict => {}
             Ok(_) => {
                 let _ = tx.rollback();
                 return Err(ErrorCode::Internal);
@@ -92,6 +96,7 @@ impl VaultStore {
         if unfreeze {
             rev_state::unfreeze(&tx, &rev.record_id)?;
         }
+        super::store::stamp_flip(&tx, next_gen)?;
         tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
         self.persist_head()
     }
@@ -163,7 +168,7 @@ impl VaultStore {
                 created_at: now_epoch(),
             },
         )?;
-        self.commit_local(rev, false)?;
+        self.commit_local(rev, false, false)?;
         Ok(record_id)
     }
 
@@ -200,7 +205,7 @@ impl VaultStore {
                 created_at,
             },
         )?;
-        self.commit_local(rev, false)
+        self.commit_local(rev, false, false)
     }
 
     /// Tombstone revision (§3.2). Ciphertexts seal an empty JSON object:
@@ -220,36 +225,56 @@ impl VaultStore {
                 created_at: head.created_at,
             },
         )?;
-        self.commit_local(rev, false)
+        self.commit_local(rev, false, false)
     }
 
-    /// `resolve_conflict` (§3.2): a revision whose parents are **all**
-    /// current heads, collapsing them to one; it also clears a freeze (the
-    /// op layer requires fresh presence and the user's acknowledgement).
-    pub fn resolve(&mut self, vk: &SecretBytes<32>, record_id: &str, res: Resolution<'_>) -> Result<(), ErrorCode> {
+    /// `resolve_conflict` (§3.2): a revision whose parents are the chosen
+    /// head plus the other current heads — at most `MAX_PARENTS` in all,
+    /// lowest ids first; any beyond stay in conflict (partial cover). A
+    /// frozen record also needs the user's acknowledgement, checked here as
+    /// well as before the presence prompt (VER-I5).
+    pub fn resolve(
+        &mut self,
+        vk: &SecretBytes<32>,
+        record_id: &str,
+        res: Resolution<'_>,
+        acknowledge_tamper: bool,
+    ) -> Result<(), ErrorCode> {
         let hs = heads(&self.conn, record_id)?;
         let frozen = rev_state::is_frozen(&self.conn, record_id)?;
         if hs.is_empty() || (hs.len() < 2 && !frozen) {
             return Err(ErrorCode::BadState);
         }
+        if frozen && !acknowledge_tamper {
+            return Err(ErrorCode::ConflictPending);
+        }
+        let base = match &res {
+            Resolution::Chosen(id) | Resolution::Edited { base: id, .. } => *id,
+        };
+        if !hs.contains(&base) {
+            return Err(ErrorCode::InvalidInput);
+        }
+        let row = get_row(&self.conn, &base)?.ok_or(ErrorCode::DbCorrupt)?;
         let (kind_tag, schema_version, plaintext, meta, created_at, deleted) = match res {
-            Resolution::Chosen(id) => {
-                if !hs.contains(&id) {
-                    return Err(ErrorCode::InvalidInput);
-                }
-                let row = get_row(&self.conn, &id)?.ok_or(ErrorCode::DbCorrupt)?;
+            Resolution::Chosen(_) => {
                 let pt = self.open_row(vk, &row)?;
                 let meta = self.open_row_meta(vk, &row)?;
-                (row.kind_tag, row.schema_version, Zeroizing::new(pt.to_vec()), meta.to_vec(), row.created_at, row.deleted)
+                (row.kind_tag, row.schema_version, Zeroizing::new(pt.to_vec()), Zeroizing::new(meta.to_vec()), row.created_at, row.deleted)
             }
-            Resolution::Edited { kind_tag, schema_version, plaintext, meta } => {
-                (kind_tag, schema_version, Zeroizing::new(plaintext.to_vec()), meta.to_vec(), now_epoch(), false)
+            Resolution::Edited { kind_tag, schema_version, plaintext, meta, .. } => {
+                if row.deleted {
+                    return Err(ErrorCode::InvalidInput);
+                }
+                (kind_tag, schema_version, Zeroizing::new(plaintext.to_vec()), Zeroizing::new(meta.to_vec()), now_epoch(), false)
             }
         };
+        let mut parents = vec![base];
+        parents.extend(hs.iter().filter(|h| **h != base).take(revisions::MAX_PARENTS - 1));
+        let partial = parents.len() < hs.len();
         let rev = self.author(
             vk,
-            NewRevision { record_id, parents: hs, deleted, kind_tag, schema_version, plaintext: &plaintext, meta: &meta, created_at },
+            NewRevision { record_id, parents, deleted, kind_tag, schema_version, plaintext: &plaintext, meta: &meta, created_at },
         )?;
-        self.commit_local(rev, frozen)
+        self.commit_local(rev, frozen, partial)
     }
 }

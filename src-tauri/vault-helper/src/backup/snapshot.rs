@@ -8,7 +8,7 @@ use std::path::Path;
 
 use super::checkpoint::RegistryCheckpoint;
 use super::fs_store::{Auth, FsBackupStore};
-use super::index::{self, IndexRef, ObjectIndex};
+use super::index_v1::{self as index, IndexRef, ObjectIndex};
 use super::manifest::SignedManifest;
 use super::object;
 use crate::crypto::registry::{self, RegistryEntry};
@@ -176,7 +176,15 @@ pub fn materialize(dir: &Path, d: &Downloaded) -> Result<VaultStore, ErrorCode> 
     store.manifest.registry_head = store.header.registry_head;
     {
         let tx = store.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
-        crate::storage::merge::apply_batch(&tx, &d.rows, &crate::storage::merge::NoCompare)?;
+        let gen = store.header.vk_generation;
+        crate::storage::merge::apply_batch(&tx, &d.rows, gen, &crate::storage::merge::NoCompare)?;
+        // A verified index is ancestor-closed (§3.2): anything left held
+        // back, or refused, means the state is not what it claims.
+        if crate::storage::rev_state::pending_count(&tx)? != 0
+            || crate::storage::revision_rows::all_rows(&tx)?.len() != d.rows.len()
+        {
+            return Err(ErrorCode::ManifestMismatch);
+        }
         tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
     }
     store.persist_head()?;

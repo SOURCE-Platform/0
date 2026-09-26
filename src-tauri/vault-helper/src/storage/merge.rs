@@ -2,6 +2,14 @@
 //! exact counter algorithm, tombstone conservatism, duplicate handling,
 //! and pending revisions. No timestamp ever decides anything.
 //!
+//! **Heads are a function of the admitted graph alone** (SY-09): a
+//! non-tombstone is a head iff it has no admitted child; a tombstone T is a
+//! head unless some admitted revision names T as a *direct* parent among
+//! two or more parents (a resolution, which honest devices author over all
+//! current heads). A single-parent edit anywhere below T therefore never
+//! resurrects the record, at any depth. Revisions are admitted only at the
+//! local `vk_generation` (a copy at any other generation is never stored).
+//!
 //! Callers supply a transaction. Refusal of revoked authors (§3.2) is the
 //! sync layer's decision and happens before `apply_revision`.
 
@@ -46,6 +54,8 @@ impl ContentCompare for NoCompare {
 }
 
 const ZERO_AUTHOR: &str = "00000000-0000-0000-0000-000000000000";
+/// Held-back revisions per vault (SEC-O3): beyond this, more are refused.
+pub const MAX_PENDING: u64 = 10_000;
 
 /// All admitted ancestors of a revision with the given parents.
 pub fn ancestors(conn: &Connection, parents: &[[u8; 32]]) -> Result<HashSet<[u8; 32]>, ErrorCode> {
@@ -78,24 +88,34 @@ fn author_revisions(conn: &Connection, rev: &RevisionRow) -> Result<Vec<([u8; 32
     .collect()
 }
 
-/// Apply one revision under the §3.2 rules. `object` is its serialized
-/// §3.7 form, kept if the revision has to wait in `pending_revs`.
+fn reject(conn: &Connection, rev: &RevisionRow, reason: u8) -> Result<MergeOutcome, ErrorCode> {
+    rev_state::count_refused(conn, &rev.record_id, reason)?;
+    Ok(MergeOutcome::Rejected(reason))
+}
+
+/// Apply one revision under the §3.2 rules. `local_vk_generation` is this
+/// vault's current generation: nothing sealed under another is admitted.
 pub fn apply_revision(
     conn: &Connection,
     rev: &RevisionRow,
-    object: &[u8],
+    local_vk_generation: u32,
     cmp: &dyn ContentCompare,
 ) -> Result<MergeOutcome, ErrorCode> {
     if rev.author_device == ZERO_AUTHOR || revisions::uuid_bytes(&rev.author_device).is_none() {
-        rev_state::count_refused(conn, &rev.record_id, revisions::REFUSED_ZERO_AUTHOR)?;
-        return Ok(MergeOutcome::Rejected(revisions::REFUSED_ZERO_AUTHOR));
+        return reject(conn, rev, revisions::REFUSED_ZERO_AUTHOR);
     }
-    if !revisions::parents_canonical(&rev.parent_ids) || rev.parent_ids.contains(&rev.revision_id) {
-        rev_state::count_refused(conn, &rev.record_id, revisions::REFUSED_MALFORMED)?;
-        return Ok(MergeOutcome::Rejected(revisions::REFUSED_MALFORMED));
+    let malformed = !revisions::parents_canonical(&rev.parent_ids)
+        || rev.parent_ids.contains(&rev.revision_id)
+        || rev.counter > i64::MAX as u64
+        || revisions::uuid_bytes(&rev.record_id).is_none();
+    if malformed {
+        return reject(conn, rev, revisions::REFUSED_MALFORMED);
     }
     if let Some(existing) = get_row(conn, &rev.revision_id)? {
-        return duplicate(conn, &existing, rev, cmp);
+        return duplicate(conn, &existing, rev, local_vk_generation, cmp);
+    }
+    if rev.vk_generation != local_vk_generation {
+        return reject(conn, rev, revisions::REFUSED_GENERATION);
     }
     // Applicable only when every parent is admitted, in the same record.
     for p in &rev.parent_ids {
@@ -106,8 +126,10 @@ pub fn apply_revision(
                 return Ok(MergeOutcome::Rejected(revisions::REFUSED_MALFORMED));
             }
             None => {
-                rev_state::put_pending(conn, rev, object)?;
-                return Ok(MergeOutcome::Pending);
+                if rev_state::pending_count(conn)? >= MAX_PENDING {
+                    return reject(conn, rev, revisions::REFUSED_MALFORMED);
+                }
+                return rev_state::put_pending(conn, rev);
             }
         }
     }
@@ -128,21 +150,22 @@ pub fn apply_revision(
         }
     }
     let current = heads(conn, &rev.record_id)?;
-    // A resolution covers a genuine multi-head conflict; it is the one
-    // revision allowed to keep an edit over a competing tombstone.
-    let resolves = current.len() >= 2 && current.iter().all(|h| rev.parent_ids.contains(h));
     revisions::insert_rev(conn, rev)?;
-    let mut next: Vec<[u8; 32]> = current.into_iter().filter(|h| !anc.contains(h)).collect();
-    next.push(rev.revision_id);
-    // Tombstone conservatism: an edit whose parent is a tombstone never
-    // resurrects — the tombstone stays a head beside it (conflict).
-    if !rev.deleted && !resolves {
-        for p in &rev.parent_ids {
-            if get_row(conn, p)?.is_some_and(|r| r.deleted) && !next.contains(p) {
-                next.push(*p);
-            }
+    let mut next = Vec::with_capacity(current.len() + 1);
+    for h in current {
+        // A tombstone head stays unless R covers it directly as a
+        // resolution; every other ancestor of R stops being a head.
+        let covered = if anc.contains(&h) {
+            let tomb = get_row(conn, &h)?.is_some_and(|r| r.deleted);
+            !tomb || (rev.parent_ids.len() >= 2 && rev.parent_ids.contains(&h))
+        } else {
+            false
+        };
+        if !covered {
+            next.push(h);
         }
     }
+    next.push(rev.revision_id);
     next.sort();
     set_heads(conn, &rev.record_id, &next)?;
     if !fork_evidence.is_empty() {
@@ -152,26 +175,30 @@ pub fn apply_revision(
     Ok(MergeOutcome::Applied { conflicted: next.len() > 1 })
 }
 
-/// Same `revision_id` already admitted (§3.2 "Duplicates").
+/// Same `revision_id` already admitted (§3.2 "Duplicates"). A copy at a
+/// generation other than the local one is never stored (SEC-B1): only a
+/// same-graph copy that brings a row *up to* the local generation replaces
+/// it (the §2.10 re-seal adoption path).
 fn duplicate(
     conn: &Connection,
     existing: &RevisionRow,
     rev: &RevisionRow,
+    local_vk_generation: u32,
     cmp: &dyn ContentCompare,
 ) -> Result<MergeOutcome, ErrorCode> {
     if existing == rev {
         return Ok(MergeOutcome::AlreadyKnown);
     }
     if !existing.same_graph(rev) {
-        rev_state::freeze(conn, &rev.record_id, &[rev.revision_id])?;
+        freeze_both(conn, existing, rev)?;
         return Ok(MergeOutcome::Frozen);
     }
-    if rev.vk_generation > existing.vk_generation {
-        revisions::insert_rev(conn, rev)?; // newer representation replaces
-        return Ok(MergeOutcome::Superseded);
+    if rev.vk_generation != local_vk_generation {
+        return Ok(MergeOutcome::Superseded); // other generation: ignored
     }
-    if rev.vk_generation < existing.vk_generation {
-        return Ok(MergeOutcome::Superseded); // stale representation ignored
+    if existing.vk_generation < local_vk_generation {
+        revisions::insert_rev(conn, rev)?; // brought up to the local generation
+        return Ok(MergeOutcome::Superseded);
     }
     if cmp.same_content(existing, rev)? {
         // Benign: keep the lexicographically lower blob hash.
@@ -181,8 +208,18 @@ fn duplicate(
         }
         return Ok(MergeOutcome::AlreadyKnown);
     }
-    rev_state::freeze(conn, &rev.record_id, &[rev.revision_id])?;
+    freeze_both(conn, existing, rev)?;
     Ok(MergeOutcome::Frozen)
+}
+
+/// Freeze the record the admitted copy belongs to (never only the one an
+/// incoming forgery claims, SEC-O2).
+fn freeze_both(conn: &Connection, existing: &RevisionRow, rev: &RevisionRow) -> Result<(), ErrorCode> {
+    rev_state::freeze(conn, &existing.record_id, &[rev.revision_id])?;
+    if rev.record_id != existing.record_id && revisions::uuid_bytes(&rev.record_id).is_some() {
+        rev_state::freeze(conn, &rev.record_id, &[rev.revision_id])?;
+    }
+    Ok(())
 }
 
 /// Apply a batch in dependency order, then retry held revisions until no
@@ -190,19 +227,19 @@ fn duplicate(
 pub fn apply_batch(
     conn: &Connection,
     rows: &[RevisionRow],
+    local_vk_generation: u32,
     cmp: &dyn ContentCompare,
 ) -> Result<Vec<MergeOutcome>, ErrorCode> {
     let mut out = vec![MergeOutcome::Pending; rows.len()];
     for i in in_batch_order(rows) {
-        let obj = crate::backup::object::encode(&rows[i])?;
-        out[i] = apply_revision(conn, &rows[i], &obj, cmp)?;
+        out[i] = apply_revision(conn, &rows[i], local_vk_generation, cmp)?;
     }
-    retry_pending(conn, cmp)?;
+    retry_pending(conn, local_vk_generation, cmp)?;
     Ok(out)
 }
 
 /// Re-apply held revisions until a full pass admits nothing new.
-pub fn retry_pending(conn: &Connection, cmp: &dyn ContentCompare) -> Result<(), ErrorCode> {
+pub fn retry_pending(conn: &Connection, local_vk_generation: u32, cmp: &dyn ContentCompare) -> Result<(), ErrorCode> {
     loop {
         let before = rev_state::pending_count(conn)?;
         if before == 0 {
@@ -210,7 +247,7 @@ pub fn retry_pending(conn: &Connection, cmp: &dyn ContentCompare) -> Result<(), 
         }
         for obj in rev_state::take_pending(conn)? {
             let row = crate::backup::object::decode(&obj)?;
-            apply_revision(conn, &row, &obj, cmp)?;
+            apply_revision(conn, &row, local_vk_generation, cmp)?;
         }
         if rev_state::pending_count(conn)? >= before {
             return Ok(());
@@ -218,27 +255,28 @@ pub fn retry_pending(conn: &Connection, cmp: &dyn ContentCompare) -> Result<(), 
     }
 }
 
-/// Parents-first order within the batch (members whose parents are
-/// outside the batch come first; cycles fall back to input order and end
-/// up pending).
+/// Parents-first order within the batch. Every row is scheduled exactly
+/// once — including a second copy of an id, which then meets the duplicate
+/// rule (SEC-I4); rows whose parents never become ready keep input order
+/// and end up pending.
 fn in_batch_order(rows: &[RevisionRow]) -> Vec<usize> {
     let ids: HashSet<[u8; 32]> = rows.iter().map(|r| r.revision_id).collect();
-    let mut done: HashSet<[u8; 32]> = HashSet::new();
+    let mut ready: HashSet<[u8; 32]> = HashSet::new();
+    let mut scheduled = vec![false; rows.len()];
     let mut order = Vec::with_capacity(rows.len());
-    while order.len() < rows.len() {
+    loop {
         let before = order.len();
         for (i, r) in rows.iter().enumerate() {
-            if !done.contains(&r.revision_id)
-                && r.parent_ids.iter().all(|p| !ids.contains(p) || done.contains(p))
-            {
-                done.insert(r.revision_id);
+            if !scheduled[i] && r.parent_ids.iter().all(|p| !ids.contains(p) || ready.contains(p)) {
+                scheduled[i] = true;
                 order.push(i);
+                ready.insert(r.revision_id);
             }
         }
-        if order.len() == before {
-            order.extend((0..rows.len()).filter(|i| !done.contains(&rows[*i].revision_id)));
+        if order.len() == rows.len() || order.len() == before {
             break;
         }
     }
+    order.extend((0..rows.len()).filter(|i| !scheduled[*i]));
     order
 }

@@ -17,7 +17,7 @@ use crate::crypto::secret::SecretBytes;
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
 use crate::storage::rev_state;
-use crate::storage::revisions::get_row;
+use crate::storage::revisions::{get_row, heads};
 use crate::storage::store_records::Resolution;
 use crate::storage::VaultStore;
 
@@ -39,7 +39,9 @@ pub fn resolve_conflict(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps
         }
     }
     let ack = frame.get("acknowledge_tamper").and_then(Value::as_bool) == Some(true);
-    // Refuse a frozen record without the acknowledgement before prompting.
+    // Refuse a frozen record without the acknowledgement before prompting;
+    // a frozen record gets its own tamper-specific prompt (SEC-O4).
+    let frozen;
     {
         let c = lock_core(core);
         if c.state != VaultState::Unlocked {
@@ -48,37 +50,47 @@ pub fn resolve_conflict(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps
         let Some(store) = c.store.as_ref() else {
             return OpOutcome::err(ErrorCode::Internal);
         };
-        match rev_state::is_frozen(&store.conn, r) {
+        frozen = match rev_state::is_frozen(&store.conn, r) {
             Ok(true) if !ack => return OpOutcome::err(ErrorCode::ConflictPending),
-            Ok(_) => {}
+            Ok(f) => f,
             Err(e) => return OpOutcome::err(e),
-        }
+        };
     }
-    if let Err(o) = presence_gate(core, deps, "Source Vault: resolve conflict") {
+    let prompt = if frozen {
+        "Source Vault: accept a possibly tampered item"
+    } else {
+        "Source Vault: resolve conflict"
+    };
+    if let Err(o) = presence_gate(core, deps, prompt) {
         return o;
     }
     finish_authorized!(core, deps, move |store: &mut VaultStore,
                                          vk: &SecretBytes<32>| {
         let Some(edits) = &edits else {
-            store.resolve(vk, r, Resolution::Chosen(chosen))?;
+            store.resolve(vk, r, Resolution::Chosen(chosen), ack)?;
             return Ok(json!({}));
         };
+        // `resolve` checks that `chosen` is a current head of `r`; the row
+        // is read here only to merge the edits over it.
         let row = get_row(&store.conn, &chosen)?.ok_or(ErrorCode::InvalidInput)?;
-        if row.record_id != r || row.deleted {
+        if row.record_id != r || row.deleted || !heads(&store.conn, r)?.contains(&chosen) {
             return Err(ErrorCode::InvalidInput);
         }
         let old: Value = serde_json::from_slice(&store.open_row(vk, &row)?).map_err(|_| ErrorCode::RecordCorrupt)?;
         let (plaintext, meta, warnings) = build_record(row.kind_tag, edits, Some(&old))?;
+        drop(old);
         let plaintext = zeroize::Zeroizing::new(plaintext);
         store.resolve(
             vk,
             r,
             Resolution::Edited {
+                base: chosen,
                 kind_tag: row.kind_tag,
                 schema_version: row.schema_version,
                 plaintext: plaintext.as_bytes(),
                 meta: meta.as_bytes(),
             },
+            ack,
         )?;
         let mut extra = json!({});
         if !warnings.is_empty() {

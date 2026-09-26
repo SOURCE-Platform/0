@@ -56,7 +56,8 @@ fn sync(into: &mut VaultStore, from: &VaultStore) {
         .map(|r| object::decode(&object::encode(r).unwrap()).unwrap())
         .collect();
     let tx = into.conn.transaction().unwrap();
-    apply_batch(&tx, &rows, &NoCompare).unwrap();
+    let gen = into.header.vk_generation;
+    apply_batch(&tx, &rows, gen, &NoCompare).unwrap();
     tx.commit().unwrap();
     into.persist_head().unwrap();
 }
@@ -105,7 +106,7 @@ fn concurrent_edits_conflict_then_resolve_to_chosen_head() {
     assert!(a.read_tip(&vk, &r).is_err());
 
     let chosen = vault_helper::crypto::hex::decode_array::<32>(&b_rev).unwrap();
-    a.resolve(&vk, &r, Resolution::Chosen(chosen)).unwrap();
+    a.resolve(&vk, &r, Resolution::Chosen(chosen), false).unwrap();
     assert_eq!(heads(&a.conn, &r).unwrap().len(), 1);
     assert_eq!(title_of(&a, &vk, &r), "from-b");
     assert_eq!(a.read_tip(&vk, &r).unwrap().plaintext.as_slice(), br#"{"password":"synthetic-from-b"}"#);
@@ -126,25 +127,28 @@ fn resolve_with_edits_and_refusals() {
     sync(&mut a, &b);
     let hs = heads(&a.conn, &r).unwrap();
     // A non-head revision id is refused.
-    assert_eq!(a.resolve(&vk, &r, Resolution::Chosen([0x55; 32])), Err(ErrorCode::InvalidInput));
+    assert_eq!(a.resolve(&vk, &r, Resolution::Chosen([0x55; 32]), false), Err(ErrorCode::InvalidInput));
     let pt = br#"{"password":"synthetic-merged"}"#;
     let meta = br#"{"title":"merged","hosts":[]}"#;
-    a.resolve(&vk, &r, Resolution::Edited { kind_tag: 1, schema_version: 1, plaintext: pt, meta }).unwrap();
+    let old = *all_rows(&a.conn).unwrap().iter().find(|x| x.parent_ids.is_empty()).map(|x| &x.revision_id).unwrap();
+    let edited = |base| Resolution::Edited { base, kind_tag: 1, schema_version: 1, plaintext: pt, meta };
+    assert_eq!(a.resolve(&vk, &r, edited(old), false), Err(ErrorCode::InvalidInput), "SEC-I6: base must be a head");
+    a.resolve(&vk, &r, edited(hs[0]), false).unwrap();
     let now = heads(&a.conn, &r).unwrap();
     assert_eq!(now.len(), 1);
     assert!(!hs.contains(&now[0]));
     assert_eq!(title_of(&a, &vk, &r), "merged");
     // Nothing left to resolve on a single-head, unfrozen record.
-    assert_eq!(a.resolve(&vk, &r, Resolution::Chosen(now[0])), Err(ErrorCode::BadState));
+    assert_eq!(a.resolve(&vk, &r, Resolution::Chosen(now[0]), false), Err(ErrorCode::BadState));
     for d in dirs {
         let _ = std::fs::remove_dir_all(d);
     }
 }
 
 #[test]
-fn author_fork_freezes_until_resolved() {
-    // The copy keeps A's author id: two A revisions that are not each
-    // other's ancestors — an author fork (§3.2 counters table).
+fn equivocation_freezes_until_acknowledged() {
+    // The copy keeps A's author id: two A revisions with the same counter
+    // that are not each other's ancestors — equivocation (§3.2 table).
     let (mut a, mut a2, vk, r, dirs) = two_devices(None);
     edit(&mut a, &vk, &r, "fork-1").unwrap();
     edit(&mut a2, &vk, &r, "fork-2").unwrap();
@@ -156,7 +160,9 @@ fn author_fork_freezes_until_resolved() {
     assert_eq!(edit(&mut a, &vk, &r, "blind"), Err(ErrorCode::ConflictPending));
 
     let hs = heads(&a.conn, &r).unwrap();
-    a.resolve(&vk, &r, Resolution::Chosen(hs[0])).unwrap();
+    assert_eq!(a.resolve(&vk, &r, Resolution::Chosen(hs[0]), false), Err(ErrorCode::ConflictPending), "VER-I5: ack required");
+    assert!(is_frozen(&a.conn, &r).unwrap());
+    a.resolve(&vk, &r, Resolution::Chosen(hs[0]), true).unwrap();
     assert!(!is_frozen(&a.conn, &r).unwrap());
     assert_eq!(heads(&a.conn, &r).unwrap().len(), 1);
     edit(&mut a, &vk, &r, "after").unwrap();

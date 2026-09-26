@@ -7,7 +7,7 @@
 use sha2::{Digest, Sha256};
 
 use crate::errors::ErrorCode;
-use crate::storage::revisions::{self, RevisionRow, MAX_PARENTS};
+use crate::rev::{self as revisions, RevisionRow, MAX_PARENTS};
 
 const MAGIC: &[u8; 8] = b"OV0OBJ02";
 const RETIRED_MAGIC: &[u8; 8] = b"OV0OBJ01";
@@ -85,12 +85,20 @@ pub fn decode(bytes: &[u8]) -> Result<RevisionRow, ErrorCode> {
     }
     let kind_tag = c.arr::<1>()?[0];
     let flags = c.arr::<1>()?[0];
-    if flags > 1 {
+    if flags > 1 || kind_tag == 0 {
         return Err(ErrorCode::FormatInvalid);
+    }
+    if !revisions::KNOWN_KINDS.contains(&kind_tag) {
+        return Err(ErrorCode::FormatTooNew);
     }
     let vk_generation = u32::from_be_bytes(c.arr()?);
     let counter = u64::from_be_bytes(c.arr()?);
     let author: [u8; 16] = c.arr()?;
+    // Counters live in SQLite INTEGER columns (SEC-I2); the author is
+    // never all-zero (§3.7).
+    if counter > i64::MAX as u64 || author == [0u8; 16] {
+        return Err(ErrorCode::FormatInvalid);
+    }
     let rid: [u8; 16] = c.arr()?;
     let revision_id: [u8; 32] = c.arr()?;
     let n = c.arr::<1>()?[0] as usize;

@@ -20,14 +20,7 @@ pub struct RecordCiphertext {
     pub ct: Vec<u8>,
 }
 
-/// The revision a ciphertext belongs to (§2.6): its stable `revision_id`
-/// and the `graph_digest` over its record, author, counter, flags, kind
-/// and parents (computed by `storage::revisions::graph_digest`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RevBinding {
-    pub revision_id: [u8; 32],
-    pub graph_digest: [u8; 32],
-}
+pub use vault_proto::rev::RevBinding;
 
 /// §2.6 v0.4: "ov0/record/v2" ‖ vault_id ‖ record_id ‖ revision_id ‖
 /// u32be(schema) ‖ u32be(vk_generation) ‖ graph_digest.

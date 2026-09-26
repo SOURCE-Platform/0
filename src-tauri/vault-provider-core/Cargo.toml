@@ -1,0 +1,21 @@
+[package]
+name = "vault-provider-core"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Credential-vault provider semantics (spec v0.4 §11) over storage traits, plus FsStores for tests and rehearsals"
+publish = false
+
+# Separate supply-chain scope from the helper (§17.1a). Every dependency
+# here is already in the vault-helper graph; nothing new is introduced.
+[dependencies]
+vault-proto = { path = "../vault-proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hmac = "0.13"
+getrandom = "0.4"
+
+[lib]
+name = "vault_provider_core"
+path = "src/lib.rs"

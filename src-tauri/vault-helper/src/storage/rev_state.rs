@@ -83,11 +83,34 @@ pub fn bump_hwm(conn: &Connection, record_id: &str, counter: u64) -> Result<(), 
     Ok(())
 }
 
-pub fn put_pending(conn: &Connection, row: &RevisionRow, object: &[u8]) -> Result<(), ErrorCode> {
-    db(conn.execute(
-        "INSERT OR REPLACE INTO pending_revs (revision_id, record_id, object) VALUES (?1, ?2, ?3)",
-        params![row.revision_id.as_slice(), row.record_id, object],
-    ))?;
+/// Hold a revision until its parents arrive. A second, different copy of
+/// a held id is the duplicate case before admission: the record freezes
+/// and the first copy is kept (VER-M1).
+pub fn put_pending(conn: &Connection, row: &RevisionRow) -> Result<super::merge::MergeOutcome, ErrorCode> {
+    let object = crate::backup::object::encode(row)?;
+    let held: Option<Vec<u8>> = db(conn
+        .query_row("SELECT object FROM pending_revs WHERE revision_id=?1", params![row.revision_id.as_slice()], |r| r.get(0))
+        .optional())?;
+    match held {
+        Some(h) if h == object => Ok(super::merge::MergeOutcome::Pending),
+        Some(_) => {
+            freeze(conn, &row.record_id, &[row.revision_id])?;
+            Ok(super::merge::MergeOutcome::Frozen)
+        }
+        None => {
+            db(conn.execute(
+                "INSERT INTO pending_revs (revision_id, record_id, object) VALUES (?1, ?2, ?3)",
+                params![row.revision_id.as_slice(), row.record_id, object],
+            ))?;
+            Ok(super::merge::MergeOutcome::Pending)
+        }
+    }
+}
+
+/// Drop every held revision (VK rotation: they are sealed under the
+/// retiring VK and are re-fetched from the next committed state).
+pub fn purge_pending(conn: &Connection) -> Result<(), ErrorCode> {
+    db(conn.execute("DELETE FROM pending_revs", []))?;
     Ok(())
 }
 

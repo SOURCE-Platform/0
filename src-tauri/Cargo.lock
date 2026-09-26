@@ -5954,6 +5954,7 @@ dependencies = [
  "sha2 0.11.0",
  "subtle",
  "unicode-normalization",
+ "vault-proto",
  "zeroize",
 ]
 
@@ -7347,6 +7348,35 @@ dependencies = [
  "aligned-vec",
  "num-traits",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "vault-proto"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "libc",
+ "p256",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "unicode-normalization",
+ "zeroize",
+]
+
+[[package]]
+name = "vault-provider-core"
+version = "0.1.0"
+dependencies = [
+ "getrandom 0.4.3",
+ "hmac 0.13.0",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "vault-proto",
 ]
 
 [[package]]

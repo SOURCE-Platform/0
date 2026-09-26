@@ -9,10 +9,13 @@ mod graph_fx;
 use graph_fx::*;
 use vault_helper::storage::merge::{apply_revision, retry_pending, MergeOutcome, NoCompare};
 use vault_helper::storage::rev_state::{is_frozen, refused_totals};
-use vault_helper::storage::revisions::{heads, REFUSED_COUNTER_REGRESSION, REFUSED_MALFORMED, REFUSED_ZERO_AUTHOR};
+use vault_helper::storage::revisions::{get_row, heads, REFUSED_COUNTER_REGRESSION, REFUSED_MALFORMED, REFUSED_ZERO_AUTHOR};
+
+/// The fixture vault's local `vk_generation`.
+const GEN: u32 = 0;
 
 fn apply(g: &Graph, r: &Rev) -> MergeOutcome {
-    apply_revision(&g.conn, &r.row, &r.obj, &NoCompare).unwrap()
+    apply_revision(&g.conn, &r.row, GEN, &NoCompare).unwrap()
 }
 
 /// SY-01: single-author linear edits fast-forward; no conflict rows.
@@ -158,7 +161,7 @@ fn sy09_permutations_converge() {
         for &k in order.iter() {
             apply(&g, &revs[k]);
         }
-        retry_pending(&g.conn, &NoCompare).unwrap();
+        retry_pending(&g.conn, GEN, &NoCompare).unwrap();
         let state = (heads(&g.conn, REC).unwrap(), is_frozen(&g.conn, REC).unwrap());
         results.push((state, revs));
     }
@@ -169,17 +172,26 @@ fn sy09_permutations_converge() {
     }
 }
 
-/// SY-12: duplicate ids — identical bytes are a no-op; a newer
-/// `vk_generation` of the same graph supersedes; different graph freezes.
+/// SY-12: duplicate ids — identical bytes are a no-op; a different graph
+/// freezes; a copy at a generation other than the local one is never
+/// stored (SEC-B1); a same-graph copy that brings a row up to the local
+/// generation replaces it (VER-O3 checks the stored row).
 #[test]
 fn sy12_duplicates() {
     let g = Graph::new("sy12");
     let base = g.rev(A, 1, &[], false);
     apply(&g, &base);
     assert_eq!(apply(&g, &base), MergeOutcome::AlreadyKnown);
-    let mut resealed = base.clone();
-    resealed.reseal(1);
-    assert_eq!(apply(&g, &resealed), MergeOutcome::Superseded);
+    let stored = |g: &Graph| get_row(&g.conn, &base.row.revision_id).unwrap().unwrap();
+    let mut high = base.clone();
+    high.reseal(99);
+    assert_eq!(apply(&g, &high), MergeOutcome::Superseded);
+    assert_eq!(stored(&g).vk_generation, 0, "a higher-generation copy is never stored");
+    assert!(!is_frozen(&g.conn, REC).unwrap());
+    let mut up = base.clone();
+    up.reseal(1);
+    assert_eq!(apply_revision(&g.conn, &up.row, 1, &NoCompare).unwrap(), MergeOutcome::Superseded);
+    assert_eq!(stored(&g).vk_generation, 1, "brought up to the local generation");
     let mut forged = base.clone();
     forged.row.counter = 7;
     forged.refresh();

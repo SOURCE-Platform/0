@@ -9,8 +9,8 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::crypto::hex;
-use crate::errors::ErrorCode;
+use vault_proto::crypto::hex;
+use vault_proto::errors::ErrorCode;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexRef {

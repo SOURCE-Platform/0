@@ -22,7 +22,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use super::index::{self, ObjectIndex};
+use super::index_v1::{self as index, ObjectIndex};
 use super::manifest::SignedManifest;
 use crate::crypto::hex;
 use crate::errors::ErrorCode;

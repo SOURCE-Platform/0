@@ -11,6 +11,9 @@ publish = false
 # requires a cargo-vet audit. Do not add crates without a spec citation.
 
 [dependencies]
+# Phase F (spec v0.4 §1.1): wire types and secret-free verification,
+# shared with the provider; a workspace path crate, no new external deps.
+vault-proto = { path = "../vault-proto" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"

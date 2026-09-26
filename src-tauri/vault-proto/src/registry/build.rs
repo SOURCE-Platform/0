@@ -8,7 +8,10 @@ use super::device::DeviceIdentity;
 use crate::crypto::registry::{self, EntryKind, RegistryEntry};
 use crate::crypto::secret::SecretBytes;
 use crate::errors::ErrorCode;
-use crate::storage::store::now_epoch;
+
+fn now_epoch() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
 
 fn device_entry(st: &RegistryState, kind: EntryKind, dev: &dyn DeviceIdentity) -> RegistryEntry {
     RegistryEntry {

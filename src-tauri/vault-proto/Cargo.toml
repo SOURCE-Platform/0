@@ -1,0 +1,27 @@
+[package]
+name = "vault-proto"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Credential-vault wire types and secret-free verification shared by helper, provider and tests (spec v0.4 §1.1)"
+publish = false
+
+# Pure Rust (spec §1.1): no rusqlite, objc2 or Swift. Every dependency is
+# already in the vault-helper graph (§17.1a: the helper's dependency count
+# stays unchanged).
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11"
+hmac = "0.13"
+hkdf = "0.13"
+p256 = { version = "0.14", features = ["ecdsa"] }
+zeroize = { version = "1", features = ["derive"] }
+subtle = "2"
+unicode-normalization = "0.1"
+getrandom = "0.4"
+libc = "0.2"
+
+[lib]
+name = "vault_proto"
+path = "src/lib.rs"

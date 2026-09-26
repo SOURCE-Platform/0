@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use recovery_fx::*;
 use vault_helper::backup::checkpoint::RegistryCheckpoint;
 use vault_helper::backup::fs_store::Auth;
-use vault_helper::backup::index::{IndexRef, ObjectIndex};
+use vault_helper::backup::index_v1::{IndexRef, ObjectIndex};
 use vault_helper::backup::manifest::SignedManifest;
 use vault_helper::backup::snapshot;
 use vault_helper::crypto::registry::{EntryKind, RegistryEntry};
@@ -87,7 +87,7 @@ fn provider_substitutes_a_different_registry() {
     let attacker = SoftwareDevice::generate("Provider", PLATFORM_MACOS);
     let forged: Vec<RegistryEntry> = vec![vault_helper::registry::build::genesis(&attacker).unwrap()];
     let reg_bytes = registry_file::encode(&forged).unwrap();
-    let reg_key = vault_helper::backup::index::meta_key("registry", &reg_bytes);
+    let reg_key = vault_helper::backup::index_v1::meta_key("registry", &reg_bytes);
     w.backup.put_object(&w.vault_id, &reg_key, &reg_bytes, auth).unwrap();
     let mut idx = d.index.clone();
     idx.registry = IndexRef::of(reg_key, &reg_bytes);
@@ -96,7 +96,7 @@ fn provider_substitutes_a_different_registry() {
     m.object_index_hash = idx.hash();
     let m = m.sign(&attacker).unwrap();
     w.backup.put_object(&w.vault_id, &ObjectIndex::key(m.generation), &idx.encode(), auth).unwrap();
-    let key = vault_helper::backup::index::meta_key("manifest", &m.encode());
+    let key = vault_helper::backup::index_v1::meta_key("manifest", &m.encode());
     w.backup.put_object(&w.vault_id, &key, &m.encode(), auth).unwrap();
     // The provider serves its forged state but can only re-serve the real
     // checkpoint (it holds no VK).
@@ -128,7 +128,7 @@ fn provider_alters_historical_recovery_epoch_bytes() {
     // (b) rebuild index + manifest (attacker-signed): the checkpoint's
     // registry head no longer matches what is served.
     let attacker = SoftwareDevice::generate("Provider", PLATFORM_MACOS);
-    let reg_key = vault_helper::backup::index::meta_key("registry", &reg_bytes);
+    let reg_key = vault_helper::backup::index_v1::meta_key("registry", &reg_bytes);
     w.backup.put_object(&w.vault_id, &reg_key, &reg_bytes, auth).unwrap();
     let mut idx = d.index.clone();
     idx.registry = IndexRef::of(reg_key, &reg_bytes);
@@ -137,7 +137,7 @@ fn provider_alters_historical_recovery_epoch_bytes() {
     m.object_index_hash = idx.hash();
     let m = m.sign(&attacker).unwrap();
     w.backup.put_object(&w.vault_id, &ObjectIndex::key(m.generation), &idx.encode(), auth).unwrap();
-    let key = vault_helper::backup::index::meta_key("manifest", &m.encode());
+    let key = vault_helper::backup::index_v1::meta_key("manifest", &m.encode());
     w.backup.put_object(&w.vault_id, &key, &m.encode(), auth).unwrap();
     w.backup.put_object(&w.vault_id, &RegistryCheckpoint::key(m.generation), &d.checkpoint.encode(), auth).unwrap();
     w.backup.force_head(&w.vault_id, &m.encode()).unwrap();

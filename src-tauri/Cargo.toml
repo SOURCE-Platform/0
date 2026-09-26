@@ -1,5 +1,5 @@
 [workspace]
-members = ["vault-helper"]
+members = ["vault-helper", "vault-proto", "vault-provider-core"]
 resolver = "2"
 
 [package]

@@ -91,15 +91,33 @@ impl VaultStore {
         let manifest_bytes =
             std::fs::read(dir.join(MANIFEST_NAME)).map_err(|_| ErrorCode::ManifestMismatch)?;
         let manifest = manifest::parse_manifest(&manifest_bytes)?;
-        manifest::check_against_header(&manifest, &header)?;
-        let store = VaultStore {
+        let mut store = VaultStore {
             conn,
             header,
             manifest,
             dir: dir.to_path_buf(),
         };
-        store.verify_objects()?;
+        let consistent = manifest::check_against_header(&store.manifest, &store.header).and_then(|_| store.verify_objects());
+        if consistent.is_err() && store.can_roll_forward() {
+            // A crash between the DB commit and the manifest flip: the DB
+            // records exactly this one pending step (SEC-I7).
+            store.persist_head()?; // manifest generation → the pending step
+            manifest::check_against_header(&store.manifest, &store.header)?;
+            store.verify_objects()?;
+        } else {
+            consistent?;
+        }
         Ok(store)
+    }
+
+/// Roll forward only the single pending flip: same vault, VK
+    /// generation and registry head, the DB marker exactly one step past
+    /// the manifest, and the header at either end of that step.
+    fn can_roll_forward(&self) -> bool {
+        let (m, h) = (&self.manifest, &self.header);
+        let same = m.vault_id == h.vault_id && m.vk_generation == h.vk_generation && m.registry_head == h.registry_head;
+        let step = m.manifest_generation + 1;
+        same && pending_flip(&self.conn) == Some(step) && (h.manifest_generation == m.manifest_generation || h.manifest_generation == step)
     }
 
     /// Parse just the header (boot path; no DB touch).
@@ -222,6 +240,23 @@ impl VaultStore {
     fn live_item_count(&self) -> Result<u64, ErrorCode> {
         super::revision_rows::live_count(&self.conn)
     }
+}
+
+/// SEC-I7 roll-forward marker, written inside the transaction that
+/// changes the revision set: "the manifest flip to `next_gen` is due".
+pub fn stamp_flip(tx: &rusqlite::Connection, next_gen: u64) -> Result<(), ErrorCode> {
+    tx.execute(
+        "INSERT INTO kv (key, value) VALUES ('pending_flip', ?1)
+         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [next_gen.to_be_bytes().to_vec()],
+    )
+    .map(|_| ())
+    .map_err(|_| ErrorCode::DbCorrupt)
+}
+
+fn pending_flip(conn: &rusqlite::Connection) -> Option<u64> {
+    let v: Vec<u8> = conn.query_row("SELECT value FROM kv WHERE key='pending_flip'", [], |r| r.get(0)).ok()?;
+    Some(u64::from_be_bytes(v.try_into().ok()?))
 }
 
 pub fn now_epoch() -> u64 {

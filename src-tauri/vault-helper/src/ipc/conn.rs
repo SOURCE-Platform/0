@@ -81,6 +81,10 @@ fn read_hello(stream: &mut UnixStream, ctx: &ConnCtx) -> Option<(ClientClass, Va
     Some((class, ops::hello_ok(state)))
 }
 
+/// Ops an `nm-host` connection may send (§1.5 nm-host table, plus the
+/// state read every client class has).
+const NM_HOST_OPS: [&str; 5] = ["get_state", "fill_candidates", "fill_authorize", "save_new", "save_update"];
+
 fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
     let Ok(read_side) = stream.try_clone() else {
         return;
@@ -91,6 +95,11 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
     for frame in frames_rx {
         let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
         let response = match op {
+            // §1.5: the nm-host class has its own, closed op list; every
+            // app op is unknown to it (SEC-O5).
+            _ if class == ClientClass::NmHost && !NM_HOST_OPS.contains(&op) => {
+                crate::errors::ErrorCode::UnknownOp.frame()
+            }
             "get_state" => ops::ok_with_state(lock_core(&ctx.core).state),
             // Already applied by the read side on arrival; answer in order.
             "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
@@ -125,7 +134,7 @@ fn read_loop(mut stream: UnixStream, class: ClientClass, ctx: &ConnCtx, frames: 
             ctx.hub.route_reply(&frame);
             continue;
         }
-        if frame.get("op").and_then(Value::as_str) == Some("lock") {
+        if class == ClientClass::App && frame.get("op").and_then(Value::as_str) == Some("lock") {
             do_lock(ctx);
         }
         if frames.send(frame).is_err() {

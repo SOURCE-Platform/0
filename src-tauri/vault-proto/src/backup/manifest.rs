@@ -1,4 +1,4 @@
-//! `SignedManifest` (spec §11.2): canonical TLV, signed by the publishing
+//! `SignedManifest` v2 (spec v0.4 §11.2): canonical TLV, signed by the publishing
 //! device over SHA-256("ov0/manifest/sign/v1" ‖ tlv(without 0x10)).
 //! `manifest_hash` = SHA-256 of the full signed TLV bytes — the value a
 //! recovery_epoch binds (§4.5) and finalize CASes against (§11.8).
@@ -9,6 +9,9 @@ use crate::crypto::ecdsa;
 use crate::crypto::tlv::{EntryBuilder, EntryReader};
 use crate::errors::ErrorCode;
 use crate::registry::device::DeviceIdentity;
+
+/// v0.4 manifest format; v1 is retired (`FORMAT_INVALID`, §3.5).
+pub const MANIFEST_VERSION: u32 = 2;
 
 mod tag {
     pub const VERSION: u8 = 0x01;
@@ -39,7 +42,7 @@ pub struct SignedManifest {
 impl SignedManifest {
     fn tlv(&self, with_sig: bool) -> Vec<u8> {
         let mut b = EntryBuilder::new()
-            .field_uint(tag::VERSION, 1)
+            .field_uint(tag::VERSION, u64::from(MANIFEST_VERSION))
             .and_then(|b| b.field_bytes(tag::VAULT_ID, &self.vault_id))
             .and_then(|b| b.field_uint(tag::GENERATION, self.generation))
             .and_then(|b| b.field_uint(tag::CREATED_AT, self.created_at))
@@ -93,13 +96,17 @@ impl SignedManifest {
             .map_err(|_| ErrorCode::SignatureInvalid)
     }
 
-    /// Strict decode: canonical TLV, version 1, every field present with
-    /// its exact width; re-encoding must reproduce the input.
+    /// Strict decode: canonical TLV, version 2, every field present with
+    /// its exact width; re-encoding must reproduce the input. Version 1 is
+    /// the retired format (`FORMAT_INVALID`); above 2 is `FORMAT_TOO_NEW`.
     pub fn decode(bytes: &[u8]) -> Result<SignedManifest, ErrorCode> {
         let bad = |_| ErrorCode::ManifestMismatch;
         let r = EntryReader::parse(bytes).map_err(bad)?;
-        if r.get_uint(tag::VERSION).map_err(bad)? != Some(1) {
-            return Err(ErrorCode::FormatTooNew);
+        match r.get_uint(tag::VERSION).map_err(bad)? {
+            Some(v) if v == u64::from(MANIFEST_VERSION) => {}
+            Some(v) if v > u64::from(MANIFEST_VERSION) => return Err(ErrorCode::FormatTooNew),
+            Some(_) => return Err(ErrorCode::FormatInvalid),
+            None => return Err(ErrorCode::ManifestMismatch),
         }
         let fixed = |t: u8| r.get(t).ok_or(ErrorCode::ManifestMismatch);
         let uint = |t: u8| r.get_uint(t).map_err(bad)?.ok_or(ErrorCode::ManifestMismatch);

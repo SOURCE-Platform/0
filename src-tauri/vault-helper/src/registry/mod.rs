@@ -3,8 +3,7 @@
 //! registry and signed manifests build on. The entry codec, hashes, and
 //! proof primitives live in `crypto::registry` (Phase B).
 
-pub mod build;
-pub mod chain;
-pub mod device;
-pub mod file;
 pub mod log;
+
+// Moved to `vault-proto` (spec v0.4 §1.1); re-exported at their old paths.
+pub use vault_proto::registry::{build, chain, device, file};

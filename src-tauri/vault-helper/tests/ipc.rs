@@ -144,6 +144,10 @@ fn same_class_second_hello_replaces_first() {
     // A different class gets its own slot and both stay usable.
     let (mut nm, _) = raw_hello(&dir.join("helper.sock"), "nm-host");
     assert_eq!(op(&mut nm, "get_state")["ok"], true);
+    // SEC-O5: app ops are unknown to the nm-host class.
+    for app_op in ["list_items", "reveal", "resolve_conflict", "lock", "setup_vault"] {
+        assert_eq!(op(&mut nm, app_op)["error"], "UNKNOWN_OP", "{app_op}");
+    }
 
     shutdown.store(true, Ordering::SeqCst);
     assert_eq!(handle.join().unwrap(), 0);

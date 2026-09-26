@@ -197,6 +197,9 @@ fn reseal_db(
         });
     }
     super::import_log::recompute(&tx, h, old_vk, new_vk)?;
+    // Held-back revisions are sealed under the retiring VK and are not
+    // this vault's to re-seal; the next committed state brings them back.
+    super::rev_state::purge_pending(&tx)?;
     tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
     Ok(objects)
 }
