@@ -13,30 +13,25 @@ pub const INFO_WRAP_RK: &[u8] = b"ov0/wrap/rk/v1";
 pub const INFO_RECORD: &[u8] = b"ov0/record/v1";
 pub const INFO_META: &[u8] = b"ov0/meta/v1";
 pub const INFO_RECOVERY_AUTH: &[u8] = b"ov0/recovery-auth/v1";
-pub const INFO_LOCATE_MP: &[u8] = b"ov0/locate/mp/v1";
-pub const INFO_LOCATE_RK: &[u8] = b"ov0/locate/rk/v1";
-pub const INFO_BACKUP_AUTH_MP: &[u8] = b"ov0/backup-auth/mp/v1";
-pub const INFO_BACKUP_AUTH_RK: &[u8] = b"ov0/backup-auth/rk/v1";
 pub const INFO_IMPORT_FINGERPRINT: &[u8] = b"ov0/import-fingerprint/v1";
 pub const INFO_ENROLL_SAS: &[u8] = b"ov0/enroll/sas/v1";
-/// Key for the authorizing device's record of the per-device backup
-/// credentials it has issued (§11.4; added in Phase E).
-pub const INFO_DEVICE_CREDS: &[u8] = b"ov0/device-creds/v1";
+/// Provider recovery-auth `ikm_c` (§11.4); the info is this prefix ‖ vault_id.
+pub const INFO_PROVIDER_AUTH_MP: &[u8] = b"ov0/provider-recovery-auth/mp/v2";
+pub const INFO_PROVIDER_AUTH_RK: &[u8] = b"ov0/provider-recovery-auth/rk/v2";
 
-/// All §2.9 strings; XV-HKDF vectors cover every one of them.
-pub const ALL_INFO_STRINGS: [&[u8]; 12] = [
+/// All §2.9 strings (v0.4); XV-HKDF vectors cover every one of them. The
+/// v0.3 `backup-auth`, `locate`, `locator` and `device-creds` contexts are
+/// retired and appear nowhere.
+pub const ALL_INFO_STRINGS: [&[u8]; 9] = [
     INFO_WRAP_MP,
     INFO_WRAP_RK,
     INFO_RECORD,
     INFO_META,
     INFO_RECOVERY_AUTH,
-    INFO_LOCATE_MP,
-    INFO_LOCATE_RK,
-    INFO_BACKUP_AUTH_MP,
-    INFO_BACKUP_AUTH_RK,
     INFO_IMPORT_FINGERPRINT,
     INFO_ENROLL_SAS,
-    INFO_DEVICE_CREDS,
+    INFO_PROVIDER_AUTH_MP,
+    INFO_PROVIDER_AUTH_RK,
 ];
 
 /// HKDF-SHA-256 extract+expand to a 32-byte secret.
@@ -87,40 +82,6 @@ pub fn recovery_auth_key(
     hkdf32(vk.expose(), manifest_hash, INFO_RECOVERY_AUTH)
 }
 
-/// Recovery-class backup credential from PK (§11.4, CR-13).
-pub fn backup_cred_mp(
-    pk: &SecretBytes<32>,
-    salt: &[u8; 16],
-) -> Result<SecretBytes<32>, CryptoError> {
-    hkdf32(pk.expose(), salt, INFO_BACKUP_AUTH_MP)
-}
-
-/// Recovery-class backup credential from the RK-derived key (§11.4, CR-13).
-pub fn backup_cred_rk(
-    rk: &SecretBytes<32>,
-    salt: &[u8; 16],
-) -> Result<SecretBytes<32>, CryptoError> {
-    hkdf32(rk.expose(), salt, INFO_BACKUP_AUTH_RK)
-}
-
-/// Recovery locator keys (§12 scenario 3).
-pub fn locator_mp(pk: &SecretBytes<32>, salt: &[u8; 16]) -> Result<SecretBytes<32>, CryptoError> {
-    hkdf32(pk.expose(), salt, INFO_LOCATE_MP)
-}
-
-pub fn locator_rk(rk: &SecretBytes<32>, salt: &[u8; 16]) -> Result<SecretBytes<32>, CryptoError> {
-    hkdf32(rk.expose(), salt, INFO_LOCATE_RK)
-}
-
-/// Key sealing the issued-credential record (§11.4): HKDF(ikm=VK,
-/// salt=vault_id). Rotates with the VK, like every other VK-derived key.
-pub fn device_creds_key(
-    vk: &SecretBytes<32>,
-    vault_id: &[u8; 16],
-) -> Result<SecretBytes<32>, CryptoError> {
-    hkdf32(vk.expose(), vault_id, INFO_DEVICE_CREDS)
-}
-
 /// Import idempotency HMAC key from VK (§10.3).
 pub fn import_fp_key(
     vk: &SecretBytes<32>,
@@ -135,21 +96,19 @@ mod tests {
 
     #[test]
     fn derivations_are_domain_separated() {
-        let vk = SecretBytes::new([3u8; 32]);
+        let k = SecretBytes::new([3u8; 32]);
         let salt = [4u8; 16];
-        let a = wrap_key_rk(&vk, &salt).unwrap();
-        let b = backup_cred_rk(&vk, &salt).unwrap();
-        let c = locator_rk(&vk, &salt).unwrap();
-        assert_ne!(a.expose(), b.expose());
-        assert_ne!(a.expose(), c.expose());
-        assert_ne!(b.expose(), c.expose());
+        let outs: Vec<[u8; 32]> = ALL_INFO_STRINGS.iter().map(|i| *hkdf32(k.expose(), &salt, i).unwrap().expose()).collect();
+        for (i, a) in outs.iter().enumerate() {
+            assert!(outs[i + 1..].iter().all(|b| b != a), "context {i} collides");
+        }
     }
 
     #[test]
     fn salt_changes_output() {
         let pk = SecretBytes::new([5u8; 32]);
-        let a = backup_cred_mp(&pk, &[1u8; 16]).unwrap();
-        let b = backup_cred_mp(&pk, &[2u8; 16]).unwrap();
+        let a = wrap_key_rk(&pk, &[1u8; 16]).unwrap();
+        let b = wrap_key_rk(&pk, &[2u8; 16]).unwrap();
         assert_ne!(a.expose(), b.expose());
     }
 }

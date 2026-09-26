@@ -12,10 +12,9 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Value};
 
 use super::{lock_core, OpOutcome, VaultCore};
-use crate::crypto::secret::{random_secret, SecretBytes};
+use crate::crypto::secret::{SecretBytes};
 use crate::crypto::wrap::DeviceEnvelopePayload;
 use crate::crypto::{ecdsa, hex};
-use crate::device::creds::DeviceCreds;
 use crate::device::envelope;
 use crate::device::identity::SeDevice;
 use crate::enroll::session::{Peer, Stage};
@@ -54,33 +53,34 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
     let mut entries = state.entries.clone();
     entries.push(entry.clone());
 
-    // The device's own envelope: VK plus the credential this Mac issues
-    // to it (§2.2, §11.4 class 1).
-    let cred = random_secret();
+    // The device's own envelope: the VK only (§2.2 v2).
     let nonce_e = c.enroll.as_ref().map(|s| s.nonce_e).ok_or(ErrorCode::BadState)?;
     let payload = DeviceEnvelopePayload {
         vk: SecretBytes::new(*vk.expose()),
-        device_backup_cred: SecretBytes::new(*cred.expose()),
         wrapped_at: now_epoch(),
         vk_generation,
     };
     let env = envelope::seal_envelope(&peer.agree_pub, &vault_id, &peer.device_id, &nonce_e, &payload)?;
 
-    // The vault itself, as a §11.2 snapshot signed by this Mac.
-    let snap = crate::backup::snapshot::build(
+    // The vault itself, as a v0.4 state (index v2) signed by this Mac,
+    // including the registry with the pending enroll entry.
+    let pending = crate::registry::chain::verify_chain_with(&entries, &vault_id, &POLICY)?;
+    let env_bytes = serde_json::to_vec_pretty(&env).map_err(|_| ErrorCode::Internal)?;
+    let snap = crate::sync::local::stage_local(
         c.store.as_ref().ok_or(ErrorCode::BadState)?,
-        &entries,
+        &pending,
         store.header.manifest_generation,
         [0u8; 32],
         &me,
         &vk,
+        &[(peer.device_id, env_bytes)],
     )?;
     let bundle = wire::Bundle {
         vault_id: hex::encode(vault_id),
         objects: snap
-            .objects
+            .blobs
             .iter()
-            .map(|(k, v)| (k.clone(), hex::encode(v)))
+            .map(|(k, v)| (hex::encode(k), hex::encode(v)))
             .collect(),
         manifest: hex::encode(snap.manifest.encode()),
         checkpoint: hex::encode(snap.checkpoint.encode()),
@@ -89,7 +89,6 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
     };
     let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
     session.entry = Some(entry);
-    session.cred = Some(cred);
     session.stage = Stage::AwaitingAck;
     serde_json::to_value(&bundle).map_err(|_| ErrorCode::Internal)
 }
@@ -133,11 +132,6 @@ fn finish_ack(core: &Arc<Mutex<VaultCore>>, sig: &[u8; 64]) -> Result<Value, Err
     }
     let peer = session.peer.clone().ok_or(ErrorCode::BadState)?;
     let entry = session.entry.clone().ok_or(ErrorCode::BadState)?;
-    let cred = session
-        .cred
-        .as_ref()
-        .map(|c| SecretBytes::new(*c.expose()))
-        .ok_or(ErrorCode::BadState)?;
     let head = crate::crypto::registry::entry_hash(&entry).map_err(|_| ErrorCode::Internal)?;
     let digest = transcript::ack_digest(&head, &me.device_id());
     ecdsa::verify_prehash(&peer.sign_pub, &digest, sig)
@@ -154,15 +148,11 @@ fn finish_ack(core: &Arc<Mutex<VaultCore>>, sig: &[u8; 64]) -> Result<Value, Err
         &session.nonce_e,
         &DeviceEnvelopePayload {
             vk: SecretBytes::new(*vk.expose()),
-            device_backup_cred: SecretBytes::new(*cred.expose()),
             wrapped_at: now_epoch(),
             vk_generation: c.store.as_ref().ok_or(ErrorCode::BadState)?.header.vk_generation,
         },
     )?;
     envelope::write_envelope(&dir, &peer.device_id, &env_file)?;
-    let mut creds = DeviceCreds::load(&dir, &vk, &vault_id)?;
-    creds.insert(peer.device_id, &cred);
-    creds.save(&dir, &vk, &vault_id)?;
     let store = c.store.as_mut().ok_or(ErrorCode::BadState)?;
     store.set_registry_head(head)?;
     let header = store.header.clone();

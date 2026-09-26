@@ -61,7 +61,10 @@ fn enrollment_end_to_end() {
         serde_json::from_value(bundle["envelope"].clone()).unwrap();
     let payload = envelope::open_envelope(phone.dev.key_tag(), &vault_id, &env).expect("envelope");
     assert_eq!(payload.vk_generation, 1);
-    assert_eq!(payload.device_backup_cred.expose().len(), 32);
+    // CR-12 (v0.4): the envelope payload is exactly {vk, wrapped_at,
+    // vk_generation} — no credential of any kind.
+    let tags: Vec<u8> = vault_helper::crypto::tlv::EntryReader::parse(&payload.encode()).unwrap().tags().collect();
+    assert_eq!(tags, vec![0x01, 0x02, 0x03]);
 
     // ...verifies the manifest it was sent, signed by the Mac.
     let manifest =

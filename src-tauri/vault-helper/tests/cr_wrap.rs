@@ -139,27 +139,23 @@ fn cr12_payload_split_holds() {
         wrapped_at: 1,
         vk_generation: 0,
     };
+    // v0.4 CR-12: both payload shapes are exactly {vk, wrapped_at,
+    // vk_generation}; the retired credential tag 0x04 is refused by both.
     let bytes = recovery.encode();
-    // recovery payload must not parse as a device envelope (cred absent)
-    assert!(matches!(
-        DeviceEnvelopePayload::parse(&bytes),
-        Err(CryptoError::FieldPresence)
-    ));
-
-    let device = DeviceEnvelopePayload {
-        vk: random_secret(),
-        device_backup_cred: random_secret(),
-        wrapped_at: 1,
-        vk_generation: 0,
-    };
-    let bytes = device.encode();
-    // device payload must not parse as a recovery wrap (cred present)
-    assert!(matches!(
-        RecoveryWrapPayload::parse(&bytes),
-        Err(CryptoError::FieldPresence)
-    ));
-    let roundtrip = DeviceEnvelopePayload::parse(&bytes).unwrap();
-    assert_eq!(roundtrip.device_backup_cred.expose().len(), 32);
+    let tags = |b: &[u8]| -> Vec<u8> { vault_helper::crypto::tlv::EntryReader::parse(b).unwrap().tags().collect() };
+    assert_eq!(tags(&bytes), vec![0x01, 0x02, 0x03]);
+    let device = DeviceEnvelopePayload { vk: random_secret(), wrapped_at: 1, vk_generation: 0 };
+    assert_eq!(tags(&device.encode()), vec![0x01, 0x02, 0x03]);
+    assert!(DeviceEnvelopePayload::parse(&device.encode()).is_ok());
+    let with_cred = vault_helper::crypto::tlv::EntryBuilder::new()
+        .field_bytes(0x01, &[1; 32])
+        .and_then(|b| b.field_uint(0x02, 1))
+        .and_then(|b| b.field_uint(0x03, 0))
+        .and_then(|b| b.field_bytes(0x04, &[2; 32]))
+        .unwrap()
+        .build();
+    assert!(matches!(DeviceEnvelopePayload::parse(&with_cred), Err(CryptoError::FieldPresence)));
+    assert!(matches!(RecoveryWrapPayload::parse(&with_cred), Err(CryptoError::FieldPresence)));
 
     // After rotation both recovery wraps still carry no backup credential.
     let rk = random_secret();
@@ -177,9 +173,6 @@ fn cr12_payload_split_holds() {
         wrap::open_wrap_mp(&mp_rot, &pk, &VAULT_ID).unwrap(),
         wrap::open_wrap_rk(&rk_rot, &rk, &VAULT_ID).unwrap(),
     ] {
-        assert!(matches!(
-            DeviceEnvelopePayload::parse(&payload.encode()),
-            Err(CryptoError::FieldPresence)
-        ));
+        assert_eq!(tags(&payload.encode()), vec![0x01, 0x02, 0x03]);
     }
 }

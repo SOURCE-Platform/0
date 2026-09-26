@@ -37,8 +37,10 @@ pub fn set_master_password(store: &mut VaultStore, vk: &SecretBytes<32>, new_mp:
         &store.dir.join(PASSWORD_WRAP_NAME),
         &serde_json::to_vec_pretty(&file).map_err(|_| ErrorCode::Internal)?,
     )?;
-    store.header.kdf = KdfBlock { salt: crate::crypto::hex::encode(salt), ..KdfBlock::v1() };
-    store.persist_head()?;
+    let mut next = store.header.clone();
+    next.kdf = KdfBlock::frozen(salt);
+    next.auth_salt_mp = crate::storage::header::Hex16::random();
+    store.flip(next)?;
     Ok(salt)
 }
 

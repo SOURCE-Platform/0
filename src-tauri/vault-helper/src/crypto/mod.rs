@@ -10,4 +10,4 @@ pub mod vectors;
 pub mod wrap;
 
 // Moved to `vault-proto` (spec v0.4 §1.1); re-exported at their old paths.
-pub use vault_proto::crypto::{ecdsa, hex, hkdf, registry, secret, tlv, CryptoError};
+pub use vault_proto::crypto::{ecdsa, hex, hkdf, recovery_auth, registry, secret, tlv, CryptoError};

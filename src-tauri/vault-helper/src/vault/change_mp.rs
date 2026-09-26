@@ -144,7 +144,10 @@ fn rewrap_under_new_mp(
     // the vault (header's kdf block is the policy record, §2.3).
     write_atomic(&vault_dir.join(PASSWORD_WRAP_NAME), &wrap_json)?;
     let mut new_header = header.clone();
-    new_header.kdf.salt = crate::crypto::hex::encode(new_salt);
+    // §11.4: an MP change regenerates the kdf salt and the MP-class
+    // auth salt; the recovery-auth update is staged with the publish.
+    new_header.kdf.salt = crate::storage::header::Hex16(new_salt);
+    new_header.auth_salt_mp = crate::storage::header::Hex16::random();
     write_atomic(&vault_dir.join(VAULT_HEADER_NAME), &write_header(&new_header)?)?;
     Ok(new_header)
 }

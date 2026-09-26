@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use subtle::ConstantTimeEq;
 
 use crate::crypto::registry::RegistryEntry;
-use crate::crypto::secret::SecretBytes;
 use crate::errors::ErrorCode;
 
 /// §5.2: the whole flow lives 300 s.
@@ -49,9 +48,6 @@ pub struct EnrollSession {
     pub sas: Option<String>,
     /// Built at `confirm`, appended to the registry only at `ack`.
     pub entry: Option<RegistryEntry>,
-    /// The per-device backup credential issued to this device (§11.4),
-    /// held until the ACK lands so it can be recorded for re-enveloping.
-    pub cred: Option<SecretBytes<32>>,
 }
 
 impl EnrollSession {
@@ -71,7 +67,6 @@ impl EnrollSession {
             transcript: None,
             sas: None,
             entry: None,
-            cred: None,
         }
     }
 

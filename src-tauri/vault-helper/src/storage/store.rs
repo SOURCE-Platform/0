@@ -98,26 +98,12 @@ impl VaultStore {
             dir: dir.to_path_buf(),
         };
         let consistent = manifest::check_against_header(&store.manifest, &store.header).and_then(|_| store.verify_objects());
-        if consistent.is_err() && store.can_roll_forward() {
-            // A crash between the DB commit and the manifest flip: the DB
-            // records exactly this one pending step (SEC-I7).
-            store.persist_head()?; // manifest generation → the pending step
-            manifest::check_against_header(&store.manifest, &store.header)?;
-            store.verify_objects()?;
-        } else {
+        // An interrupted flip rolls forward to its recorded target; any
+        // other inconsistency fails closed (§3.5, see `flip`).
+        if consistent.is_err() && !store.roll_forward()? {
             consistent?;
         }
         Ok(store)
-    }
-
-/// Roll forward only the single pending flip: same vault, VK
-    /// generation and registry head, the DB marker exactly one step past
-    /// the manifest, and the header at either end of that step.
-    fn can_roll_forward(&self) -> bool {
-        let (m, h) = (&self.manifest, &self.header);
-        let same = m.vault_id == h.vault_id && m.vk_generation == h.vk_generation && m.registry_head == h.registry_head;
-        let step = m.manifest_generation + 1;
-        same && pending_flip(&self.conn) == Some(step) && (h.manifest_generation == m.manifest_generation || h.manifest_generation == step)
     }
 
     /// Parse just the header (boot path; no DB touch).
@@ -171,50 +157,6 @@ impl VaultStore {
         Ok(())
     }
 
-    /// Flip the manifest generation after a committed mutation and persist
-    /// header + manifest atomically (generation kept in lockstep so §3.5
-    /// catches any file swapped in from a different point in time).
-    pub fn persist_head(&mut self) -> Result<(), ErrorCode> {
-        self.manifest.manifest_generation += 1;
-        self.header.manifest_generation = self.manifest.manifest_generation;
-        let mut stmt = self
-            .conn
-            .prepare("SELECT record_id, revision_id FROM record_revs")
-            .map_err(|_| ErrorCode::DbCorrupt)?;
-        let objects = stmt
-            .query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|_| ErrorCode::DbCorrupt)?
-            .filter_map(|r| r.ok())
-            .map(|(record_id, id)| manifest::ManifestObject {
-                record_id,
-                revision_id: crate::crypto::hex::encode(id),
-            })
-            .collect();
-        self.manifest.objects = objects;
-        self.manifest.item_count = self.live_item_count()?;
-        write_atomic(
-            &self.dir.join(VAULT_HEADER_NAME),
-            &header::write_header(&self.header)?,
-        )?;
-        write_atomic(
-            &self.dir.join(MANIFEST_NAME),
-            &manifest::write_manifest(&self.manifest)?,
-        )?;
-        Ok(())
-    }
-
-    /// Move both heads to a new registry head (an appended enroll/revoke
-    /// entry, §4). Header and manifest stay in lockstep, so a directory
-    /// carrying a registry from a different point in time is caught by
-    /// §3.5 rather than silently accepted.
-    pub fn set_registry_head(&mut self, head: [u8; 32]) -> Result<(), ErrorCode> {
-        self.header.registry_head = crate::storage::header::Hex32(head);
-        self.manifest.registry_head = crate::storage::header::Hex32(head);
-        self.persist_head()
-    }
-
     /// The registry `device_id` this vault authors revisions as (§3.2),
     /// recorded in `kv` at creation or recovery.
     pub fn author_device(&self) -> Result<String, ErrorCode> {
@@ -236,27 +178,6 @@ impl VaultStore {
             .map(|_| ())
             .map_err(|_| ErrorCode::DbCorrupt)
     }
-
-    fn live_item_count(&self) -> Result<u64, ErrorCode> {
-        super::revision_rows::live_count(&self.conn)
-    }
-}
-
-/// SEC-I7 roll-forward marker, written inside the transaction that
-/// changes the revision set: "the manifest flip to `next_gen` is due".
-pub fn stamp_flip(tx: &rusqlite::Connection, next_gen: u64) -> Result<(), ErrorCode> {
-    tx.execute(
-        "INSERT INTO kv (key, value) VALUES ('pending_flip', ?1)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        [next_gen.to_be_bytes().to_vec()],
-    )
-    .map(|_| ())
-    .map_err(|_| ErrorCode::DbCorrupt)
-}
-
-fn pending_flip(conn: &rusqlite::Connection) -> Option<u64> {
-    let v: Vec<u8> = conn.query_row("SELECT value FROM kv WHERE key='pending_flip'", [], |r| r.get(0)).ok()?;
-    Some(u64::from_be_bytes(v.try_into().ok()?))
 }
 
 pub fn now_epoch() -> u64 {

@@ -28,6 +28,7 @@ pub mod recovery;
 pub mod registry;
 pub mod state;
 pub mod storage;
+pub mod sync;
 #[cfg(debug_assertions)]
 pub mod test_support;
 pub mod vault;

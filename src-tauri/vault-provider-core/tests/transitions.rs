@@ -182,7 +182,7 @@ fn pr04_bound_fields() {
     use vault_proto::crypto::recovery_auth::key_id;
     use vault_proto::request::{auth_header, ProviderRequest, SignerId};
     let signer = SignerId::Device { device_id: s.mac.device_id(), key_id: key_id(&s.mac.sign_pub()) };
-    let req = ProviderRequest::build(ORIGIN, s.vault_id, Operation::StateGet, None, signer, b"", None, s.now, n).unwrap();
+    let req = ProviderRequest::build(ORIGIN, s.vault_id, Operation::StateGet, None, signer, vault_proto::request::body_hash(b""), None, s.now, n).unwrap();
     let h = auth_header(&req.encode(), &s.mac.sign_prehash(&req.prehash()).unwrap());
     let send = |method: &str, path: &str, body: &[u8], now: u64| {
         s.p.handle(&vault_provider_core::Request { method, path, auth: Some(&h), body, now, client_ip: "192.0.2.1" }).status
@@ -231,7 +231,7 @@ fn bk17_concurrent_publishers() {
                 Operation::StateCommit,
                 None,
                 vault_proto::request::SignerId::Device { device_id: other.device_id(), key_id: key },
-                &body,
+                vault_proto::request::body_hash(&body),
                 Some(tb.expected_state),
                 s.now,
                 n,

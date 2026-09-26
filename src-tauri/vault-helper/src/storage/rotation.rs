@@ -150,7 +150,7 @@ pub fn rotate(
 
 /// Re-seal every revision and every import fingerprint inside one
 /// transaction of the staged DB. Returns the new manifest object list.
-fn reseal_db(
+pub(super) fn reseal_db(
     conn: &mut Connection,
     h: &Header,
     old_vk: &SecretBytes<32>,
@@ -234,10 +234,9 @@ fn stage_wraps(
             let pk = kdf::derive_pk(mp, &salt, params).map_err(|_| ErrorCode::Internal)?;
             let file = wrap::seal_wrap_mp(&payload(), &pk, &vault_id, params, &salt)
                 .map_err(|_| ErrorCode::Internal)?;
-            new_header.kdf = header::KdfBlock {
-                salt: crate::crypto::hex::encode(salt),
-                ..header::KdfBlock::v1()
-            };
+            // A new MP: new kdf salt and a new MP-class auth salt (§11.4).
+            new_header.kdf = header::KdfBlock::frozen(salt);
+            new_header.auth_salt_mp = header::Hex16::random();
             file
         }
     };

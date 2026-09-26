@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use vault_helper::crypto::hkdf;
+use vault_helper::crypto::recovery_auth::{self, RecoveryClass};
 use vault_helper::crypto::secret::{random_secret, SecretBytes, SecretVec};
 use vault_helper::crypto::{bip39, wrap};
 
@@ -47,25 +47,25 @@ fn cr11_secret_vec_zeroizes_on_drop() {
     }
 }
 
-/// CR-13: cred_mp / cred_rk derivation follows the §2.9 context strings,
-/// and derived secrets never touch the filesystem. The second half scans
-/// every file the crypto layer produced for canary bytes — Phase B's
-/// crypto core writes nothing by construction, and this test keeps it so.
+/// CR-13 (v0.4): recovery-auth keys derive from PK / RK_bytes through the
+/// §2.9 provider-recovery-auth contexts (distinct per class and vault,
+/// deterministic), and derived secrets never touch the filesystem. The
+/// second half scans every file the crypto layer produced for canaries.
 #[test]
-fn cr13_backup_credential_derivation_and_no_persistence() {
+fn cr13_recovery_auth_derivation_and_no_persistence() {
     let pk = SecretBytes::new([0x51; 32]);
     let rk = SecretBytes::new([0x52; 32]);
-    let vault_salt = [0x53; 16];
+    let salt = [0x53; 16];
+    let vid = [0x54; 16];
 
-    let cred_mp = hkdf::backup_cred_mp(&pk, &vault_salt).unwrap();
-    let cred_rk = hkdf::backup_cred_rk(&rk, &vault_salt).unwrap();
-    // distinct inputs + distinct info strings → distinct credentials
-    assert_ne!(cred_mp.expose(), cred_rk.expose());
-
-    // Determinism (vectors pin the exact bytes; XV-HKDF covers all §2.9
-    // strings including ov0/backup-auth/{mp,rk}/v1).
-    let cred_mp2 = hkdf::backup_cred_mp(&pk, &vault_salt).unwrap();
-    assert_eq!(cred_mp.expose(), cred_mp2.expose());
+    let mp_key = recovery_auth::derive(RecoveryClass::Mp, &pk, &salt, &vid).unwrap();
+    let rk_key = recovery_auth::derive(RecoveryClass::Rk, &rk, &salt, &vid).unwrap();
+    assert_ne!(mp_key.public, rk_key.public);
+    // Same secret, other class or other vault → other key.
+    assert_ne!(recovery_auth::derive(RecoveryClass::Rk, &pk, &salt, &vid).unwrap().public, mp_key.public);
+    assert_ne!(recovery_auth::derive(RecoveryClass::Mp, &pk, &salt, &[0x55; 16]).unwrap().public, mp_key.public);
+    // Determinism (XV-RECOVERY-AUTH pins the exact bytes).
+    assert_eq!(recovery_auth::derive(RecoveryClass::Mp, &pk, &salt, &vid).unwrap().public, mp_key.public);
 
     // No-persistence scan: produce every Phase B artifact a vault dir
     // would hold (wrap files), then scan for canary secrets.
@@ -92,8 +92,8 @@ fn cr13_backup_credential_derivation_and_no_persistence() {
     .unwrap();
 
     let canaries: Vec<&[u8]> = vec![
-        cred_mp.expose(),
-        cred_rk.expose(),
+        pk.expose(),
+        rk.expose(),
         vk.expose(),
         rk.expose(),
         pk.expose(),
@@ -124,7 +124,7 @@ fn cr13_rk_derivation_uses_raw_entropy() {
     let words = bip39::encode_rk(&rk);
     let decoded = bip39::decode_rk(&words).unwrap();
     assert_eq!(decoded.expose(), rk.expose());
-    let cred = hkdf::backup_cred_rk(&decoded, &[0x53; 16]).unwrap();
-    let direct = hkdf::backup_cred_rk(&rk, &[0x53; 16]).unwrap();
-    assert_eq!(cred.expose(), direct.expose());
+    let via_words = recovery_auth::derive(RecoveryClass::Rk, &decoded, &[0x53; 16], &[0x54; 16]).unwrap();
+    let direct = recovery_auth::derive(RecoveryClass::Rk, &rk, &[0x53; 16], &[0x54; 16]).unwrap();
+    assert_eq!(via_words.public, direct.public);
 }

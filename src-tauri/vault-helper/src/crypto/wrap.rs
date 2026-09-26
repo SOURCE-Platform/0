@@ -13,7 +13,6 @@
 
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
-use serde::{Deserialize, Serialize};
 
 use super::hkdf;
 use super::kdf::{self, Argon2Params};
@@ -25,6 +24,7 @@ use super::{hex, CryptoError};
 const TAG_VK: u8 = 0x01;
 const TAG_WRAPPED_AT: u8 = 0x02;
 const TAG_VK_GENERATION: u8 = 0x03;
+/// v0.3's device backup credential: retired, refused on decode (§2.2).
 const TAG_DEVICE_BACKUP_CRED: u8 = 0x04;
 
 pub type VaultId = [u8; 16];
@@ -36,10 +36,10 @@ pub struct RecoveryWrapPayload {
     pub vk_generation: u32,
 }
 
-/// §2.2 DeviceEnvelopePayload: devices/<id>.wrap contents.
+/// §2.2 DeviceEnvelopePayload v2: devices/<id>.wrap contents — the VK
+/// only (v0.4 removes the device backup credential; tag 0x04 is refused).
 pub struct DeviceEnvelopePayload {
     pub vk: SecretBytes<32>,
-    pub device_backup_cred: SecretBytes<32>,
     pub wrapped_at: u64,
     pub vk_generation: u32,
 }
@@ -82,14 +82,17 @@ impl DeviceEnvelopePayload {
             .field_bytes(TAG_VK, self.vk.expose())
             .and_then(|b| b.field_uint(TAG_WRAPPED_AT, self.wrapped_at))
             .and_then(|b| b.field_uint(TAG_VK_GENERATION, self.vk_generation as u64))
-            .and_then(|b| b.field_bytes(TAG_DEVICE_BACKUP_CRED, self.device_backup_cred.expose()))
             .expect("payload tags are ascending constants")
             .build()
     }
 
-    /// Strict decode. The backup credential is mandatory here (§2.2, CR-12).
+    /// Strict decode. The retired backup credential (0x04) is a hard
+    /// error (§2.2 v2, CR-12).
     pub fn parse(bytes: &[u8]) -> Result<Self, CryptoError> {
         let reader = EntryReader::parse(bytes)?;
+        if reader.get(TAG_DEVICE_BACKUP_CRED).is_some() {
+            return Err(CryptoError::FieldPresence);
+        }
         let vk = read_secret32(&reader, TAG_VK)?;
         let wrapped_at = reader
             .get_uint(TAG_WRAPPED_AT)?
@@ -97,10 +100,8 @@ impl DeviceEnvelopePayload {
         let vk_generation = reader
             .get_uint(TAG_VK_GENERATION)?
             .ok_or(CryptoError::FieldPresence)? as u32;
-        let cred = read_secret32(&reader, TAG_DEVICE_BACKUP_CRED)?;
         Ok(DeviceEnvelopePayload {
             vk,
-            device_backup_cred: cred,
             wrapped_at,
             vk_generation,
         })
@@ -115,32 +116,9 @@ fn read_secret32(reader: &EntryReader<'_>, tag: u8) -> Result<SecretBytes<32>, C
 
 // --- Wrap files (§2.5 JSON shapes) ----------------------------------------
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct KdfBlock {
-    pub m: u32,
-    pub t: u32,
-    pub p: u32,
-    pub salt: String, // hex, 16 bytes
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PasswordWrapFile {
-    pub v: u32,
-    pub kind: String, // "mp"
-    pub kdf_version: u32,
-    pub argon2id: KdfBlock,
-    pub nonce: String, // hex, 24 bytes
-    pub ct: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct RecoveryWrapFile {
-    pub v: u32,
-    pub kind: String, // "rk"
-    pub salt: String, // hex, 16 bytes random, stored
-    pub nonce: String,
-    pub ct: String,
-}
+// The wrap files' public JSON lives in vault-proto (the provider reads the
+// MP wrap's parameter block, §11.3 step 7).
+pub use vault_proto::header::{PasswordWrapFile, RecoveryWrapFile, WrapKdf as KdfBlock};
 
 fn wrap_aad(vault_id: &VaultId, kind: &str) -> Vec<u8> {
     let mut aad = b"ov0/wrap".to_vec();

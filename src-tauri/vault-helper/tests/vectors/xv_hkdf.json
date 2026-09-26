@@ -34,30 +34,6 @@
     },
     {
       "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "info": "ov0/locate/mp/v1",
-      "okm32": "afe72c9c587470cee382f4f5a9f599c015569edd4889065eec2696b50aced671",
-      "salt": "202122232425262728292a2b2c2d2e2f"
-    },
-    {
-      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "info": "ov0/locate/rk/v1",
-      "okm32": "eba70d3eb3d0213bda64ae9d476d73ba7dab757d80b4a9f1759084cbbdb8aae6",
-      "salt": "202122232425262728292a2b2c2d2e2f"
-    },
-    {
-      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "info": "ov0/backup-auth/mp/v1",
-      "okm32": "24666051e139be3ec46c0163447b2fb09dfc8c025221f00f8effd3347cf5146f",
-      "salt": "202122232425262728292a2b2c2d2e2f"
-    },
-    {
-      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "info": "ov0/backup-auth/rk/v1",
-      "okm32": "82519be0c4a316d7d96a5fd3deeada129fb7b14248e56f3aadff9580fabbbe6d",
-      "salt": "202122232425262728292a2b2c2d2e2f"
-    },
-    {
-      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
       "info": "ov0/import-fingerprint/v1",
       "okm32": "83646881ee62720b5ac998431ec8883d77a04c537fe1dd5e2d2a6a87949e8839",
       "salt": "202122232425262728292a2b2c2d2e2f"
@@ -70,8 +46,14 @@
     },
     {
       "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
-      "info": "ov0/device-creds/v1",
-      "okm32": "91a1835e6a2d099c0f24a80f03b5e1282cb11d1ccb8dec3c51fa983f0a41c0e6",
+      "info": "ov0/provider-recovery-auth/mp/v2",
+      "okm32": "2afe21fbcd814155da7f077b3797fa3d9dd316f58ae702623605cdf95ad9fc34",
+      "salt": "202122232425262728292a2b2c2d2e2f"
+    },
+    {
+      "ikm": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "info": "ov0/provider-recovery-auth/rk/v2",
+      "okm32": "5c5ec01cabbdf653c00438b6c916318978a485c126e9784e1178d58610d7cfde",
       "salt": "202122232425262728292a2b2c2d2e2f"
     }
   ]

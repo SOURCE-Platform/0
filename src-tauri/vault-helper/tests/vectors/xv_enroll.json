@@ -8,8 +8,8 @@
   "envelope_info": {
     "device_id": "c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5",
     "enrollment_nonce": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
-    "info": "6f76302f656e76656c6f70652f7631c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
-    "prefix": "ov0/envelope/v1",
+    "info": "6f76302f656e76656c6f70652f7632c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "prefix": "ov0/envelope/v2",
     "vault_id": "c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6"
   },
   "family": "XV-ENROLL",

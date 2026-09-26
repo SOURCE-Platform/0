@@ -93,7 +93,12 @@ pub fn put_pending(conn: &Connection, row: &RevisionRow) -> Result<super::merge:
         .optional())?;
     match held {
         Some(h) if h == object => Ok(super::merge::MergeOutcome::Pending),
-        Some(_) => {
+        Some(h) => {
+            // Freeze the held copy's record as well as the claimed one
+            // (SEC-O6).
+            if let Ok(held) = crate::backup::object::decode(&h) {
+                freeze(conn, &held.record_id, &[row.revision_id])?;
+            }
             freeze(conn, &row.record_id, &[row.revision_id])?;
             Ok(super::merge::MergeOutcome::Frozen)
         }

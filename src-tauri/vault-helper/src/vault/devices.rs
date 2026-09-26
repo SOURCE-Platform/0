@@ -23,7 +23,6 @@ use super::setup::{emit_panel, PANEL_TIMEOUT_PUB as PANEL_TIMEOUT};
 use super::{lock_core, Deps, OpOutcome, PanelOutcome, PanelRequest, VaultCore};
 use crate::crypto::hex;
 use crate::crypto::secret::random_secret;
-use crate::device::creds::DeviceCreds;
 use crate::device::envelope;
 use crate::device::identity::SeDevice;
 use crate::device::rotate::EnvelopePlan;
@@ -205,8 +204,6 @@ fn commit_revocation(
         return Err(ErrorCode::BadState);
     };
     store.set_registry_head(head)?;
-    let mut creds = DeviceCreds::load(dir, &vk, vault_id)?;
-    creds.remove(&target);
 
     // 3. Rotate. Every surviving device is re-enveloped in the same
     //    journal transaction as the wraps (§2.10 + §11.4).
@@ -219,7 +216,7 @@ fn commit_revocation(
     let plan = EnvelopePlan {
         vault_id: *vault_id,
         devices,
-        creds: &creds,
+        fresh: Vec::new(),
     };
     let rotated = rotation::rotate(
         store,

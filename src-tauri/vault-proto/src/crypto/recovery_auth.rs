@@ -27,8 +27,8 @@ pub const CLASS_DEVICE: u8 = 1;
 pub const CLASS_MP: u8 = 2;
 pub const CLASS_RK: u8 = 3;
 
-pub const DOMAIN_MP: &[u8] = b"ov0/provider-recovery-auth/mp/v2";
-pub const DOMAIN_RK: &[u8] = b"ov0/provider-recovery-auth/rk/v2";
+pub const DOMAIN_MP: &[u8] = super::hkdf::INFO_PROVIDER_AUTH_MP;
+pub const DOMAIN_RK: &[u8] = super::hkdf::INFO_PROVIDER_AUTH_RK;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum RecoveryClass {

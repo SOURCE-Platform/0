@@ -1,12 +1,12 @@
 //! Device envelopes: `wraps/devices/<device_id>.wrap` (§2.2, §2.5, §5.2).
 //!
-//! The payload is the §2.2 `DeviceEnvelopePayload` (VK + that device's
-//! own backup credential), sealed with HPKE base mode to the device's
-//! Secure Enclave agreement key at the §2.12 suite. `info` binds the
-//! vault, the device and the enrollment instance (§2.9):
+//! The payload is the §2.2 `DeviceEnvelopePayload` v2 (the VK only — no
+//! credential of any kind, v0.4), sealed with HPKE base mode to the
+//! device's Secure Enclave agreement key at the §2.12 suite. `info` binds
+//! the vault, the device and the enrollment instance (§2.5, §2.9):
 //!
 //! ```text
-//! info = "ov0/envelope/v1" || vault_id || device_id || enrollment_nonce
+//! info = "ov0/envelope/v2" || vault_id || device_id || enrollment_nonce
 //! ```
 //!
 //! so an envelope cannot be replayed to another device, another vault, or
@@ -22,7 +22,9 @@ use crate::crypto::wrap::DeviceEnvelopePayload;
 use crate::errors::ErrorCode;
 use crate::storage::store::{write_atomic, WRAPS_DIR};
 
-pub const ENVELOPE_INFO_PREFIX: &[u8] = b"ov0/envelope/v1";
+pub const ENVELOPE_INFO_PREFIX: &[u8] = b"ov0/envelope/v2";
+/// §2.5 envelope file version.
+pub const ENVELOPE_VERSION: u32 = 2;
 pub const DEVICES_DIR: &str = "devices";
 
 /// On-disk envelope (§2.5 JSON family; the device-wrap shape is a Phase E
@@ -65,7 +67,7 @@ pub fn seal_envelope(
     let plaintext = crate::crypto::secret::SecretVec::new(payload.encode());
     let (enc, ct) = se::hpke_seal(agree_pub, &info(vault_id, device_id, enrollment_nonce), &plaintext)?;
     Ok(DeviceEnvelopeFile {
-        v: 1,
+        v: ENVELOPE_VERSION,
         kind: "device".to_string(),
         device_id: hex::encode(device_id),
         enrollment_nonce: hex::encode(enrollment_nonce),
@@ -83,8 +85,13 @@ pub fn open_envelope(
     vault_id: &[u8; 16],
     file: &DeviceEnvelopeFile,
 ) -> Result<DeviceEnvelopePayload, ErrorCode> {
-    if file.v != 1 || file.kind != "device" {
-        return Err(ErrorCode::FormatTooNew);
+    if file.kind != "device" {
+        return Err(ErrorCode::FormatInvalid);
+    }
+    match file.v {
+        ENVELOPE_VERSION => {}
+        v if v > ENVELOPE_VERSION => return Err(ErrorCode::FormatTooNew),
+        _ => return Err(ErrorCode::FormatInvalid), // the v1 envelope carried a credential
     }
     let device_id = hex::decode_array::<16>(&file.device_id).ok_or(ErrorCode::WrapCorrupt)?;
     let nonce = hex::decode_array::<16>(&file.enrollment_nonce).ok_or(ErrorCode::WrapCorrupt)?;

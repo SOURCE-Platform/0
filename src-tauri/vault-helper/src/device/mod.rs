@@ -7,13 +7,11 @@
 //! public record, `envelope.rs` seals/opens `devices/<id>.wrap`, and
 //! `se.rs` is the thin FFI over the §2.12 CryptoKit bridge.
 
-pub mod creds;
 pub mod envelope;
 pub mod identity;
 pub mod rotate;
 pub mod se;
 
-pub use creds::DeviceCreds;
 pub use envelope::{seal_envelope, open_envelope, DeviceEnvelopeFile, ENVELOPE_INFO_PREFIX};
 pub use rotate::EnvelopePlan;
 pub use identity::{SeDevice, DeviceFile, DEVICE_FILE_NAME};

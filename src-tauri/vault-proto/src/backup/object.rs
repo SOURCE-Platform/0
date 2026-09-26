@@ -96,7 +96,7 @@ pub fn decode(bytes: &[u8]) -> Result<RevisionRow, ErrorCode> {
     let author: [u8; 16] = c.arr()?;
     // Counters live in SQLite INTEGER columns (SEC-I2); the author is
     // never all-zero (§3.7).
-    if counter > i64::MAX as u64 || author == [0u8; 16] {
+    if counter > revisions::MAX_COUNTER || author == [0u8; 16] {
         return Err(ErrorCode::FormatInvalid);
     }
     let rid: [u8; 16] = c.arr()?;

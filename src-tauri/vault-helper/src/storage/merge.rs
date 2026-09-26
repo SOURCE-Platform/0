@@ -106,10 +106,14 @@ pub fn apply_revision(
     }
     let malformed = !revisions::parents_canonical(&rev.parent_ids)
         || rev.parent_ids.contains(&rev.revision_id)
-        || rev.counter > i64::MAX as u64
+        || rev.counter > revisions::MAX_COUNTER
         || revisions::uuid_bytes(&rev.record_id).is_none();
     if malformed {
         return reject(conn, rev, revisions::REFUSED_MALFORMED);
+    }
+    // §3.2: a revoked author's revisions outside Admit(D) never enter.
+    if super::revoked::refuses(conn, rev)? {
+        return reject(conn, rev, revisions::REFUSED_REVOKED_AUTHOR);
     }
     if let Some(existing) = get_row(conn, &rev.revision_id)? {
         return duplicate(conn, &existing, rev, local_vk_generation, cmp);
@@ -173,6 +177,30 @@ pub fn apply_revision(
         rev_state::freeze(conn, &rev.record_id, &fork_evidence)?;
     }
     Ok(MergeOutcome::Applied { conflicted: next.len() > 1 })
+}
+
+/// Recompute a record's heads from its admitted graph alone (after
+/// revisions were removed, §3.2 revoked authors): a non-tombstone with no
+/// admitted child, or a tombstone no ≥2-parent revision names directly.
+pub fn recompute_heads(conn: &Connection, record_id: &str) -> Result<(), ErrorCode> {
+    let rows: Vec<RevisionRow> =
+        super::revision_rows::all_rows(conn)?.into_iter().filter(|r| r.record_id == record_id).collect();
+    let mut next: Vec<[u8; 32]> = Vec::new();
+    for r in &rows {
+        let has_child = rows.iter().any(|c| c.parent_ids.contains(&r.revision_id));
+        let covered = rows.iter().any(|c| c.parent_ids.len() >= 2 && c.parent_ids.contains(&r.revision_id));
+        let head = if r.deleted { !covered } else { !has_child };
+        if head {
+            next.push(r.revision_id);
+        }
+    }
+    next.sort();
+    if next.is_empty() {
+        conn.execute("DELETE FROM record_tips WHERE record_id=?1", params![record_id]).map_err(|_| ErrorCode::DbCorrupt)?;
+        conn.execute("DELETE FROM record_conflicts WHERE record_id=?1", params![record_id]).map_err(|_| ErrorCode::DbCorrupt)?;
+        return Ok(());
+    }
+    set_heads(conn, record_id, &next)
 }
 
 /// Same `revision_id` already admitted (§3.2 "Duplicates"). A copy at a

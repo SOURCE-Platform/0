@@ -78,7 +78,7 @@ impl VaultStore {
     /// except a resolution over more heads than one revision may name
     /// (`allow_conflict`, §3.2 partial cover).
     fn commit_local(&mut self, rev: RevisionRow, unfreeze: bool, allow_conflict: bool) -> Result<(), ErrorCode> {
-        let next_gen = self.manifest.manifest_generation + 1;
+        let target = self.flip_target(self.header.clone());
         let tx = self.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
         match merge::apply_revision(&tx, &rev, self.header.vk_generation, &NoCompare) {
             Ok(MergeOutcome::Applied { conflicted: false }) => {}
@@ -96,7 +96,7 @@ impl VaultStore {
         if unfreeze {
             rev_state::unfreeze(&tx, &rev.record_id)?;
         }
-        super::store::stamp_flip(&tx, next_gen)?;
+        super::flip::stamp(&tx, &target)?;
         tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
         self.persist_head()
     }
@@ -228,6 +228,29 @@ impl VaultStore {
         self.commit_local(rev, false, false)
     }
 
+    /// §3.2 descendants: this device's own revision whose ancestry was
+    /// refused is re-authored — same content, a new `revision_id`, parents
+    /// = the record's current heads (it may join a conflict).
+    pub fn reauthor(&mut self, vk: &SecretBytes<32>, old: &RevisionRow) -> Result<(), ErrorCode> {
+        let pt = self.open_row(vk, old)?;
+        let meta = Zeroizing::new(self.open_row_meta(vk, old)?.to_vec());
+        let parents = heads(&self.conn, &old.record_id)?;
+        let rev = self.author(
+            vk,
+            NewRevision {
+                record_id: &old.record_id,
+                parents,
+                deleted: false,
+                kind_tag: old.kind_tag,
+                schema_version: old.schema_version,
+                plaintext: &pt,
+                meta: &meta,
+                created_at: old.created_at,
+            },
+        )?;
+        self.commit_local(rev, false, true)
+    }
+
     /// `resolve_conflict` (§3.2): a revision whose parents are the chosen
     /// head plus the other current heads — at most `MAX_PARENTS` in all,
     /// lowest ids first; any beyond stay in conflict (partial cover). A
@@ -255,6 +278,14 @@ impl VaultStore {
             return Err(ErrorCode::InvalidInput);
         }
         let row = get_row(&self.conn, &base)?.ok_or(ErrorCode::DbCorrupt)?;
+        // A frozen record whose one head is a tombstone chosen as-is: any
+        // new revision would leave the tombstone beside it, so the
+        // acknowledged resolution only clears the freeze (SEC-I10).
+        if hs.len() == 1 && row.deleted && matches!(res, Resolution::Chosen(_)) {
+            let tx = self.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
+            rev_state::unfreeze(&tx, record_id)?;
+            return tx.commit().map_err(|_| ErrorCode::DbCorrupt);
+        }
         let (kind_tag, schema_version, plaintext, meta, created_at, deleted) = match res {
             Resolution::Chosen(_) => {
                 let pt = self.open_row(vk, &row)?;
@@ -268,8 +299,18 @@ impl VaultStore {
                 (kind_tag, schema_version, Zeroizing::new(plaintext.to_vec()), Zeroizing::new(meta.to_vec()), now_epoch(), false)
             }
         };
+        // Parents: the chosen head, then every head this device authored
+        // (leaving one out would read as an author fork, SEC-I9), then the
+        // lowest others — at most MAX_PARENTS; any beyond stay in conflict.
+        let me = self.author_device()?;
+        let mut others: Vec<([u8; 32], bool)> = Vec::new();
+        for h in hs.iter().filter(|h| **h != base) {
+            let mine = get_row(&self.conn, h)?.is_some_and(|r| r.author_device == me);
+            others.push((*h, mine));
+        }
+        others.sort_by_key(|(h, mine)| (!*mine, *h));
         let mut parents = vec![base];
-        parents.extend(hs.iter().filter(|h| **h != base).take(revisions::MAX_PARENTS - 1));
+        parents.extend(others.iter().map(|(h, _)| *h).take(revisions::MAX_PARENTS - 1));
         let partial = parents.len() < hs.len();
         let rev = self.author(
             vk,

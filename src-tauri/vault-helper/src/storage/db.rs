@@ -72,6 +72,14 @@ CREATE TABLE kv (
   key   TEXT PRIMARY KEY,
   value BLOB NOT NULL
 );
+CREATE TABLE revoked_authors (          -- §3.2: D revoked; Admit(D) fixed
+  author TEXT PRIMARY KEY
+);
+CREATE TABLE admitted_by_revoked (      -- Admit(D) revision ids
+  author      TEXT NOT NULL,
+  revision_id BLOB NOT NULL,
+  PRIMARY KEY (author, revision_id)
+);
 ";
 
 /// Open (or create) the database and enforce the §3.2 pragmas.

@@ -73,7 +73,7 @@ fn revocation_rotates_the_vk_and_re_envelopes_survivors() {
     );
 
     // The Mac can open its new envelope, and it carries the new VK
-    // generation and the *same* backup credential (§11.4).
+    // generation (the v2 payload carries nothing else).
     let vault_id = header_of(&fx).vault_id.0;
     let opened_before =
         envelope::open_envelope(mac.key_tag(), &vault_id, &mac_env_before).expect("old envelope");
@@ -81,11 +81,6 @@ fn revocation_rotates_the_vk_and_re_envelopes_survivors() {
         envelope::open_envelope(mac.key_tag(), &vault_id, &mac_env_after).expect("new envelope");
     assert_eq!(opened_after.vk_generation, 2);
     assert_ne!(opened_after.vk.expose(), opened_before.vk.expose());
-    assert_eq!(
-        opened_after.device_backup_cred.expose(),
-        opened_before.device_backup_cred.expose(),
-        "device credentials rotate only by re-enrollment"
-    );
 
     // The vault still works: the record reads, and the heads moved in
     // lockstep with the registry.

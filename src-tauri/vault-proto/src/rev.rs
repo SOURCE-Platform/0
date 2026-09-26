@@ -28,6 +28,10 @@ pub const KNOWN_KINDS: [u8; 2] = [1, 2];
 
 pub const MAX_PARENTS: usize = 8;
 
+/// Largest accepted counter: counters live in SQLite INTEGER columns and
+/// the next one must still fit (review SEC-I2, SEC-O7).
+pub const MAX_COUNTER: u64 = (1 << 62) - 1;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RevisionRow {
     pub revision_id: [u8; 32],

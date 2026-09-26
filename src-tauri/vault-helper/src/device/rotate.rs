@@ -2,17 +2,13 @@
 //!
 //! A rotation that changed the VK without rewriting the envelopes would
 //! leave every enrolled device holding a wrap of a dead key, so the
-//! envelopes and the credential record are staged through the rotation
-//! journal alongside the wraps: the new VK and the new envelopes commit
-//! in the same pass, or neither does.
-//!
-//! Each device keeps the credential it was issued (§11.4: credentials
-//! rotate only by re-enrollment) and the enrollment nonce its envelope
-//! was first bound to, so re-sealing changes only the VK inside.
+//! envelopes are staged through the rotation journal alongside the wraps:
+//! the new VK and the new envelopes commit in the same pass, or neither
+//! does. Each envelope keeps the enrollment nonce it was first bound to,
+//! so re-sealing changes only the VK inside (§2.10).
 
 use std::path::Path;
 
-use super::creds::{DeviceCreds, CREDS_NAME};
 use super::envelope::{self, DEVICES_DIR};
 use crate::crypto::hex;
 use crate::crypto::secret::SecretBytes;
@@ -24,17 +20,19 @@ use crate::storage::store::{now_epoch, WRAPS_DIR};
 
 /// Every device that must still be able to open its envelope after the
 /// rotation, with the agreement key from the verified registry.
-pub struct EnvelopePlan<'a> {
+pub struct EnvelopePlan {
     pub vault_id: [u8; 16],
     pub devices: Vec<([u8; 16], [u8; 65])>,
-    pub creds: &'a DeviceCreds,
+    /// Devices getting their first envelope here (a recovery's new
+    /// device), with the enrollment nonce to bind it to.
+    pub fresh: Vec<([u8; 16], [u8; 65], [u8; 16])>,
 }
 
 fn staged_name(device_id: &[u8; 16]) -> String {
     format!("{WRAPS_DIR}/{DEVICES_DIR}/{}.wrap", hex::encode(device_id))
 }
 
-impl ExtraStaging for EnvelopePlan<'_> {
+impl ExtraStaging for EnvelopePlan {
     fn stage(
         &self,
         dir: &Path,
@@ -42,23 +40,22 @@ impl ExtraStaging for EnvelopePlan<'_> {
         new_vk_generation: u32,
     ) -> Result<Vec<String>, ErrorCode> {
         let mut names = Vec::new();
-        for (device_id, agree_pub) in &self.devices {
-            // The credential is the one this device already holds; a
-            // device we cannot re-envelope must not be silently dropped.
-            let cred = self
-                .creds
-                .get(device_id)
-                .ok_or(ErrorCode::RotationFailed)?;
+        let all = self
+            .devices
+            .iter()
+            .map(|(id, agree)| (id, agree, None))
+            .chain(self.fresh.iter().map(|(id, agree, n)| (id, agree, Some(*n))));
+        for (device_id, agree_pub, fresh_nonce) in all {
             // Keep the envelope bound to the same enrollment instance.
-            let nonce = match envelope::read_envelope(dir, device_id) {
-                Ok(existing) => {
+            let nonce = match (fresh_nonce, envelope::read_envelope(dir, device_id)) {
+                (Some(n), _) => n,
+                (None, Ok(existing)) => {
                     hex::decode_array::<16>(&existing.enrollment_nonce).ok_or(ErrorCode::WrapCorrupt)?
                 }
-                Err(_) => return Err(ErrorCode::RotationFailed),
+                (None, Err(_)) => return Err(ErrorCode::RotationFailed),
             };
             let payload = DeviceEnvelopePayload {
                 vk: SecretBytes::new(*new_vk.expose()),
-                device_backup_cred: cred,
                 wrapped_at: now_epoch(),
                 vk_generation: new_vk_generation,
             };
@@ -75,11 +72,6 @@ impl ExtraStaging for EnvelopePlan<'_> {
             )?;
             names.push(name);
         }
-        // The credential record is itself VK-sealed.
-        let creds_name = format!("{WRAPS_DIR}/{DEVICES_DIR}/{CREDS_NAME}");
-        self.creds
-            .seal_to(&next_path(dir, &creds_name), new_vk, &self.vault_id)?;
-        names.push(creds_name);
         Ok(names)
     }
 }

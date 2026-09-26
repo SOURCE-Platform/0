@@ -108,3 +108,69 @@ fn higher_generation_forgery_is_inert() {
     assert!(s.read_tip(&vk, &r).is_ok());
     let _ = std::fs::remove_dir_all(&d);
 }
+
+/// SEC-I9: this device's own head is always covered by its resolution,
+/// even when it is not among the lowest ids — no self-inflicted freeze.
+#[test]
+fn partial_cover_always_includes_own_heads() {
+    let (d, mut s, vk, r) = vault("own");
+    let base = all_rows(&s.conn).unwrap().remove(0);
+    s.write_successor(&vk, &r, 1, 1, br#"{"password":"synthetic-mine"}"#, br#"{"title":"mine","hosts":[]}"#, 1).unwrap();
+    let mine = heads(&s.conn, &r).unwrap()[0];
+    let mut sibs = Vec::new();
+    for i in 0..8u8 {
+        let mut x = base.clone();
+        // Ids 00 i 00…: below the random own id unless that starts with a
+        // zero byte (1/256 — then the lowest-ids rule covers it anyway).
+        x.revision_id = [0; 32];
+        x.revision_id[1] = i + 1;
+        x.parent_ids = vec![base.revision_id];
+        x.author_device = format!("c{i}000000-0000-4000-8000-00000000000c");
+        x.counter = 1;
+        sibs.push(x);
+    }
+    admit(&mut s, &sibs);
+    assert_eq!(heads(&s.conn, &r).unwrap().len(), 9);
+    let pt = br#"{"password":"synthetic-merged"}"#;
+    let meta = br#"{"title":"merged","hosts":[]}"#;
+    let foreign = sibs[0].revision_id;
+    s.resolve(&vk, &r, Resolution::Edited { base: foreign, kind_tag: 1, schema_version: 1, plaintext: pt, meta }, false).unwrap();
+    assert!(!vault_helper::storage::rev_state::is_frozen(&s.conn, &r).unwrap(), "no author fork against itself");
+    assert!(!heads(&s.conn, &r).unwrap().contains(&mine), "own head covered");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// SEC-I10: a frozen record whose single head is a tombstone clears with
+/// an acknowledged resolution choosing it.
+#[test]
+fn frozen_tombstone_head_can_be_resolved() {
+    let (d, mut s, vk, r) = vault("ftomb");
+    s.tombstone(&vk, &r).unwrap();
+    let t = heads(&s.conn, &r).unwrap()[0];
+    vault_helper::storage::rev_state::freeze(&s.conn, &r, &[t]).unwrap();
+    assert_eq!(s.resolve(&vk, &r, Resolution::Chosen(t), false), Err(ErrorCode::ConflictPending));
+    s.resolve(&vk, &r, Resolution::Chosen(t), true).unwrap();
+    assert!(!vault_helper::storage::rev_state::is_frozen(&s.conn, &r).unwrap());
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+/// SEC-O8/O9: the header already written, the manifest not — for a
+/// record edit and for a registry-head flip — rolls forward to the
+/// recorded target.
+#[test]
+fn half_written_flip_rolls_forward() {
+    let (d, mut s, vk, r) = vault("half");
+    let m1 = std::fs::read(d.join(MANIFEST_NAME)).unwrap();
+    s.write_successor(&vk, &r, 1, 1, br#"{"password":"synthetic-2"}"#, br#"{"title":"2","hosts":[]}"#, 1).unwrap();
+    drop(s);
+    std::fs::write(d.join(MANIFEST_NAME), &m1).unwrap(); // header at m+1, manifest at m
+    let mut s = VaultStore::open(&d).expect("rolled forward");
+    let m2 = std::fs::read(d.join(MANIFEST_NAME)).unwrap();
+    s.set_registry_head([0x7a; 32]).unwrap();
+    drop(s);
+    std::fs::write(d.join(MANIFEST_NAME), &m2).unwrap();
+    let s = VaultStore::open(&d).expect("registry flip rolled forward");
+    assert_eq!(s.header.registry_head.0, [0x7a; 32]);
+    assert_eq!(s.manifest.registry_head.0, [0x7a; 32]);
+    let _ = std::fs::remove_dir_all(&d);
+}

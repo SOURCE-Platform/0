@@ -240,7 +240,7 @@ impl Sim {
             ),
             Who::Rec(k, c) => (SignerId::Recovery { class: c.code(), key_id: k.key_id() }, Box::new(move |h| k.sign_prehash(h))),
         };
-        let req = ProviderRequest::build(ORIGIN, self.vault_id, op, blob, signer, body, expected, self.now, n).unwrap();
+        let req = ProviderRequest::build(ORIGIN, self.vault_id, op, blob, signer, vault_proto::request::body_hash(body), expected, self.now, n).unwrap();
         let header = auth_header(&req.encode(), &sign(&req.prehash()));
         self.p.handle(&Request { method: &req.method, path: &req.path, auth: Some(&header), body, now: self.now, client_ip: "192.0.2.1" })
     }

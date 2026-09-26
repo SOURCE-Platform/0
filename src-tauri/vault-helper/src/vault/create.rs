@@ -14,7 +14,6 @@ use std::path::Path;
 use crate::crypto::kdf::{self, Argon2Params};
 use crate::crypto::secret::{self, SecretBytes};
 use crate::crypto::wrap::{self, DeviceEnvelopePayload, RecoveryWrapPayload};
-use crate::device::creds::DeviceCreds;
 use crate::device::envelope;
 use crate::registry::build;
 use crate::registry::device::DeviceIdentity;
@@ -49,14 +48,14 @@ fn build_vault(
 ) -> Result<(Header, SecretBytes<32>), ErrorCode> {
     let vault_id = Hex16::random();
     let vk = secret::random_secret().mlock_best_effort();
-    let mut header = Header::fresh(vault_id);
+    let mut header = crate::storage::header::fresh_header(vault_id)?;
     // §4.4 rule 4: genesis is the only self-signed entry, and it is what
     // the header's registry head names from the first moment.
     let genesis = build::genesis(dev)?;
     let head = crate::crypto::registry::entry_hash(&genesis).map_err(|_| ErrorCode::Internal)?;
     header.registry_head = crate::storage::header::Hex32(head);
-    let salt = header.kdf.salt_bytes()?;
-    let pk = kdf::derive_pk(mp, &salt, header.kdf.params()).map_err(|_| ErrorCode::Internal)?;
+    let salt = header.kdf.salt.0;
+    let pk = kdf::derive_pk(mp, &salt, crate::storage::header::kdf_params(&header.kdf)).map_err(|_| ErrorCode::Internal)?;
     let payload = || RecoveryWrapPayload {
         vk: SecretBytes::new(*vk.expose()),
         wrapped_at: now_epoch(),
@@ -82,21 +81,18 @@ fn build_vault(
     Ok((header, vk))
 }
 
-/// The creating device's own envelope: VK + a fresh backup credential
-/// (§2.2 DeviceEnvelopePayload), plus the issuer's record of that
-/// credential so later rotations can re-seal it (§11.4).
+/// The creating device's own envelope: the VK (§2.2 DeviceEnvelopePayload
+/// v2 — no credential of any kind).
 fn issue_self_envelope(
     dir: &Path,
     header: &Header,
     vk: &SecretBytes<32>,
     dev: &dyn DeviceIdentity,
 ) -> Result<(), ErrorCode> {
-    let cred = secret::random_secret();
     let mut nonce = [0u8; 16];
     getrandom::fill(&mut nonce).map_err(|_| ErrorCode::Internal)?;
     let payload = DeviceEnvelopePayload {
         vk: SecretBytes::new(*vk.expose()),
-        device_backup_cred: SecretBytes::new(*cred.expose()),
         wrapped_at: now_epoch(),
         vk_generation: header.vk_generation,
     };
@@ -107,10 +103,7 @@ fn issue_self_envelope(
         &nonce,
         &payload,
     )?;
-    envelope::write_envelope(dir, &dev.device_id(), &file)?;
-    let mut creds = DeviceCreds::default();
-    creds.insert(dev.device_id(), &cred);
-    creds.save(dir, vk, &header.vault_id.0)
+    envelope::write_envelope(dir, &dev.device_id(), &file)
 }
 
 /// Remove exactly the files vault creation may have created. Never

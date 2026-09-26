@@ -39,7 +39,6 @@ fn tmp() -> PathBuf {
 fn payload(gen: u32) -> DeviceEnvelopePayload {
     DeviceEnvelopePayload {
         vk: random_secret(),
-        device_backup_cred: random_secret(),
         wrapped_at: 1_700_000_000,
         vk_generation: gen,
     }
@@ -99,7 +98,8 @@ fn deleted_se_keys_make_the_identity_unloadable() {
 }
 
 /// EV-01: a device envelope round-trips through the Enclave, and the
-/// payload is the §2.2 device shape (VK + per-device backup credential).
+/// payload is the §2.2 v2 device shape (the VK only). A v1 envelope file
+/// and a payload carrying the retired credential tag 0x04 are refused.
 #[test]
 fn envelope_round_trips_through_the_enclave() {
     let _g = serial();
@@ -108,7 +108,7 @@ fn envelope_round_trips_through_the_enclave() {
     let vault_id = [7u8; 16];
     let nonce = [9u8; 16];
     let pt = payload(3);
-    let (vk, cred) = (*pt.vk.expose(), *pt.device_backup_cred.expose());
+    let vk = *pt.vk.expose();
 
     let file = envelope::seal_envelope(&dev.agree_pub(), &vault_id, &dev.device_id(), &nonce, &pt)
         .expect("seal");
@@ -121,8 +121,18 @@ fn envelope_round_trips_through_the_enclave() {
     let read = envelope::read_envelope(&dir, &dev.device_id()).expect("read");
     let opened = envelope::open_envelope(dev.key_tag(), &vault_id, &read).expect("open");
     assert_eq!(opened.vk.expose(), &vk);
-    assert_eq!(opened.device_backup_cred.expose(), &cred);
     assert_eq!(opened.vk_generation, 3);
+    let mut v1 = read.clone();
+    v1.v = 1;
+    assert_eq!(envelope::open_envelope(dev.key_tag(), &vault_id, &v1).err(), Some(vault_helper::errors::ErrorCode::FormatInvalid));
+    let with_cred = vault_helper::crypto::tlv::EntryBuilder::new()
+        .field_bytes(0x01, &[1; 32])
+        .and_then(|b| b.field_uint(0x02, 1))
+        .and_then(|b| b.field_uint(0x03, 1))
+        .and_then(|b| b.field_bytes(0x04, &[2; 32]))
+        .unwrap()
+        .build();
+    assert!(DeviceEnvelopePayload::parse(&with_cred).is_err(), "CR-12: tag 0x04 refused");
     se::delete_keys(dev.key_tag());
 }
 

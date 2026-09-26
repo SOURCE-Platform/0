@@ -8,15 +8,19 @@
 //! - `revisions` — content-committed revision graph (§3.2)
 //! - `store` — the `VaultStore` tying them together at open/unlock time
 
+pub mod adopt;
 pub mod db;
+pub mod flip;
 pub mod header;
 pub mod import_log;
+pub mod kv;
 pub mod manifest;
 pub mod merge;
 pub mod records;
 pub mod rev_state;
 pub mod revision_rows;
 pub mod revisions;
+pub mod revoked;
 pub mod rotation;
 pub mod rotation_journal;
 pub mod store;

@@ -82,6 +82,7 @@ pub fn discard_staged(dir: &Path) {
         }
     }
     let _ = std::fs::remove_file(next_path(dir, DB_NAME).with_extension("next-journal"));
+    let _ = std::fs::remove_file(next_path(dir, crate::VAULT_REGISTRY_NAME));
 }
 
 /// Finish a committed rotation. The live DB was checkpointed and closed

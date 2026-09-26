@@ -78,7 +78,7 @@ pub fn check_against_header(m: &Manifest, h: &super::header::Header) -> Result<(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::header::Header;
+
 
     #[test]
     fn round_trip_manifest() {
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn header_disagreement_is_manifest_mismatch() {
         let vault_id = Hex16::random();
-        let h = Header::fresh(vault_id);
+        let h = crate::storage::header::fresh_header(vault_id).unwrap();
         let mut m = Manifest::fresh(vault_id);
         check_against_header(&m, &h).unwrap();
         m.manifest_generation = 2;
