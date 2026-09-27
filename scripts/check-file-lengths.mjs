@@ -9,6 +9,11 @@ const includeRoots = [
   path.join(root, "src-tauri", "src"),
   path.join(root, "src-tauri", "vault-helper", "src"),
   path.join(root, "src-tauri", "vault-helper", "tests"),
+  // Phase F crates (spec v0.4 §1.1) and their tests.
+  ...["vault-proto", "vault-provider-core", "vault-coordinator", "vault-provider", "vault-tests"].flatMap((c) => [
+    path.join(root, "src-tauri", c, "src"),
+    path.join(root, "src-tauri", c, "tests"),
+  ]),
 ];
 
 async function walk(dir) {
