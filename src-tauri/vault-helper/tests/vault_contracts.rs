@@ -58,7 +58,7 @@ fn sc01_sc04_op_surface_has_no_credential_fields() {
     let fx = fx();
     // A frame claiming to carry the MP must not be consumed: the op still
     // drives the panel (empty queue → PANEL_CANCELLED proves it).
-    let resp = fx.op(json!({"op": "setup_vault", "master_password": "attacker-supplied"}));
+    let resp = fx.op(json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test", "master_password": "attacker-supplied"}));
     assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
     assert_eq!(fx.panel.seen.lock().unwrap().len(), 1);
 

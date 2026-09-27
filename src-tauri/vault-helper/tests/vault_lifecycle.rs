@@ -182,7 +182,7 @@ fn op05_cancelled_panels_leave_no_partial_state() {
     let _g = serial();
     // setup cancel: no vault files, still UNINITIALIZED.
     let fx = fx(); // empty panel queue → Cancelled
-    let resp = fx.op(json!({"op": "setup_vault"}));
+    let resp = fx.op(json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test"}));
     assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
     assert_eq!(fx.state(), VaultState::Uninitialized);
     assert!(!fx.dir.join(VAULT_HEADER_NAME).exists());

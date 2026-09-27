@@ -100,7 +100,7 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             _ if class == ClientClass::NmHost && !NM_HOST_OPS.contains(&op) => {
                 crate::errors::ErrorCode::UnknownOp.frame()
             }
-            "get_state" => ops::ok_with_state(lock_core(&ctx.core).state),
+            "get_state" => ops::ok_with_state(lock_core(&ctx.core).reported_state()),
             // Already applied by the read side on arrival; answer in order.
             "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
             _ => match forward(ctx, frame) {

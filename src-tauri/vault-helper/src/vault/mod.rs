@@ -26,6 +26,8 @@ pub mod change_mp;
 pub mod create;
 pub mod device_unlock;
 pub mod devices;
+pub mod dispatch;
+pub use dispatch::dispatch;
 pub mod enroll_commit;
 pub mod enroll_ops;
 pub mod gate;
@@ -34,7 +36,11 @@ pub mod recovery_ops;
 pub mod registry_status;
 pub mod resolve;
 pub mod revoke_core;
+pub mod provider_ops;
+pub mod backup_ops;
+pub mod recovery_flow;
 pub mod rk_ops;
+pub mod sync_ops;
 pub mod secure_ui;
 pub mod setup;
 
@@ -146,6 +152,9 @@ pub struct VaultCore {
     /// The one in-flight device enrollment, if any (§5: one session at
     /// a time, torn down on lock, cancel, expiry or failure).
     pub enroll: Option<crate::enroll::EnrollSession>,
+    /// v0.4 provider work (§11): at most one publication, one sync and
+    /// one recovery session.
+    pub provider: crate::vault::provider_ops::Sessions,
 }
 
 impl VaultCore {
@@ -173,6 +182,7 @@ impl VaultCore {
             auto_lock_minutes: crate::keychain::read_auto_lock_minutes(),
             vault_dir,
             enroll: None,
+            provider: Default::default(),
         }
     }
 
@@ -185,6 +195,9 @@ impl VaultCore {
         // An enrollment in flight does not survive a lock: its secret is
         // zeroized and the phone must rescan (§5.3).
         self.enroll = None;
+        // §13.3: a sync or a publication still being built is aborted; a
+        // fully staged publication survives; a recovery is abandoned.
+        self.provider.on_lock();
         self.last_authorization = None;
         let mut events = Vec::new();
         if had_vault_state {
@@ -244,42 +257,10 @@ pub fn lock_core(core: &Arc<Mutex<VaultCore>>) -> MutexGuard<'_, VaultCore> {
     core.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-/// Dispatch one post-hello op (§1.5 Phase C subset). `get_state`, `lock`,
-/// and `hello` are handled by the server layer (they need no vault deps).
-pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
-    let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
-    match op {
-        "setup_vault" => setup::setup_vault(core, deps),
-        "unlock" => device_unlock::unlock(core, deps),
-        "begin_recovery_unlock" => setup::begin_recovery_unlock(core, frame, deps),
-        "change_master_password" if frame.get("mode").and_then(Value::as_str) == Some("reset") => {
-            rk_ops::reset_master_password(core, deps)
-        }
-        "change_master_password" => change_mp::change_master_password(core, deps),
-        "rotate_recovery_key" => rk_ops::rotate_recovery_key(core, deps),
-        "list_items" => items::list_items(core),
-        "add_item" => items::add_item(core, frame, deps),
-        "update_item" => items::update_item(core, frame, deps),
-        "delete_item" => items::delete_item(core, frame, deps),
-        "reveal" => gate::reveal(core, frame, deps),
-        "resolve_conflict" => resolve::resolve_conflict(core, frame, deps),
-        "begin_enrollment" => enroll_ops::begin_enrollment(core, frame),
-        "enroll_hello" => enroll_ops::enroll_hello(core, frame),
-        "enroll_confirm" => enroll_ops::enroll_confirm(core, deps),
-        "enroll_ack" => enroll_commit::enroll_ack(core, frame),
-        "cancel_enrollment" => enroll_ops::cancel_enrollment(core),
-        "list_devices" => devices::list_devices(core),
-        "registry_status" => registry_status::registry_status(core),
-        "revoke_device" => devices::revoke_device(core, frame, deps),
-        "set_auto_lock_minutes" => set_auto_lock_minutes(core, frame),
-        _ => OpOutcome::err(ErrorCode::UnknownOp),
-    }
-}
-
 /// Phase C internal op (not in §1.5 — the catalog has no prefs op; the
 /// §1.6 "configurable 5–60" dial needs one). Documented in the Phase C
 /// verification report.
-fn set_auto_lock_minutes(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
+pub(super) fn set_auto_lock_minutes(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     let minutes = frame.get("minutes").and_then(Value::as_u64);
     let Some(minutes) = minutes else {
         return OpOutcome::err(ErrorCode::InvalidInput);

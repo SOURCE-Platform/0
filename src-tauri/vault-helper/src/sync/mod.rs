@@ -13,4 +13,5 @@ pub mod pending;
 pub mod publish;
 pub mod remote;
 pub mod seen;
+pub mod session;
 pub mod sign;

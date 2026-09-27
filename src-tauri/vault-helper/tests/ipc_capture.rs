@@ -73,7 +73,7 @@ fn reveal_capture_check_is_answered_on_the_requesting_connection() {
     framing::write_frame(&mut s, &json!({"op": "hello", "proto": 1, "client": "app"})).unwrap();
     assert_eq!(framing::read_frame(&mut s).unwrap()["op"], "hello_ok");
 
-    assert_eq!(call(&mut s, json!({"op": "setup_vault"}), true).0["ok"], true);
+    assert_eq!(call(&mut s, json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test"}), true).0["ok"], true);
     let (resp, _) = call(&mut s, json!({"op": "begin_recovery_unlock", "kind": "mp"}), true);
     assert_eq!(resp["ok"], true, "{resp}");
     let (resp, _) = call(
@@ -98,7 +98,9 @@ fn reveal_capture_check_is_answered_on_the_requesting_connection() {
     // response on the wire belongs to the next real request.
     framing::write_frame(&mut s, &json!({"reply_to": "cc-stale", "suppressed": true})).unwrap();
     let (resp, _) = call(&mut s, json!({"op": "get_state"}), true);
-    assert_eq!(resp["state"], "unlocked", "{resp}");
+    // Setup staged the vault's first backup upload (§11.3), which nothing
+    // posts in this test: the unlocked vault reports BACKING_UP.
+    assert_eq!(resp["state"], "backing_up", "{resp}");
 
     drop(s);
     shutdown.store(true, std::sync::atomic::Ordering::SeqCst);

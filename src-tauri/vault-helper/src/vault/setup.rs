@@ -39,13 +39,17 @@ pub(super) fn emit_panel(deps: &Deps, visible: bool, req: PanelRequest) {
 /// genesis registry entry signed by this Mac's Secure Enclave identity,
 /// plus its own device envelope (Phase E). Ends LOCKED per §13.1; VK is
 /// never installed by this op.
-pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
+pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
     {
         let c = lock_core(core);
         if c.state != VaultState::Uninitialized {
             return OpOutcome::err(ErrorCode::BadState);
         }
     }
+    // v0.4 §11.5: the public recovery handle, normalized before any prompt.
+    let Some(handle) = frame.get("handle").and_then(Value::as_str).and_then(|h| vault_proto::handle::normalize(h).ok()) else {
+        return OpOutcome::err(ErrorCode::InvalidInput);
+    };
     emit_panel(deps, true, PanelRequest::MpCreate);
     let outcome = deps.panel.run(PanelRequest::MpCreate, PANEL_TIMEOUT);
     emit_panel(deps, false, PanelRequest::MpCreate);
@@ -61,13 +65,15 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         Ok(d) => d,
         Err(e) => return OpOutcome::err(e),
     };
-    let result = super::create::create_vault(&vault_dir, &mp, &rk, &dev);
+    let result = super::create::create_vault(&vault_dir, &mp, &rk, &dev).and_then(|(header, vk)| {
+        // The recovery-auth public keys for both classes (§11.4 D-11),
+        // derived while MP and RK are in hand; only public keys persist.
+        let updates = crate::sync::change::updates_for(&header, Some(&mp), Some(&rk))?;
+        Ok((header, vk, updates))
+    });
     drop(mp); // SecretVec zeroizes
-    let header = match result {
-        Ok((header, vk)) => {
-            drop(vk); // setup ends LOCKED (§13.1)
-            header
-        }
+    let (header, vk, updates) = match result {
+        Ok(v) => v,
         Err(e) => {
             dev.destroy(&vault_dir);
             return OpOutcome::err(e);
@@ -88,14 +94,50 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         dev.destroy(&vault_dir);
         return OpOutcome::err(ErrorCode::PanelCancelled);
     }
+    // §11.3 bootstrap: stage the fully sealed `create` (it can finish
+    // while LOCKED) and record it as pending (§11.3.2 `vault_create`).
+    let staged = stage_create(&vault_dir, &dev, &vk, &handle, updates);
+    drop(vk); // setup ends LOCKED (§13.1)
+    let publication = match staged {
+        Ok(p) => p,
+        Err(e) => {
+            super::create::cleanup_partial_vault(&vault_dir);
+            dev.destroy(&vault_dir);
+            return OpOutcome::err(e);
+        }
+    };
     // Rollback-evidence bookkeeping (§2.8). Keychain failure is not fatal
     // to creation; the vault opens without it (first-seen semantics).
     let _ = keychain::write_seen_generation(header.manifest_generation);
     let mut c = lock_core(core);
     c.header = Some(header);
     c.state = VaultState::Locked;
-    deps.events.emit(ev_state(VaultState::Locked));
-    OpOutcome::ok(json!({"state": "locked"}))
+    let summary = super::backup_ops::staging_summary(&publication.t, &publication.staging);
+    c.provider.publish = Some(publication);
+    deps.events.emit(ev_state(c.reported_state()));
+    OpOutcome::ok(json!({"state": "locked", "publication": summary}))
+}
+
+fn stage_create(
+    dir: &std::path::Path,
+    dev: &SeDevice,
+    vk: &crate::crypto::secret::SecretBytes<32>,
+    handle: &str,
+    updates: Vec<vault_proto::state::RecoveryAuthEntry>,
+) -> Result<super::provider_ops::PublishSession, ErrorCode> {
+    use crate::registry::chain::EpochPolicy;
+    use crate::sync::pending::{self, Base, PendingOp};
+    let store = crate::storage::VaultStore::open(dir)?;
+    let reg = crate::registry::log::read_state(dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
+    let hk = vault_proto::handle::handle_key(handle);
+    let mut staging = crate::sync::publish::stage_create(&store, &reg, vk, dev, hk, updates.clone())?;
+    staging.carries_pending = true;
+    // The normalized handle stays local (never in header.json) for sheet
+    // reprints and a later `setup_retry_handle` (§1.5).
+    crate::storage::kv::put(&store.conn, "recovery_handle", &handle)?;
+    let seen_updates = crate::sync::change::seen_auth(&updates);
+    pending::add(&store.conn, PendingOp::VaultCreate, false, Base::of(&store.header), seen_updates, crate::storage::store::now_epoch())?;
+    Ok(super::provider_ops::PublishSession { t: super::backup_ops::transfer_for(&staging), staging })
 }
 
 /// §1.5 `begin_recovery_unlock` with `kind:"mp"`: the panel-based unlock

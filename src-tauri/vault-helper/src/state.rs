@@ -34,6 +34,16 @@ pub enum VaultState {
     Authorizing,
     /// Fatal vault-data problem; only get_state/lock proceed (§13.2).
     Error,
+    /// v0.4: a publication is staged and in flight (reported while the
+    /// underlying state is UNLOCKED or LOCKED; every op stays allowed).
+    #[serde(rename = "backing_up")]
+    BackingUp,
+    /// v0.4: a provider state is being verified and merged.
+    Syncing,
+    /// v0.4: total-loss recovery in progress; recovery ops only.
+    Recovering,
+    /// v0.4: registry fork / equivocation / confirmed tamper; writes frozen.
+    Compromised,
 }
 
 impl VaultState {
@@ -45,6 +55,10 @@ impl VaultState {
             VaultState::Unlocked => "unlocked",
             VaultState::Authorizing => "authorizing",
             VaultState::Error => "error",
+            VaultState::BackingUp => "backing_up",
+            VaultState::Syncing => "syncing",
+            VaultState::Recovering => "recovering",
+            VaultState::Compromised => "compromised",
         }
     }
 
@@ -52,7 +66,7 @@ impl VaultState {
     pub fn vk_resident(self) -> bool {
         matches!(
             self,
-            VaultState::Unlocked | VaultState::Authorizing | VaultState::Unlocking
+            VaultState::Unlocked | VaultState::Authorizing | VaultState::Unlocking | VaultState::Compromised
         )
     }
 }

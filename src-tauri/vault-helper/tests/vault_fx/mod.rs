@@ -253,7 +253,7 @@ pub fn err_code(resp: &Value) -> &str {
 
 pub fn setup_vault(fx: &Fx, mp: &[u8]) -> Value {
     fx.push_panel(submitted(mp));
-    fx.op(json!({"op": "setup_vault"}))
+    fx.op(json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test"}))
 }
 
 pub fn unlock(fx: &Fx, mp: &[u8]) -> Value {

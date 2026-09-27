@@ -64,16 +64,21 @@ pub enum SheetReason {
     Replaced,
     /// A device was removed, which rotates the vault key (§11.4).
     DeviceRemoved,
+    /// Total-loss recovery issued a new one (§11.8).
+    Recovered,
 }
 
 impl SheetReason {
     /// One line under the title. Every case that supersedes an existing
-    /// Recovery Key says so in as many words.
+    /// Recovery Key says so — and, per the §1.7/§11.3.2 remote-pending
+    /// rule, never claims the old key is dead before the backup has
+    /// accepted the change.
     pub fn line(self) -> &'static str {
         match self {
             SheetReason::VaultCreated => "This is the only way back into your vault if you forget your master password.",
-            SheetReason::Replaced => "This replaces your previous Recovery Key, which no longer works.",
-            SheetReason::DeviceRemoved => "Removing a device replaced your vault key, so your previous Recovery Key no longer works.",
+            SheetReason::Replaced => "Replaces your previous key. Your backup accepts the old one until this Mac reaches it.",
+            SheetReason::DeviceRemoved => "A removed device means this replaces your key. The old one works until this Mac reaches it.",
+            SheetReason::Recovered => "Your vault was recovered under a new vault key. This is your new Recovery Key.",
         }
     }
 }
@@ -103,20 +108,19 @@ pub trait PanelRunner: Send + Sync {
 mod tests {
     use super::*;
 
-    /// Every reason that supersedes an existing Recovery Key must say so
-    /// in the window. Someone who is handed new words without being told
-    /// the old ones are dead will keep the old paper.
+    /// Every reason that supersedes an existing Recovery Key must say so,
+    /// and — the §1.7 remote-pending rule — none may claim the old key is
+    /// dead while the backup can still accept it.
     #[test]
-    fn superseding_reasons_say_the_old_key_stopped_working() {
+    fn superseding_reasons_say_so_without_claiming_a_cutoff() {
         for reason in [SheetReason::Replaced, SheetReason::DeviceRemoved] {
             let line = reason.line().to_lowercase();
-            assert!(
-                line.contains("no longer works"),
-                "{reason:?} does not tell the user their previous key is dead: {line}"
-            );
+            assert!(line.contains("replace"), "{reason:?}: {line}");
+            assert!(line.contains("until this mac reaches it"), "{reason:?} must state the pending window: {line}");
         }
-        // The first key supersedes nothing, so it must not claim otherwise.
-        assert!(!SheetReason::VaultCreated.line().contains("no longer works"));
+        for reason in [SheetReason::VaultCreated, SheetReason::Replaced, SheetReason::DeviceRemoved, SheetReason::Recovered] {
+            assert!(!reason.line().contains("no longer works"), "{reason:?} claims a cutoff");
+        }
     }
 
     /// The copy is shown in a fixed-width window; keep every line short
@@ -127,6 +131,7 @@ mod tests {
             SheetReason::VaultCreated,
             SheetReason::Replaced,
             SheetReason::DeviceRemoved,
+            SheetReason::Recovered,
         ] {
             assert!(reason.line().len() <= 92, "too long to render: {}", reason.line());
         }

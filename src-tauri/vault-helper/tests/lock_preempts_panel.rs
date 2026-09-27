@@ -131,7 +131,7 @@ fn scenario() {
 
     // Create the vault headlessly (scripted panel), then use the REAL panel.
     std::env::set_var("OV0_VAULT_PANEL_SCRIPT", format!("submit:{MP}"));
-    framing::write_frame(&mut s, &json!({"op": "setup_vault"})).unwrap();
+    framing::write_frame(&mut s, &json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test"})).unwrap();
     let setup = response(&rx, Duration::from_secs(60), |_| {});
     assert_eq!(setup["ok"], true, "setup: {setup}");
     std::env::remove_var("OV0_VAULT_PANEL_SCRIPT");

@@ -63,7 +63,7 @@ fn main() -> ExitCode {
         "expect-reject-server" => expect_reject_server(socket),
         "hold" => hold(socket, rest.first().and_then(|s| s.parse().ok()).unwrap_or(5)),
         // Phase C flows
-        "setup" => op(socket, json!({"op": "setup_vault"})),
+        "setup" => op(socket, json!({"op": "setup_vault", "handle": "synthetic-fixture@example.test"})),
         "unlock-mp" => op(socket, json!({"op": "begin_recovery_unlock", "kind": "mp"})),
         "unlock-kind-expect-unknown" => {
             expect_unknown_op(socket, json!({"op": "begin_recovery_unlock", "kind": "device"}))
