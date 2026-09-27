@@ -49,6 +49,9 @@ pub struct RecoverySheet {
     /// Non-secret freshness checkpoint line (§11.7): vault id, manifest
     /// generation, registry head prefix.
     pub checkpoint: String,
+    /// FR-02: the normalized recovery handle and the provider origin, so
+    /// a later recovery can be checked against the printed page.
+    pub recovery: String,
     /// Why this window is on screen. A Recovery Key that appears without
     /// explanation invites the worst outcome available: keeping the old
     /// printout and discarding the new one.
@@ -66,6 +69,9 @@ pub enum SheetReason {
     DeviceRemoved,
     /// Total-loss recovery issued a new one (§11.8).
     Recovered,
+    /// The first handle was taken; `setup_retry_handle` voids the first
+    /// sheet (it opens only a retired key that protects nothing, §1.5).
+    HandleRetried,
 }
 
 impl SheetReason {
@@ -79,6 +85,7 @@ impl SheetReason {
             SheetReason::Replaced => "Replaces your previous key. Your backup accepts the old one until this Mac reaches it.",
             SheetReason::DeviceRemoved => "A removed device means this replaces your key. The old one works until this Mac reaches it.",
             SheetReason::Recovered => "Your vault was recovered under a new vault key. This is your new Recovery Key.",
+            SheetReason::HandleRetried => "Your first recovery name was taken. Discard the earlier sheet; it opens nothing.",
         }
     }
 }
@@ -118,7 +125,7 @@ mod tests {
             assert!(line.contains("replace"), "{reason:?}: {line}");
             assert!(line.contains("until this mac reaches it"), "{reason:?} must state the pending window: {line}");
         }
-        for reason in [SheetReason::VaultCreated, SheetReason::Replaced, SheetReason::DeviceRemoved, SheetReason::Recovered] {
+        for reason in [SheetReason::VaultCreated, SheetReason::Replaced, SheetReason::DeviceRemoved, SheetReason::Recovered, SheetReason::HandleRetried] {
             assert!(!reason.line().contains("no longer works"), "{reason:?} claims a cutoff");
         }
     }
@@ -132,8 +139,21 @@ mod tests {
             SheetReason::Replaced,
             SheetReason::DeviceRemoved,
             SheetReason::Recovered,
+            SheetReason::HandleRetried,
         ] {
             assert!(reason.line().len() <= 92, "too long to render: {}", reason.line());
         }
+    }
+
+    /// FR-02: the printed sheet carries the checkpoint facts plus the
+    /// normalized handle and the provider origin.
+    #[test]
+    fn sheet_carries_handle_and_origin() {
+        let rk = crate::crypto::secret::SecretBytes::new([0x42; 32]);
+        let s = crate::vault::rk_ops::make_sheet(&rk, &[0xa0; 16], 7, &[0x66; 32], Some("synthetic@example.test"), SheetReason::VaultCreated);
+        assert!(s.checkpoint.contains(&crate::crypto::hex::encode([0xa0u8; 16])) && s.checkpoint.contains("generation 7"));
+        assert!(s.recovery.contains("synthetic@example.test"), "{}", s.recovery);
+        assert!(s.recovery.contains(crate::storage::header::default_provider().unwrap()), "{}", s.recovery);
+        assert!(s.recovery.len() <= 92, "fits the window: {}", s.recovery);
     }
 }

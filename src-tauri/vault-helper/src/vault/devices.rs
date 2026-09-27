@@ -124,7 +124,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
     let PanelOutcome::Submitted(mp) = outcome else {
         return super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled));
     };
-    let (pk, next_gen, head) = {
+    let (pk, next_gen, head, handle) = {
         let c = lock_core(core);
         let Some(store) = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing) else {
             return OpOutcome::err(ErrorCode::BadState);
@@ -134,6 +134,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
                 pk,
                 store.header.manifest_generation + 1,
                 store.header.registry_head.0,
+                super::rk_ops::stored_handle(store),
             ),
             Err(e) => {
                 drop(c);
@@ -145,7 +146,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
     // The rotation invalidates the current recovery wrap, so the user
     // leaves with a Recovery Key that works — or nothing is committed.
     let rk = random_secret();
-    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, super::SheetReason::DeviceRemoved)) {
+    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::DeviceRemoved)) {
         return super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled));
     }
 

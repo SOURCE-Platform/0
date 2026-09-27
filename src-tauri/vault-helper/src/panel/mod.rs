@@ -134,6 +134,7 @@ impl PanelRunner for HelperPanel {
             sheet: crate::vault::RecoverySheet {
                 words: sheet.words.clone(),
                 checkpoint: sheet.checkpoint.clone(),
+                recovery: sheet.recovery.clone(),
                 reason: sheet.reason,
             },
             reply: tx,

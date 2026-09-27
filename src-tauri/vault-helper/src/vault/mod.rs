@@ -39,6 +39,8 @@ pub mod revoke_core;
 pub mod provider_ops;
 pub mod backup_ops;
 pub mod recovery_flow;
+pub mod remote_status;
+pub mod retry_handle;
 pub mod rk_ops;
 pub mod sync_ops;
 pub mod secure_ui;
@@ -163,6 +165,10 @@ impl VaultCore {
     /// the auto-lock pref (§1.6, Keychain helper-prefs).
     pub fn boot(vault_dir: PathBuf) -> VaultCore {
         let state = crate::state::detect_boot_state(&vault_dir);
+        if state == VaultState::Uninitialized {
+            // TR-08 / §13.3: an interrupted recovery restarts from scratch.
+            let _ = std::fs::remove_dir_all(vault_dir.join(recovery_flow::STAGING));
+        }
         let (header, header_error) = if state == VaultState::Locked {
             match VaultStore::read_header(&vault_dir) {
                 Ok(h) => (Some(h), None),
@@ -189,6 +195,9 @@ impl VaultCore {
     /// Zeroize key material and drop the store on entry to
     /// Locked/Error (§13.3). Returns the events to emit.
     pub fn lock(&mut self, reason: LockReason) -> Vec<Value> {
+        // An abandoned recovery returns to where the device was before it
+        // (no local vault → UNINITIALIZED, never a vault-less LOCKED).
+        let left = self.leave_recovery();
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)
         self.store = None;
@@ -199,13 +208,35 @@ impl VaultCore {
         // fully staged publication survives; a recovery is abandoned.
         self.provider.on_lock();
         self.last_authorization = None;
-        let mut events = Vec::new();
+        let mut events: Vec<Value> = left.into_iter().collect();
         if had_vault_state {
             self.state = VaultState::Locked;
             events.push(ev_locked(reason));
             events.push(ev_state(VaultState::Locked));
         }
         events
+    }
+
+    /// The state an open vault rests in: UNLOCKED, or COMPROMISED while
+    /// persisted fork evidence exists (§13.3: re-entered at open).
+    pub fn open_state(&self) -> VaultState {
+        match self.store.as_ref().map(|s| crate::storage::compromised::load(&s.conn)) {
+            Some(Ok(None)) => VaultState::Unlocked,
+            Some(_) => VaultState::Compromised, // evidence, or unreadable: fail closed
+            None => VaultState::Locked,
+        }
+    }
+
+    /// §1.3 TR-07 / §13.3: drop the recovery session and leave
+    /// RECOVERING for the state the vault directory implies. Returns the
+    /// state event when the state changed.
+    pub fn leave_recovery(&mut self) -> Option<Value> {
+        self.provider.recovery = None;
+        if self.state != VaultState::Recovering {
+            return None;
+        }
+        self.state = crate::state::detect_boot_state(&self.vault_dir);
+        Some(ev_state(self.state))
     }
 
     /// Fatal vault-data path (§3.6): zeroize, ERROR state, emit.

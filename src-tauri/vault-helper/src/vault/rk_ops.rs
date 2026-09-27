@@ -34,9 +34,12 @@ pub fn make_sheet(
     vault_id: &[u8; 16],
     generation: u64,
     registry_head: &[u8; 32],
+    handle: Option<&str>,
     reason: super::SheetReason,
 ) -> RecoverySheet {
+    let origin = crate::storage::header::default_provider().unwrap_or("not configured");
     RecoverySheet {
+        recovery: format!("Recovery name {}  ·  backup {origin}", handle.unwrap_or("not set")),
         reason,
         words: Zeroizing::new(bip39::encode_rk(rk)),
         checkpoint: format!(
@@ -45,6 +48,14 @@ pub fn make_sheet(
             head_prefix(registry_head)
         ),
     }
+}
+
+/// The normalized recovery handle this vault was set up (or recovered)
+/// with, kept in helper `kv` for sheet reprints (§1.5 `setup_vault`).
+pub const HANDLE_KEY: &str = "recovery_handle";
+
+pub fn stored_handle(store: &VaultStore) -> Option<String> {
+    crate::storage::kv::get(&store.conn, HANDLE_KEY).ok().flatten()
 }
 
 /// Show the sheet with the capture-suppression bracket around it.
@@ -153,7 +164,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
     let PanelOutcome::Submitted(mp) = outcome else {
         return finish(core, deps, Err(ErrorCode::PanelCancelled));
     };
-    let (pk, vault_id, next_gen, head) = {
+    let (pk, vault_id, next_gen, head, handle) = {
         let c = lock_core(core);
         let Some(store) = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing) else {
             return OpOutcome::err(ErrorCode::BadState);
@@ -165,11 +176,11 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
                 return finish(core, deps, Err(e));
             }
         };
-        (pk, store.header.vault_id.0, store.header.manifest_generation + 1, store.header.registry_head.0)
+        (pk, store.header.vault_id.0, store.header.manifest_generation + 1, store.header.registry_head.0, stored_handle(store))
     };
     drop(mp);
     let rk = random_secret();
-    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, super::SheetReason::Replaced)) {
+    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::Replaced)) {
         return finish(core, deps, Err(ErrorCode::PanelCancelled)); // nothing committed
     }
     let mut c = lock_core(core);

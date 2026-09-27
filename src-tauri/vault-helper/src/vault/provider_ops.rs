@@ -44,6 +44,9 @@ pub struct RecoverySession {
     pub completed: Option<Completed>,
     /// A newly issued RK was acknowledged on its sheet.
     pub acknowledged: bool,
+    /// The normalized handle main located the vault by (display data for
+    /// the sheet and the recovered vault's `kv`, like `setup_vault`'s).
+    pub handle: Option<String>,
 }
 
 #[derive(Default)]
@@ -51,6 +54,9 @@ pub struct Sessions {
     pub publish: Option<PublishSession>,
     pub sync: Option<SyncSession>,
     pub recovery: Option<RecoverySession>,
+    /// §1.3 TR-09: an enrollment bundle too large for one frame, read by
+    /// main with `stream_read` (ciphertext and public data only).
+    pub bundle: Option<Transfer>,
 }
 
 impl Sessions {
@@ -59,6 +65,7 @@ impl Sessions {
     pub fn on_lock(&mut self) {
         self.sync = None;
         self.recovery = None;
+        self.bundle = None; // the enrollment it belongs to dies with the lock
     }
 
     pub fn transfer(&mut self, id: &Id) -> Option<&mut Transfer> {
@@ -67,6 +74,9 @@ impl Sessions {
         }
         if let Some(s) = self.sync.as_mut().filter(|s| &s.t.id == id) {
             return Some(&mut s.t);
+        }
+        if let Some(b) = self.bundle.as_mut().filter(|b| &b.id == id) {
+            return Some(b);
         }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
     }
@@ -155,15 +165,14 @@ pub fn session_close(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     let Ok(id) = session_id(frame) else { return OpOutcome::err(ErrorCode::InvalidInput) };
     let mut c = lock_core(core);
     let p = &mut c.provider;
-    if p.publish.as_ref().is_some_and(|s| s.t.id == id) {
+    if p.bundle.as_ref().is_some_and(|b| b.id == id) {
+        p.bundle = None;
+    } else if p.publish.as_ref().is_some_and(|s| s.t.id == id) {
         p.publish = None;
     } else if p.sync.as_ref().is_some_and(|s| s.t.id == id) {
         p.sync = None;
     } else if p.recovery.as_ref().is_some_and(|s| s.t.id == id) {
-        p.recovery = None;
-        if c.state == VaultState::Recovering {
-            c.state = if c.vault_dir.join(crate::VAULT_HEADER_NAME).exists() { VaultState::Locked } else { VaultState::Uninitialized };
-        }
+        c.leave_recovery();
     }
     OpOutcome::ok(json!({}))
 }

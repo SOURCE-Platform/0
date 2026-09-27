@@ -25,6 +25,29 @@ const NEW_ID: [u8; 16] = [0xC5; 16];
 const VAULT_ID: [u8; 16] = [0xC6; 16];
 const REGISTRY_HEAD: [u8; 32] = [0xC7; 32];
 
+const PAYLOAD_VK: [u8; 32] = [0xC8; 32];
+const PAYLOAD_WRAPPED_AT: u64 = 1_900_000_000;
+const PAYLOAD_VK_GENERATION: u32 = 3;
+
+fn payload_v2() -> Vec<u8> {
+    crate::crypto::wrap::DeviceEnvelopePayload {
+        vk: crate::crypto::secret::SecretBytes::new(PAYLOAD_VK),
+        wrapped_at: PAYLOAD_WRAPPED_AT,
+        vk_generation: PAYLOAD_VK_GENERATION,
+    }
+    .encode()
+}
+
+fn payload_v1() -> Vec<u8> {
+    vault_proto::crypto::tlv::EntryBuilder::new()
+        .field_bytes(0x01, &PAYLOAD_VK)
+        .and_then(|b| b.field_uint(0x02, PAYLOAD_WRAPPED_AT))
+        .and_then(|b| b.field_uint(0x03, PAYLOAD_VK_GENERATION as u64))
+        .and_then(|b| b.field_bytes(0x04, &[0xC9; 32]))
+        .expect("ascending constant tags")
+        .build()
+}
+
 fn sign_pub() -> [u8; 65] {
     crate::crypto::ecdsa::dev_keypair_from_scalar([0x11; 32]).1
 }
@@ -76,6 +99,15 @@ pub fn xv_enroll() -> Value {
             "enrollment_nonce": hex::encode(NONCE_E),
             "info": hex::encode(envelope::info(&VAULT_ID, &NEW_ID, &NONCE_E)),
         },
+        // §2.2 DeviceEnvelopePayload v2: the VK only. A v1 payload (with
+        // the 0x04 backup credential) must be refused by every reader.
+        "envelope_payload": {
+            "vk": hex::encode(PAYLOAD_VK),
+            "wrapped_at": PAYLOAD_WRAPPED_AT,
+            "vk_generation": PAYLOAD_VK_GENERATION,
+            "tlv_v2": hex::encode(payload_v2()),
+            "tlv_v1_with_credential_refused": hex::encode(payload_v1()),
+        },
         "suite": {
             "kem": "0x0010 DHKEM(P-256, HKDF-SHA256)",
             "kdf": "0x0001 HKDF-SHA256",
@@ -84,4 +116,19 @@ pub fn xv_enroll() -> Value {
             "public_key_encoding": "65-byte uncompressed X9.63 (0x04 || X || Y)"
         }
     })
+}
+
+#[cfg(test)]
+mod payload_tests {
+    use super::*;
+    use crate::crypto::wrap::DeviceEnvelopePayload;
+
+    /// The committed rows mean what they say: v2 parses to the fixed
+    /// values; the v1 layout (with a credential) is refused.
+    #[test]
+    fn envelope_payload_rows() {
+        let p = DeviceEnvelopePayload::parse(&payload_v2()).unwrap();
+        assert_eq!((p.vk.expose(), p.wrapped_at, p.vk_generation), (&PAYLOAD_VK, PAYLOAD_WRAPPED_AT, PAYLOAD_VK_GENERATION));
+        assert!(DeviceEnvelopePayload::parse(&payload_v1()).is_err());
+    }
 }

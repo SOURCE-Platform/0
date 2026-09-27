@@ -168,7 +168,7 @@ impl Mac {
         self.call(cloud, SignRequest { operation: Operation::StateCommit, blob: None, body_sha256: st.body_sha256, expected_state: Some(st.expected_state) }, &scope, &st.body)
     }
 
-    fn accept(&mut self, st: &Staging, r: &Response) -> Result<(), ErrorCode> {
+    pub fn accept(&mut self, st: &Staging, r: &Response) -> Result<(), ErrorCode> {
         if r.status != 200 {
             return Err(match err(r).as_str() {
                 "STATE_MOVED" => ErrorCode::StateMoved,

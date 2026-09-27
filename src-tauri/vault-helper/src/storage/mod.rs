@@ -9,6 +9,7 @@
 //! - `store` — the `VaultStore` tying them together at open/unlock time
 
 pub mod adopt;
+pub mod compromised;
 pub mod db;
 pub mod flip;
 pub mod header;

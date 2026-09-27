@@ -2,7 +2,9 @@
 //! §16.7): RC-05 MP forgotten with a trusted device, RC-07 a suspected
 //! stolen RK (security-driven, old RK authenticates until the commit),
 //! BK-10 a historical snapshot and the old RK, CP-02 a substituted
-//! registry, BK-18 no canary secret anywhere in provider storage.
+//! registry, CP-03 an altered historical recovery_epoch, BK-18 no
+//! canary secret anywhere in provider storage, CP-01
+//! repeated recoveries, RU-03 a pending change across a restart.
 //! Synthetic data only.
 
 mod mfx;
@@ -106,19 +108,50 @@ fn bk10_historical_snapshot_and_the_old_rk() {
 /// new index) cannot make the served checkpoint bind it: recovery stops.
 #[test]
 fn cp02_substituted_registry_is_refused() {
+    let (cloud, mac, handle) = world("cp02");
+    let evil = vault_helper::registry::device::SoftwareDevice::generate("Provider's device", vault_helper::registry::device::PLATFORM_MACOS);
+    let fake = vault_helper::registry::file::encode(&[vault_helper::registry::build::genesis(&evil).unwrap()]).unwrap();
+    let rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
+    assert!(substituted_registry_refused(&cloud, &mac, &handle, &rk, &evil, fake));
+}
+
+/// CP-03: after a recovery (a `recovery_epoch` entry in the registry), a
+/// provider that alters that historical entry is refused both ways: the
+/// altered blob fails its index hash, and a rebuilt index/manifest fails
+/// the checkpoint binding.
+#[test]
+fn cp03_altered_recovery_epoch_is_refused() {
+    let (cloud, mac, handle) = world("cp03");
+    let rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
+    drop(mac);
+    let out = recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: Some(&rk) }, None).unwrap();
+    let mut m = into_mac(out);
+    m.add("after-recovery");
+    m.publish(&cloud).unwrap();
+    let real = std::fs::read(m.dir.join(vault_helper::VAULT_REGISTRY_NAME)).unwrap();
+    let mut altered = real.clone();
+    let n = altered.len() - 8; // inside the last entry: the recovery_epoch
+    altered[n] ^= 1;
+    // Rebuilt index + manifest over the altered bytes.
+    let evil = vault_helper::registry::device::SoftwareDevice::generate("Provider's device", vault_helper::registry::device::PLATFORM_MACOS);
+    assert!(substituted_registry_refused(&cloud, &m, &handle, &rk, &evil, altered.clone()));
+    // In place: the served blob no longer matches its index hash.
+    let blob = cloud.dir.join(format!("v2/vaults/{}/blobs/{}", vault_helper::crypto::hex::encode(m.vid()), vault_helper::crypto::hex::encode(sha(&real))));
+    std::fs::write(&blob, &altered).unwrap();
+    let r = recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: Some(&rk) }, None);
+    assert!(r.is_err(), "an altered historical recovery_epoch must stop recovery");
+}
+
+/// Serve `fake_reg` in place of the registry, with a new index and a
+/// manifest re-signed by `evil`; true when recovery refuses it.
+fn substituted_registry_refused(cloud: &Cloud, mac: &Mac, handle: &str, rk: &SecretBytes<32>, evil: &vault_helper::registry::device::SoftwareDevice, fake_reg: Vec<u8>) -> bool {
     use vault_helper::backup::index::{IndexEntry, ObjectIndex, Role};
     use vault_helper::backup::manifest::SignedManifest;
-    use vault_helper::registry::device::{SoftwareDevice, PLATFORM_MACOS};
-    let (cloud, mac, handle) = world("cp02");
-    let rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
-    let state = mac.read(&cloud, Operation::StateGet, None).body;
+    let state = mac.read(cloud, Operation::StateGet, None).body;
     let real = remote::parse(&state).unwrap();
-    let get = |h: [u8; 32]| mac.read(&cloud, Operation::BlobGet, Some(h)).body;
+    let get = |h: [u8; 32]| mac.read(cloud, Operation::BlobGet, Some(h)).body;
     let index = ObjectIndex::decode(&get(real.manifest.object_index_hash)).unwrap();
     let mut blobs: HashMap<[u8; 32], Vec<u8>> = index.blobs().into_iter().map(|h| (h, get(h))).collect();
-    // The attacker's registry: its own genesis device.
-    let evil = SoftwareDevice::generate("Provider's device", PLATFORM_MACOS);
-    let fake_reg = vault_helper::registry::file::encode(&[vault_helper::registry::build::genesis(&evil).unwrap()]).unwrap();
     let mut entries: Vec<IndexEntry> = index.entries.iter().filter(|e| e.role != Role::Registry).cloned().collect();
     entries.push(IndexEntry::of(Role::Registry, &fake_reg));
     blobs.insert(sha(&fake_reg), fake_reg);
@@ -126,13 +159,13 @@ fn cp02_substituted_registry_is_refused() {
     blobs.insert(fake_index.hash(), fake_index.encode());
     let mut m: SignedManifest = real.manifest.clone();
     m.object_index_hash = fake_index.hash();
-    let m = m.sign(&evil).unwrap();
+    let m = m.sign(evil).unwrap();
     let forged = RemoteStateBuilder::with_manifest(&state, &m.encode());
-    let locate = cloud.locate(&handle);
-    let mut r = Recovery::begin(ORIGIN, &locate, Credential::Rk(&rk), 0).unwrap();
+    let locate = cloud.locate(handle);
+    let mut r = Recovery::begin(ORIGIN, &locate, Credential::Rk(rk), 0).unwrap();
     let remote = remote::parse(&forged).unwrap();
-    let idx = r.plan(&remote, &fake_index.encode()).unwrap();
-    assert!(r.verify(remote, &idx, &blobs).is_err(), "the checkpoint cannot bind a substituted registry");
+    let Ok(idx) = r.plan(&remote, &fake_index.encode()) else { return true };
+    r.verify(remote, &idx, &blobs).is_err()
 }
 
 /// BK-18: canary secrets planted in a full flow never appear anywhere in
@@ -189,4 +222,43 @@ impl RemoteStateBuilder {
         v["state_commit"] = serde_json::json!(vault_helper::crypto::hex::encode(commit));
         serde_json::to_vec(&v).unwrap()
     }
+}
+
+/// CP-01: repeated total-loss recoveries — each one re-keys, moves the
+/// registry epoch on and publishes; the next recovery verifies the new
+/// checkpoint and gets everything, including edits made in between.
+#[test]
+fn cp01_repeated_recoveries() {
+    let (cloud, mac, handle) = world("cp01");
+    let rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
+    drop(mac);
+    let mut expected = vec!["kept".to_string()];
+    for round in 1..=3 {
+        let out = recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: Some(&rk) }, None).expect("recovered");
+        let mut m = into_mac(out);
+        assert_eq!(m.titles(), expected, "round {round}");
+        assert_eq!(m.store().header.vk_generation, 1 + round, "one rotation per recovery");
+        let title = format!("after-round-{round}");
+        m.add(&title);
+        m.publish(&cloud).unwrap();
+        expected.push(title);
+        expected.sort();
+    }
+}
+
+/// RU-03: a wrap-bearing change waiting for its publish survives a restart
+/// (the store is reopened) and is cleared by the publish that carries it.
+#[test]
+fn ru03_pending_change_survives_a_restart() {
+    let (cloud, mut mac, handle) = world("ru03");
+    let (store, vk) = (mac.store.take().unwrap(), mac.vk.take().unwrap());
+    drop(change_mp(store, &vk, None, NEW_MP).unwrap());
+    // "Restart": nothing but the vault directory carries over.
+    mac.store = Some(vault_helper::storage::VaultStore::open(&mac.dir).unwrap());
+    mac.vk = Some(vk);
+    let p = pending::load(&mac.store().conn).unwrap().expect("pending survives the reopen");
+    assert!(!p.needs_user);
+    mac.publish(&cloud).unwrap();
+    assert!(pending::load(&mac.store().conn).unwrap().is_none(), "cleared by the publish");
+    assert_eq!(can_read(&cloud, &handle, Credential::Mp(NEW_MP)), 200);
 }

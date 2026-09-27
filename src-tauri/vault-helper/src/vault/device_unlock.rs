@@ -101,7 +101,7 @@ pub fn unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     drop(payload);
     let outcome = install_unlock(core, &header, &dir, recovered, deps);
     if outcome.response["ok"] == Value::Bool(true) {
-        return OpOutcome::ok(json!({"state": "unlocked", "method": "device"}));
+        return OpOutcome::ok(json!({"state": outcome.response["state"], "method": "device"}));
     }
     outcome
 }

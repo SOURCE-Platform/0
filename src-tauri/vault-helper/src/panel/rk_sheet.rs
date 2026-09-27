@@ -124,7 +124,8 @@ fn content_view(sheet: &RecoverySheet, delegate: &RkSheetDelegate, mtm: MainThre
             let (col, row) = ((i / 6) as f64, (i % 6) as f64);
             add(&format!("{:>2}. {word}", i + 1), 24.0 + col * 130.0, H - 122.0 - row * 26.0, 124.0);
         }
-        add(&sheet.checkpoint, 24.0, 118.0, 520.0);
+        add(&sheet.checkpoint, 24.0, 136.0, 520.0);
+        add(&sheet.recovery, 24.0, 118.0, 520.0);
         add("Anyone with these words can open your vault.", 24.0, 92.0, 520.0);
         // Normative copy (spec §1.7, Phase D.1 owner decision).
         add("Print to paper. Saving as PDF creates an unencrypted copy of your", 24.0, 74.0, 520.0);

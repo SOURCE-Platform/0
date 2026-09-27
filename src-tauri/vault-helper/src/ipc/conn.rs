@@ -61,6 +61,20 @@ pub fn handle_connection(mut stream: UnixStream, ctx: Arc<ConnCtx>) {
     }
     serve(&mut stream, class, &ctx);
     ctx.hub.unregister(class, conn_id);
+    if class == ClientClass::App {
+        drop_provider_sessions(&ctx);
+    }
+}
+
+/// §1.3 TR-07: the app connection's sessions die with it — a sync or a
+/// recovery in flight is abandoned (a fully staged publication survives,
+/// as it does a lock, and is resumed by the next connection).
+fn drop_provider_sessions(ctx: &ConnCtx) {
+    let mut c = lock_core(&ctx.core);
+    c.provider.on_lock();
+    if let Some(ev) = c.leave_recovery() {
+        ctx.hub.emit(ev);
+    }
 }
 
 /// The first frame must be a spec-conformant `hello` (proto 1, known

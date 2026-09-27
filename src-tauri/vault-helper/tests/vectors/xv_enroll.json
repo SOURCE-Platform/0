@@ -12,6 +12,13 @@
     "prefix": "ov0/envelope/v2",
     "vault_id": "c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6c6"
   },
+  "envelope_payload": {
+    "tlv_v1_with_credential_refused": "0100000020c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c80200000004713fb3000300000001030400000020c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9ff",
+    "tlv_v2": "0100000020c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c80200000004713fb300030000000103ff",
+    "vk": "c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8",
+    "vk_generation": 3,
+    "wrapped_at": 1900000000
+  },
   "family": "XV-ENROLL",
   "suite": {
     "aead": "0x0003 ChaCha20-Poly1305",

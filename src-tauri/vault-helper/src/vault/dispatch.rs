@@ -22,6 +22,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         }
         "change_master_password" => change_mp::change_master_password(core, deps),
         "rotate_recovery_key" => rk_ops::rotate_recovery_key(core, deps),
+        "setup_retry_handle" => retry_handle::setup_retry_handle(core, frame, deps),
         "list_items" => items::list_items(core),
         "add_item" => items::add_item(core, frame, deps),
         "update_item" => items::update_item(core, frame, deps),
@@ -50,6 +51,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         "sign_provider_request" => provider_ops::sign_provider_request(core, frame),
         "session_close" => provider_ops::session_close(core, frame),
         "quarantine_status" => provider_ops::quarantine_status(core),
+        "remote_update_status" => remote_status::remote_update_status(core),
         "recovery_begin" => recovery_flow::recovery_begin(core, frame, deps),
         "recovery_preview" => recovery_flow::recovery_preview(core),
         "recovery_complete" => recovery_flow::recovery_complete(core, deps),

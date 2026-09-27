@@ -52,7 +52,7 @@ impl RecoveryClass {
         }
     }
 
-    fn domain(self) -> &'static [u8] {
+    pub fn domain(self) -> &'static [u8] {
         match self {
             RecoveryClass::Mp => DOMAIN_MP,
             RecoveryClass::Rk => DOMAIN_RK,

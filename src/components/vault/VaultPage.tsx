@@ -251,7 +251,18 @@ export function VaultPage() {
             <DevicesPanel onError={(m) => setError(m)} />
           </div>
         )}
-        {(state === "unknown" || state === "compromised") && (
+        {/* §13.2 COMPROMISED: reads allowed, writes and backup frozen. */}
+        {state === "compromised" && (
+          <div className="space-y-4">
+            <StatusCard
+              icon={<ShieldAlert className="h-5 w-5 text-red-400" />}
+              title="Vault is read-only"
+              body="The backup service showed this Mac two different histories of your vault. You can still view and copy your items, but changes and backups are paused so nothing is overwritten."
+            />
+            <ItemList refreshKey={refreshKey} onError={(m) => setError(m)} />
+          </div>
+        )}
+        {state === "unknown" && (
           <StatusCard
             icon={<KeyRound className="h-5 w-5 text-muted-foreground" />}
             title={`Vault state: ${state}`}

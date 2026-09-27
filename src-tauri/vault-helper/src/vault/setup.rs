@@ -86,6 +86,7 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
         &header.vault_id.0,
         header.manifest_generation,
         &header.registry_head.0,
+        Some(&handle),
         super::SheetReason::VaultCreated,
     );
     drop(rk);
@@ -118,7 +119,7 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
     OpOutcome::ok(json!({"state": "locked", "publication": summary}))
 }
 
-fn stage_create(
+pub fn stage_create(
     dir: &std::path::Path,
     dev: &SeDevice,
     vk: &crate::crypto::secret::SecretBytes<32>,
@@ -134,7 +135,7 @@ fn stage_create(
     staging.carries_pending = true;
     // The normalized handle stays local (never in header.json) for sheet
     // reprints and a later `setup_retry_handle` (§1.5).
-    crate::storage::kv::put(&store.conn, "recovery_handle", &handle)?;
+    crate::storage::kv::put(&store.conn, super::rk_ops::HANDLE_KEY, &handle)?;
     let seen_updates = crate::sync::change::seen_auth(&updates);
     pending::add(&store.conn, PendingOp::VaultCreate, false, Base::of(&store.header), seen_updates, crate::storage::store::now_epoch())?;
     Ok(super::provider_ops::PublishSession { t: super::backup_ops::transfer_for(&staging), staging })
@@ -287,10 +288,10 @@ pub(super) fn install_unlock(
     c.header = Some(header.clone());
     c.failed_attempts = 0;
     c.note_authorization();
-    c.state = VaultState::Unlocked;
+    c.state = c.open_state();
     let _ = keychain::write_seen_generation(generation);
-    deps.events.emit(ev_state(VaultState::Unlocked));
-    OpOutcome::ok(json!({"state": "unlocked"}))
+    deps.events.emit(ev_state(c.state));
+    OpOutcome::ok(json!({"state": c.state.as_str()}))
 }
 
 /// The wrap's own kdf block (§2.5 JSON shape), strictly parsed.

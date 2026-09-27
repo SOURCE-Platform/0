@@ -21,10 +21,11 @@ use crate::storage::records::{self, CardRecord, LoginRecord, UrlEntryWire};
 use crate::storage::store::now_epoch;
 use crate::storage::VaultStore;
 
-/// §1.5 `list_items`: metadata only, UNLOCKED required (§13.2).
+/// §1.5 `list_items`: metadata only, UNLOCKED (or COMPROMISED, where
+/// reads stay allowed, §13.2) required.
 pub fn list_items(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
     let c = lock_core(core);
-    if c.state != VaultState::Unlocked {
+    if c.state != VaultState::Unlocked && c.state != VaultState::Compromised {
         return OpOutcome::err(ErrorCode::BadState);
     }
     let (Some(store), Some(vk)) = (c.store.as_ref(), c.vk.as_ref()) else {

@@ -165,7 +165,7 @@ impl Flows<'_> {
     /// the preview.
     pub fn recovery_start(&self, origin: &str, handle_text: &str, kind: &str) -> Outcome<Value> {
         let locate = self.locate(origin, handle_text)?;
-        ok(self.helper.op(json!({ "op": "recovery_begin", "kind": kind, "locate_response": String::from_utf8_lossy(&locate) })))?;
+        ok(self.helper.op(json!({ "op": "recovery_begin", "kind": kind, "handle": handle_text, "locate_response": String::from_utf8_lossy(&locate) })))?;
         self.run_sync()
     }
 

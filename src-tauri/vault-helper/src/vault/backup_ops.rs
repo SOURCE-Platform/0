@@ -65,14 +65,7 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
             }
             // The first `create` never committed (e.g. a restart dropped
             // its staged session): stage it again from the pending record.
-            None => {
-                let p = pending::load(&store.conn)?.filter(|p| p.ops.contains(&pending::PendingOp::VaultCreate)).ok_or(ErrorCode::BadState)?;
-                let handle: String = crate::storage::kv::get(&store.conn, "recovery_handle")?.ok_or(ErrorCode::BadState)?;
-                let seen_auth = seen::Seen { generation: 0, manifest_hash: crate::storage::header::Hex32([0; 32]), state_commit: crate::storage::header::Hex32([0; 32]), recovery_auth: p.recovery_auth_updates };
-                let mut st = publish::stage_create(store, &reg, vk, &me, vault_proto::handle::handle_key(&handle), seen_auth.auth_entries()?)?;
-                st.carries_pending = true;
-                st
-            }
+            None => restage_create(store, &reg, vk, &me)?,
         };
         let t = transfer_for(&staging);
         let out = staging_summary(&t, &staging);
@@ -81,6 +74,17 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         Ok(out)
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
+}
+
+/// The vault's first `create`, staged again from the pending
+/// `vault_create` record and the stored handle (§11.3.2).
+pub fn restage_create(store: &VaultStore, reg: &crate::registry::chain::RegistryState, vk: &crate::crypto::secret::SecretBytes<32>, me: &SeDevice) -> Result<Staging, ErrorCode> {
+    let p = pending::load(&store.conn)?.filter(|p| p.ops.contains(&pending::PendingOp::VaultCreate)).ok_or(ErrorCode::BadState)?;
+    let handle: String = crate::storage::kv::get(&store.conn, super::rk_ops::HANDLE_KEY)?.ok_or(ErrorCode::BadState)?;
+    let seen_auth = seen::Seen { generation: 0, manifest_hash: crate::storage::header::Hex32([0; 32]), state_commit: crate::storage::header::Hex32([0; 32]), recovery_auth: p.recovery_auth_updates };
+    let mut st = publish::stage_create(store, reg, vk, me, vault_proto::handle::handle_key(&handle), seen_auth.auth_entries()?)?;
+    st.carries_pending = true;
+    Ok(st)
 }
 
 /// `backup_blob_list {session, page}` → ≤ 400 `{sha256, size}`.
@@ -146,12 +150,18 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
                 &opened
             }
         };
+        let before = pending::load(&store.conn)?;
         let out = if status == 200 {
             let generation = body["generation"].as_u64().ok_or(ErrorCode::ManifestMismatch)?;
             let commit = body["state_commit"].as_str().and_then(hex::decode_array::<32>).ok_or(ErrorCode::ManifestMismatch)?;
             publish::committed(store, &session.staging, generation, commit)?;
-            deps.events.emit(json!({"event": "remote_update", "status": "remote_committed"}));
-            json!({ "committed": true, "generation": generation })
+            // §11.3.2 REMOTE_COMMITTED: the components this commit cleared
+            // (the UI's post-commit copy keys off them).
+            let cleared = match (&before, pending::load(&store.conn)?) {
+                (Some(p), None) => p.ops.clone(),
+                _ => Vec::new(),
+            };
+            json!({ "committed": true, "generation": generation, "cleared": cleared })
         } else {
             let code = body["error"].as_str().unwrap_or("BACKUP_UNAVAILABLE").to_string();
             if let Some(mut p) = pending::load(&store.conn)? {
@@ -161,6 +171,9 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
             }
             json!({ "committed": false, "sync_required": code == "STATE_MOVED", "error_code": code })
         };
+        if before.is_some() {
+            deps.events.emit(super::remote_status::event(store)?);
+        }
         deps.events.emit(ev_state(c.reported_state()));
         Ok(out)
     };

@@ -136,6 +136,7 @@ pub fn run() {
             debug_mobile_transcribe,
             vault_state,
             vault_setup,
+            vault_setup_retry_handle,
             vault_unlock,
             vault_unlock_with_master_password,
             vault_change_master_password,

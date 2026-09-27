@@ -67,6 +67,7 @@ pub fn backup_state_offer(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
             }
             Err(ErrorCode::RegistryFork) => {
                 // §4.6: two validly signed manifests for one generation.
+                crate::storage::compromised::mark(&store.conn, ErrorCode::RegistryFork)?;
                 c.state = VaultState::Compromised;
                 deps.events.emit(ev_state(VaultState::Compromised));
                 Err(ErrorCode::RegistryFork)
@@ -140,7 +141,11 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                 // committed; key material stays out until the next unlock.
                 c.store = crate::storage::VaultStore::open(&dir).ok();
                 if e == ErrorCode::RegistryFork {
-                    c.state = VaultState::Compromised;
+                    // The evidence persists; the key is gone, so the vault
+                    // locks and the next unlock opens it COMPROMISED
+                    // (§13.3). Unrecordable evidence → ERROR, not LOCKED.
+                    let marked = c.store.take().map(|s| crate::storage::compromised::mark(&s.conn, e));
+                    c.state = if matches!(marked, Some(Ok(()))) { VaultState::Locked } else { VaultState::Error };
                 } else if c.store.is_none() {
                     c.state = VaultState::Error;
                 } else {

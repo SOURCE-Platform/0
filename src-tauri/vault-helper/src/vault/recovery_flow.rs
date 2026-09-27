@@ -34,11 +34,12 @@ use crate::sync::publish;
 use crate::sync::session::Transfer;
 
 const PANEL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
-const STAGING: &str = "recovered";
+pub(crate) const STAGING: &str = "recovered";
 
 pub fn recovery_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
     let run = || -> Result<Value, ErrorCode> {
         let kind = frame.get("kind").and_then(Value::as_str).ok_or(ErrorCode::InvalidInput)?;
+        let handle = frame.get("handle").and_then(Value::as_str).map(vault_proto::handle::normalize).transpose().map_err(|_| ErrorCode::InvalidInput)?;
         let locate_json = frame.get("locate_response").and_then(Value::as_str).ok_or(ErrorCode::InvalidInput)?.to_string();
         {
             let c = lock_core(core);
@@ -72,7 +73,7 @@ pub fn recovery_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) 
         }
         let t = Transfer::new(Default::default());
         let out = json!({ "session": hex::encode(t.id), "origin": origin, "vault_id": hex::encode(rec.locate.vault_id) });
-        c.provider.recovery = Some(RecoverySession { t, rec, remote: None, index: None, preview: None, completed: None, acknowledged: false });
+        c.provider.recovery = Some(RecoverySession { t, rec, remote: None, index: None, preview: None, completed: None, acknowledged: false, handle });
         c.state = VaultState::Recovering;
         deps.events.emit(ev_state(VaultState::Recovering));
         Ok(out)
@@ -150,9 +151,16 @@ pub fn recovery_complete(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome
             Ok(d) => d,
             Err(e) => return abort(core, session, e),
         };
+        if let Some(h) = &session.handle {
+            if let Err(e) = crate::storage::kv::put(&done.store.conn, super::rk_ops::HANDLE_KEY, h) {
+                drop(done);
+                let _ = std::fs::remove_dir_all(&staging_dir);
+                return abort(core, session, e);
+            }
+        }
         if let Some(rk) = &done.new_rk {
             let st = &done.staging;
-            let sheet = make_sheet(rk, &session.rec.locate.vault_id, st.generation, &done.store.header.registry_head.0, SheetReason::Recovered);
+            let sheet = make_sheet(rk, &session.rec.locate.vault_id, st.generation, &done.store.header.registry_head.0, session.handle.as_deref(), SheetReason::Recovered);
             if !show_sheet(deps, &sheet) {
                 drop(done);
                 let _ = std::fs::remove_dir_all(&staging_dir);
@@ -217,10 +225,17 @@ pub fn finalize_result(core: &Arc<Mutex<VaultCore>>, status: u64, body: &Value, 
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
 }
 
+/// `header.json` moves last: until it lands, a crash leaves the device
+/// UNINITIALIZED (boot sweeps the staging, §13.3) — never a header over a
+/// half-moved vault.
 fn move_into_place(from: &std::path::Path, to: &std::path::Path) -> Result<(), ErrorCode> {
     for e in std::fs::read_dir(from).map_err(|_| ErrorCode::Internal)? {
         let e = e.map_err(|_| ErrorCode::Internal)?;
-        std::fs::rename(e.path(), to.join(e.file_name())).map_err(|_| ErrorCode::Internal)?;
+        if e.file_name() != crate::VAULT_HEADER_NAME {
+            std::fs::rename(e.path(), to.join(e.file_name())).map_err(|_| ErrorCode::Internal)?;
+        }
     }
+    let header = crate::VAULT_HEADER_NAME;
+    std::fs::rename(from.join(header), to.join(header)).map_err(|_| ErrorCode::Internal)?;
     std::fs::remove_dir(from).map_err(|_| ErrorCode::Internal)
 }

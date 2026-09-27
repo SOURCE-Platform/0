@@ -29,12 +29,19 @@ pub enum Trigger {
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct BackupStatus {
     /// "idle" | "working" | "ok" | "offline" | "error" | "conflict" |
-    /// "access_lost" | "clock_skew" | "not_configured"
+    /// "access_lost" | "clock_skew" | "not_configured" | "handle_taken"
     pub state: String,
     pub last_success: Option<u64>,
     pub last_error: Option<String>,
     pub attempts: u32,
     pub stale: bool,
+    /// §11.3.2 remote-completion status from the helper
+    /// (`remote_update_status`): drives the pending/security banners.
+    pub pending: Value,
+    /// Components the last commit made effective remotely (the
+    /// post-commit copy, e.g. "Your backup now uses the new master
+    /// password.").
+    pub cleared: Vec<String>,
 }
 
 struct Worker {
@@ -100,14 +107,20 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
     let transport = ProviderHttp;
     let flows = Flows { helper: &AppHelper, transport: &transport };
     let result = match trigger {
-        Trigger::Staged(p) => flows.run_publication(&p).map(|_| ()),
+        Trigger::Staged(p) => flows.run_publication(&p).map(Some),
         Trigger::Now => run_unlocked(&flows),
     };
+    let pending = vault_coordinator::Helper::op(&AppHelper, json!({"op": "remote_update_status"})).unwrap_or(Value::Null);
     match result {
-        Ok(()) => {
+        Ok(ran) => {
             watch.success();
             set_status(app, |s| {
-                *s = BackupStatus { state: "ok".into(), last_success: Some(now()), ..Default::default() };
+                let cleared = ran.as_ref().map(|v| strings(&v["cleared"])).unwrap_or_default();
+                // Nothing ran (locked): keep the last success, so staleness
+                // still counts from the last real publication.
+                let last_success = if ran.is_some() { Some(now()) } else { s.last_success };
+                let state = if last_success.is_some() { "ok" } else { "idle" };
+                *s = BackupStatus { state: state.into(), last_success, pending, cleared, ..Default::default() };
             });
             PERIOD
         }
@@ -119,21 +132,33 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
                 let (state, err) = classify(&flows, origin, &f, watch);
                 s.state = state.into();
                 s.last_error = Some(err);
+                s.pending = pending;
+                s.cleared.clear();
             });
             Duration::from_secs(policy::backoff(attempts))
         }
     }
 }
 
-/// Sync, then publish if anything changed. Nothing to do while locked
-/// (a staged publication arrives as `Trigger::Staged`).
-fn run_unlocked(flows: &Flows<'_>) -> Result<(), Failure> {
+/// Publish if anything changed (a `STATE_MOVED` merges first), else pull
+/// what others published. Publishing first also covers a vault whose
+/// first `create` never committed: there is no remote state to sync yet
+/// (BK-28). Nothing to do while locked (a staged publication arrives as
+/// `Trigger::Staged`).
+fn run_unlocked(flows: &Flows<'_>) -> Result<Option<Value>, Failure> {
     let state = vault_coordinator::Helper::op(&AppHelper, json!({"op": "get_state"})).map_err(Failure::Helper)?;
     if state["state"] != "unlocked" {
-        return Ok(());
+        return Ok(None);
     }
-    flows.run_sync()?;
-    flows.backup_now().map(|_| ())
+    let out = flows.backup_now()?;
+    if out["nothing_to_publish"] == true {
+        flows.run_sync()?;
+    }
+    Ok(Some(out))
+}
+
+fn strings(v: &Value) -> Vec<String> {
+    v.as_array().into_iter().flatten().filter_map(|x| x.as_str().map(String::from)).collect()
 }
 
 fn classify(flows: &Flows<'_>, origin: &str, f: &Failure, watch: &mut AccessWatch) -> (&'static str, String) {
@@ -154,6 +179,8 @@ fn classify(flows: &Flows<'_>, origin: &str, f: &Failure, watch: &mut AccessWatc
                 _ => ("error", "AUTH_INVALID".into()),
             }
         }
+        // BK-28: the user picks another name (`vault_setup_retry_handle`).
+        Failure::Provider(409, code) if code == "HANDLE_TAKEN" => ("handle_taken", code.clone()),
         Failure::Provider(_, code) => ("error", code.clone()),
         Failure::Helper(code) => ("error", code.clone()),
     }

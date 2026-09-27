@@ -168,13 +168,36 @@ pub async fn confirm() -> Result<Value, String> {
     }
     eprintln!("vault-enroll: confirm → helper (presence check follows)");
     let resp = call(json!({"op": "enroll_confirm"})).await?;
-    let bundle = resp
-        .get("bundle")
-        .cloned()
-        .ok_or("helper did not return an enrollment bundle")?;
+    let bundle = match resp.get("bundle") {
+        Some(b) => b.clone(),
+        None => pull_bundle(&resp).await?,
+    };
     publish_bundle(bundle)?;
     eprintln!("vault-enroll: bundle published to the waiting device");
     Ok(json!({"ok": true}))
+}
+
+/// §1.3 TR-09: a bundle larger than one frame arrives as a stream; read
+/// it chunk by chunk, verify its SHA-256, then close the session.
+async fn pull_bundle(resp: &Value) -> Result<Value, String> {
+    let (session, sha) = match (resp["session"].as_str(), resp["stream"].as_str()) {
+        (Some(s), Some(h)) => (s.to_string(), h.to_string()),
+        _ => return Err("helper did not return an enrollment bundle".to_string()),
+    };
+    let mut bytes = Vec::new();
+    loop {
+        let r = call(json!({"op": "stream_read", "session": session, "sha256": sha, "offset": bytes.len()})).await?;
+        let chunk = r["data"].as_str().and_then(vault_proto::b64::decode).ok_or("malformed bundle chunk")?;
+        bytes.extend(chunk);
+        if r["eof"] == true {
+            break;
+        }
+    }
+    let _ = call(json!({"op": "session_close", "session": session})).await;
+    if vault_proto::crypto::hex::encode(Sha256::digest(&bytes)) != sha {
+        return Err("enrollment bundle failed its checksum".to_string());
+    }
+    serde_json::from_slice(&bytes).map_err(|_| "malformed enrollment bundle".to_string())
 }
 
 /// Tear the session down: the server stops, the helper burns the secret.

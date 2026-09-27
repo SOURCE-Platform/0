@@ -91,6 +91,19 @@ pub async fn vault_setup(app: tauri::AppHandle, handle: String) -> Result<Value,
     Ok(resp)
 }
 
+/// §1.5 `setup_retry_handle` (BK-28): the first recovery name was taken.
+/// The helper's panel re-checks the MP and shows a new Recovery Key; the
+/// re-staged `create` goes to the backup worker.
+#[tauri::command]
+pub async fn vault_setup_retry_handle(app: tauri::AppHandle, handle: String) -> Result<Value, String> {
+    let resp = call_with_panel(app, json!({"op": "setup_retry_handle", "handle": handle})).await?;
+    #[cfg(target_os = "macos")]
+    if let Some(p) = resp.get("publication").filter(|p| !p.is_null()) {
+        crate::core::vault_backup::worker::trigger(crate::core::vault_backup::worker::Trigger::Staged(p.clone()));
+    }
+    Ok(resp)
+}
+
 /// Unlock via the helper's secure panel (§1.5 begin_recovery_unlock,
 /// kind "mp" — the LA/device-envelope `unlock` op is Phase E).
 #[tauri::command]

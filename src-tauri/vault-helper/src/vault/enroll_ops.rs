@@ -253,7 +253,27 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     // other presence-gated op (§1.6).
     lock_core(core).note_authorization();
     match super::enroll_commit::build_bundle(core) {
-        Ok(bundle) => OpOutcome::ok(json!({"bundle": bundle})),
+        Ok(bundle) => OpOutcome::ok(deliver_bundle(&mut lock_core(core), bundle)),
         Err(e) => OpOutcome::err(e),
     }
 }
+
+/// Bundles up to this size travel inline in the `enroll_confirm` answer.
+const INLINE_BUNDLE: usize = 32 * 1024;
+
+/// §1.3 TR-09: a bundle too large for one frame becomes a one-blob
+/// stream session (`{session, stream, size}`), read with `stream_read`
+/// and closed with `session_close`.
+pub fn deliver_bundle(c: &mut VaultCore, bundle: Value) -> Value {
+    let bytes = serde_json::to_vec(&bundle).unwrap_or_default();
+    if bytes.len() <= INLINE_BUNDLE {
+        return json!({ "bundle": bundle });
+    }
+    let sha: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&bytes).into();
+    let size = bytes.len();
+    let t = crate::sync::session::Transfer::new([(sha, bytes)].into_iter().collect());
+    let out = json!({ "session": hex::encode(t.id), "stream": hex::encode(sha), "size": size });
+    c.provider.bundle = Some(t);
+    out
+}
+

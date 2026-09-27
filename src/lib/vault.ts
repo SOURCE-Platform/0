@@ -65,12 +65,33 @@ export async function vaultSetup(handle: string): Promise<void> {
   await invoke("vault_setup", { handle });
 }
 
+/**
+ * The first recovery name was taken (BK-28). The helper re-checks the
+ * master password and shows a new Recovery Key; the earlier sheet is void.
+ */
+export async function vaultSetupRetryHandle(handle: string): Promise<void> {
+  await invoke("vault_setup_retry_handle", { handle });
+}
+
 export interface BackupStatus {
   state: string;
   last_success: number | null;
   last_error: string | null;
   attempts: number;
   stale: boolean;
+  /** §11.3.2 remote-completion status (helper `remote_update_status`). */
+  pending: RemotePending | null;
+  /** Components the last commit made effective at the backup. */
+  cleared: string[];
+}
+
+export interface RemotePending {
+  pending: boolean;
+  ops?: string[];
+  security_driven?: boolean;
+  needs_user?: boolean;
+  attempts?: number;
+  revocation_failed?: boolean;
 }
 
 export async function vaultBackupStatus(): Promise<{ status: BackupStatus; provider: string | null }> {

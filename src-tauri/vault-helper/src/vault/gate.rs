@@ -19,9 +19,20 @@ pub(super) fn presence_gate(
     deps: &Deps,
     reason: &str,
 ) -> Result<(), OpOutcome> {
+    presence_gate_mode(core, deps, reason, false)
+}
+
+/// `read`: also from COMPROMISED, where reads stay allowed and writes are
+/// frozen (§13.2). Every exit returns to the vault's open state.
+pub(super) fn presence_gate_mode(
+    core: &Arc<Mutex<VaultCore>>,
+    deps: &Deps,
+    reason: &str,
+    read: bool,
+) -> Result<(), OpOutcome> {
     {
         let mut c = lock_core(core);
-        if c.state != VaultState::Unlocked {
+        if c.state != VaultState::Unlocked && !(read && c.state == VaultState::Compromised) {
             return Err(OpOutcome::err(ErrorCode::BadState));
         }
         c.state = VaultState::Authorizing;
@@ -32,8 +43,8 @@ pub(super) fn presence_gate(
     }
     let mut c = lock_core(core);
     if c.state == VaultState::Authorizing {
-        c.state = VaultState::Unlocked;
-        deps.events.emit(ev_state(VaultState::Unlocked));
+        c.state = c.open_state();
+        deps.events.emit(ev_state(c.state));
     }
     Err(OpOutcome::err(ErrorCode::PresenceDenied))
 }
@@ -68,8 +79,8 @@ macro_rules! finish_authorized {
             ) -> Result<Value, Ec> = &$body;
             body(store, vk)
         };
-        c.state = Vs::Unlocked;
-        $deps.events.emit(ev_state(Vs::Unlocked));
+        c.state = c.open_state();
+        $deps.events.emit(ev_state(c.state));
         match result {
             Ok(extra) => {
                 c.note_authorization();
@@ -91,7 +102,7 @@ pub fn reveal(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOut
     };
     {
         let c = lock_core(core);
-        if c.state != VaultState::Unlocked {
+        if c.state != VaultState::Unlocked && c.state != VaultState::Compromised {
             return OpOutcome::err(ErrorCode::BadState);
         }
     }
@@ -99,7 +110,7 @@ pub fn reveal(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOut
         deps.events.emit(ev_capture_unsafe("reveal"));
         return OpOutcome::err(ErrorCode::CaptureUnsafe);
     }
-    if let Err(o) = presence_gate(core, deps, "Source Vault: reveal one item") {
+    if let Err(o) = presence_gate_mode(core, deps, "Source Vault: reveal one item", true) {
         return o;
     }
     finish_authorized!(core, deps, move |store: &mut crate::storage::VaultStore,
