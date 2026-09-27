@@ -1,0 +1,40 @@
+# The deployable provider service (spec v0.4 §1.1, §11): an HTTP adapter
+# over vault-provider-core plus S3 stores. A separate deployable with its
+# own workspace and lockfile — a separate supply-chain scope (§17.1a):
+# nothing here enters the helper's or the app's dependency graph.
+[workspace]
+
+[package]
+name = "vault-provider"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+vault-provider-core = { path = "../vault-provider-core" }
+vault-proto = { path = "../vault-proto" }
+axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "signal"] }
+serde_json = "1"
+sha2 = "0.11"
+hmac = "0.13"
+getrandom = "0.4"
+# A lean S3 client (SigV4 by hand, conditional headers) over reqwest with
+# rustls on the pure-Rust ring provider and platform certificate roots.
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+[lib]
+name = "vault_provider"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vault-provider"
+path = "src/main.rs"
+
+[dev-dependencies]
+reqwest = { version = "0.13", default-features = false, features = ["blocking"] }
+
+[profile.release]
+panic = "abort"
