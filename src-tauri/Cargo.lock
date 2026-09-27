@@ -11,6 +11,7 @@ dependencies = [
  "axum",
  "axum-server",
  "base64 0.23.1",
+ "block2 0.6.2",
  "chrono",
  "cocoa",
  "core-graphics 0.23.2",
@@ -26,6 +27,8 @@ dependencies = [
  "mdns-sd",
  "notify",
  "objc",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
  "procfs",
  "qrcode",
  "rand 0.10.2",
@@ -47,6 +50,8 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "uuid",
+ "vault-coordinator",
+ "vault-proto",
  "windows 0.58.0",
  "x11",
  "zbus 4.4.0",
@@ -7351,6 +7356,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault-coordinator"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2 0.11.0",
+ "vault-proto",
+]
+
+[[package]]
 name = "vault-proto"
 version = "0.1.0"
 dependencies = [
@@ -7387,6 +7401,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "source-vault-helper",
+ "vault-coordinator",
  "vault-proto",
  "vault-provider-core",
 ]

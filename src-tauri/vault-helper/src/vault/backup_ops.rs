@@ -54,9 +54,26 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         }
         let me = SeDevice::load(&c.vault_dir)?;
         let (store, vk) = (c.store.as_ref().ok_or(ErrorCode::Internal)?, c.vk.as_ref().ok_or(ErrorCode::Internal)?);
-        let seen = seen::load(&store.conn)?.ok_or(ErrorCode::BadState)?; // the create has not committed
         let reg = log::read_state(&store.dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
-        let staging = publish::stage_publish(store, &reg, vk, &me, &seen, Vec::new())?;
+        let staging = match seen::load(&store.conn)? {
+            Some(seen) => {
+                let st = publish::stage_publish(store, &reg, vk, &me, &seen, Vec::new())?;
+                if publish::unchanged(store, &st)? {
+                    return Ok(json!({ "nothing_to_publish": true }));
+                }
+                st
+            }
+            // The first `create` never committed (e.g. a restart dropped
+            // its staged session): stage it again from the pending record.
+            None => {
+                let p = pending::load(&store.conn)?.filter(|p| p.ops.contains(&pending::PendingOp::VaultCreate)).ok_or(ErrorCode::BadState)?;
+                let handle: String = crate::storage::kv::get(&store.conn, "recovery_handle")?.ok_or(ErrorCode::BadState)?;
+                let seen_auth = seen::Seen { generation: 0, manifest_hash: crate::storage::header::Hex32([0; 32]), state_commit: crate::storage::header::Hex32([0; 32]), recovery_auth: p.recovery_auth_updates };
+                let mut st = publish::stage_create(store, &reg, vk, &me, vault_proto::handle::handle_key(&handle), seen_auth.auth_entries()?)?;
+                st.carries_pending = true;
+                st
+            }
+        };
         let t = transfer_for(&staging);
         let out = staging_summary(&t, &staging);
         c.provider.publish = Some(PublishSession { t, staging });

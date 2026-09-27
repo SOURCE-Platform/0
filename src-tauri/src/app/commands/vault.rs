@@ -11,12 +11,25 @@ use serde_json::{json, Value};
 #[cfg(target_os = "macos")]
 use crate::core::vault_client;
 
+/// Ops after which the backup worker runs a cycle (§11.3.2: the change
+/// is published — or, for a vault-wide change, tracked as pending).
+#[cfg(target_os = "macos")]
+const BACKUP_AFTER: [&str; 11] = [
+    "unlock", "begin_recovery_unlock", "add_item", "update_item", "delete_item", "resolve_conflict",
+    "change_master_password", "rotate_recovery_key", "revoke_device", "enroll_ack", "import_dashlane",
+];
+
 /// One blocking op on a runtime worker thread.
 #[cfg(target_os = "macos")]
 async fn call(frame: Value) -> Result<Value, String> {
-    tauri::async_runtime::spawn_blocking(move || vault_client::request(frame))
+    let op = frame.get("op").and_then(Value::as_str).unwrap_or("").to_string();
+    let resp = tauri::async_runtime::spawn_blocking(move || vault_client::request(frame))
         .await
-        .map_err(|e| format!("vault task join failed: {e}"))?
+        .map_err(|e| format!("vault task join failed: {e}"))??;
+    if resp["ok"] == true && BACKUP_AFTER.contains(&op.as_str()) {
+        crate::core::vault_backup::worker::trigger(crate::core::vault_backup::worker::Trigger::Now);
+    }
+    Ok(resp)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -28,7 +41,7 @@ async fn call(_frame: Value) -> Result<Value, String> {
 /// main thread. SOURCE is the active app when the user clicks; without
 /// this the helper's panel — or its Touch ID sheet — opens unfocused and
 /// can sit behind our own window (UI-02).
-async fn yield_activation(app: tauri::AppHandle) {
+pub(super) async fn yield_activation(app: tauri::AppHandle) {
     let (tx, rx) = std::sync::mpsc::channel();
     let queued = app.run_on_main_thread(move || {
         crate::platform::activation::yield_activation_to(
@@ -65,9 +78,17 @@ pub async fn vault_state() -> Result<Value, String> {
 
 /// First-device vault creation (UNINITIALIZED only). The helper's secure
 /// panel collects the new master password; nothing secret crosses here.
+/// `handle` is the public recovery handle (§11.5). The staged `create`
+/// goes to the backup worker, which posts it even while the vault is
+/// locked (§11.3.2).
 #[tauri::command]
-pub async fn vault_setup(app: tauri::AppHandle) -> Result<Value, String> {
-    call_with_panel(app, json!({"op": "setup_vault"})).await
+pub async fn vault_setup(app: tauri::AppHandle, handle: String) -> Result<Value, String> {
+    let resp = call_with_panel(app, json!({"op": "setup_vault", "handle": handle})).await?;
+    #[cfg(target_os = "macos")]
+    if let Some(p) = resp.get("publication").filter(|p| !p.is_null()) {
+        crate::core::vault_backup::worker::trigger(crate::core::vault_backup::worker::Trigger::Staged(p.clone()));
+    }
+    Ok(resp)
 }
 
 /// Unlock via the helper's secure panel (§1.5 begin_recovery_unlock,

@@ -26,7 +26,10 @@ import {
   vaultUnlockWithRecoveryKey,
   type VaultState,
 } from "@/lib/vault";
+import { BackupStatusLine } from "./BackupStatusLine";
 import { DevicesPanel } from "./DevicesPanel";
+import { RecoverCard } from "./RecoverCard";
+import { SetupCard } from "./SetupCard";
 import { ItemList } from "./ItemList";
 import { AddLoginForm } from "./AddLoginForm";
 
@@ -158,24 +161,17 @@ export function VaultPage() {
           />
         )}
         {state === "uninitialized" && (
-          <div className="rounded-2xl border border-border/70 bg-black/10 p-6">
-            <div className="flex items-center gap-3">
-              <KeyRound className="h-5 w-5 text-foreground" />
-              <h2 className="text-lg font-medium text-foreground">Create your vault</h2>
-            </div>
-            <p className="mt-2 max-w-[60ch] text-sm leading-6 text-muted-foreground">
-              Choosing a master password happens in the helper's native secure panel —
-              the password is never visible to this window. After creation the vault
-              starts locked.
-            </p>
-            <button
-              onClick={() => run(vaultSetup)}
-              disabled={busy}
-              className="mt-4 cursor-pointer rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {busy ? "Waiting for the secure panel…" : "Create vault"}
-            </button>
-          </div>
+          <>
+            <SetupCard busy={busy} onCreate={(handle) => run(() => vaultSetup(handle))} />
+            <RecoverCard onDone={refreshState} />
+          </>
+        )}
+        {state === "recovering" && (
+          <StatusCard
+            icon={<KeyRound className="h-5 w-5 text-foreground" />}
+            title="Recovering your vault"
+            body="Recovery is in progress. Follow the helper's prompts; the vault opens when it finishes."
+          />
         )}
         {(state === "locked" || state === "unlocking") && (
           <div className="rounded-2xl border border-border/70 bg-black/10 p-6">
@@ -221,8 +217,9 @@ export function VaultPage() {
             check for one op (§13.3). Keep the list mounted through it: an
             in-flight reveal resolves into ItemList's state, and swapping in
             a status card would unmount it and drop the revealed secret. */}
-        {(state === "unlocked" || state === "authorizing") && (
+        {(state === "unlocked" || state === "authorizing" || state === "backing_up" || state === "syncing") && (
           <div className="space-y-4">
+            <BackupStatusLine />
             <div className="flex items-center justify-between">
               {state === "authorizing" ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">

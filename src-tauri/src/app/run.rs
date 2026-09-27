@@ -154,7 +154,11 @@ pub fn run() {
             vault_confirm_enrollment,
             vault_cancel_enrollment,
             vault_list_devices,
-            vault_revoke_device
+            vault_revoke_device,
+            vault_backup_status,
+            vault_backup_now,
+            vault_recovery_start,
+            vault_recovery_finish
         ])
         .on_window_event(|window, event| {
             // Standard tray behavior: closing the window hides it to the

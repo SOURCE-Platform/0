@@ -13,6 +13,9 @@ export type VaultState =
   | "unlocking"
   | "unlocked"
   | "authorizing"
+  | "backing_up"
+  | "syncing"
+  | "recovering"
   | "error"
   | "compromised"
   | "helper-unavailable"
@@ -54,8 +57,50 @@ export async function vaultState(): Promise<VaultState> {
   return (resp.state as VaultState) ?? "unknown";
 }
 
-export async function vaultSetup(): Promise<void> {
-  await invoke("vault_setup");
+/**
+ * Create the vault. `handle` is the public recovery name (it can be an
+ * email address) used to find the backup after losing every device.
+ */
+export async function vaultSetup(handle: string): Promise<void> {
+  await invoke("vault_setup", { handle });
+}
+
+export interface BackupStatus {
+  state: string;
+  last_success: number | null;
+  last_error: string | null;
+  attempts: number;
+  stale: boolean;
+}
+
+export async function vaultBackupStatus(): Promise<{ status: BackupStatus; provider: string | null }> {
+  return invoke("vault_backup_status");
+}
+
+export async function vaultBackupNow(): Promise<void> {
+  await invoke("vault_backup_now");
+}
+
+export function onBackupStatus(handler: (s: BackupStatus) => void): Promise<UnlistenFn> {
+  return listen<BackupStatus>("vault:backup", (e) => handler(e.payload));
+}
+
+export interface RecoveryPreview {
+  vault_id: string;
+  generation: number;
+  created_at: number;
+  item_count: number;
+  registry_head_prefix: string;
+}
+
+/** Find the backup by recovery name and check it (the helper's own panel asks for the secret). */
+export async function vaultRecoveryStart(handle: string, kind: "mp" | "rk"): Promise<RecoveryPreview> {
+  const resp = await invoke<{ preview: RecoveryPreview }>("vault_recovery_start", { handle, kind });
+  return resp.preview;
+}
+
+export async function vaultRecoveryFinish(): Promise<void> {
+  await invoke("vault_recovery_finish");
 }
 
 /**
@@ -178,6 +223,25 @@ export function vaultErrorMessage(code: string): string {
       return "The security update didn't finish. The vault is locked; unlock to retry.";
     case "INVALID_INPUT":
       return "That input isn't valid.";
+    // v0.4 backup and recovery (§15 copy).
+    case "HANDLE_TAKEN":
+      return "That recovery name is taken — choose another.";
+    case "KDF_POLICY_VIOLATION":
+      return "The backup service returned unsupported settings — recovery stopped.";
+    case "RECOVERY_METADATA_MISMATCH":
+      return "The backup service returned inconsistent data — recovery stopped.";
+    case "RECOVERY_THROTTLED":
+      return "Too many recovery attempts — try again later, or recover with your Recovery Key.";
+    case "AUTH_INVALID":
+      return "No backup matched that recovery name and password or Recovery Key.";
+    case "BACKUP_UNAVAILABLE":
+      return "The backup service can't be reached right now. Your vault keeps working on this Mac.";
+    case "BACKUP_CONFLICT":
+      return "Two devices changed the vault — review.";
+    case "BACKUP_ACCESS_LOST":
+      return "Backup access lost — this Mac may have been removed, or your vault may have been recovered on another device. If you did not do this, treat it as a security incident.";
+    case "CONFLICT_PENDING":
+      return "This item was changed on two devices — choose which version to keep.";
     default:
       return code;
   }

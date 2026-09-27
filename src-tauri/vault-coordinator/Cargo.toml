@@ -1,0 +1,18 @@
+[package]
+name = "vault-coordinator"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "Main-process backup coordinator for the credential vault (spec v0.4 §11.1): drives helper ops and a provider transport. Holds no secrets."
+publish = false
+
+# Pure logic over two traits (helper ops, provider transport); every
+# dependency is already in the main app's graph.
+[dependencies]
+vault-proto = { path = "../vault-proto" }
+serde_json = "1"
+sha2 = "0.11"
+
+[lib]
+name = "vault_coordinator"
+path = "src/lib.rs"

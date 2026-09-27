@@ -33,6 +33,8 @@ pub struct Staging {
     /// The transition carries the pending local change (§11.3.2): its
     /// commit is REMOTE_COMMITTED for it.
     pub carries_pending: bool,
+    /// The staged manifest bytes (to exclude the index from the digest).
+    pub body_manifest: Vec<u8>,
 }
 
 /// Finish a staged state into a transition (also used by §11.8 finalize).
@@ -65,6 +67,7 @@ pub fn finish_transition(
         new_auth,
         blobs: staged.blobs,
         carries_pending: false,
+        body_manifest: staged.manifest.encode(),
     })
 }
 
@@ -116,7 +119,29 @@ pub fn committed(store: &VaultStore, st: &Staging, generation: u64, commit: [u8;
     if st.carries_pending {
         super::pending::clear(&store.conn)?; // REMOTE_COMMITTED
     }
+    crate::storage::kv::put(&store.conn, PUBLISHED_KEY, &crate::crypto::hex::encode(content_digest(st)))?;
     Ok(s)
+}
+
+const PUBLISHED_KEY: &str = "published_content";
+
+/// A digest of everything a staging publishes except the per-generation
+/// index, manifest and checkpoint: equal digests mean nothing changed.
+pub fn content_digest(st: &Staging) -> [u8; 32] {
+    use sha2::Digest;
+    let mut h = sha2::Sha256::new();
+    let index = vault_proto::backup::manifest::SignedManifest::decode(&st.body_manifest).map(|m| m.object_index_hash).ok();
+    for k in st.blobs.keys().filter(|k| Some(**k) != index) {
+        h.update(k);
+    }
+    h.finalize().into()
+}
+
+/// Whether `st` would publish exactly what the last commit published and
+/// carries no pending change (§11.3: no empty generations).
+pub fn unchanged(store: &VaultStore, st: &Staging) -> Result<bool, ErrorCode> {
+    let last: Option<String> = crate::storage::kv::get(&store.conn, PUBLISHED_KEY)?;
+    Ok(!st.carries_pending && last == Some(crate::crypto::hex::encode(content_digest(st))))
 }
 
 /// The public recovery-auth updates for the classes whose secret the

@@ -1,5 +1,5 @@
 [workspace]
-members = ["vault-helper", "vault-proto", "vault-provider-core", "vault-tests"]
+members = ["vault-helper", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-tests"]
 resolver = "2"
 
 [package]
@@ -69,6 +69,14 @@ objc = "0.2"
 # drift-prone reimplementation. Runtime separation is unchanged: vault
 # secrets still live only in the helper process.
 source-vault-helper = { path = "vault-helper" } # lib name: vault_helper
+# v0.4 backup coordinator (main-process flows; no secrets) and the
+# provider HTTPS transport over Apple's URLSession: the objc2 0.6 family is
+# already in the graph through Tauri, so only features are enabled here.
+vault-coordinator = { path = "vault-coordinator" }
+vault-proto = { path = "vault-proto" }
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "block2", "NSData", "NSError", "NSString", "NSURL", "NSURLRequest", "NSURLResponse", "NSURLSession", "NSDictionary"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.58", features = [

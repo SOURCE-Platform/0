@@ -33,6 +33,9 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
     // dev builds without a signed helper bundle stay fully usable.
     #[cfg(target_os = "macos")]
     crate::core::vault_client::init(app.handle());
+    // v0.4 backup worker (§11.3.2): idle until a vault op or its timer.
+    #[cfg(target_os = "macos")]
+    crate::core::vault_backup::worker::start(app.handle().clone());
     tauri::async_runtime::block_on(async {
         let db = Arc::new(
             Database::init()
