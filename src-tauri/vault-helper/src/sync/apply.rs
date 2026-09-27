@@ -94,23 +94,27 @@ pub fn apply(
     }
     let signer = rstate.active_device(&remote.manifest.signer_device_id).ok_or(ErrorCode::DeviceNotAuthorized)?;
     remote.manifest.verify(&signer.sign_pub)?;
-    // The VK of the committed state.
-    // The VK of the committed state: ours, or a newer one from our own
-    // envelope. `None` only when our own pending rotation is ahead of it
-    // (§11.3): then our chain and the manifest signature anchor it, and
-    // its revisions wait for their authors' re-seal.
+    // The VK of the committed state. With a pending local rotation, the
+    // generation *number* says nothing about the key: another device may
+    // have rotated to the same number with a different VK (§11.3 rule 2).
+    // - our pending rotation is ahead of an unchanged remote → `None`: our
+    //   chain and the manifest signature anchor it;
+    // - no local rotation and the same generation → our VK;
+    // - the remote moved past our base → the VK from our own envelope.
     let local_gen = store.header.vk_generation;
-    let remote_vk: Option<SecretBytes<32>> = if remote.vk_generation == local_gen {
+    let base_gen = pending.as_ref().map_or(local_gen, |p| p.base.vk_generation);
+    let rotated = base_gen < local_gen;
+    let remote_vk: Option<SecretBytes<32>> = if rotated && remote.vk_generation == base_gen {
+        None
+    } else if !rotated && remote.vk_generation == local_gen {
         Some(SecretBytes::new(*vk.expose()))
-    } else if remote.vk_generation > local_gen {
+    } else if remote.vk_generation > base_gen {
         let env: DeviceEnvelopeFile = serde_json::from_slice(get(&Role::Env { device_id: me })?).map_err(|_| ErrorCode::WrapCorrupt)?;
         let payload = open_env(&env)?;
         if payload.vk_generation != remote.vk_generation {
             return Err(ErrorCode::ManifestMismatch);
         }
         Some(payload.vk)
-    } else if pending.is_some() {
-        None
     } else {
         return Err(ErrorCode::ManifestMismatch);
     };
@@ -178,19 +182,32 @@ pub fn apply(
     let (mut store, vk) = match remote_vk {
         Some(rvk) if !keep_local => {
             let dir = store.dir.clone();
-            let reseal = remote.vk_generation != local_gen;
+            let reseal = rvk.expose() != vk.expose();
             adopt(store, &committed, reseal.then_some((&vk, &rvk)))?;
             report.adopted_singletons = true;
             report.adopted_vk = reseal;
-            (VaultStore::open(&dir)?, rvk)
+            let store = VaultStore::open(&dir)?;
+            // A dropped pending revocation revoked nobody remotely: forget
+            // local revoked-author marks for devices still active (§11.3
+            // adoption path — no false refusals afterwards).
+            for d in rstate.devices.iter().filter(|d| !d.revoked) {
+                revoked::forget(&store.conn, &d.device_id)?;
+            }
+            (store, rvk)
         }
         _ => (store, vk),
     };
     // Revisions: those sealed under our current generation merge; others
     // (a rotation we are ahead of) wait for their authors to re-seal
-    // them (§11.3, BK-27) — neither admitted nor counted.
+    // them (§11.3, BK-27) — neither admitted nor counted, except a revoked
+    // author's, which never will be re-sealed: refused and counted once.
     let gen = store.header.vk_generation;
-    let rows: Vec<RevisionRow> = incoming.into_iter().filter(|r| r.vk_generation == gen).collect();
+    let (rows, stale): (Vec<RevisionRow>, Vec<RevisionRow>) = incoming.into_iter().partition(|r| r.vk_generation == gen);
+    for r in &stale {
+        if revoked::refuses(&store.conn, r)? {
+            rev_state::count_refused_once(&store.conn, r, crate::storage::revisions::REFUSED_REVOKED_AUTHOR)?;
+        }
+    }
     let target = store.flip_target(store.header.clone());
     {
         let tx = store.conn.unchecked_transaction().map_err(|_| ErrorCode::DbCorrupt)?;

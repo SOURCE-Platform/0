@@ -53,6 +53,16 @@ pub fn count_refused(conn: &Connection, record_id: &str, reason: u8) -> Result<(
     Ok(())
 }
 
+/// Count a refusal of this specific revision at most once, however often
+/// a provider state keeps listing it (§3.2 "N changes … were not accepted").
+pub fn count_refused_once(conn: &Connection, rev: &RevisionRow, reason: u8) -> Result<(), ErrorCode> {
+    let fresh = db(conn.execute("INSERT OR IGNORE INTO refused_once (revision_id) VALUES (?1)", params![rev.revision_id.as_slice()]))?;
+    if fresh == 1 {
+        count_refused(conn, &rev.record_id, reason)?;
+    }
+    Ok(())
+}
+
 /// Total refusals per reason across the vault (`quarantine_status`).
 pub fn refused_totals(conn: &Connection) -> Result<Vec<(u8, u64)>, ErrorCode> {
     let mut stmt = db(conn.prepare("SELECT reason, SUM(count) FROM refused_revs GROUP BY reason ORDER BY reason"))?;

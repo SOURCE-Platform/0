@@ -44,6 +44,20 @@ pub fn tmp(tag: &str) -> PathBuf {
     d
 }
 
+/// Recursive copy (provider-store snapshots for fork scenarios).
+pub fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap() {
+        let e = e.unwrap();
+        let dst = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            copy_tree(&e.path(), &dst);
+        } else {
+            std::fs::copy(e.path(), dst).unwrap();
+        }
+    }
+}
+
 pub fn sha(b: &[u8]) -> [u8; 32] {
     Sha256::digest(b).into()
 }
@@ -66,6 +80,12 @@ impl Cloud {
         let dir = tmp(&format!("{tag}-cloud"));
         let fs = Arc::new(FsStores::new(&dir));
         Cloud { p: Arc::new(Provider::with_fs(Config::new(ORIGIN, [0x5e; 32]), fs.clone())), fs, dir }
+    }
+
+    /// A second provider instance over an existing store directory.
+    pub fn at(dir: &std::path::Path) -> Cloud {
+        let fs = Arc::new(FsStores::new(dir));
+        Cloud { p: Arc::new(Provider::with_fs(Config::new(ORIGIN, [0x5e; 32]), fs.clone())), fs, dir: dir.to_path_buf() }
     }
 
     pub fn send(&self, method: &str, path: &str, auth: Option<&str>, body: &[u8]) -> Response {
@@ -214,7 +234,19 @@ impl Mac {
         let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
         let store = self.store.take().unwrap();
         let vk = self.vk.take().unwrap();
-        match apply::apply(store, vk, &remote, &index, &blobs, self.dev.device_id(), &open)? {
+        // Like the helper op: on failure reopen the committed vault (the
+        // apply is transactional/journaled) and keep the key resident.
+        let keep = SecretBytes::new(*vk.expose());
+        let applied = apply::apply(store, vk, &remote, &index, &blobs, self.dev.device_id(), &open);
+        let applied = match applied {
+            Ok(a) => a,
+            Err(e) => {
+                self.store = VaultStore::open(&self.dir).ok();
+                self.vk = Some(keep);
+                return Err(e);
+            }
+        };
+        match applied {
             Applied::Merged(rep, store, vk) => {
                 self.store = Some(store);
                 self.vk = Some(vk);

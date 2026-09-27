@@ -113,7 +113,8 @@ pub fn apply_revision(
     }
     // §3.2: a revoked author's revisions outside Admit(D) never enter.
     if super::revoked::refuses(conn, rev)? {
-        return reject(conn, rev, revisions::REFUSED_REVOKED_AUTHOR);
+        rev_state::count_refused_once(conn, rev, revisions::REFUSED_REVOKED_AUTHOR)?;
+        return Ok(MergeOutcome::Rejected(revisions::REFUSED_REVOKED_AUTHOR));
     }
     if let Some(existing) = get_row(conn, &rev.revision_id)? {
         return duplicate(conn, &existing, rev, local_vk_generation, cmp);

@@ -72,6 +72,9 @@ CREATE TABLE kv (
   key   TEXT PRIMARY KEY,
   value BLOB NOT NULL
 );
+CREATE TABLE refused_once (             -- a refused revision is counted once
+  revision_id BLOB PRIMARY KEY
+);
 CREATE TABLE revoked_authors (          -- §3.2: D revoked; Admit(D) fixed
   author TEXT PRIMARY KEY
 );

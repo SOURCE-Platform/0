@@ -56,6 +56,16 @@ pub fn record(conn: &Connection, device_id: &[u8; 16], admit: &HashSet<[u8; 32]>
     purge(conn, me)
 }
 
+/// Undo a local revocation mark that never became committed history (the
+/// §11.3 adoption path drops the pending revocation). Nothing was purged
+/// by it: at the revoker, `Admit(D)` covered every revision it held.
+pub fn forget(conn: &Connection, device_id: &[u8; 16]) -> Result<(), ErrorCode> {
+    let author = uuid_string(device_id);
+    db(conn.execute("DELETE FROM admitted_by_revoked WHERE author=?1", params![author]))?;
+    db(conn.execute("DELETE FROM revoked_authors WHERE author=?1", params![author]))?;
+    Ok(())
+}
+
 /// The revoker's side: `Admit(D)` is every D-authored revision it holds.
 pub fn record_local(conn: &Connection, device_id: &[u8; 16], me: &str) -> Result<(), ErrorCode> {
     let author = uuid_string(device_id);
