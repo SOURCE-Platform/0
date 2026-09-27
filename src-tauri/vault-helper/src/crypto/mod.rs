@@ -7,6 +7,7 @@ pub mod kdf;
 pub mod record;
 pub mod rotate;
 pub mod vectors;
+pub mod vectors_v04;
 pub mod wrap;
 
 // Moved to `vault-proto` (spec v0.4 §1.1); re-exported at their old paths.

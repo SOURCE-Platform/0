@@ -1,0 +1,36 @@
+{
+  "cases": [
+    {
+      "handle_key": "ec97e8f94b908f73a0b85499782aab59435efa2a8d6bdc4fbd9203385df325dd",
+      "input": "  Alice@Example.TEST ",
+      "normalized": "alice@example.test"
+    },
+    {
+      "handle_key": "68151f5f67cd05a938886c1cb4137ff115586d906d5aa705801314bcf0ed9478",
+      "input": "ＡＢＣ",
+      "normalized": "abc"
+    },
+    {
+      "handle_key": "25ae91a95e321ad7faaf9fa6f5aaf5562090f05e10450d86bbd4a4027cb520af",
+      "input": "Ünïcode.Handle",
+      "normalized": "ünïcode.handle"
+    },
+    {
+      "input": "ab",
+      "rejected": true
+    },
+    {
+      "input": "a b c",
+      "rejected": true
+    },
+    {
+      "input": "abc​",
+      "rejected": true
+    },
+    {
+      "input": "ab\u0007c",
+      "rejected": true
+    }
+  ],
+  "family": "XV-HANDLE"
+}
