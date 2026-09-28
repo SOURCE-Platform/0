@@ -136,8 +136,11 @@ fn hc04_crash_before_bind() {
     b.now = T0 + CLAIM_GRACE + 10;
     assert_eq!(Sim::error(&create(&b)), "HANDLE_TAKEN", "claim live: its vault state exists");
     a.now = T0 + 5;
+    ops.fail_bind.store(false, Ordering::SeqCst);
     let r = a.commit(&t, Who::Dev(&a.mac));
     assert_eq!(r.status, 200, "{}", String::from_utf8_lossy(&r.body));
+    let (claim, _) = a.fs.get(&claim_key(&a.handle_key)).unwrap().unwrap();
+    assert!(String::from_utf8_lossy(&claim).contains("\"bound\""), "the retry binds the handle");
 }
 
 /// HC-05: a stale pending claim; the owner's late retry reads it, then

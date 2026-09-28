@@ -103,6 +103,7 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
         set_status(app, |s| s.state = "not_configured".into());
         return PERIOD;
     };
+    let previous = status().state;
     set_status(app, |s| s.state = "working".into());
     let transport = ProviderHttp;
     let flows = Flows { helper: &AppHelper, transport: &transport };
@@ -115,7 +116,10 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
         Ok(None) => {
             // Nothing ran (locked, nothing staged): no verdict — keep the
             // last outcome, its failure streak and its error (§11.6).
-            set_status(app, |s| s.pending = pending);
+            set_status(app, |s| {
+                s.pending = pending;
+                s.state = previous; // nothing ran: the last verdict stands
+            });
             PERIOD
         }
         Ok(Some(ran)) => {

@@ -160,11 +160,17 @@ fn substituted_registry_error(cloud: &Cloud, mac: &Mac, handle: &str, rk: &Secre
     let mut blobs: HashMap<[u8; 32], Vec<u8>> = index.blobs().into_iter().map(|h| (h, get(h))).collect();
     let mut entries: Vec<IndexEntry> = index.entries.iter().filter(|e| e.role != Role::Registry).cloned().collect();
     entries.push(IndexEntry::of(Role::Registry, &fake_reg));
+    let fake_reg_bytes = fake_reg.clone();
     blobs.insert(sha(&fake_reg), fake_reg);
     let fake_index = ObjectIndex { entries, ..index.clone() };
     blobs.insert(fake_index.hash(), fake_index.encode());
     let mut m: SignedManifest = real.manifest.clone();
     m.object_index_hash = fake_index.hash();
+    // The manifest names the substituted registry's head, as a real
+    // attacker's would: only the checkpoint binding can still refuse it.
+    let fake_entries = vault_helper::registry::file::decode(blobs.get(&sha(&fake_reg_bytes)).unwrap()).unwrap();
+    m.registry_head = vault_helper::crypto::registry::entry_hash(fake_entries.last().unwrap()).unwrap();
+    m.signer_device_id = vault_helper::registry::device::DeviceIdentity::device_id(evil);
     let m = m.sign(evil).unwrap();
     let forged = RemoteStateBuilder::with_manifest(&state, &m.encode());
     let locate = cloud.locate(handle);
@@ -184,14 +190,31 @@ fn bk18_no_canary_in_provider_storage() {
     let vk = SecretBytes::new(*mac.vk.as_ref().unwrap().expose());
     mac.store.as_mut().unwrap().add_record(&vk, 1, format!(r#"{{"password":"{canary_pw}"}}"#).as_bytes(), meta.as_bytes()).unwrap();
     mac.publish(&cloud).unwrap();
-    let _ = recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: None }, None).map(recover::discard);
-    let canaries: Vec<Vec<u8>> = vec![
+    recover::discard(recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: None }, None).expect("the recovery ran"));
+    let h = mac.store().header.clone();
+    let pk = vault_helper::crypto::kdf::derive_pk(MP, &h.kdf.salt.0, vault_helper::storage::header::kdf_params(&h.kdf)).unwrap();
+    let ikm = |class: vault_helper::crypto::recovery_auth::RecoveryClass, s: &[u8], salt: &[u8; 16]| {
+        let mut info = class.domain().to_vec();
+        info.extend_from_slice(&h.vault_id.0);
+        vault_proto::crypto::hkdf::hkdf32(s, salt, &info).unwrap()
+    };
+    let ikm_mp = ikm(vault_helper::crypto::recovery_auth::RecoveryClass::Mp, pk.expose(), &h.auth_salt_mp.0);
+    let ikm_rk = ikm(vault_helper::crypto::recovery_auth::RecoveryClass::Rk, mac.rk.as_ref().unwrap().expose(), &h.auth_salt_rk.0);
+    let mut canaries: Vec<Vec<u8>> = vec![
+        pk.expose().to_vec(),
+        ikm_mp.expose().to_vec(),
+        ikm_rk.expose().to_vec(),
         MP.to_vec(),
         canary_pw.as_bytes().to_vec(),
         vk.expose().to_vec(),
         mac.rk.as_ref().unwrap().expose().to_vec(),
         vault_helper::crypto::hex::encode(vk.expose()).into_bytes(),
     ];
+    for i in [&ikm_mp, &ikm_rk] {
+        for counter in [0u8, 1] {
+            canaries.push(vault_proto::crypto::recovery_auth::dkp_candidate(i.expose(), counter).to_vec()); // sk_c
+        }
+    }
     let mut files = 0;
     scan(&cloud.dir, &mut |bytes| {
         files += 1;

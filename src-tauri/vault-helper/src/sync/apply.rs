@@ -82,18 +82,26 @@ pub fn apply(
             .map_or(local_entries.len(), |i| i + 1),
         None => local_entries.len(),
     };
-    chain::check_extends(&local_entries[..base_len.min(local_entries.len())], &remote_entries)?;
-    let rstate = chain::verify_chain_with(&remote_entries, &vid, &EpochPolicy::CheckpointAnchored)?;
+    // The served chain and manifest verify on their own terms first; a
+    // divergence from ours is fork evidence only when a device of *our*
+    // registry signed the served manifest (SPEC-B2): anything else is
+    // unverifiable and refused with no state change.
+    let not_fork = |e: ErrorCode| if e == ErrorCode::RegistryFork { ErrorCode::SignatureInvalid } else { e };
+    let rstate = chain::verify_chain_with(&remote_entries, &vid, &EpochPolicy::CheckpointAnchored).map_err(not_fork)?;
     if rstate.head != remote.manifest.registry_head {
         return Err(ErrorCode::ManifestMismatch);
+    }
+    let signer = rstate.active_device(&remote.manifest.signer_device_id).ok_or(ErrorCode::DeviceNotAuthorized)?;
+    remote.manifest.verify(&signer.sign_pub)?;
+    if let Err(e) = chain::check_extends(&local_entries[..base_len.min(local_entries.len())], &remote_entries) {
+        let verified = e == ErrorCode::RegistryFork && super::fetch::signed_by_our_registry(&store, remote)?;
+        return Err(if verified { e } else { not_fork(e) });
     }
     match rstate.devices.iter().find(|d| d.device_id == me) {
         Some(d) if d.revoked => return Ok(Applied::Revoked(store)),
         Some(_) => {}
         None => return Err(ErrorCode::DeviceNotAuthorized), // EV-05: unable to verify
     }
-    let signer = rstate.active_device(&remote.manifest.signer_device_id).ok_or(ErrorCode::DeviceNotAuthorized)?;
-    remote.manifest.verify(&signer.sign_pub)?;
     // The VK of the committed state. With a pending local rotation, the
     // generation *number* says nothing about the key: another device may
     // have rotated to the same number with a different VK (§11.3 rule 2).
@@ -119,8 +127,14 @@ pub fn apply(
     remote.checkpoint.verify_binding(&remote_vk, &remote.manifest, &rstate.head, rstate.epoch)?;
     // §11.3 rule 2: a device this Mac is revoking that authorized entries
     // after the base is fork evidence, never adopted (verified above).
-    if pending.as_ref().is_some_and(|p| p.ops.contains(&pending::PendingOp::Revocation)) {
+    if pending.as_ref().is_some_and(|p| p.all_ops().contains(&pending::PendingOp::Revocation)) {
         for e in remote_entries.iter().skip(base_len) {
+            // A recovery epoch that leaves this device active is not a
+            // conformant total-loss recovery (S-4 revokes every prior
+            // device): with a revocation pending it is fork evidence.
+            if e.kind == crate::crypto::registry::EntryKind::RecoveryEpoch {
+                return Err(ErrorCode::RegistryFork);
+            }
             if let Some(a) = e.authorizer {
                 if revoked::is_revoked(&store.conn, &uuid_string(&a))? {
                     return Err(ErrorCode::RegistryFork);
@@ -190,6 +204,10 @@ pub fn apply(
         Some(p) if pending::base_unchanged(p, &header) => true,
         Some(p) => {
             let mut p = p.clone();
+            p.ops = p.all_ops();
+            p.security_driven = p.security();
+            p.awaiting_redo.clear();
+            p.awaiting_security = false;
             p.needs_user = true;
             pending::save(&store.conn, &p)?;
             report.needs_user = true;

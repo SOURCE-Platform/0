@@ -70,6 +70,31 @@ pub struct PendingRemote {
     /// singletons (§11.3.2 "state_get shows … the change").
     #[serde(default)]
     pub in_flight: Vec<InFlight>,
+    /// Components adopted away (`needs_user`) that the user has not redone
+    /// yet, while another change proceeds: their redo prompt and — for
+    /// security-driven work — their warning stay (§11.3 rule 2).
+    #[serde(default)]
+    pub awaiting_redo: Vec<PendingOp>,
+    #[serde(default)]
+    pub awaiting_security: bool,
+}
+
+impl PendingRemote {
+    /// Everything the user must still see as not effective remotely.
+    pub fn all_ops(&self) -> Vec<PendingOp> {
+        let mut ops = self.ops.clone();
+        ops.extend(self.awaiting_redo.iter().filter(|o| !self.ops.contains(o)));
+        ops
+    }
+
+    /// The record's own updates are stale, or something awaits a redo.
+    pub fn needs_redo(&self) -> bool {
+        self.needs_user || !self.awaiting_redo.is_empty()
+    }
+
+    pub fn security(&self) -> bool {
+        self.security_driven || self.awaiting_security
+    }
 }
 
 /// One staged transition carrying this record, as posted.
@@ -78,6 +103,10 @@ pub struct InFlight {
     pub version: u64,
     /// The singletons the provider holds once it commits.
     pub base_after: Base,
+    /// For a `create`: the handle it binds (a replaced create that lands
+    /// late binds its own handle, which must then be the one kept).
+    #[serde(default)]
+    pub handle: Option<String>,
 }
 
 const IN_FLIGHT_KEEP: usize = 4;
@@ -105,10 +134,16 @@ pub fn add(
     updates: Vec<SeenAuth>,
     now: u64,
 ) -> Result<PendingRemote, ErrorCode> {
-    // A change made over a record that needs the user is the redo: it
-    // starts afresh on the adopted base (§11.3 singleton rule).
+    // A change made over a record that needs the user starts afresh on
+    // the adopted base (§11.3 singleton rule); every other adopted-away
+    // component stays awaiting its own redo, with its warning.
     let prior = load(conn)?;
     let version = prior.as_ref().map_or(0, |p| p.version) + 1;
+    let (awaiting, awaiting_security) = match &prior {
+        Some(p) if p.needs_user => (p.all_ops(), p.security()),
+        Some(p) => (p.awaiting_redo.clone(), p.awaiting_security),
+        None => (Vec::new(), false),
+    };
     let mut p = prior.filter(|p| !p.needs_user).unwrap_or(PendingRemote {
         ops: Vec::new(),
         security_driven: false,
@@ -120,8 +155,12 @@ pub fn add(
         last_error: None,
         version: 0,
         in_flight: Vec::new(),
+        awaiting_redo: Vec::new(),
+        awaiting_security: false,
     });
     p.version = version;
+    p.awaiting_redo = awaiting.into_iter().filter(|o| *o != op).collect();
+    p.awaiting_security = awaiting_security && !p.awaiting_redo.is_empty();
     if !p.ops.contains(&op) {
         p.ops.push(op);
     }
@@ -146,11 +185,11 @@ pub fn base_for(conn: &Connection, current: &Header) -> Result<Base, ErrorCode> 
 
 /// A staging carrying this record is about to be posted: remember it.
 /// Returns the version it carries.
-pub fn note_staged(conn: &Connection, base_after: Base) -> Result<Option<u64>, ErrorCode> {
+pub fn note_staged(conn: &Connection, base_after: Base, handle: Option<String>) -> Result<Option<u64>, ErrorCode> {
     let Some(mut p) = load(conn)? else { return Ok(None) };
     let v = p.version;
     p.in_flight.retain(|f| f.version != v || f.base_after != base_after);
-    p.in_flight.push(InFlight { version: v, base_after });
+    p.in_flight.push(InFlight { version: v, base_after, handle });
     let excess = p.in_flight.len().saturating_sub(IN_FLIGHT_KEEP);
     p.in_flight.drain(..excess);
     save(conn, &p)?;
@@ -162,8 +201,29 @@ pub fn note_staged(conn: &Connection, base_after: Base) -> Result<Option<u64>, E
 /// otherwise it stays, rebased on what landed. Returns the cleared ops.
 pub fn settle(conn: &Connection, version: u64, landed: Base) -> Result<Vec<PendingOp>, ErrorCode> {
     let Some(mut p) = load(conn)? else { return Ok(Vec::new()) };
+    // The handle a landed `create` bound is the vault's recovery handle.
+    if let Some(h) = p.in_flight.iter().find(|f| f.version == version).and_then(|f| f.handle.clone()) {
+        kv::put(conn, crate::vault::rk_ops::HANDLE_KEY, &h)?;
+    }
     if p.version == version {
-        clear(conn)?;
+        if p.awaiting_redo.is_empty() {
+            clear(conn)?;
+        } else {
+            // What still awaits a redo stays, prompt and warning intact.
+            let rest = PendingRemote {
+                ops: std::mem::take(&mut p.awaiting_redo),
+                security_driven: p.awaiting_security,
+                recovery_auth_updates: Vec::new(),
+                base: landed,
+                needs_user: true,
+                attempts: 0,
+                last_error: None,
+                in_flight: Vec::new(),
+                awaiting_security: false,
+                ..p.clone()
+            };
+            save(conn, &rest)?;
+        }
         return Ok(p.ops);
     }
     // Updates the landed state already carries are not re-sent (the

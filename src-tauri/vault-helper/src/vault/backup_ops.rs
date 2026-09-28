@@ -90,7 +90,7 @@ pub fn restage_create(store: &VaultStore, reg: &crate::registry::chain::Registry
     let handle: String = crate::storage::kv::get(&store.conn, super::rk_ops::HANDLE_KEY)?.ok_or(ErrorCode::BadState)?;
     let seen_auth = seen::Seen { generation: 0, manifest_hash: crate::storage::header::Hex32([0; 32]), state_commit: crate::storage::header::Hex32([0; 32]), recovery_auth: p.recovery_auth_updates };
     let mut st = publish::stage_create(store, reg, vk, me, vault_proto::handle::handle_key(&handle), seen_auth.auth_entries()?)?;
-    st.carries_pending = publish::carry(store)?;
+    st.carries_pending = publish::carry_create(store, Some(handle))?;
     Ok(st)
 }
 
@@ -180,7 +180,7 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
             // A transient failure keeps the fully staged publication for a
             // byte-identical re-send (also while LOCKED); anything the
             // provider refused on its merits needs a fresh staging.
-            resend = status == 0 || status == 408 || status == 429 || status >= 500;
+            resend = transient(status);
             json!({ "committed": false, "sync_required": code == "STATE_MOVED", "error_code": code, "will_resend": resend })
         };
         if before.is_some() {
@@ -196,3 +196,11 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
 }
+
+/// Failures worth a byte-identical re-send (§11.2/§11.3.2): unreachable,
+/// timeouts, throttling, provider errors, and a GC race on a referenced
+/// blob (`412`, re-uploaded by the re-send).
+pub fn transient(status: u64) -> bool {
+    matches!(status, 0 | 408 | 412 | 429) || status >= 500
+}
+

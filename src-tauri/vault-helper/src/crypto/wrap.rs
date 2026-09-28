@@ -96,9 +96,8 @@ impl DeviceEnvelopePayload {
         let wrapped_at = reader
             .get_uint(TAG_WRAPPED_AT)?
             .ok_or(CryptoError::FieldPresence)?;
-        let vk_generation = reader
-            .get_uint(TAG_VK_GENERATION)?
-            .ok_or(CryptoError::FieldPresence)? as u32;
+        let vk_generation = u32::try_from(reader.get_uint(TAG_VK_GENERATION)?.ok_or(CryptoError::FieldPresence)?)
+            .map_err(|_| CryptoError::FieldPresence)?;
         Ok(DeviceEnvelopePayload {
             vk,
             wrapped_at,

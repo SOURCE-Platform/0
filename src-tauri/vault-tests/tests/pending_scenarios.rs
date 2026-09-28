@@ -170,3 +170,32 @@ fn resending_the_same_transition_is_idempotent() {
     assert_eq!(pending_ops(&a), None);
 }
 
+
+/// Review NEW-B2 / SPEC-I14: a revocation adopted away (needs_user) keeps
+/// its redo prompt and its security warning while another change — here
+/// an MP change — is made and published; only redoing it clears them.
+#[test]
+fn an_unredone_revocation_survives_another_change() {
+    let (cloud, mut a, mut b, c) = trio("await-redo");
+    let d = Mac::new("await-redo-d");
+    revoke(&mut a, c.dev.device_id());
+    b.enroll(&cloud, &d);
+    assert_eq!(a.publish(&cloud), Err(ErrorCode::StateMoved));
+    assert!(a.sync(&cloud).unwrap().unwrap().needs_user);
+    mp_change(&mut a, MP, MP2); // another change first
+    let p = pending::load(&a.store().conn).unwrap().unwrap();
+    assert_eq!(p.awaiting_redo, vec![pending::PendingOp::Revocation]);
+    assert!(p.security() && p.needs_redo(), "warning and redo prompt stay");
+    a.publish(&cloud).expect("the MP change publishes");
+    let p = pending::load(&a.store().conn).unwrap().expect("the revocation still awaits its redo");
+    assert_eq!(p.ops, vec![pending::PendingOp::Revocation]);
+    assert!(p.needs_user && p.security_driven);
+    assert_eq!(c.read(&cloud, Operation::StateGet, None).status, 200, "C is not cut off yet");
+    let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
+    let done = vault_helper::vault::revoke_core::revoke(store, &vk, &a.dev, c.dev.device_id(), MP2, &a.rk_fresh()).unwrap();
+    a.store = Some(done.store);
+    a.vk = Some(done.vk);
+    a.publish(&cloud).expect("the redo publishes");
+    assert_eq!(pending_ops(&a), None);
+    assert_eq!(c.read(&cloud, Operation::StateGet, None).status, 401);
+}

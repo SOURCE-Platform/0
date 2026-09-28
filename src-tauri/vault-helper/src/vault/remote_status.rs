@@ -24,12 +24,13 @@ pub fn summary(p: Option<&PendingRemote>) -> Value {
     let Some(p) = p else {
         return json!({ "pending": false });
     };
-    let revocation = p.ops.contains(&PendingOp::Revocation);
+    let ops = p.all_ops();
+    let revocation = ops.contains(&PendingOp::Revocation);
     json!({
         "pending": true,
-        "ops": p.ops,
-        "security_driven": p.security_driven,
-        "needs_user": p.needs_user,
+        "ops": ops,
+        "security_driven": p.security(),
+        "needs_user": p.needs_redo(),
         "attempts": p.attempts,
         "last_error": p.last_error,
         "revocation_failed": revocation && p.attempts >= REVOCATION_FAILED_AFTER,
@@ -69,7 +70,7 @@ mod tests {
 
     fn rec(ops: Vec<PendingOp>, attempts: u32) -> PendingRemote {
         let base = Base { vk_generation: 1, kdf_salt: Hex16([0; 16]), auth_salt_mp: Hex16([0; 16]), auth_salt_rk: Hex16([0; 16]), registry_head: Hex32([0; 32]) };
-        PendingRemote { ops, security_driven: true, local_committed_at: 0, recovery_auth_updates: Vec::new(), base, needs_user: false, attempts, last_error: None, version: 1, in_flight: Vec::new() }
+        PendingRemote { ops, security_driven: true, local_committed_at: 0, recovery_auth_updates: Vec::new(), base, needs_user: false, attempts, last_error: None, version: 1, in_flight: Vec::new(), awaiting_redo: Vec::new(), awaiting_security: false }
     }
 
     /// RU-04: a pending revocation surfaces BACKUP_REVOCATION_FAILED after

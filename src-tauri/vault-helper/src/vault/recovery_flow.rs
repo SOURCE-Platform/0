@@ -130,7 +130,17 @@ pub fn recovery_complete(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome
     let run = || -> Result<Value, ErrorCode> {
         let (mut session, dir) = {
             let mut c = lock_core(core);
-            let r = c.provider.recovery.take().filter(|r| r.preview.is_some() && r.completed.is_none()).ok_or(ErrorCode::BadState)?;
+            // A completed, acknowledged attempt whose upload failed
+            // transiently is resumed as staged (no second rotation).
+            if let Some(r) = c.provider.recovery.as_ref().filter(|r| r.acknowledged) {
+                if let Some(done) = &r.completed {
+                    return Ok(staging_summary(&r.t, &done.staging));
+                }
+            }
+            if !c.provider.recovery.as_ref().is_some_and(|r| r.preview.is_some() && r.completed.is_none()) {
+                return Err(ErrorCode::BadState);
+            }
+            let r = c.provider.recovery.take().ok_or(ErrorCode::BadState)?;
             (r, c.vault_dir.clone())
         };
         let new_mp = if session.rec.class == crate::crypto::recovery_auth::RecoveryClass::Rk {
@@ -192,20 +202,27 @@ fn abort(core: &Arc<Mutex<VaultCore>>, session: RecoverySession, e: ErrorCode) -
 }
 
 /// The finalize's provider outcome. `200` → the recovered vault moves
-/// from staging into place and the device is UNLOCKED on the fresh VK;
-/// anything else discards the attempt (the provider's state is unchanged).
+/// from staging into place and the device is UNLOCKED on the fresh VK. A
+/// transient failure keeps the completed attempt for a byte-identical
+/// re-send (the finalize may even have landed); a refusal discards it.
 pub fn finalize_result(core: &Arc<Mutex<VaultCore>>, status: u64, body: &Value, deps: &Deps) -> OpOutcome {
     let run = || -> Result<Value, ErrorCode> {
         let mut c = lock_core(core);
+        let code = body["error"].as_str().unwrap_or("BACKUP_UNAVAILABLE").to_string();
+        if status != 200 && super::backup_ops::transient(status) {
+            c.provider.recovery.as_ref().filter(|r| r.completed.is_some()).ok_or(ErrorCode::BadState)?;
+            return Ok(json!({ "committed": false, "error_code": code, "will_resend": true }));
+        }
         let session = c.provider.recovery.take().ok_or(ErrorCode::BadState)?;
         let done = session.completed.ok_or(ErrorCode::BadState)?;
         let staging_dir = c.vault_dir.join(STAGING);
         if status != 200 {
             drop(done);
             let _ = std::fs::remove_dir_all(&staging_dir);
+            crate::device::identity::wipe(&c.vault_dir); // the abandoned attempt's identity
             c.state = VaultState::Uninitialized;
             deps.events.emit(ev_state(VaultState::Uninitialized));
-            return Ok(json!({ "committed": false, "error_code": body["error"].as_str().unwrap_or("BACKUP_UNAVAILABLE") }));
+            return Ok(json!({ "committed": false, "error_code": code }));
         }
         let generation = body["generation"].as_u64().ok_or(ErrorCode::ManifestMismatch)?;
         let commit = body["state_commit"].as_str().and_then(hex::decode_array::<32>).ok_or(ErrorCode::ManifestMismatch)?;

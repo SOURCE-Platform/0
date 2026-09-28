@@ -139,13 +139,20 @@ else fail "no ignored test outside the allowlist" "$IGNORED"; fi
 # --- 13. U-1 SE signing latency ------------------------------------------------------------------
 U1=$(cargo test -q -p source-vault-helper --test se_latency -- --ignored --nocapture 2>&1 | grep -E '^U-1 SE signing' | head -1)
 MEAN=$(echo "$U1" | sed -nE 's/.*mean=([0-9.]+) ms.*/\1/p')
-if [ -n "$MEAN" ] && awk "BEGIN {exit !($MEAN < 20)}"; then record "U-1 SE signing latency < 20 ms/request" PASS "$U1"
-else fail "U-1 SE signing latency < 20 ms/request" "${U1:-no measurement}"; fi
+# A measurement, not a threshold (design U-1): above ~20 ms/request the
+# design adds batch blob signing. The gate fails only if nothing was measured.
+if [ -n "$MEAN" ]; then
+    BATCH=$(awk "BEGIN {print ($MEAN < 20) ? \"per-request signing\" : \"batch blob signing indicated\"}")
+    record "U-1 SE signing latency recorded" PASS "$U1 → $BATCH"
+else fail "U-1 SE signing latency recorded" "no measurement"; fi
 
 # --- 14. EV-03 on a physical iPhone --------------------------------------------------------------
+# The xcodebuild log of the physical-device run: a real device destination
+# (never the simulator) and the EV-03 tests passing by name.
 EV03_LOG="${PHASE_F_EV03_LOG:-}"
-if [ -n "$EV03_LOG" ] && grep -qE 'EV03.*passed' "$EV03_LOG"; then
-    record "EV-03 on a physical A15+ iPhone (by name)" PASS "$(grep -cE 'EV03.*passed' "$EV03_LOG") EV-03 tests"
+if [ -n "$EV03_LOG" ] && grep -qE 'platform=iOS,(id|name)=' "$EV03_LOG" && ! grep -q 'Simulator' "$EV03_LOG" \
+        && grep -qE 'Test .*ev03[A-Za-z]*\(\).* passed' "$EV03_LOG" && ! grep -qE 'Test .*ev03.* failed' "$EV03_LOG"; then
+    record "EV-03 on a physical A15+ iPhone (by name)" PASS "$(grep -cE 'Test .*ev03.* passed' "$EV03_LOG") EV-03 tests on a device"
 else
     fail "EV-03 on a physical A15+ iPhone (by name)" "not run — needs the owner's iPhone (set PHASE_F_EV03_LOG)"
 fi

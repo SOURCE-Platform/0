@@ -53,7 +53,7 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
 
 /// The served manifest verifies under a device active in the local,
 /// already-trusted registry.
-fn signed_by_our_registry(store: &VaultStore, remote: &RemoteState) -> Result<bool, ErrorCode> {
+pub(crate) fn signed_by_our_registry(store: &VaultStore, remote: &RemoteState) -> Result<bool, ErrorCode> {
     let reg = crate::registry::log::read_state(&store.dir, &store.header.vault_id.0, &crate::registry::chain::EpochPolicy::CheckpointAnchored)?;
     Ok(reg.active_device(&remote.manifest.signer_device_id).is_some_and(|d| remote.manifest.verify(&d.sign_pub).is_ok()))
 }

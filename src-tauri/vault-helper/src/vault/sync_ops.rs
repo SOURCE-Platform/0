@@ -115,8 +115,10 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
         let dir = store.dir.clone();
         // A refused state never costs the user their unlocked vault
         // (§11.6, §15 "reject; keep local"): the VK is kept for the
-        // failure path, valid while the committed VK generation is ours.
-        let keep = (SecretBytes::new(*vk.expose()), store.header.vk_generation);
+        // failure path, valid only while the committed singletons are
+        // exactly those it was used with (an adoption may re-key at the
+        // same generation number, §11.3 rule 2).
+        let keep = (SecretBytes::new(*vk.expose()), crate::sync::pending::Base::of(&store.header));
         let me = SeDevice::load(&c.vault_dir)?;
         let (tag, vid) = (me.key_tag().to_string(), store.header.vault_id.0);
         let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
@@ -147,7 +149,7 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                 c.store = crate::storage::VaultStore::open(&dir).ok();
                 match c.store.as_ref().map(|s| s.header.clone()) {
                     None => c.state = VaultState::Error,
-                    Some(h) if h.vk_generation == keep.1 => {
+                    Some(h) if crate::sync::pending::Base::of(&h) == keep.1 => {
                         c.header = Some(h);
                         c.vk = Some(keep.0.mlock_best_effort());
                         c.state = VaultState::Unlocked;
@@ -157,12 +159,12 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                     }
                     Some(h) => {
                         c.header = Some(h);
-                        if e == ErrorCode::RegistryFork {
-                            let _ = c.store.as_ref().map(|s| crate::storage::compromised::mark(&s.conn, e));
-                        }
+                        let recorded = e != ErrorCode::RegistryFork || c.store.as_ref().is_some_and(|s| crate::storage::compromised::mark(&s.conn, e).is_ok());
                         c.provider.publish = None;
                         c.store = None;
-                        c.state = VaultState::Locked; // re-entered COMPROMISED at unlock
+                        // Re-entered COMPROMISED at unlock; evidence that
+                        // cannot be recorded fails closed to ERROR.
+                        c.state = if recorded { VaultState::Locked } else { VaultState::Error };
                     }
                 }
                 Err(e)

@@ -111,10 +111,15 @@ pub fn stage_publish(
     Ok(st)
 }
 
-/// Mark a staging of the local vault as carrying the pending record.
+/// Mark a staging of the local vault as carrying the pending record
+/// (`handle`: the handle a `create` binds).
 pub fn carry(store: &VaultStore) -> Result<Option<(u64, super::pending::Base)>, ErrorCode> {
+    carry_create(store, None)
+}
+
+pub fn carry_create(store: &VaultStore, handle: Option<String>) -> Result<Option<(u64, super::pending::Base)>, ErrorCode> {
     let base = super::pending::Base::of(&store.header);
-    Ok(super::pending::note_staged(&store.conn, base.clone())?.map(|v| (v, base)))
+    Ok(super::pending::note_staged(&store.conn, base.clone(), handle)?.map(|v| (v, base)))
 }
 
 /// A `200` for this staging: accept it only if the provider's result is

@@ -43,16 +43,19 @@ impl Provider {
         }
         let body_sha: [u8; 32] = Sha256::digest(inc.body).into();
         if t.kind == TransitionKind::Create {
-            // A `create` never writes into an existing vault's namespace;
-            // an identical re-send of the committed create stays idempotent.
-            if let Some((cur, _)) = &loaded {
-                return match replayed(cur, &t, &body_sha)? {
-                    Some(r) => Ok(r),
-                    None => Err(moved(cur)),
-                };
-            }
             let v = self.validate(None, &t, &a.signer)?;
-            self.write_blobs(&inc.vault_id, &v.blobs)?;
+            match &loaded {
+                // A `create` never writes into an existing vault's
+                // namespace. Only our own identical re-send continues — and
+                // it never short-circuits: C1/C4 still bind the handle
+                // (a crash after C3, §11.3.1 HC-04).
+                Some((cur, _)) => {
+                    if replayed(cur, &t, &body_sha)?.is_none() {
+                        return Err(moved(cur));
+                    }
+                }
+                None => self.write_blobs(&inc.vault_id, &v.blobs)?,
+            }
             return self.create_with_claim(&t, v.state, body_sha, inc.now);
         }
         let mut current = loaded;

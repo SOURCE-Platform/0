@@ -232,3 +232,62 @@ fn fork_evidence_through_the_op_must_verify() {
     fx.remove_dir();
 }
 
+
+/// SPEC-B2 (apply path): the next generation, correctly chained, but
+/// with a provider-built registry (its own genesis) and a manifest its own
+/// key signed. The served chain verifies on its own terms, yet no device
+/// of ours signed it: refused as unverifiable — never COMPROMISED.
+#[test]
+fn a_provider_built_registry_is_refused_not_a_fork() {
+    use sha2::{Digest, Sha256};
+    use vault_helper::backup::index::{IndexEntry, ObjectIndex, Role};
+    use vault_helper::backup::manifest::SignedManifest;
+    use vault_helper::registry::device::{SoftwareDevice, PLATFORM_MACOS};
+    let (cloud, mut a, b) = pair("junkreg");
+    a.add("genuine");
+    a.publish(&cloud).unwrap();
+    let state = b.read(&cloud, Operation::StateGet, None).body;
+    let real = remote::parse(&state).unwrap();
+    let get = |h: [u8; 32]| b.read(&cloud, Operation::BlobGet, Some(h)).body;
+    let index = ObjectIndex::decode(&get(real.manifest.object_index_hash)).unwrap();
+    let evil = SoftwareDevice::generate("Provider's device", PLATFORM_MACOS);
+    // Longer than ours, so it is a divergence, not a truncation.
+    let vid = b.vid();
+    let mut chain_entries = vec![vault_helper::registry::build::genesis(&evil).unwrap()];
+    for i in 0..3 {
+        let st = vault_helper::registry::chain::verify_chain_with(&chain_entries, &vid, &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
+        let other = SoftwareDevice::generate(&format!("Provider's device {i}"), PLATFORM_MACOS);
+        chain_entries.push(vault_helper::registry::build::enroll(&st, &evil, &other).unwrap());
+    }
+    let fake_reg = vault_helper::registry::file::encode(&chain_entries).unwrap();
+    let mut entries: Vec<IndexEntry> = index.entries.iter().filter(|e| e.role != Role::Registry).cloned().collect();
+    entries.push(IndexEntry::of(Role::Registry, &fake_reg));
+    let fake_index = ObjectIndex { entries, ..index.clone() };
+    let mut m: SignedManifest = real.manifest.clone();
+    m.object_index_hash = fake_index.hash();
+    m.registry_head = vault_helper::crypto::registry::entry_hash(chain_entries.last().unwrap()).unwrap();
+    m.signer_device_id = evil.device_id();
+    let m = m.sign(&evil).unwrap().encode();
+    let mut v: serde_json::Value = serde_json::from_slice(&state).unwrap();
+    let digest = vault_proto::state::recovery_auth_digest(&real.recovery_auth).unwrap();
+    let commit = vault_proto::state::state_commit(&real.manifest.vault_id, real.generation, &Sha256::digest(&m).into(), &Sha256::digest(&real.checkpoint_bytes).into(), &digest);
+    v["manifest"] = serde_json::json!(vault_proto::b64::encode(&m));
+    v["state_commit"] = serde_json::json!(vault_helper::crypto::hex::encode(commit));
+    let forged = remote::parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+    assert_eq!(fetch::offer(b.store(), &forged), Ok(fetch::Offer::Index(fake_index.hash())), "chained: passes the offer");
+    let (plan_index, need) = fetch::plan(b.store(), &forged, &fake_index.encode()).unwrap();
+    let mut blobs = std::collections::HashMap::new();
+    for h in need {
+        let bytes = if h == sha(&fake_reg) { fake_reg.clone() } else { get(h) };
+        blobs.insert(h, bytes);
+    }
+    let dir = b.dir.clone();
+    let mut b = b;
+    let (store, vk) = (b.store.take().unwrap(), b.vk.take().unwrap());
+    let tag = b.dev.key_tag().to_string();
+    let open = move |f: &vault_helper::device::envelope::DeviceEnvelopeFile| vault_helper::device::envelope::open_envelope(&tag, &vid, f);
+    let r = vault_helper::sync::apply::apply(store, vk, &forged, &plan_index, &blobs, b.dev.device_id(), &open);
+    assert_eq!(r.err(), Some(ErrorCode::SignatureInvalid));
+    let reopened = vault_helper::storage::VaultStore::open(&dir).unwrap();
+    assert!(vault_helper::storage::compromised::load(&reopened.conn).unwrap().is_none(), "no evidence recorded");
+}
