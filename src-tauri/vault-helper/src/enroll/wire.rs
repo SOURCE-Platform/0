@@ -61,6 +61,9 @@ pub struct Bundle {
     /// Hex of the registry file (JSONL, §4.2) the phone verifies; it is
     /// also among `objects`, keyed by its hash, as in the state.
     pub registry: String,
+    /// The vault's provider origin (header `provider`): where the phone
+    /// fetches its envelope after a rotation (§4.7 catch-up).
+    pub provider: String,
 }
 
 /// The phone's signature over `SHA-256("ov0/enroll/ack/v1" ‖ head ‖ mac)`.

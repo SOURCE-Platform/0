@@ -88,6 +88,7 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         envelope: serde_json::to_value(&env).map_err(|_| ErrorCode::Internal)?,
         registry_head: hex::encode(head),
         registry: hex::encode(crate::registry::file::encode(&pending.entries)?),
+        provider: c.store.as_ref().ok_or(ErrorCode::BadState)?.header.provider.clone(),
     };
     let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
     session.entry = Some(entry);
