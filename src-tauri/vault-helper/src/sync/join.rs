@@ -4,6 +4,13 @@
 //! rehearsals' simulated Macs). The VK comes from this device's own
 //! envelope, opened inside its Enclave; the checkpoint under that VK must
 //! bind the served registry head and manifest before anything is trusted.
+//!
+//! Test-only in Phase F (no product op reaches it). Its anchor is weak on
+//! purpose-built fixtures only: an envelope is HPKE base mode, so a
+//! provider can seal a VK of its choosing to any public key, and a
+//! checkpoint under that VK vouches only for itself (review SEC-B3). A
+//! product join (Phase F.2) must anchor on the registry head delivered over
+//! the pinned enrollment channel, as the iPhone catch-up does.
 
 use std::collections::HashMap;
 use std::path::Path;

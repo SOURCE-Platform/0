@@ -76,6 +76,7 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         &[(peer.device_id, env_bytes)],
         true,
     )?;
+    let seen_floor = crate::sync::seen::load(&c.store.as_ref().ok_or(ErrorCode::BadState)?.conn)?;
     let bundle = wire::Bundle {
         vault_id: hex::encode(vault_id),
         objects: snap
@@ -89,6 +90,8 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         registry_head: hex::encode(head),
         registry: hex::encode(crate::registry::file::encode(&pending.entries)?),
         provider: c.store.as_ref().ok_or(ErrorCode::BadState)?.header.provider.clone(),
+        provider_generation: seen_floor.as_ref().map_or(0, |s| s.generation),
+        provider_manifest_hash: seen_floor.as_ref().map_or(String::new(), |s| hex::encode(s.manifest_hash.0)),
     };
     let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
     session.entry = Some(entry);

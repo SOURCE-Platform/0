@@ -150,9 +150,13 @@ else fail "U-1 SE signing latency recorded" "no measurement"; fi
 # The xcodebuild log of the physical-device run: a real device destination
 # (never the simulator) and the EV-03 tests passing by name.
 EV03_LOG="${PHASE_F_EV03_LOG:-}"
-if [ -n "$EV03_LOG" ] && grep -qE 'platform=iOS,(id|name)=' "$EV03_LOG" && ! grep -q 'Simulator' "$EV03_LOG" \
-        && grep -qE 'Test .*ev03[A-Za-z]*\(\).* passed' "$EV03_LOG" && ! grep -qE 'Test .*ev03.* failed' "$EV03_LOG"; then
-    record "EV-03 on a physical A15+ iPhone (by name)" PASS "$(grep -cE 'Test .*ev03.* passed' "$EV03_LOG") EV-03 tests on a device"
+EV03_OK=1
+for t in ev03EnclaveOpensAV2Envelope ev03EnclaveSignsStateGet; do
+    grep -qE "Test $t\(\) passed" "$EV03_LOG" 2>/dev/null || EV03_OK=0
+done
+grep -qE 'Suite VaultCatchUpTests passed' "$EV03_LOG" 2>/dev/null || EV03_OK=0
+if [ -n "$EV03_LOG" ] && [ "$EV03_OK" = 1 ] && grep -qE 'platform=iOS,(id|name)=' "$EV03_LOG" && ! grep -q 'Simulator' "$EV03_LOG"; then
+    record "EV-03 on a physical A15+ iPhone (by name)" PASS "Enclave open + sign, and the catch-up suite, on a device"
 else
     fail "EV-03 on a physical A15+ iPhone (by name)" "not run — needs the owner's iPhone (set PHASE_F_EV03_LOG)"
 fi

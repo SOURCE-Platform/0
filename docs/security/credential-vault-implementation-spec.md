@@ -1,8 +1,10 @@
 # O / Source Credential Vault — Implementation Specification
 
-**Status:** Implementation specification **v0.4** (2026-09-24). Phases A–E
-and E.1 are implemented and verified against v0.3.1; **Phase F is specified
-here and not yet implemented or authorized.** This document is normative;
+**Status:** Implementation specification **v0.4** (2026-09-24), with the
+owner-approved **v0.4.1 amendment** (2026-09-29, §4.7 catch-up order and
+the §4.8 anchoring rule). Phases A–E and E.1 are implemented and verified
+against v0.3.1; **Phase F is implemented on the Mac and the iPhone catch-up
+is in review.** This document is normative;
 it does not by itself authorize implementation. Supersedes v0.3.1.
 **v0.4 changes (Phase F design closure, owner-approved; source:
 `docs/security/phase-f-design-closure.md` revision 3, commit `cfc6b80`):**
@@ -1422,19 +1424,36 @@ event-driven refresh points (no background polling):
    evidence → "unable to verify").
 3. Fetch the index (SHA-256 = `object_index_hash`), then the registry blob
    and its own `env` blob (SHA-256 per index lines).
-4. HPKE-open the v2 envelope in the Secure Enclave; require its
-   `vk_generation` = `manifest.vk_generation`.
-5. Verify the checkpoint MAC under that VK **and** its binding to this
+4. Verify the registry: the phone's accepted chain (Mac-verified, seeded
+   at enrollment; and the provider-path floor) must be an exact prefix (by
+   entry hash) of the served one, and every new suffix entry a signed
+   genesis/enroll/revoke under §4.4 rules 1–5, 7, 8. A new
+   `recovery_epoch` after the accepted head → "unable to verify — confirm
+   on your Mac", no state change. With no accepted chain yet → "unable to
+   verify".
+5. Verify the manifest signature under a signer active in that registry.
+6. HPKE-open the v2 envelope in the Secure Enclave — now authenticated by
+   the signed manifest → index → blob hash; require its `vk_generation` =
+   `manifest.vk_generation`.
+7. Verify the checkpoint MAC under that VK **and** its binding to this
    manifest (`manifest_core_hash`, which the phone computes itself;
-   generation; `vk_generation`) and to the served registry head (§4.8
-   order: envelope → checkpoint → registry).
-6. Verify the registry: the phone's accepted chain must be an exact prefix
-   (by entry hash) of the served one; the new suffix entries are checked
-   under §4.4 rules 1–5, 7, 8, with `recovery_epoch` entries checked
-   structurally as in §4.8 (the checkpoint from step 5 anchors this head).
-7. Verify the manifest signature under a signer active in that registry.
+   generation; `vk_generation`) and to the registry head.
 8. Atomically replace the stored envelope, manifest and checkpoint and
-   raise both floors.
+   raise the manifest floor and the provider-path registry floor (kept
+   separate from the Mac-refresh floor, which only the Mac refresh moves).
+
+**Amendment v0.4.1 (owner-approved 2026-09-29, review SEC-B1/B3).** The
+original order (envelope → checkpoint → registry, with recovery epochs
+anchored by that checkpoint) was unsound on the provider path: envelopes
+are HPKE base mode, so a provider can seal a VK of its choosing to any
+device's public agreement key, and a checkpoint under that VK vouches only
+for itself. Trust on the provider path is therefore anchored on what the
+device already accepted, never on the served checkpoint alone. The Mac
+applies the same rule (§4.8 below): a `recovery_epoch` it has not accepted
+is believed only if its proof verifies under the VK it holds, for the
+manifest it last accepted; otherwise the state is refused with no change.
+The Mac refresh (the pinned channel) believes a new `recovery_epoch` only
+in the S-4 shape — every device active before it revoked after it.
 
 **On this provider path a `revoke` naming this phone is never acted on
 destructively.** A provider (possibly colluding with a stolen, revoked
@@ -1552,8 +1571,15 @@ are created and whenever it holds that VK (§4.5); a later fresh device
 must not need an extinct VK once the current checkpoint validates.
 
 **Threat notes.** The checkpoint is a MAC, not a signature: only a holder
-of the current VK can produce one, which is exactly the party the
-recovering user has just proven to be. A provider that substitutes a
+of the VK it is checked under can produce one. That anchors a registry only
+when the verifier obtained the VK independently of the provider — from the
+MP or RK (a recovering device), or already holding it. A VK taken from an
+envelope the provider served does **not** anchor anything the provider
+could have written (v0.4.1): an envelope is HPKE base mode and
+authenticates no sender. Devices that learn their VK from an envelope
+(§4.7 catch-up, §2.10) therefore anchor on their accepted registry and the
+manifest signature first, and accept a new `recovery_epoch` only by its
+proof (Mac) or through the Mac refresh (iPhone). A provider that substitutes a
 different registry (even with a manifest it signs with a device of its
 own) cannot produce the matching checkpoint, and the served one will not
 bind the substituted head. Altering historical epoch bytes changes the

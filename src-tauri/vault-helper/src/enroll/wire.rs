@@ -64,6 +64,12 @@ pub struct Bundle {
     /// The vault's provider origin (header `provider`): where the phone
     /// fetches its envelope after a rotation (§4.7 catch-up).
     pub provider: String,
+    /// The last provider state this Mac accepted (generation and
+    /// manifest hash; 0 / "" before the first publish): the phone's
+    /// manifest floor for §4.7 catch-up. The bundle's own `manifest` is a
+    /// local snapshot and never a provider generation.
+    pub provider_generation: u64,
+    pub provider_manifest_hash: String,
 }
 
 /// The phone's signature over `SHA-256("ov0/enroll/ack/v1" ‖ head ‖ mac)`.

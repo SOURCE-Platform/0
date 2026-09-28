@@ -45,6 +45,57 @@ impl DeviceIdentity for FixedPhone {
     }
 }
 
+/// A provider-built next state for the phone, with no vault key and no
+/// device key of the vault: `entries` (its registry, signed by `evil`), a
+/// manifest `evil` signs, the phone's envelope sealed to a VK′ of its own
+/// choosing, and a checkpoint under VK′ (review SEC-B1/B2).
+fn forge(real_state: &[u8], entries: &[vault_helper::crypto::registry::RegistryEntry], evil: &dyn DeviceIdentity, header_bytes: &[u8]) -> Value {
+    use sha2::{Digest, Sha256};
+    use vault_helper::backup::index::{IndexEntry, ObjectIndex, Role};
+    let real = vault_helper::sync::remote::parse(real_state).unwrap();
+    let vid = real.manifest.vault_id;
+    let st = vault_helper::registry::chain::verify_chain_with(entries, &vid, &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
+    let registry = vault_helper::registry::file::encode(entries).unwrap();
+    let vk_prime: vault_helper::crypto::secret::SecretBytes<32> = vault_helper::crypto::secret::random_secret();
+    let next_gen = real.vk_generation + 1;
+    let payload = vault_helper::crypto::wrap::DeviceEnvelopePayload { vk: vault_helper::crypto::secret::SecretBytes::new(*vk_prime.expose()), wrapped_at: now(), vk_generation: next_gen };
+    let env = vault_helper::device::envelope::seal_envelope(&FixedPhone.agree_pub(), &vid, &PHONE_ID, &[0x44; 16], &payload).unwrap();
+    let env_bytes = serde_json::to_vec_pretty(&env).unwrap();
+    let index = ObjectIndex {
+        generation: real.generation + 1,
+        entries: vec![IndexEntry::of(Role::Header, header_bytes), IndexEntry::of(Role::Registry, &registry), IndexEntry::of(Role::Env { device_id: PHONE_ID }, &env_bytes)],
+        item_count: 0,
+    };
+    let manifest = vault_helper::backup::manifest::SignedManifest {
+        vault_id: vid,
+        generation: real.generation + 1,
+        created_at: now(),
+        registry_head: st.head,
+        vk_generation: next_gen,
+        object_index_hash: index.hash(),
+        prev_manifest_hash: real.manifest_hash,
+        signer_device_id: [0; 16],
+        signature: [0; 64],
+    }
+    .sign(evil)
+    .unwrap();
+    let cp = vault_helper::backup::checkpoint::RegistryCheckpoint::create(&vk_prime, &manifest, st.epoch).unwrap().encode();
+    let m = manifest.encode();
+    let mut v: Value = serde_json::from_slice(real_state).unwrap();
+    let digest = vault_proto::state::recovery_auth_digest(&real.recovery_auth).unwrap();
+    let commit = vault_proto::state::state_commit(&vid, manifest.generation, &Sha256::digest(&m).into(), &Sha256::digest(&cp).into(), &digest);
+    v["manifest"] = json!(vault_proto::b64::encode(&m));
+    v["checkpoint"] = json!(vault_proto::b64::encode(&cp));
+    v["generation"] = json!(manifest.generation);
+    v["vk_generation"] = json!(next_gen);
+    v["state_commit"] = json!(hex::encode(commit));
+    let mut blobs = serde_json::Map::new();
+    for b in [index.encode(), registry, env_bytes, header_bytes.to_vec()] {
+        blobs.insert(hex::encode(sha(&b)), json!(hex::encode(&b)));
+    }
+    json!({ "state": serde_json::to_string(&v).unwrap(), "blobs": blobs })
+}
+
 fn build() -> Value {
     let cloud = Cloud::new("catchup");
     let mut a = Mac::new("catchup-a");
@@ -74,6 +125,21 @@ fn build() -> Value {
         let e = index.find(&role).unwrap();
         blobs.insert(hex::encode(e.blob), json!(hex::encode(a.read(&cloud, Operation::BlobGet, Some(e.blob)).body)));
     }
+    // Two provider forgeries (no vault key, no vault device key):
+    // an unproven recovery epoch appended to the real chain, and a
+    // fabricated vault that enrolls the phone under the provider's genesis.
+    use vault_helper::registry::device::SoftwareDevice;
+    let header_bytes = a.read(&cloud, Operation::BlobGet, Some(index.find(&vault_helper::backup::index::Role::Header).unwrap().blob)).body;
+    let evil = SoftwareDevice::generate("Provider's device", PLATFORM_IOS);
+    let mut epoch_chain = vault_helper::registry::file::decode(&a.read(&cloud, Operation::BlobGet, Some(index.find(&vault_helper::backup::index::Role::Registry).unwrap().blob)).body).unwrap();
+    let st = vault_helper::registry::chain::verify_chain_with(&epoch_chain, &a.vid(), &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
+    epoch_chain.push(vault_helper::registry::build::recovery_epoch(&st, a.vid(), remote.manifest_hash, &vault_helper::crypto::secret::random_secret(), &evil).unwrap());
+    let forged_epoch = forge(&state, &epoch_chain, &evil, &header_bytes);
+    let genesis = vault_helper::registry::build::genesis(&evil).unwrap();
+    let st = vault_helper::registry::chain::verify_chain_with(std::slice::from_ref(&genesis), &a.vid(), &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
+    let fabricated_chain = vec![genesis.clone(), vault_helper::registry::build::enroll(&st, &evil, &FixedPhone).unwrap()];
+    let fabricated = forge(&state, &fabricated_chain, &evil, &header_bytes);
+
     // A state_get request the phone signs, with fixed t and n.
     let key_id = vault_proto::crypto::recovery_auth::key_id(&FixedPhone.sign_pub());
     let req = ProviderRequest::build(ORIGIN, a.vid(), Operation::StateGet, None, SignerId::Device { device_id: PHONE_ID, key_id }, body_hash(b""), None, 1_900_000_000, [0x0D; 16]).unwrap();
@@ -106,6 +172,8 @@ fn build() -> Value {
             "manifest_core_hash": hex::encode(remote.manifest.core_hash()),
             "phone_env_blob": hex::encode(index.find(&vault_helper::backup::index::Role::Env { device_id: PHONE_ID }).unwrap().blob),
         },
+        "forged_epoch": forged_epoch,
+        "fabricated": fabricated,
         "state_get_request": {
             "t": 1_900_000_000u64,
             "n": hex::encode([0x0D; 16]),
