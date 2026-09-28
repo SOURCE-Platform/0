@@ -5,6 +5,8 @@
 //! sweeps an interrupted recovery; TR-09 a large enrollment bundle
 //! streams. Synthetic only.
 
+mod vault_fx;
+
 use serde_json::json;
 use vault_helper::state::VaultState;
 use vault_helper::vault::{LockReason, VaultCore};
@@ -79,7 +81,8 @@ fn large_enrollment_bundle_streams() {
         }
     }
     assert_eq!(serde_json::from_slice::<serde_json::Value>(&bytes).unwrap(), big);
-    session_close(&core, &json!({"session": session}));
+    let fx = vault_fx::fx();
+    session_close(&core, &json!({"session": session}), &fx.deps);
     let r = stream_read(&core, &json!({"session": session, "sha256": sha, "offset": 0})).response;
     assert_eq!(r["error"], "TRANSFER_INVALID");
     // A lock drops an undelivered bundle.
@@ -87,4 +90,5 @@ fn large_enrollment_bundle_streams() {
     core.lock().unwrap().lock(LockReason::Explicit);
     assert!(core.lock().unwrap().provider.bundle.is_none());
     std::fs::remove_dir_all(&dir).ok();
+    fx.remove_dir();
 }

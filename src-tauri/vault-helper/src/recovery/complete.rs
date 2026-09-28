@@ -131,7 +131,7 @@ impl Recovery {
             let k = recovery_auth::derive(RecoveryClass::Rk, rk, &store.header.auth_salt_rk.0, &vid).map_err(|_| ErrorCode::Internal)?;
             updates.push(RecoveryAuthEntry { class: RecoveryClass::Rk, public: k.public, salt: store.header.auth_salt_rk.0 });
         }
-        let staged = crate::sync::local::stage_local(&store, &registry, v.remote.generation + 1, v.remote.manifest_hash, new_device, &rotated.new_vk, &[])?;
+        let staged = crate::sync::local::stage_local(&store, &registry, v.remote.generation + 1, v.remote.manifest_hash, new_device, &rotated.new_vk, &[], true)?;
         let base_auth = v.remote.recovery_auth.clone();
         let staging = crate::sync::publish::finish_transition(TransitionKind::Finalize, staged, v.remote.state_commit, &base_auth, updates, None)?;
         Ok(Completed { store, vk: rotated.new_vk, staging, new_rk })

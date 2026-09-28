@@ -61,7 +61,7 @@ pub fn rotate_with_rk(
     security_driven: bool,
 ) -> Result<RotationOutcome, ErrorCode> {
     use crate::registry::chain::EpochPolicy;
-    use crate::sync::pending::{self, Base, PendingOp};
+    use crate::sync::pending::{self, PendingOp};
     let vid = store.header.vault_id.0;
     let reg = crate::registry::log::read_state(&store.dir, &vid, &EpochPolicy::CheckpointAnchored)?;
     let envelopes = crate::device::rotate::EnvelopePlan {
@@ -73,7 +73,7 @@ pub fn rotate_with_rk(
         envelopes: Some(&envelopes),
         op: PendingOp::RkReplacement,
         security_driven,
-        base: pending::load(&store.conn)?.map_or_else(|| Base::of(&store.header), |p| p.base),
+        base: pending::base_for(&store.conn, &store.header)?,
         mp: None,
         rk: Some(new_rk),
         revoke: None,
@@ -89,7 +89,7 @@ pub fn rotate_with_rk(
 /// (§11.3.2). No VK rotation. Returns the reopened store.
 pub fn change_mp(store: VaultStore, vk: &SecretBytes<32>, old_mp: Option<&[u8]>, new_mp: &[u8]) -> Result<VaultStore, ErrorCode> {
     use crate::sync::change::{seen_auth, updates_for};
-    use crate::sync::pending::{self, Base, PendingOp};
+    use crate::sync::pending::{self, PendingOp};
     if let Some(old) = old_mp {
         prove_mp(&store, old)?;
     }
@@ -102,7 +102,7 @@ pub fn change_mp(store: VaultStore, vk: &SecretBytes<32>, old_mp: Option<&[u8]>,
     let mut next = store.header.clone();
     next.kdf = KdfBlock::frozen(salt);
     next.auth_salt_mp = crate::storage::header::Hex16::random();
-    let base = pending::load(&store.conn)?.map_or_else(|| Base::of(&store.header), |p| p.base);
+    let base = pending::base_for(&store.conn, &store.header)?;
     let updates = seen_auth(&updates_for(&next, Some(new_mp), None)?);
     let record = move |c: &rusqlite::Connection| pending::add(c, PendingOp::MpChange, false, base.clone(), updates.clone(), now_epoch()).map(|_| ());
     crate::storage::adopt::commit_singleton_change(store, &next, &wrap_json, &record)?;

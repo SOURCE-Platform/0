@@ -20,7 +20,7 @@ use crate::storage::revisions::uuid_string;
 use crate::storage::rotation::{self, MpWrap, RkWrap};
 use crate::storage::VaultStore;
 use crate::sync::change::RemoteChange;
-use crate::sync::pending::{self, Base, PendingOp};
+use crate::sync::pending::{self, PendingOp};
 
 pub struct Revoked {
     pub store: VaultStore,
@@ -49,7 +49,7 @@ pub fn revoke(
         return Err(ErrorCode::NotFound);
     }
     prove_mp(&store, mp)?;
-    let base = pending::load(&store.conn)?.map_or_else(|| Base::of(&store.header), |p| p.base);
+    let base = pending::base_for(&store.conn, &store.header)?;
     let mut entries = state.entries.clone();
     entries.push(build::revoke(&state, me, target)?);
     let after = chain::verify_chain_with(&entries, &vid, &EpochPolicy::CheckpointAnchored)?;

@@ -160,8 +160,8 @@ pub async fn vault_unlock_with_recovery_key(app: tauri::AppHandle) -> Result<Val
 /// §12 scenarios 6/7: new Recovery Key + vault-key rotation. The helper
 /// shows (and can print) the new words in its own capture-excluded window.
 #[tauri::command]
-pub async fn vault_rotate_recovery_key(app: tauri::AppHandle) -> Result<Value, String> {
-    call_with_panel(app, json!({"op": "rotate_recovery_key"})).await
+pub async fn vault_rotate_recovery_key(app: tauri::AppHandle, suspected_theft: Option<bool>) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "rotate_recovery_key", "suspected_theft": suspected_theft.unwrap_or(false)})).await
 }
 
 /// §12 scenario 5: set a new master password on an unlocked vault when

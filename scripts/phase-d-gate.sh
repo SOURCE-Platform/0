@@ -83,7 +83,11 @@ echo "== Phase D gate (workdir $T)"
 cd "$SRC_TAURI" || exit 1
 
 # --- 1. Phase D tests ------------------------------------------------------------------------
-D_TESTS="--test vault_rotation --test registry_epoch --test registry_checkpoint --test recovery_total_loss --test recovery_finalize --test recovery_trusted --test vault_rk_ops"
+# v0.4 (Phase F) replaced the v0.3 registry-checkpoint and FsBackupStore
+# recovery targets (registry_checkpoint, recovery_total_loss,
+# recovery_finalize, recovery_trusted); their successors — CP-*, RC-*,
+# RF-*, FR-* over the provider — run in scripts/phase-f-gate.sh.
+D_TESTS="--test vault_rotation --test registry_epoch --test vault_rk_ops"
 # shellcheck disable=SC2086
 cargo test -p source-vault-helper --no-fail-fast $D_TESTS >"$T/d-tests.log" 2>&1
 D_PASS=$(grep -E "^test result" "$T/d-tests.log" | awk '{s+=$4} END {print s+0}')

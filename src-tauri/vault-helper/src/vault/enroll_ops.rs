@@ -227,14 +227,13 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         return OpOutcome::err(e);
     }
     {
-        let c = lock_core(core);
+        // Checked and entered under one lock: a lock landing in between
+        // must not leave AUTHORIZING (then UNLOCKED) over no VK.
+        let mut c = lock_core(core);
         match c.enroll.as_ref() {
-            Some(s) if s.stage == Stage::AwaitingConfirm && !s.expired() => {}
+            Some(s) if s.stage == Stage::AwaitingConfirm && !s.expired() && c.state == VaultState::Unlocked => {}
             _ => return OpOutcome::err(ErrorCode::BadState),
         }
-    }
-    {
-        let mut c = lock_core(core);
         c.state = VaultState::Authorizing;
     }
     deps.events.emit(ev_state(VaultState::Authorizing));

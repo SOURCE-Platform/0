@@ -58,8 +58,25 @@ impl Flows<'_> {
     }
 
     /// Upload a staged transition's blobs, post its body, report back.
+    /// Every outcome after staging reaches the helper — success, a
+    /// provider refusal, or an unreachable provider (status 0) — so it
+    /// counts attempts (§11.3.2, RU-04) and keeps a transiently failed
+    /// publication for a byte-identical re-send.
     pub fn run_publication(&self, p: &Value) -> Outcome<Value> {
         let session = p["session"].as_str().unwrap_or("");
+        let upload = self.upload(p, session);
+        let (status, code) = match &upload {
+            Ok(_) => return upload,
+            Err(Failure::Provider(s, c)) => (*s, c.clone()),
+            Err(Failure::Unreachable) => (0, "BACKUP_UNAVAILABLE".to_string()),
+            Err(_) => return upload, // a helper-side refusal: nothing was posted
+        };
+        let body = json!({ "error": code }).to_string();
+        let _ = self.helper.op(json!({ "op": "backup_commit_result", "session": session, "status": status, "body": body }));
+        upload
+    }
+
+    fn upload(&self, p: &Value, session: &str) -> Outcome<Value> {
         let expected = p["expected_state"].as_str();
         if p["kind"] != "create" {
             let mut page = 0;
@@ -89,12 +106,10 @@ impl Flows<'_> {
             None => self.pull(session, tb["stream"].as_str().unwrap_or(""))?,
         };
         let r = self.call("state_commit", None, &body, expected)?;
-        let result = ok(self.helper.op(json!({ "op": "backup_commit_result", "session": session, "status": r.status, "body": String::from_utf8_lossy(&r.body) })))?;
-        if r.status == 200 {
-            Ok(result)
-        } else {
-            Err(Failure::Provider(r.status, code_of(&r.body)))
+        if r.status != 200 {
+            return Err(Failure::Provider(r.status, code_of(&r.body)));
         }
+        ok(self.helper.op(json!({ "op": "backup_commit_result", "session": session, "status": 200, "body": String::from_utf8_lossy(&r.body) })))
     }
 
     /// Offer the provider's state and feed the helper what it asks for.

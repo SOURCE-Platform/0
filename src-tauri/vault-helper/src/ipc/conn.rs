@@ -60,8 +60,11 @@ pub fn handle_connection(mut stream: UnixStream, ctx: Arc<ConnCtx>) {
         return;
     }
     serve(&mut stream, class, &ctx);
+    // A connection that was replaced must not tear down its successor's
+    // sessions: only the current holder of the slot cleans up.
+    let current = ctx.hub.is_current(class, conn_id);
     ctx.hub.unregister(class, conn_id);
-    if class == ClientClass::App {
+    if class == ClientClass::App && current {
         drop_provider_sessions(&ctx);
     }
 }
@@ -114,7 +117,14 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             _ if class == ClientClass::NmHost && !NM_HOST_OPS.contains(&op) => {
                 crate::errors::ErrorCode::UnknownOp.frame()
             }
-            "get_state" => ops::ok_with_state(lock_core(&ctx.core).reported_state()),
+            "get_state" => {
+                // BACKING_UP can overlay a LOCKED vault (a fully staged
+                // publication, §13.2): say whether the vault itself is open.
+                let c = lock_core(&ctx.core);
+                let mut v = ops::ok_with_state(c.reported_state());
+                v["vault_open"] = serde_json::json!(c.vk.is_some());
+                v
+            }
             // Already applied by the read side on arrival; answer in order.
             "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
             _ => match forward(ctx, frame) {

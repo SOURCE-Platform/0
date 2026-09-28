@@ -45,11 +45,18 @@ pub fn staging_summary(t: &Transfer, st: &Staging) -> Value {
     })
 }
 
-/// `backup_prepare`: UNLOCKED → BACKING_UP.
+/// `backup_prepare`: UNLOCKED → BACKING_UP. A publication already fully
+/// staged (e.g. after a failed upload, §11.3.2 retries) is resumed as is —
+/// also while LOCKED — rather than refused.
 pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     let run = || -> Result<Value, ErrorCode> {
         let mut c = lock_core(core);
-        if c.state != VaultState::Unlocked || c.provider.publish.is_some() || c.provider.sync.is_some() {
+        if matches!(c.state, VaultState::Unlocked | VaultState::Locked) {
+            if let Some(p) = &c.provider.publish {
+                return Ok(staging_summary(&p.t, &p.staging));
+            }
+        }
+        if c.state != VaultState::Unlocked || c.provider.sync.is_some() {
             return Err(ErrorCode::BadState);
         }
         let me = SeDevice::load(&c.vault_dir)?;
@@ -83,7 +90,7 @@ pub fn restage_create(store: &VaultStore, reg: &crate::registry::chain::Registry
     let handle: String = crate::storage::kv::get(&store.conn, super::rk_ops::HANDLE_KEY)?.ok_or(ErrorCode::BadState)?;
     let seen_auth = seen::Seen { generation: 0, manifest_hash: crate::storage::header::Hex32([0; 32]), state_commit: crate::storage::header::Hex32([0; 32]), recovery_auth: p.recovery_auth_updates };
     let mut st = publish::stage_create(store, reg, vk, me, vault_proto::handle::handle_key(&handle), seen_auth.auth_entries()?)?;
-    st.carries_pending = true;
+    st.carries_pending = publish::carry(store)?;
     Ok(st)
 }
 
@@ -139,7 +146,12 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
     }
     let run = || -> Result<Value, ErrorCode> {
         let mut c = lock_core(core);
-        let session = c.provider.publish.take().filter(|p| p.t.id == id).ok_or(ErrorCode::TransferInvalid)?;
+        // Only the session reported on is touched (never a newer one).
+        if c.provider.publish.as_ref().map(|p| p.t.id) != Some(id) {
+            return Err(ErrorCode::TransferInvalid);
+        }
+        let session = c.provider.publish.take().ok_or(ErrorCode::TransferInvalid)?;
+        let mut resend = false;
         // The DB is ciphertext-only here: a fully staged publication can
         // finish while LOCKED by opening the store just for bookkeeping.
         let opened;
@@ -154,13 +166,9 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
         let out = if status == 200 {
             let generation = body["generation"].as_u64().ok_or(ErrorCode::ManifestMismatch)?;
             let commit = body["state_commit"].as_str().and_then(hex::decode_array::<32>).ok_or(ErrorCode::ManifestMismatch)?;
-            publish::committed(store, &session.staging, generation, commit)?;
-            // §11.3.2 REMOTE_COMMITTED: the components this commit cleared
-            // (the UI's post-commit copy keys off them).
-            let cleared = match (&before, pending::load(&store.conn)?) {
-                (Some(p), None) => p.ops.clone(),
-                _ => Vec::new(),
-            };
+            // §11.3.2 REMOTE_COMMITTED for the version this staging carried;
+            // the components cleared drive the UI's post-commit copy.
+            let (_, cleared) = publish::committed_clearing(store, &session.staging, generation, commit)?;
             json!({ "committed": true, "generation": generation, "cleared": cleared })
         } else {
             let code = body["error"].as_str().unwrap_or("BACKUP_UNAVAILABLE").to_string();
@@ -169,10 +177,19 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
                 p.last_error = Some(code.clone());
                 pending::save(&store.conn, &p)?;
             }
-            json!({ "committed": false, "sync_required": code == "STATE_MOVED", "error_code": code })
+            // A transient failure keeps the fully staged publication for a
+            // byte-identical re-send (also while LOCKED); anything the
+            // provider refused on its merits needs a fresh staging.
+            resend = status == 0 || status == 408 || status == 429 || status >= 500;
+            json!({ "committed": false, "sync_required": code == "STATE_MOVED", "error_code": code, "will_resend": resend })
         };
         if before.is_some() {
-            deps.events.emit(super::remote_status::event(store)?);
+            if let Ok(ev) = super::remote_status::event(store) {
+                deps.events.emit(ev);
+            }
+        }
+        if resend {
+            c.provider.publish = Some(session);
         }
         deps.events.emit(ev_state(c.reported_state()));
         Ok(out)

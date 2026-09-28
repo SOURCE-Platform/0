@@ -13,6 +13,7 @@ use super::provider_ops::{session_id, SyncSession};
 use super::{ev_state, lock_core, Deps, OpOutcome, VaultCore};
 use crate::backup::index::Role;
 use crate::crypto::hex;
+use crate::crypto::secret::SecretBytes;
 use crate::device::{envelope, SeDevice};
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
@@ -66,10 +67,9 @@ pub fn backup_state_offer(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
                 Ok(out)
             }
             Err(ErrorCode::RegistryFork) => {
-                // §4.6: two validly signed manifests for one generation.
-                crate::storage::compromised::mark(&store.conn, ErrorCode::RegistryFork)?;
-                c.state = VaultState::Compromised;
-                deps.events.emit(ev_state(VaultState::Compromised));
+                // §4.6: verified fork evidence (fetch::offer checked the
+                // served manifest's signature against our registry).
+                enter_compromised(&mut c, deps);
                 Err(ErrorCode::RegistryFork)
             }
             Err(e) => Err(e),
@@ -113,6 +113,10 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
         let session = c.provider.sync.take().ok_or(ErrorCode::Internal)?;
         let (store, vk) = (c.store.take().ok_or(ErrorCode::Internal)?, c.vk.take().ok_or(ErrorCode::Internal)?);
         let dir = store.dir.clone();
+        // A refused state never costs the user their unlocked vault
+        // (§11.6, §15 "reject; keep local"): the VK is kept for the
+        // failure path, valid while the committed VK generation is ours.
+        let keep = (SecretBytes::new(*vk.expose()), store.header.vk_generation);
         let me = SeDevice::load(&c.vault_dir)?;
         let (tag, vid) = (me.key_tag().to_string(), store.header.vault_id.0);
         let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
@@ -138,18 +142,28 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
             }
             Err(e) => {
                 // The apply is journaled/transactional: reopen whatever is
-                // committed; key material stays out until the next unlock.
+                // committed. The VK comes back only if the committed state
+                // is still at its generation (an adoption may have landed).
                 c.store = crate::storage::VaultStore::open(&dir).ok();
-                if e == ErrorCode::RegistryFork {
-                    // The evidence persists; the key is gone, so the vault
-                    // locks and the next unlock opens it COMPROMISED
-                    // (§13.3). Unrecordable evidence → ERROR, not LOCKED.
-                    let marked = c.store.take().map(|s| crate::storage::compromised::mark(&s.conn, e));
-                    c.state = if matches!(marked, Some(Ok(()))) { VaultState::Locked } else { VaultState::Error };
-                } else if c.store.is_none() {
-                    c.state = VaultState::Error;
-                } else {
-                    c.state = VaultState::Locked;
+                match c.store.as_ref().map(|s| s.header.clone()) {
+                    None => c.state = VaultState::Error,
+                    Some(h) if h.vk_generation == keep.1 => {
+                        c.header = Some(h);
+                        c.vk = Some(keep.0.mlock_best_effort());
+                        c.state = VaultState::Unlocked;
+                        if e == ErrorCode::RegistryFork {
+                            enter_compromised(c, deps);
+                        }
+                    }
+                    Some(h) => {
+                        c.header = Some(h);
+                        if e == ErrorCode::RegistryFork {
+                            let _ = c.store.as_ref().map(|s| crate::storage::compromised::mark(&s.conn, e));
+                        }
+                        c.provider.publish = None;
+                        c.store = None;
+                        c.state = VaultState::Locked; // re-entered COMPROMISED at unlock
+                    }
                 }
                 Err(e)
             }
@@ -159,3 +173,20 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
 }
+
+/// §4.6/§13.2: record the evidence and freeze writes. A staged
+/// publication from before the fork is dropped (it would write). If the
+/// evidence cannot be recorded the vault fails closed to ERROR.
+fn enter_compromised(c: &mut VaultCore, deps: &Deps) {
+    c.provider.publish = None;
+    c.provider.sync = None;
+    let marked = c.store.as_ref().map(|s| crate::storage::compromised::mark(&s.conn, ErrorCode::RegistryFork));
+    if matches!(marked, Some(Ok(()))) {
+        c.state = VaultState::Compromised;
+    } else {
+        c.enter_error(&deps.events);
+        return;
+    }
+    deps.events.emit(ev_state(c.state));
+}
+

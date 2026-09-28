@@ -64,7 +64,10 @@ export function VaultPage() {
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     onVaultEvent((event) => {
-      if (event.event === "state" && event.state) {
+      if (event.event === "state" && event.state === "backing_up") {
+        // Over a locked vault or an open one: ask (§13.2).
+        vaultState().then(setState).catch(() => {});
+      } else if (event.event === "state" && event.state) {
         setState(event.state as VaultState);
       }
       if (event.event === "locked") {
@@ -109,11 +112,18 @@ export function VaultPage() {
         {(state === "unlocked" || state === "authorizing") && (
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
-              onClick={() => run(vaultRotateRecoveryKey)}
+              onClick={() => run(() => vaultRotateRecoveryKey(false))}
               disabled={busy || state !== "unlocked"}
               className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <KeyRound className="h-4 w-4" /> Replace Recovery Key
+            </button>
+            <button
+              onClick={() => run(() => vaultRotateRecoveryKey(true))}
+              disabled={busy || state !== "unlocked"}
+              className="flex cursor-pointer items-center gap-2 rounded-xl border border-amber-300/50 px-4 py-2 text-sm text-amber-300 transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <KeyRound className="h-4 w-4" /> Recovery Key lost or stolen
             </button>
             <button
               onClick={() => run(vaultResetMasterPassword)}
@@ -173,6 +183,7 @@ export function VaultPage() {
             body="Recovery is in progress. Follow the helper's prompts; the vault opens when it finishes."
           />
         )}
+        {(state === "locked" || state === "compromised") && <BackupStatusLine />}
         {(state === "locked" || state === "unlocking") && (
           <div className="rounded-2xl border border-border/70 bg-black/10 p-6">
             <div className="flex items-center gap-3">

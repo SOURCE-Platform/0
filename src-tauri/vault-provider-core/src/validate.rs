@@ -123,6 +123,10 @@ impl Provider {
         if env_ids != active_ids {
             return Err(ErrorCode::IndexInvalid.into());
         }
+        // §11.3: a new vault's first state has no records.
+        if t.kind == TransitionKind::Create && index.revs().next().is_some() {
+            return Err(ErrorCode::IndexInvalid.into());
+        }
         let cur_vk = cur.map_or(0, |c| c.vk_generation);
         let vk_ok = match t.kind {
             TransitionKind::Create => m.vk_generation >= 1,

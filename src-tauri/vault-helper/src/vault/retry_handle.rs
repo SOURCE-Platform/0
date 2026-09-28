@@ -135,6 +135,19 @@ pub fn setup_retry_handle(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
 /// The journaled rotation: every active device (the genesis Mac)
 /// re-enveloped, both wraps rebuilt, handle and pending in one commit.
 pub fn rotate(store: VaultStore, vk: &SecretBytes<32>, pk: &SecretBytes<32>, rk: &SecretBytes<32>, handle: &str) -> Result<SecretBytes<32>, ErrorCode> {
+    rotate_failing(store, vk, pk, rk, handle, None)
+}
+
+/// `rotate` with the journal's test-only crash injection (BK-28: a crash
+/// at any point leaves the old or the new state, never a mix).
+pub fn rotate_failing(
+    store: VaultStore,
+    vk: &SecretBytes<32>,
+    pk: &SecretBytes<32>,
+    rk: &SecretBytes<32>,
+    handle: &str,
+    fail: Option<crate::storage::rotation_journal::FailAt>,
+) -> Result<SecretBytes<32>, ErrorCode> {
     let vid = store.header.vault_id.0;
     let reg = crate::registry::log::read_state(&store.dir, &vid, &EpochPolicy::CheckpointAnchored)?;
     let envelopes = crate::device::rotate::EnvelopePlan {
@@ -145,5 +158,5 @@ pub fn rotate(store: VaultStore, vk: &SecretBytes<32>, pk: &SecretBytes<32>, rk:
     let base = pending::load(&store.conn)?.ok_or(ErrorCode::BadState)?.base;
     let change = RemoteChange { envelopes: Some(&envelopes), op: pending::PendingOp::VaultCreate, security_driven: false, base, mp: None, rk: Some(rk), revoke: None, registry: None };
     let retry = Retry { change, handle };
-    Ok(rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(rk), Some(&retry), None)?.new_vk)
+    Ok(rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(rk), Some(&retry), fail)?.new_vk)
 }

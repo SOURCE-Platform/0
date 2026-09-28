@@ -3,7 +3,8 @@
 //! response main sends to the provider are recorded across setup, the
 //! `create` while LOCKED, publish, sync, BK-28 `HANDLE_TAKEN` + retry
 //! through the coordinator, and total-loss recovery. The canaries — the
-//! MP, PK, VK, the RK (bytes and words) and both classes' `ikm_c` — appear
+//! MP, PK, VK, the RK (bytes and words), both classes' `ikm_c` and `sk_c`,
+//! and the retry's and the recovery's new VK and RK — appear
 //! in none of it, raw or encoded. (A record's own fields cross IPC once,
 //! main → helper, by design, §1.5 `add_item`; BK-18 covers provider
 //! storage.) Synthetic data only.
@@ -80,6 +81,9 @@ fn pr01_no_canary_in_any_transcript() {
     assert_eq!(fa.backup_now().unwrap()["committed"], true);
     fa.run_sync().unwrap();
     let vk = vault_helper::crypto::secret::SecretBytes::new(*a.core.lock().unwrap().vk.as_ref().unwrap().expose());
+    // BK-28: once the create committed, the retry is refused.
+    let late = fa.helper.op(json!({ "op": "setup_retry_handle", "handle": "synthetic-too-late@example.test" })).unwrap();
+    assert_eq!(late["error"], "BAD_STATE", "{late}");
 
     // B: the same handle is taken; retry with a new one (BK-28).
     let b = vault_fx::fx();
@@ -97,6 +101,8 @@ fn pr01_no_canary_in_any_transcript() {
     assert_eq!(fb.run_publication(&retry["publication"]).unwrap()["committed"], true);
     let st = fb.helper.op(json!({"op": "remote_update_status"})).unwrap();
     assert_eq!(st["pending"], false, "the retried create committed: {st}");
+    let b_words = b.panel.shown_rk.lock().unwrap().clone().expect("B's retry RK shown");
+    let b_vk = vault_helper::crypto::secret::SecretBytes::new(*b.core.lock().unwrap().vk.as_ref().unwrap().expose());
 
     // C: total-loss recovery of A's vault with the MP.
     let c = vault_fx::fx();
@@ -104,6 +110,8 @@ fn pr01_no_canary_in_any_transcript() {
     c.push_panel(submitted(vault_fx::MP));
     fc.recovery_start(mfx::ORIGIN, HANDLE, "mp").unwrap();
     assert_eq!(fc.recovery_finish().unwrap()["committed"], true);
+    let c_words = c.panel.shown_rk.lock().unwrap().clone().expect("C's new RK shown");
+    let c_vk = vault_helper::crypto::secret::SecretBytes::new(*c.core.lock().unwrap().vk.as_ref().unwrap().expose());
 
     // The canaries.
     let h = VaultStore::open(&a.dir).unwrap().header;
@@ -118,10 +126,20 @@ fn pr01_no_canary_in_any_transcript() {
     let ikm_mp = ikm(RecoveryClass::Mp, pk.expose(), &h.auth_salt_mp.0);
     let ikm_rk = ikm(RecoveryClass::Rk, rk.expose(), &h.auth_salt_rk.0);
     let mut canaries: Vec<Vec<u8>> = Vec::new();
-    for s in [vault_fx::MP, pk.expose(), vk.expose(), rk.expose(), ikm_mp.expose(), ikm_rk.expose()] {
+    let (b_rk, c_rk) = (vault_helper::crypto::bip39::decode_rk(&b_words).unwrap(), vault_helper::crypto::bip39::decode_rk(&c_words).unwrap());
+    for s in [vault_fx::MP, pk.expose(), vk.expose(), rk.expose(), ikm_mp.expose(), ikm_rk.expose(), b_vk.expose(), b_rk.expose(), c_vk.expose(), c_rk.expose()] {
         canaries.extend(forms(s));
     }
-    canaries.push(words.clone().into_bytes());
+    // sk_c: the first valid DeriveKeyPair candidate (counter 0, or 1 in
+    // the ~2^-32 case the first is rejected) — both scanned.
+    for ikm in [&ikm_mp, &ikm_rk] {
+        for counter in [0u8, 1] {
+            canaries.extend(forms(vault_proto::crypto::recovery_auth::dkp_candidate(ikm.expose(), counter).as_slice()));
+        }
+    }
+    for w in [&words, &b_words, &c_words] {
+        canaries.push(w.clone().into_bytes());
+    }
     for f in [&a, &b, &c] {
         for e in f.events.log.lock().unwrap().iter() {
             tape.put(&serde_json::to_vec(e).unwrap());

@@ -16,7 +16,10 @@
 #   9. main app cargo check + frontend build
 #  10. supply chain (cargo audit + cargo vet)
 #  11. Dependabot alert #108 (glib) is still open — never dismissed
-#  12. Phase E gate regression (which runs D, C, B and A)
+#  12. no test silently ignored (allowlist: the U-1 hardware measurement)
+#  13. U-1: Secure Enclave signing latency, measured and recorded
+#  14. EV-03 on a physical A15+ iPhone, by name (owner hardware)
+#  15. Phase E gate regression (which runs D, C, B and A)
 #
 # Synthetic vaults and synthetic credentials only.
 set -uo pipefail
@@ -127,7 +130,27 @@ STATE=$(cd "$ROOT" && gh api repos/SOURCE-Platform/0/dependabot/alerts/108 --jq 
 if [ "$STATE" = "open" ]; then record "Dependabot #108 (glib) still open, not dismissed" PASS "state=open"
 else fail "Dependabot #108 (glib) still open, not dismissed" "state=${STATE:-unreadable}"; fi
 
-# --- 12. Phase E regression ----------------------------------------------------------------------
+# --- 12. no silently ignored test ---------------------------------------------------------------
+IGNORED=$(cat "$T"/f-crates.log "$T"/helper.log "$T"/provider.log 2>/dev/null | grep -E '^test .* \.\.\. ignored' \
+    | grep -vE '^test u1_se_signing_latency ' | head -3 | tr '\n' ' ')
+if [ -z "$IGNORED" ]; then record "no ignored test outside the allowlist" PASS "allowlist: u1_se_signing_latency"
+else fail "no ignored test outside the allowlist" "$IGNORED"; fi
+
+# --- 13. U-1 SE signing latency ------------------------------------------------------------------
+U1=$(cargo test -q -p source-vault-helper --test se_latency -- --ignored --nocapture 2>&1 | grep -E '^U-1 SE signing' | head -1)
+MEAN=$(echo "$U1" | sed -nE 's/.*mean=([0-9.]+) ms.*/\1/p')
+if [ -n "$MEAN" ] && awk "BEGIN {exit !($MEAN < 20)}"; then record "U-1 SE signing latency < 20 ms/request" PASS "$U1"
+else fail "U-1 SE signing latency < 20 ms/request" "${U1:-no measurement}"; fi
+
+# --- 14. EV-03 on a physical iPhone --------------------------------------------------------------
+EV03_LOG="${PHASE_F_EV03_LOG:-}"
+if [ -n "$EV03_LOG" ] && grep -qE 'EV03.*passed' "$EV03_LOG"; then
+    record "EV-03 on a physical A15+ iPhone (by name)" PASS "$(grep -cE 'EV03.*passed' "$EV03_LOG") EV-03 tests"
+else
+    fail "EV-03 on a physical A15+ iPhone (by name)" "not run — needs the owner's iPhone (set PHASE_F_EV03_LOG)"
+fi
+
+# --- 15. Phase E regression ----------------------------------------------------------------------
 if [ "${PHASE_F_SKIP_REGRESSION:-0}" = "1" ]; then
     fail "Phase E gate regression (incl. D, C, B, A)" "SKIPPED — not a gate run of record"
 else

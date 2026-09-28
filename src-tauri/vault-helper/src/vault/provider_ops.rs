@@ -81,9 +81,11 @@ impl Sessions {
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
     }
 
+    /// §1.3 idle limits. A fully staged publication is exempt: it is
+    /// resumed by the next cycle (§11.3.2), including while LOCKED.
     pub fn expire(&mut self) {
-        self.publish = self.publish.take().filter(|p| !p.t.expired());
         self.sync = self.sync.take().filter(|s| !s.t.expired());
+        self.bundle = self.bundle.take().filter(|b| !b.expired());
         self.recovery = self.recovery.take().filter(|r| !r.t.expired());
     }
 }
@@ -161,7 +163,7 @@ pub fn stream_io(core: &Arc<Mutex<VaultCore>>, frame: &Value, op: &str) -> OpOut
 }
 
 /// `session_close {session}`: the session and its staging are dropped.
-pub fn session_close(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
+pub fn session_close(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &super::Deps) -> OpOutcome {
     let Ok(id) = session_id(frame) else { return OpOutcome::err(ErrorCode::InvalidInput) };
     let mut c = lock_core(core);
     let p = &mut c.provider;
@@ -172,9 +174,24 @@ pub fn session_close(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     } else if p.sync.as_ref().is_some_and(|s| s.t.id == id) {
         p.sync = None;
     } else if p.recovery.as_ref().is_some_and(|s| s.t.id == id) {
-        c.leave_recovery();
+        if let Some(ev) = c.leave_recovery() {
+            deps.events.emit(ev);
+        }
     }
     OpOutcome::ok(json!({}))
+}
+
+/// Persisted COMPROMISED evidence, from the open store or the directory.
+fn evidence_on_file(c: &VaultCore) -> Result<bool, ErrorCode> {
+    let opened;
+    let store = match c.store.as_ref() {
+        Some(s) => s,
+        None => {
+            opened = crate::storage::VaultStore::open(&c.vault_dir).map_err(|_| ErrorCode::SigningRefused)?;
+            &opened
+        }
+    };
+    Ok(crate::storage::compromised::load(&store.conn).map_err(|_| ErrorCode::SigningRefused)?.is_some())
 }
 
 /// `quarantine_status`: refused-revision counts per reason (§3.2).
@@ -229,17 +246,20 @@ pub fn sign_provider_request(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpO
                 let (m, p) = op.route(&r.rec.locate.vault_id, blob.as_ref()).ok_or(ErrorCode::SigningRefused)?;
                 (json!({ "method": m, "path": p, "origin": r.rec.origin }), h)
             }
-            VaultState::Locked | VaultState::Unlocked => {
+            VaultState::Locked | VaultState::Unlocked | VaultState::Compromised => {
                 let header = c.store.as_ref().map(|s| s.header.clone()).or(c.header.clone()).ok_or(ErrorCode::SigningRefused)?;
                 let me = SeDevice::load(&c.vault_dir).map_err(|_| ErrorCode::SigningRefused)?;
                 let put: BTreeSet<[u8; 32]>;
+                // §13.2: COMPROMISED (or its evidence, while LOCKED) reads
+                // only — no write is ever signed over fork evidence.
+                let frozen = c.state == VaultState::Compromised || (c.provider.publish.is_some() && evidence_on_file(&c)?);
                 let scope = match &c.provider.publish {
                     // LOCKED: writes only for a fully staged publication.
-                    Some(p) => {
+                    Some(p) if !frozen => {
                         put = p.staging.blobs.keys().copied().collect();
                         SignScope { put_blobs: &put, staged: Some((p.staging.body_sha256, p.staging.expected_state)) }
                     }
-                    None => reads_only,
+                    _ => reads_only,
                 };
                 let (pr, h) = sign::sign(&header.provider, header.vault_id.0, Key::Device(&me), &req, &scope, 0, now)?;
                 (json!({ "method": pr.method, "path": pr.path, "origin": header.provider }), h)

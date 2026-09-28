@@ -4,8 +4,12 @@
 //! one generation are fork evidence; BK-02 a tampered blob is detected;
 //! BK-11 a manifest signed by a non-enrolled key is rejected. The
 //! provider here is honest where the scenario needs it and forged where
-//! it plays the attacker. Synthetic data only.
+//! it plays the attacker. Fork evidence reaches COMPROMISED only when it
+//! verifies (SPEC-B2); the next generation must chain to the accepted one
+//! (SPEC-B3, `prev_manifest_hash`). Synthetic data only.
 
+#[path = "../../vault-helper/tests/vault_fx/mod.rs"]
+mod vault_fx;
 mod mfx;
 
 use mfx::*;
@@ -154,3 +158,77 @@ fn forge_signer(state_json: &[u8]) -> Vec<u8> {
     v["state_commit"] = serde_json::json!(vault_helper::crypto::hex::encode(commit));
     serde_json::to_vec(&v).unwrap()
 }
+
+/// A provider copy forked from `a`'s state before its next publish, with
+/// a different publish at the same generation. Returns (fork, fork dir).
+fn forked(cloud: &Cloud, a: &mut Mac, tag: &str) -> Cloud {
+    let fork_dir = tmp(tag);
+    copy_tree(&cloud.dir, &fork_dir);
+    let seen_before = vault_helper::sync::seen::load(&a.store().conn).unwrap().unwrap();
+    a.add("history-one");
+    a.publish(cloud).unwrap();
+    let fork = Cloud::at(&fork_dir);
+    a.add("history-two");
+    let st = vault_helper::sync::publish::stage_publish(a.store(), &a.registry(), a.vk.as_ref().unwrap(), &a.dev, &seen_before, Vec::new()).unwrap();
+    assert_eq!(a.post(&fork, &st).status, 200);
+    fork
+}
+
+/// SPEC-B3: the next generation not chained to the accepted one is fork
+/// evidence (verified: signed by an enrolled device).
+#[test]
+fn next_generation_off_our_chain_is_a_fork() {
+    use vault_helper::sync::seen::Seen;
+    let cloud = Cloud::new("prevhash");
+    let mut a = Mac::new("prevhash-a");
+    a.setup(&cloud, "synthetic-prevhash@example.test").unwrap();
+    let fork = forked(&cloud, &mut a, "prevhash-fork");
+    let f = remote::parse(&a.read(&fork, Operation::StateGet, None).body).unwrap();
+    let on_fork = Seen::with_auth(f.generation, f.manifest_hash, f.state_commit, &f.recovery_auth);
+    let st = vault_helper::sync::publish::stage_publish(a.store(), &a.registry(), a.vk.as_ref().unwrap(), &a.dev, &on_fork, Vec::new()).unwrap();
+    assert_eq!(a.post(&fork, &st).status, 200);
+    let next = remote::parse(&a.read(&fork, Operation::StateGet, None).body).unwrap();
+    assert_eq!(next.generation, vault_helper::sync::seen::load(&a.store().conn).unwrap().unwrap().generation + 1);
+    assert_eq!(fetch::offer(a.store(), &next), Err(ErrorCode::RegistryFork));
+}
+
+/// SPEC-B2 / VER-I2 through the helper op: junk the provider made up is
+/// refused with no state change; verified fork evidence enters
+/// COMPROMISED, is recorded, drops staged writes, and leaves reads.
+#[test]
+fn fork_evidence_through_the_op_must_verify() {
+    use serde_json::json;
+    use vault_helper::state::VaultState;
+    let _g = vault_fx::serial();
+    let cloud = Cloud::new("forkop");
+    let mut a = Mac::new("forkop-a");
+    a.setup(&cloud, "synthetic-forkop@example.test").unwrap();
+    let fork = forked(&cloud, &mut a, "forkop-fork");
+    let mut fx = vault_fx::fx();
+    let mut core = vault_helper::vault::VaultCore::boot(a.dir.clone());
+    core.store = Some(vault_helper::storage::VaultStore::open(&a.dir).unwrap());
+    core.vk = Some(vault_helper::crypto::secret::SecretBytes::new(*a.vk.as_ref().unwrap().expose()));
+    core.state = VaultState::Unlocked;
+    fx.core = std::sync::Arc::new(std::sync::Mutex::new(core));
+    let forked_body = a.read(&fork, Operation::StateGet, None).body;
+    // Junk: the same generation re-signed by a key the vault never enrolled.
+    let junk = forge_signer(&forked_body);
+    let r = fx.op(json!({ "op": "backup_state_offer", "state": String::from_utf8(junk).unwrap() }));
+    assert_eq!(r["error"], "SIGNATURE_INVALID", "{r}");
+    assert_eq!(fx.state(), VaultState::Unlocked, "unverifiable junk changes nothing");
+    assert!(vault_helper::storage::compromised::load(&a.store().conn).unwrap().is_none());
+    // Verified evidence: our own key signed both.
+    let r = fx.op(json!({ "op": "backup_state_offer", "state": String::from_utf8(forked_body).unwrap() }));
+    assert_eq!(r["error"], "REGISTRY_FORK", "{r}");
+    assert_eq!(fx.state(), VaultState::Compromised);
+    assert!(vault_helper::storage::compromised::load(&a.store().conn).unwrap().is_some(), "evidence recorded");
+    assert_eq!(fx.op(json!({ "op": "list_items" }))["ok"], true, "reads allowed");
+    assert_eq!(fx.op(json!({ "op": "backup_prepare" }))["error"], "BAD_STATE", "writes frozen");
+    let read = fx.op(json!({ "op": "sign_provider_request", "operation": "state_get", "body_sha256": vault_helper::crypto::hex::encode(vault_proto::request::body_hash(b"")) }));
+    assert_eq!(read["ok"], true, "network reads allowed: {read}");
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    fx.core = std::sync::Arc::new(std::sync::Mutex::new(vault_helper::vault::VaultCore::boot(a.dir.clone())));
+    assert_eq!(fx.state(), VaultState::Locked);
+    fx.remove_dir();
+}
+

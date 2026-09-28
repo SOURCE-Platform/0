@@ -13,6 +13,9 @@ use crate::errors::ErrorCode;
 /// and `hello` are handled by the server layer (they need no vault deps).
 pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
     let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
+    if let Some(ev) = lock_core(core).expire_sessions() {
+        deps.events.emit(ev);
+    }
     match op {
         "setup_vault" => setup::setup_vault(core, frame, deps),
         "unlock" => device_unlock::unlock(core, deps),
@@ -21,7 +24,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
             rk_ops::reset_master_password(core, deps)
         }
         "change_master_password" => change_mp::change_master_password(core, deps),
-        "rotate_recovery_key" => rk_ops::rotate_recovery_key(core, deps),
+        "rotate_recovery_key" => rk_ops::rotate_recovery_key(core, frame, deps),
         "setup_retry_handle" => retry_handle::setup_retry_handle(core, frame, deps),
         "list_items" => items::list_items(core),
         "add_item" => items::add_item(core, frame, deps),
@@ -49,7 +52,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         "stream_begin" => provider_ops::stream_begin(core, frame),
         "stream_write" | "stream_end" | "stream_cancel" => provider_ops::stream_io(core, frame, op),
         "sign_provider_request" => provider_ops::sign_provider_request(core, frame),
-        "session_close" => provider_ops::session_close(core, frame),
+        "session_close" => provider_ops::session_close(core, frame, deps),
         "quarantine_status" => provider_ops::quarantine_status(core),
         "remote_update_status" => remote_status::remote_update_status(core),
         "recovery_begin" => recovery_flow::recovery_begin(core, frame, deps),

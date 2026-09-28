@@ -112,15 +112,17 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
     };
     let pending = vault_coordinator::Helper::op(&AppHelper, json!({"op": "remote_update_status"})).unwrap_or(Value::Null);
     match result {
-        Ok(ran) => {
+        Ok(None) => {
+            // Nothing ran (locked, nothing staged): no verdict — keep the
+            // last outcome, its failure streak and its error (§11.6).
+            set_status(app, |s| s.pending = pending);
+            PERIOD
+        }
+        Ok(Some(ran)) => {
             watch.success();
             set_status(app, |s| {
-                let cleared = ran.as_ref().map(|v| strings(&v["cleared"])).unwrap_or_default();
-                // Nothing ran (locked): keep the last success, so staleness
-                // still counts from the last real publication.
-                let last_success = if ran.is_some() { Some(now()) } else { s.last_success };
-                let state = if last_success.is_some() { "ok" } else { "idle" };
-                *s = BackupStatus { state: state.into(), last_success, pending, cleared, ..Default::default() };
+                let cleared = strings(&ran["cleared"]);
+                *s = BackupStatus { state: "ok".into(), last_success: Some(now()), pending, cleared, ..Default::default() };
             });
             PERIOD
         }
@@ -143,11 +145,12 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
 /// Publish if anything changed (a `STATE_MOVED` merges first), else pull
 /// what others published. Publishing first also covers a vault whose
 /// first `create` never committed: there is no remote state to sync yet
-/// (BK-28). Nothing to do while locked (a staged publication arrives as
-/// `Trigger::Staged`).
+/// (BK-28). A publication left staged by a failed upload (`backing_up`)
+/// is resumed — also while LOCKED (§11.3.2 retries); otherwise nothing
+/// runs while locked.
 fn run_unlocked(flows: &Flows<'_>) -> Result<Option<Value>, Failure> {
     let state = vault_coordinator::Helper::op(&AppHelper, json!({"op": "get_state"})).map_err(Failure::Helper)?;
-    if state["state"] != "unlocked" {
+    if state["state"] != "unlocked" && state["state"] != "backing_up" {
         return Ok(None);
     }
     let out = flows.backup_now()?;

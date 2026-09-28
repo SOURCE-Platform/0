@@ -22,7 +22,12 @@ pub enum Offer {
 }
 
 /// §11.5 step 1: lower generation → `MANIFEST_ROLLBACK`; the same
-/// generation with a different manifest → fork evidence (§4.6).
+/// generation with a different manifest, or the next generation not
+/// chained to the accepted one (`prev_manifest_hash`), → fork evidence
+/// (§4.6) — but only when the served manifest verifies under a device
+/// active in this vault's own registry ("two validly signed manifests").
+/// Anything unverifiable is refused (`SIGNATURE_INVALID`) with no state
+/// change: an untrusted provider cannot freeze the vault with junk.
 pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCode> {
     if remote.manifest.vault_id != store.header.vault_id.0 {
         return Err(ErrorCode::ManifestMismatch);
@@ -31,11 +36,26 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
         if remote.generation < s.generation {
             return Err(ErrorCode::ManifestRollback);
         }
-        if remote.generation == s.generation {
-            return if remote.manifest_hash == s.manifest_hash.0 { Ok(Offer::UpToDate) } else { Err(ErrorCode::RegistryFork) };
+        let forked = if remote.generation == s.generation {
+            if remote.manifest_hash == s.manifest_hash.0 {
+                return Ok(Offer::UpToDate);
+            }
+            true
+        } else {
+            remote.generation == s.generation + 1 && remote.manifest.prev_manifest_hash != s.manifest_hash.0
+        };
+        if forked {
+            return Err(if signed_by_our_registry(store, remote)? { ErrorCode::RegistryFork } else { ErrorCode::SignatureInvalid });
         }
     }
     Ok(Offer::Index(remote.manifest.object_index_hash))
+}
+
+/// The served manifest verifies under a device active in the local,
+/// already-trusted registry.
+fn signed_by_our_registry(store: &VaultStore, remote: &RemoteState) -> Result<bool, ErrorCode> {
+    let reg = crate::registry::log::read_state(&store.dir, &store.header.vault_id.0, &crate::registry::chain::EpochPolicy::CheckpointAnchored)?;
+    Ok(reg.active_device(&remote.manifest.signer_device_id).is_some_and(|d| remote.manifest.verify(&d.sign_pub).is_ok()))
 }
 
 /// §11.5 step 2: verify the index against the manifest and list the

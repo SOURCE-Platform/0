@@ -53,7 +53,9 @@ interface RevealResponse {
 }
 
 export async function vaultState(): Promise<VaultState> {
-  const resp = await invoke<StateResponse>("vault_state");
+  const resp = await invoke<StateResponse & { vault_open?: boolean }>("vault_state");
+  // A staged upload can run over a locked vault (§13.2): show it locked.
+  if (resp.state === "backing_up" && resp.vault_open === false) return "locked";
   return (resp.state as VaultState) ?? "unknown";
 }
 
@@ -148,9 +150,13 @@ export async function vaultUnlockWithRecoveryKey(): Promise<void> {
   await invoke("vault_unlock_with_recovery_key");
 }
 
-/** New Recovery Key + key rotation; the helper shows/prints the words. */
-export async function vaultRotateRecoveryKey(): Promise<void> {
-  await invoke("vault_rotate_recovery_key");
+/**
+ * New Recovery Key + key rotation; the helper shows/prints the words.
+ * `suspectedTheft` makes it security-driven (§12 scenario 7): a
+ * persistent warning until the backup has cut the old key off.
+ */
+export async function vaultRotateRecoveryKey(suspectedTheft = false): Promise<void> {
+  await invoke("vault_rotate_recovery_key", { suspectedTheft });
 }
 
 /** New master password for an unlocked vault (old one forgotten). */

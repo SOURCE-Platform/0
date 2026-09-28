@@ -232,7 +232,12 @@ fn move_into_place(from: &std::path::Path, to: &std::path::Path) -> Result<(), E
     for e in std::fs::read_dir(from).map_err(|_| ErrorCode::Internal)? {
         let e = e.map_err(|_| ErrorCode::Internal)?;
         if e.file_name() != crate::VAULT_HEADER_NAME {
-            std::fs::rename(e.path(), to.join(e.file_name())).map_err(|_| ErrorCode::Internal)?;
+            let dest = to.join(e.file_name());
+            if dest.is_dir() {
+                // A leftover from an earlier interrupted attempt.
+                std::fs::remove_dir_all(&dest).map_err(|_| ErrorCode::Internal)?;
+            }
+            std::fs::rename(e.path(), dest).map_err(|_| ErrorCode::Internal)?;
         }
     }
     let header = crate::VAULT_HEADER_NAME;

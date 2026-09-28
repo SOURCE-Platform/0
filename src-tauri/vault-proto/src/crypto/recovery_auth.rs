@@ -99,22 +99,27 @@ const SUITE_ID: &[u8] = b"KEM\x00\x10"; // "KEM" ‖ I2OSP(0x0010, 2)
 
 /// RFC 9180 §7.1.3 `DeriveKeyPair` for DHKEM(P-256, HKDF-SHA256).
 pub fn derive_key_pair(ikm: &[u8]) -> Result<RecoveryAuthKey, CryptoError> {
+    derive_from_candidates(|counter| dkp_candidate(ikm, counter))
+}
+
+/// The `DeriveKeyPair` candidate scalar for `counter` (the first valid one
+/// is `sk_c`). Public for the PR-01/BK-18 canary scans only.
+#[doc(hidden)]
+pub fn dkp_candidate(ikm: &[u8], counter: u8) -> Zeroizing<[u8; 32]> {
     let mut labeled_ikm = Zeroizing::new(b"HPKE-v1".to_vec());
     labeled_ikm.extend_from_slice(SUITE_ID);
     labeled_ikm.extend_from_slice(b"dkp_prk");
     labeled_ikm.extend_from_slice(ikm);
     let (_, hk) = Hkdf::<Sha256>::extract(Some(&[]), &labeled_ikm);
-    derive_from_candidates(|counter| {
-        let mut info = Vec::with_capacity(2 + 7 + SUITE_ID.len() + 9 + 1);
-        info.extend_from_slice(&32u16.to_be_bytes()); // I2OSP(L, 2)
-        info.extend_from_slice(b"HPKE-v1");
-        info.extend_from_slice(SUITE_ID);
-        info.extend_from_slice(b"candidate");
-        info.push(counter);
-        let mut bytes = Zeroizing::new([0u8; 32]);
-        hk.expand(&info, bytes.as_mut()).expect("32 bytes is a valid HKDF-SHA256 length");
-        bytes
-    })
+    let mut info = Vec::with_capacity(2 + 7 + SUITE_ID.len() + 9 + 1);
+    info.extend_from_slice(&32u16.to_be_bytes()); // I2OSP(L, 2)
+    info.extend_from_slice(b"HPKE-v1");
+    info.extend_from_slice(SUITE_ID);
+    info.extend_from_slice(b"candidate");
+    info.push(counter);
+    let mut bytes = Zeroizing::new([0u8; 32]);
+    hk.expand(&info, bytes.as_mut()).expect("32 bytes is a valid HKDF-SHA256 length");
+    bytes
 }
 
 /// The rejection loop over an injectable candidate source (CR-13 (c)):

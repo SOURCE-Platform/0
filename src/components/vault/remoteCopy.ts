@@ -10,17 +10,18 @@ export function pendingBanner(s: BackupStatus | null): Banner | null {
   const p = s?.pending;
   if (!p?.pending) return null;
   const ops = p.ops ?? [];
-  if (p.needs_user) {
-    return {
-      tone: "warn",
-      text: "Another device changed your vault's security settings first. Your change was not applied — please make it again.",
-    };
-  }
-  if (p.revocation_failed) {
-    return { tone: "warn", text: "Not yet cut off at your backup: the removed device — keep this Mac online." };
-  }
-  if (p.security_driven) {
-    return { tone: "warn", text: "Not yet cut off at your backup — keep this Mac online." };
+  const redo = p.needs_user
+    ? "Another device changed your vault's security settings first. Your change was not applied — please make it again."
+    : null;
+  // Security-driven work keeps its warning throughout (§11.3), also while
+  // the user is asked to redo it.
+  const security = p.revocation_failed
+    ? "Not yet cut off at your backup: the removed device — keep this Mac online."
+    : p.security_driven
+      ? "Not yet cut off at your backup — keep this Mac online."
+      : null;
+  if (security || redo) {
+    return { tone: "warn", text: [security, redo].filter(Boolean).join(" ") };
   }
   if (ops.includes("vault_create")) return { tone: "info", text: "Your vault hasn't reached the backup yet." };
   if (ops.includes("mp_change")) {

@@ -152,9 +152,12 @@ fn finish(core: &Arc<Mutex<VaultCore>>, deps: &Deps, result: Result<(), ErrorCod
     }
 }
 
-/// §1.5 `rotate_recovery_key`: current MP (to re-seal password.wrap) →
-/// new RK shown + acknowledged → VK rotation with both wraps rebuilt.
-pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
+/// §1.5 `rotate_recovery_key {suspected_theft?}`: current MP (to re-seal
+/// password.wrap) → new RK shown + acknowledged → VK rotation with both
+/// wraps rebuilt. `suspected_theft` makes it security-driven (§11.3.2,
+/// §12 scenario 7: persistent warning, priority retry).
+pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Value, deps: &Deps) -> OpOutcome {
+    let security_driven = frame.get("suspected_theft").and_then(serde_json::Value::as_bool).unwrap_or(false);
     if let Err(e) = authorize(core, deps, "Source Vault: replace your Recovery Key") {
         return finish(core, deps, Err(e));
     }
@@ -191,7 +194,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutco
         return OpOutcome::err(ErrorCode::BadState);
     };
     let dir = store.dir.clone();
-    let rotated = super::recovery_ops::rotate_with_rk(store, &vk, &pk, &rk, false);
+    let rotated = super::recovery_ops::rotate_with_rk(store, &vk, &pk, &rk, security_driven);
     drop(vk);
     let reopened = rotated.and_then(|r| VaultStore::open(&dir).map(|s| (r, s)));
     match reopened {

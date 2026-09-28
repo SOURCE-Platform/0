@@ -97,34 +97,52 @@ pub fn apply(
     // The VK of the committed state. With a pending local rotation, the
     // generation *number* says nothing about the key: another device may
     // have rotated to the same number with a different VK (§11.3 rule 2).
-    // - our pending rotation is ahead of an unchanged remote → `None`: our
-    //   chain and the manifest signature anchor it;
     // - no local rotation and the same generation → our VK;
-    // - the remote moved past our base → the VK from our own envelope.
+    // - otherwise (a pending rotation at or past the remote's generation,
+    //   or a remote past our base) → the VK from our own envelope in the
+    //   served state. Every served state is checked under its own VK.
     let local_gen = store.header.vk_generation;
     let base_gen = pending.as_ref().map_or(local_gen, |p| p.base.vk_generation);
     let rotated = base_gen < local_gen;
-    let remote_vk: Option<SecretBytes<32>> = if rotated && remote.vk_generation == base_gen {
-        None
-    } else if !rotated && remote.vk_generation == local_gen {
-        Some(SecretBytes::new(*vk.expose()))
-    } else if remote.vk_generation > base_gen {
+    let remote_vk: SecretBytes<32> = if !rotated && remote.vk_generation == local_gen {
+        SecretBytes::new(*vk.expose())
+    } else if remote.vk_generation >= base_gen {
         let env: DeviceEnvelopeFile = serde_json::from_slice(get(&Role::Env { device_id: me })?).map_err(|_| ErrorCode::WrapCorrupt)?;
         let payload = open_env(&env)?;
         if payload.vk_generation != remote.vk_generation {
             return Err(ErrorCode::ManifestMismatch);
         }
-        Some(payload.vk)
+        payload.vk
     } else {
         return Err(ErrorCode::ManifestMismatch);
     };
-    if let Some(rvk) = &remote_vk {
-        remote.checkpoint.verify_binding(rvk, &remote.manifest, &rstate.head, rstate.epoch)?;
+    remote.checkpoint.verify_binding(&remote_vk, &remote.manifest, &rstate.head, rstate.epoch)?;
+    // §11.3 rule 2: a device this Mac is revoking that authorized entries
+    // after the base is fork evidence, never adopted (verified above).
+    if pending.as_ref().is_some_and(|p| p.ops.contains(&pending::PendingOp::Revocation)) {
+        for e in remote_entries.iter().skip(base_len) {
+            if let Some(a) = e.authorizer {
+                if revoked::is_revoked(&store.conn, &uuid_string(&a))? {
+                    return Err(ErrorCode::RegistryFork);
+                }
+            }
+        }
     }
     let header = parse_header(get(&Role::Header)?)?;
     if header.vault_id.0 != vid || header.vk_generation != remote.vk_generation {
         return Err(ErrorCode::ManifestMismatch);
     }
+    // §11.3.2 REMOTE_COMMITTED by observation: a verified state carrying
+    // the singletons one of our own posted stagings lands (a lost `200`,
+    // a restart) settles the record like the `200` would have.
+    let landed_base = pending::Base::of(&header);
+    let pending = match pending.as_ref().and_then(|p| pending::landed(p, &landed_base)) {
+        Some(v) => {
+            pending::settle(&store.conn, v, landed_base)?;
+            pending::load(&store.conn)?
+        }
+        None => pending,
+    };
     // Revision rows of the committed state (fetched or already held).
     let mut incoming: Vec<RevisionRow> = Vec::new();
     let mut authors: HashMap<[u8; 32], String> = HashMap::new();
@@ -180,7 +198,7 @@ pub fn apply(
         None => false,
     };
     let (mut store, vk) = match remote_vk {
-        Some(rvk) if !keep_local => {
+        rvk if !keep_local => {
             let dir = store.dir.clone();
             let reseal = rvk.expose() != vk.expose();
             adopt(store, &committed, reseal.then_some((&vk, &rvk)))?;

@@ -109,6 +109,11 @@ impl Hub {
         conn_id
     }
 
+    /// Whether `conn_id` still holds its class's slot (not replaced).
+    pub fn is_current(&self, class: ClientClass, conn_id: u64) -> bool {
+        self.lock().slots.get(&class).is_some_and(|s| s.conn_id == conn_id)
+    }
+
     pub fn unregister(&self, class: ClientClass, conn_id: u64) {
         let mut inner = self.lock();
         if inner

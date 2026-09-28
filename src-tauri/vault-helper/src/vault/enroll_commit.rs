@@ -74,6 +74,7 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         &me,
         &vk,
         &[(peer.device_id, env_bytes)],
+        true,
     )?;
     let bundle = wire::Bundle {
         vault_id: hex::encode(vault_id),
@@ -86,6 +87,7 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         checkpoint: hex::encode(snap.checkpoint.encode()),
         envelope: serde_json::to_value(&env).map_err(|_| ErrorCode::Internal)?,
         registry_head: hex::encode(head),
+        registry: hex::encode(crate::registry::file::encode(&pending.entries)?),
     };
     let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
     session.entry = Some(entry);
@@ -140,6 +142,9 @@ fn finish_ack(core: &Arc<Mutex<VaultCore>>, sig: &[u8; 64]) -> Result<Value, Err
     // Commit: entry → registry, envelope copy → disk (so a later VK
     // rotation can re-seal it), credential → the issuer's record.
     let state = log::read_state(&dir, &vault_id, &POLICY)?;
+    // §5.2 provider activation / §11.3.2: the enrollment is
+    // REMOTE_UPDATE_PENDING, built on the singletons held before it.
+    let base = crate::sync::pending::base_for(&c.store.as_ref().ok_or(ErrorCode::BadState)?.conn, &c.store.as_ref().ok_or(ErrorCode::BadState)?.header)?;
     log::append(&dir, &vault_id, &state, entry, &POLICY)?;
     let env_file = envelope::seal_envelope(
         &peer.agree_pub,
@@ -155,6 +160,7 @@ fn finish_ack(core: &Arc<Mutex<VaultCore>>, sig: &[u8; 64]) -> Result<Value, Err
     envelope::write_envelope(&dir, &peer.device_id, &env_file)?;
     let store = c.store.as_mut().ok_or(ErrorCode::BadState)?;
     store.set_registry_head(head)?;
+    crate::sync::pending::add(&store.conn, crate::sync::pending::PendingOp::Enrollment, false, base, Vec::new(), now_epoch())?;
     let header = store.header.clone();
     c.header = Some(header);
     c.enroll = None;

@@ -43,6 +43,14 @@ impl Provider {
         }
         let body_sha: [u8; 32] = Sha256::digest(inc.body).into();
         if t.kind == TransitionKind::Create {
+            // A `create` never writes into an existing vault's namespace;
+            // an identical re-send of the committed create stays idempotent.
+            if let Some((cur, _)) = &loaded {
+                return match replayed(cur, &t, &body_sha)? {
+                    Some(r) => Ok(r),
+                    None => Err(moved(cur)),
+                };
+            }
             let v = self.validate(None, &t, &a.signer)?;
             self.write_blobs(&inc.vault_id, &v.blobs)?;
             return self.create_with_claim(&t, v.state, body_sha, inc.now);

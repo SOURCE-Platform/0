@@ -64,6 +64,17 @@ fn bk28_handle_taken_then_retry() {
         }
     }
     assert!(pending::load(&a.store().conn).unwrap().is_none(), "the create committed");
+    // SEC-B1: no record ever reached the provider inside a `create` — not
+    // the first attempt's (sealed under the VK the retry retired), not the
+    // retries'. Records travel in the first publish.
+    let blobs_dir = cloud.dir.join(format!("v2/vaults/{}/blobs", vault_helper::crypto::hex::encode(a.vid())));
+    let objects = || {
+        let dir = &blobs_dir;
+        std::fs::read_dir(dir).map_or(0, |d| d.filter(|e| std::fs::read(e.as_ref().unwrap().path()).is_ok_and(|b| b.starts_with(b"OV0OBJ02"))).count())
+    };
+    assert_eq!(objects(), 0, "a create carries no records");
+    a.publish(&cloud).unwrap();
+    assert!(objects() > 0);
     assert_eq!(a.titles(), vec!["local-before-retry"], "local records survive");
     assert_eq!(a.store().header.vk_generation, 3, "one rotation per retry");
 
@@ -82,4 +93,46 @@ fn bk28_handle_taken_then_retry() {
     // The first-sheet RK authenticates nothing at the provider.
     let r = recover::run(&cloud, FREE, Credential::Rk(&rk0), Plan { new_mp: Some(b"synthetic-bk28-new-master-password"), keep_rk: None }, None);
     assert_eq!(r.err(), Some(ErrorCode::WrongCredential));
+}
+
+/// BK-28: a crash at any point of the retry's journaled commit leaves
+/// either the old state (VK generation, handle, pending version) or the
+/// new one — never a mix — and the vault opens and reads afterwards.
+#[test]
+fn bk28_retry_crash_is_old_or_new() {
+    use vault_helper::storage::rotation_journal::FailAt;
+    use vault_helper::vault::rk_ops::stored_handle;
+    let mut a = Mac::new("bk28-crash");
+    let rk0 = random_secret();
+    let (header, vk) = vault_helper::vault::create::create_vault(&a.dir, MP, &rk0, &a.dev).unwrap();
+    let updates = vault_helper::sync::change::updates_for(&header, Some(MP), Some(&rk0)).unwrap();
+    setup::stage_create(&a.dir, &a.dev, &vk, TAKEN_1, updates).unwrap();
+    a.store = Some(VaultStore::open(&a.dir).unwrap());
+    a.vk = Some(vk);
+    a.add("kept");
+    let snapshot = |s: &VaultStore| (s.header.vk_generation, stored_handle(s), pending::load(&s.conn).unwrap().map(|p| (p.version, p.ops)));
+    for (i, fail) in [FailAt::AfterDbStaged, FailAt::AfterWrapsStaged, FailAt::AfterHeadStaged, FailAt::AfterMarker, FailAt::AfterFirstRename].into_iter().enumerate() {
+        let handle = format!("synthetic-crash-{i}@example.test");
+        let before = snapshot(a.store());
+        let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
+        let pk = recovery_ops::prove_mp(&store, MP).unwrap();
+        let rk = random_secret();
+        let old_vk = SecretBytes::new(*vk.expose());
+        assert!(retry_handle::rotate_failing(store, &vk, &pk, &rk, &handle, Some(fail)).is_err());
+        let store = VaultStore::open(&a.dir).expect("the vault opens after a crash");
+        let after = snapshot(&store);
+        let (g, _, p) = &before;
+        if after == before {
+            a.vk = Some(old_vk);
+        } else {
+            let new = (g + 1, Some(handle.clone()), p.as_ref().map(|(v, ops)| (v + 1, ops.clone())));
+            assert_eq!(after, new, "{fail:?}: a mix of old and new");
+            // The new VK was lost with the "crash"; a committed rotation is
+            // opened by the MP, as an unlock would.
+            let f: vault_helper::crypto::wrap::PasswordWrapFile = serde_json::from_slice(&std::fs::read(a.dir.join(vault_helper::storage::store::PASSWORD_WRAP_NAME)).unwrap()).unwrap();
+            a.vk = Some(vault_helper::crypto::wrap::open_wrap_mp(&f, &recovery_ops::prove_mp(&store, MP).unwrap(), &store.header.vault_id.0).unwrap().vk);
+        }
+        a.store = Some(store);
+        assert_eq!(a.titles(), vec!["kept"], "{fail:?}: records readable");
+    }
 }

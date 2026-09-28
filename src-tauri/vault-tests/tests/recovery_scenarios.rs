@@ -112,7 +112,7 @@ fn cp02_substituted_registry_is_refused() {
     let evil = vault_helper::registry::device::SoftwareDevice::generate("Provider's device", vault_helper::registry::device::PLATFORM_MACOS);
     let fake = vault_helper::registry::file::encode(&[vault_helper::registry::build::genesis(&evil).unwrap()]).unwrap();
     let rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
-    assert!(substituted_registry_refused(&cloud, &mac, &handle, &rk, &evil, fake));
+    assert_eq!(substituted_registry_error(&cloud, &mac, &handle, &rk, &evil, fake), vault_helper::errors::ErrorCode::ManifestMismatch, "the checkpoint step refuses it");
 }
 
 /// CP-03: after a recovery (a `recovery_epoch` entry in the registry), a
@@ -129,22 +129,28 @@ fn cp03_altered_recovery_epoch_is_refused() {
     m.add("after-recovery");
     m.publish(&cloud).unwrap();
     let real = std::fs::read(m.dir.join(vault_helper::VAULT_REGISTRY_NAME)).unwrap();
-    let mut altered = real.clone();
-    let n = altered.len() - 8; // inside the last entry: the recovery_epoch
-    altered[n] ^= 1;
-    // Rebuilt index + manifest over the altered bytes.
+    // A well-formed registry whose historical recovery_epoch differs.
+    let mut entries = vault_helper::registry::file::decode(&real).unwrap();
+    let epoch = entries.iter_mut().rev().find(|e| e.kind == vault_helper::crypto::registry::EntryKind::RecoveryEpoch).expect("a recovery_epoch entry");
+    match epoch.recovery_proof.as_mut() {
+        Some(p) => p[0] ^= 1,
+        None => epoch.enrolled_at = epoch.enrolled_at.map(|t| t + 1),
+    }
+    let altered = vault_helper::registry::file::encode(&entries).unwrap();
+    assert_ne!(altered, real);
+    // Rebuilt index + manifest over it: the checkpoint binding refuses it.
     let evil = vault_helper::registry::device::SoftwareDevice::generate("Provider's device", vault_helper::registry::device::PLATFORM_MACOS);
-    assert!(substituted_registry_refused(&cloud, &m, &handle, &rk, &evil, altered.clone()));
+    assert_eq!(substituted_registry_error(&cloud, &m, &handle, &rk, &evil, altered.clone()), vault_helper::errors::ErrorCode::ManifestMismatch);
     // In place: the served blob no longer matches its index hash.
     let blob = cloud.dir.join(format!("v2/vaults/{}/blobs/{}", vault_helper::crypto::hex::encode(m.vid()), vault_helper::crypto::hex::encode(sha(&real))));
     std::fs::write(&blob, &altered).unwrap();
     let r = recover::run(&cloud, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: Some(&rk) }, None);
-    assert!(r.is_err(), "an altered historical recovery_epoch must stop recovery");
+    assert_eq!(r.err(), Some(vault_helper::errors::ErrorCode::BackupObjectMissing));
 }
 
 /// Serve `fake_reg` in place of the registry, with a new index and a
-/// manifest re-signed by `evil`; true when recovery refuses it.
-fn substituted_registry_refused(cloud: &Cloud, mac: &Mac, handle: &str, rk: &SecretBytes<32>, evil: &vault_helper::registry::device::SoftwareDevice, fake_reg: Vec<u8>) -> bool {
+/// manifest re-signed by `evil`; the error recovery's verify returns.
+fn substituted_registry_error(cloud: &Cloud, mac: &Mac, handle: &str, rk: &SecretBytes<32>, evil: &vault_helper::registry::device::SoftwareDevice, fake_reg: Vec<u8>) -> vault_helper::errors::ErrorCode {
     use vault_helper::backup::index::{IndexEntry, ObjectIndex, Role};
     use vault_helper::backup::manifest::SignedManifest;
     let state = mac.read(cloud, Operation::StateGet, None).body;
@@ -164,8 +170,8 @@ fn substituted_registry_refused(cloud: &Cloud, mac: &Mac, handle: &str, rk: &Sec
     let locate = cloud.locate(handle);
     let mut r = Recovery::begin(ORIGIN, &locate, Credential::Rk(rk), 0).unwrap();
     let remote = remote::parse(&forged).unwrap();
-    let Ok(idx) = r.plan(&remote, &fake_index.encode()) else { return true };
-    r.verify(remote, &idx, &blobs).is_err()
+    let idx = r.plan(&remote, &fake_index.encode()).expect("the forged index is well formed");
+    r.verify(remote, &idx, &blobs).expect_err("a substituted registry never verifies")
 }
 
 /// BK-18: canary secrets planted in a full flow never appear anywhere in
@@ -238,6 +244,9 @@ fn cp01_repeated_recoveries() {
         let mut m = into_mac(out);
         assert_eq!(m.titles(), expected, "round {round}");
         assert_eq!(m.store().header.vk_generation, 1 + round, "one rotation per recovery");
+        assert_eq!(m.registry().epoch, round as u64, "one epoch per recovery; earlier epochs stay as history");
+        let epochs = m.registry().entries.iter().filter(|e| e.kind == vault_helper::crypto::registry::EntryKind::RecoveryEpoch).count();
+        assert_eq!(epochs, round as usize);
         let title = format!("after-round-{round}");
         m.add(&title);
         m.publish(&cloud).unwrap();

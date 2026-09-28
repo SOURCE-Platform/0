@@ -17,7 +17,11 @@ use crate::storage::store::{now_epoch, VaultStore, PASSWORD_WRAP_NAME, RECOVERY_
 /// Stage the local vault as generation `generation`, chained to
 /// `prev_manifest_hash`, signed by `signer`, checkpointed under `vk`.
 /// `pending_envelopes` supplies envelopes not yet on disk (an enrollment
-/// whose entry is in `registry` but not yet committed).
+/// whose entry is in `registry` but not yet committed). `with_revisions`
+/// is false only for a `create`: a new vault's first state carries no
+/// records (§11.3; records sealed under a VK a `setup_retry_handle` later
+/// retires must never reach the provider, §1.5).
+#[allow(clippy::too_many_arguments)]
 pub fn stage_local(
     store: &VaultStore,
     registry: &RegistryState,
@@ -26,6 +30,7 @@ pub fn stage_local(
     signer: &dyn DeviceIdentity,
     vk: &SecretBytes<32>,
     pending_envelopes: &[([u8; 16], Vec<u8>)],
+    with_revisions: bool,
 ) -> Result<Staged, ErrorCode> {
     let dir = &store.dir;
     let read = |name: &str| std::fs::read(dir.join(name)).map_err(|_| ErrorCode::WrapCorrupt);
@@ -39,7 +44,7 @@ pub fn stage_local(
         };
         envelopes.push((d.device_id, bytes));
     }
-    let rows = revision_rows::all_rows(&store.conn)?;
+    let rows = if with_revisions { revision_rows::all_rows(&store.conn)? } else { Vec::new() };
     stage(
         StateInputs {
             vault_id: store.header.vault_id.0,

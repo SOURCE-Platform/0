@@ -132,12 +132,12 @@ pub fn stage_create(
     let reg = crate::registry::log::read_state(dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
     let hk = vault_proto::handle::handle_key(handle);
     let mut staging = crate::sync::publish::stage_create(&store, &reg, vk, dev, hk, updates.clone())?;
-    staging.carries_pending = true;
     // The normalized handle stays local (never in header.json) for sheet
     // reprints and a later `setup_retry_handle` (§1.5).
     crate::storage::kv::put(&store.conn, super::rk_ops::HANDLE_KEY, &handle)?;
     let seen_updates = crate::sync::change::seen_auth(&updates);
     pending::add(&store.conn, PendingOp::VaultCreate, false, Base::of(&store.header), seen_updates, crate::storage::store::now_epoch())?;
+    staging.carries_pending = crate::sync::publish::carry(&store)?;
     Ok(super::provider_ops::PublishSession { t: super::backup_ops::transfer_for(&staging), staging })
 }
 

@@ -30,9 +30,10 @@ pub struct Staging {
     pub manifest_hash: [u8; 32],
     pub new_state_commit: [u8; 32],
     pub new_auth: Vec<RecoveryAuthEntry>,
-    /// The transition carries the pending local change (§11.3.2): its
-    /// commit is REMOTE_COMMITTED for it.
-    pub carries_pending: bool,
+    /// The transition carries the pending local change (§11.3.2): the
+    /// record version it carries and the singletons it lands. Its commit
+    /// is REMOTE_COMMITTED for that version only.
+    pub carries_pending: Option<(u64, super::pending::Base)>,
     /// The staged manifest bytes (to exclude the index from the digest).
     pub body_manifest: Vec<u8>,
 }
@@ -66,7 +67,7 @@ pub fn finish_transition(
         new_state_commit,
         new_auth,
         blobs: staged.blobs,
-        carries_pending: false,
+        carries_pending: None,
         body_manifest: staged.manifest.encode(),
     })
 }
@@ -81,7 +82,7 @@ pub fn stage_create(
     handle_key: [u8; 32],
     updates: Vec<RecoveryAuthEntry>,
 ) -> Result<Staging, ErrorCode> {
-    let staged = stage_local(store, registry, 1, [0u8; 32], signer, vk, &[])?;
+    let staged = stage_local(store, registry, 1, [0u8; 32], signer, vk, &[], false)?;
     finish_transition(TransitionKind::Create, staged, [0u8; 32], &[], updates, Some(handle_key))
 }
 
@@ -102,25 +103,39 @@ pub fn stage_publish(
         let carried = Seen { recovery_auth: p.recovery_auth_updates.clone(), ..seen.clone() }.auth_entries()?;
         updates = merge_auth(&carried, &updates);
     }
-    let staged = stage_local(store, registry, seen.generation + 1, seen.manifest_hash.0, signer, vk, &[])?;
+    let staged = stage_local(store, registry, seen.generation + 1, seen.manifest_hash.0, signer, vk, &[], true)?;
     let mut st = finish_transition(TransitionKind::Publish, staged, seen.state_commit.0, &seen.auth_entries()?, updates, None)?;
-    st.carries_pending = pending.is_some();
+    if pending.is_some() {
+        st.carries_pending = carry(store)?;
+    }
     Ok(st)
+}
+
+/// Mark a staging of the local vault as carrying the pending record.
+pub fn carry(store: &VaultStore) -> Result<Option<(u64, super::pending::Base)>, ErrorCode> {
+    let base = super::pending::Base::of(&store.header);
+    Ok(super::pending::note_staged(&store.conn, base.clone())?.map(|v| (v, base)))
 }
 
 /// A `200` for this staging: accept it only if the provider's result is
 /// the commitment the helper computed, then move the rollback floor.
 pub fn committed(store: &VaultStore, st: &Staging, generation: u64, commit: [u8; 32]) -> Result<Seen, ErrorCode> {
+    committed_clearing(store, st, generation, commit).map(|(s, _)| s)
+}
+
+/// `committed`, also returning the pending components it cleared.
+pub fn committed_clearing(store: &VaultStore, st: &Staging, generation: u64, commit: [u8; 32]) -> Result<(Seen, Vec<super::pending::PendingOp>), ErrorCode> {
     if generation != st.generation || commit != st.new_state_commit {
         return Err(ErrorCode::ManifestMismatch);
     }
     let s = Seen::with_auth(generation, st.manifest_hash, commit, &st.new_auth);
     seen::save(&store.conn, &s)?;
-    if st.carries_pending {
-        super::pending::clear(&store.conn)?; // REMOTE_COMMITTED
-    }
+    let cleared = match &st.carries_pending {
+        Some((v, base)) => super::pending::settle(&store.conn, *v, base.clone())?, // REMOTE_COMMITTED
+        None => Vec::new(),
+    };
     crate::storage::kv::put(&store.conn, PUBLISHED_KEY, &crate::crypto::hex::encode(content_digest(st)))?;
-    Ok(s)
+    Ok((s, cleared))
 }
 
 const PUBLISHED_KEY: &str = "published_content";
@@ -141,7 +156,7 @@ pub fn content_digest(st: &Staging) -> [u8; 32] {
 /// carries no pending change (§11.3: no empty generations).
 pub fn unchanged(store: &VaultStore, st: &Staging) -> Result<bool, ErrorCode> {
     let last: Option<String> = crate::storage::kv::get(&store.conn, PUBLISHED_KEY)?;
-    Ok(!st.carries_pending && last == Some(crate::crypto::hex::encode(content_digest(st))))
+    Ok(st.carries_pending.is_none() && last == Some(crate::crypto::hex::encode(content_digest(st))))
 }
 
 /// The public recovery-auth updates for the classes whose secret the

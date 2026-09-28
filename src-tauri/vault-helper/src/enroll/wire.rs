@@ -58,6 +58,9 @@ pub struct Bundle {
     pub envelope: serde_json::Value,
     /// The registry head the phone must ACK.
     pub registry_head: String,
+    /// Hex of the registry file (JSONL, §4.2) the phone verifies; it is
+    /// also among `objects`, keyed by its hash, as in the state.
+    pub registry: String,
 }
 
 /// The phone's signature over `SHA-256("ov0/enroll/ack/v1" ‖ head ‖ mac)`.

@@ -165,8 +165,12 @@ impl VaultCore {
     /// the auto-lock pref (§1.6, Keychain helper-prefs).
     pub fn boot(vault_dir: PathBuf) -> VaultCore {
         let state = crate::state::detect_boot_state(&vault_dir);
-        if state == VaultState::Uninitialized {
-            // TR-08 / §13.3: an interrupted recovery restarts from scratch.
+        if state == VaultState::Uninitialized && vault_dir.join(recovery_flow::STAGING).exists() {
+            // TR-08 / §13.3: an interrupted recovery restarts from scratch —
+            // its staging and anything a half-finished move-into-place left
+            // in the root (there is no header, so no vault lives here).
+            crate::device::identity::wipe(&vault_dir);
+            create::cleanup_partial_vault(&vault_dir);
             let _ = std::fs::remove_dir_all(vault_dir.join(recovery_flow::STAGING));
         }
         let (header, header_error) = if state == VaultState::Locked {
@@ -227,15 +231,31 @@ impl VaultCore {
         }
     }
 
+    /// Expire idle sessions (§1.3); an expired recovery leaves RECOVERING
+    /// (§13.3). Returns the state event when the state changed.
+    pub fn expire_sessions(&mut self) -> Option<Value> {
+        self.provider.expire();
+        if self.state == VaultState::Recovering && self.provider.recovery.is_none() {
+            return self.leave_recovery();
+        }
+        None
+    }
+
     /// §1.3 TR-07 / §13.3: drop the recovery session and leave
     /// RECOVERING for the state the vault directory implies. Returns the
     /// state event when the state changed.
     pub fn leave_recovery(&mut self) -> Option<Value> {
         self.provider.recovery = None;
+        // §1.3: the recovery's staging is deleted with the session.
+        let _ = std::fs::remove_dir_all(self.vault_dir.join(recovery_flow::STAGING));
         if self.state != VaultState::Recovering {
             return None;
         }
         self.state = crate::state::detect_boot_state(&self.vault_dir);
+        if self.state == VaultState::Uninitialized {
+            // The abandoned attempt's device identity protects nothing.
+            crate::device::identity::wipe(&self.vault_dir);
+        }
         Some(ev_state(self.state))
     }
 
