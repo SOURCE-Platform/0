@@ -14,8 +14,8 @@ account or production origin was touched.
 
 **Status: Mac side and iPhone catch-up reviewed and closed (spec
 v0.4.1); Phase F itself is not yet closed.** What stops the Phase F exit
-(§4) is EV-03 on the owner's physical iPhone, the fresh-environment
-rehearsal, and the owner decisions in §5.
+(§4) is the fresh-environment rehearsal, the remaining named tests, and
+the owner decisions in §5. EV-03 passed on the owner's iPhone.
 
 ---
 
@@ -159,7 +159,13 @@ Vault crates: **278 passed, 0 failed, 1 ignored (U-1)**; `vault-provider`
 ## 4. Phase F exit — what remains
 
 1. ~~iPhone §4.7 envelope catch-up~~ — done (§2.4).
-2. EV-03 on a physical A15+ iPhone, gated by name.
+2. ~~EV-03 on a physical A15+ iPhone~~ — **passed 2026-09-29** on the
+   owner's iPhone 13 mini (A15), over the network, iPhone repo `384b940`:
+   `VaultCatchUpTests` and `VaultEV03Tests` (23 tests, including
+   `ev03EnclaveOpensAV2Envelope` and `ev03EnclaveSignsStateGet`),
+   `** TEST SUCCEEDED **`, device destination, no simulator. The raw log
+   (device name and hardware id) is kept out of the public repository;
+   the gate re-checks it when given `PHASE_F_EV03_LOG`.
 3. Fresh-environment rehearsal (kill both devices, recover) — needs a fresh
    macOS account and a reachable provider.
 4. Remaining named tests: BK-03, BK-06, RF-06, RL-03, RU-01/02/05 by
