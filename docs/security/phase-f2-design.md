@@ -1,7 +1,8 @@
 # Phase F.2 design — iPhone vault client and direct Mac ⇄ iPhone sync
 
-Date: 2026-09-29. **Revision 2** (after the security and spec reviews of
-revision 1, `088c37f`). Status: **design for re-review; no code.**
+Date: 2026-09-29. **Revision 3** (after the reviews of revision 1,
+`088c37f`, and the bounded re-review of revision 2, `dfd088a`). Status:
+**design ready for owner decisions; no code.**
 Authorized by the owner ("yes i want direct Mac ↔ iPhone sync"); spec
 v0.4.1 §18 requires this design review before implementation. Owner
 decisions are marked **F2-D*n*** (§11).
@@ -29,18 +30,23 @@ internet (no relay — §21 OQ-2 already fixes this for v1); push approvals
 | Adversary | Can | Must not be able to |
 |---|---|---|
 | Network attacker (any network the Mac or phone joins) | observe, drop, replay, redirect | read, inject, roll back, fork; pass as a device |
-| Active-but-compromised device (unlocked thief, malware) — until revoked | everything a device may do | make revocation of itself impossible (§4.4, §4.5); poison other devices' floors (§4.4) |
+| Active-but-compromised device (unlocked thief, malware) — until revoked | everything a device may do with the authority it holds; win a revocation *race* | freeze other devices or poison their committed state (§4.3); make its own revocation impossible once the owner acts (§4.3, §6.2) |
 | Revoked device (holds old VKs and its keys) | speak the peer protocol, forge revisions under the old VK | have anything it delivered survive the revocation (§4.6); obtain anything newer |
-| Stolen iPhone **with its passcode** | unlock the phone, pass Face ID fallback | revoke other devices, change the MP or RK, authorize enrollment, or reset the MP (§6.2) |
+| Stolen iPhone or Mac **with its device passcode / login password** | pass the device's presence check | revoke other devices, change the MP or RK, authorize enrollment, or reset the MP (§6.2, both platforms per F2-D3) |
 | Stolen locked iPhone | the hardware | the VK or plaintext (Data Protection + Enclave + no resident VK) |
 | The provider | as Phase F | as Phase F, also via peers: forwarding confers no trust (§4.3) |
 | Mac main process / same-user process with the TLS key | relay and tamper with peer bytes | change any signed peer content; wipe or revoke a phone (§5) |
 | Other apps, iCloud backup, screenshots | platform-level access | vault files in a device backup (§7.3); secrets captured without a warning (§7.4) |
 
-Stated residuals: a thief who knows the passcode can *read* the vault on
-the phone (§6.2 limits only authority changes); iOS cannot block
-screenshots (§7.4); the VK lives in a networked app process on iOS unless
-F2-D2 separates the app (§7.1).
+Stated residuals: a thief who snatches a phone **while the vault is
+unlocked** can read it and can delete records with presence alone
+(mitigated: bulk deletion needs the MP, and a restore path exists for
+records whose latest change came from a later-revoked device, §6.3); a
+passcode alone does not open the vault because the agreement key is
+biometry-bound (§6.2); iOS cannot block screenshots (§7.4); the VK lives
+in a networked app process on iOS unless F2-D2 separates the app (§7.1);
+a compromised device can still *race* the owner's revocation until it
+lands (§6.2 narrows what it can do in that window).
 
 ## 3. One vault engine for both platforms (F2-D1)
 
@@ -85,35 +91,47 @@ PeerResponse prehash = SHA-256("ov0/peer/response/v1" ‖ tlv)
 |---|---|---|
 | `peer_hello` | any with a vault | floors, heads summary (§4.5) |
 | `peer_state` | any with a vault | the latest *provider-committed* state, verbatim (§4.3) |
-| `peer_revs_want` / `peer_revs` | UNLOCKED or LOCKED (ciphertext only) | revision objects and their full parent closure (§4.5) |
-| `peer_status` | any | the signed registry status that replaces the Mac refresh (§5) |
+| `peer_revs_want` / `peer_revs` | serve: UNLOCKED or LOCKED; receive: UNLOCKED only (a LOCKED device keeps a bounded inbox, AEAD-opened and admitted at unlock) | revision objects and their full parent closure (§4.5) |
+| `peer_status` | any | the signed registry status that replaces the Mac refresh (§5); **answered for any key the registry ever installed, including revoked ones** — it is public data and the only way a revoked device learns its status (spec §1.5, §4.7, §11.8) |
 
 Caps per request, per response and per session; a per-peer quota for
 pending revisions; rate limits per device (spec §1.3 style).
 
 ### 4.2 Who may speak
 
-"Active" means **active in the receiver's local committed registry**,
+Except for `peer_status` (§4.1), "active" means **active in the receiver's local committed registry**,
 including its own unpublished entries, **and not the target of a pending
 revocation or a revocation awaiting redo** (§11.3.2 `awaiting_redo`). An
 unknown, revoked or pending-revocation sender gets nothing, and a
 requester checks that the responder is exactly the addressed device.
 
-### 4.3 Forwarded provider states are provisional
+### 4.3 Two tiers: committed and provisional
 
-A peer may forward only a state *the provider committed* (its
-`state_commit` as the provider served it), byte-for-byte, with its
-`recovery_auth`; a forwarder that no longer holds those exact blobs
-declines. The receiver verifies it exactly as a provider-served state
-(v0.4.1), **but**:
+`state_commit` is built from public inputs, so a still-active compromised
+device can build a validly signed "provider state" the provider never
+committed. A receiver therefore keeps two tiers:
 
-- it never becomes `seen`, the rollback floor or `expected_state` until
-  the device's own provider `state_get` shows the same `state_commit`;
-- a divergence first seen on the peer path (a fork, a wrong
-  `prev_manifest_hash`) **blames the forwarder**: the state is refused,
-  peer sync with that device stops, and the user is told — it never
-  enters vault-wide COMPROMISED;
-- the device that signed any such evidence can always still be revoked.
+- **Committed** — moved *only* by states the device's own provider
+  `state_get` confirmed (same `state_commit`). It is the only input to
+  fork and COMPROMISED decisions, the rollback floor, `seen` and
+  `expected_state`, the publication base, singleton adoption (registry,
+  header, wraps, VK, envelopes) and `Admit` sets.
+- **Provisional** — forwarded states and `peer_status` entries. They are
+  verified exactly as provider states (v0.4.1) and may only: deliver
+  revisions at the current VK generation (recorded with the forwarder as
+  the delivering peer; others wait); lock this device on its own
+  revocation (§5); stop talking to a device; inform the UI.
+- A provisional entry the provider's chain later contradicts is
+  **discarded and attributed to its source** — never fork evidence, never
+  COMPROMISED. The copy says "your Mac or your backup provider disagrees"
+  (a provider equivocating between devices looks the same), and never
+  recommends revoking the forwarder on this evidence alone.
+- A forwarder forwards only a provider-committed state, byte-for-byte with
+  its `recovery_auth`, or declines.
+- Consequence: a singleton change (a rotation, a revocation) reaches a
+  device that is offline from the provider only as revisions it cannot
+  yet open (they wait) plus a banner; it is *adopted* at the device's next
+  provider contact.
 
 ### 4.4 Singleton changes stay linear
 
@@ -135,13 +153,14 @@ v0.4.1 order).
   When the device accepts D's revocation, it refuses every revision it
   received *only from D* that is not listed in D's revocation manifest's
   index — whatever author field it carries (§3.2's author-based rule is
-  not enough against a thief holding the old VK). Adoption re-seals only
-  revisions that are in a committed state or in the device's own authoring
-  journal.
+  not enough against a thief holding the old VK); revisions delivered
+  inside a forwarded `peer_state` count as delivered by the forwarder.
+  Adoption re-seals only revisions that are in a **provider-confirmed**
+  state or in the device's own authoring journal.
 - Residual, stated: a device that has not yet learned of D's revocation
   can still *send* D its new edits (sealed under the old VK). Mitigation:
-  the phone pushes local-only revisions to a peer only after a provider
-  check within the last N minutes, and the UI's "sync now" does one.
+  a device pushes local-only revisions to a peer only after a successful
+  provider check within the last 15 minutes, and "sync now" does one.
 
 ### 4.6 Exchange
 
@@ -155,9 +174,12 @@ reach the provider at the next publication by either device.
 ### 4.7 Transport
 
 The pinned TLS channel on the local network: the phone **refuses to
-connect with no stored pin**; the pin comes from QR pairing (camera-free
-pairing is not accepted for vault traffic — its 20-bit code is too weak);
-the pin is on the SPKI (aligning the phone with spec §5.2); main checks
+connect with no stored pin**; the vault pin comes from QR pairing (camera-free
+pairing is not accepted for vault traffic — its 20-bit code is too weak)
+and is **stored separately from the SOURCE pairing pin** (camera-free
+pairing can overwrite that one today); the vault pin is on the SPKI
+(aligning the phone with spec §5.2) — existing phones re-pair for vault
+traffic (F2-D2 (a) re-enrolls anyway); main checks
 the bearer token before any helper call; the Mac binds peer routes only on
 private-network interfaces and refuses public source addresses. All of
 this is defence in depth: the signatures of §4.1 are what authorize.
@@ -190,25 +212,38 @@ own envelope → checkpoint — then fetching the index's revisions; **never
 signed `peer_status` (§5). The Phase F two-floor model is migrated into
 the engine; with signed peer status it collapses to one registry floor.
 
-### 6.2 Authority on the phone (the passcode is not enough)
+### 6.2 Authority: the device passcode is never enough (F2-D3)
 
-Unlock: Face ID → own envelope → VK in memory; MP as fallback. But every
-**authority-changing** op on the phone — revoke a device, rotate the RK,
-change the MP, authorize an enrollment — requires the **current MP**,
-verified against the committed `password.wrap`; the device passcode never
-satisfies it. The MP reset branch (§1.5 `mode:"reset"`) on the phone
-requires the **RK**. Enclave keys use `.biometryCurrentSet` access control,
-so a face added by a thief does not unlock them. (F2-D3.)
+Unlock: Face ID → own envelope → VK in memory; MP as fallback. Every
+**authority-changing** op — revoke a device, rotate the RK, change the
+MP, authorize an enrollment, and bulk deletion — requires the **current
+MP**, verified against the committed `password.wrap`. Resetting a
+forgotten MP (§1.5 `mode:"reset"`, and RC-01's "set a new MP" branch)
+requires the **RK**. **F2-D3 applies this to the Mac as well** (a Mac
+thief with the login password is the same adversary): it changes
+owner-approved §12 scenario 5 and architecture §10.2 ("presence → set a
+new MP" becomes "RK → set a new MP").
+
+Keys (spec §2.7 amended): the **agreement key** (it opens the envelope,
+i.e. the VK) is created with `.biometryCurrentSet` access control, so a
+passcode or a face a thief adds cannot open the vault; the **signing
+key** keeps no biometric control, so peer and provider requests and
+background retries still sign. Consequences, stated: re-registering Face
+ID invalidates the agreement key → the phone unlocks with the MP (which
+re-seals a fresh envelope to a new agreement key via a normal
+re-enrollment of that key); existing Phase F phones need new keys, i.e.
+re-enrollment (combined with F2-D2 (a)).
 
 ### 6.3 What the phone can do (scope)
 
 | Op | Phone | Notes |
 |---|---|---|
-| add / edit / delete / reveal records | yes | revisions authored by the phone |
-| RC-01: revoke the Mac, rotate, publish | yes | MP required (§6.2); includes the "set a new MP" branch when a stolen Mac changed it (§11.4) |
+| add / edit / delete / reveal records | yes | revisions authored by the phone; bulk deletion needs the MP |
+| restore records changed last by a later-revoked device | yes | from the retained history |
+| RC-01: revoke the Mac, rotate, publish | yes | MP required (§6.2); the "set a new MP" branch (when a stolen Mac changed it) requires the RK |
 | RK rotation, MP change | yes | §6.2 |
 | revoke another phone | yes | §6.2 |
-| authorize enrolling a replacement Mac | F2-D4 | reverse enrollment |
+| authorize enrolling a replacement Mac | F2-D4 | reverse enrollment — its roles (who serves TLS and shows the QR, who assigns `device_id`, who shows the SAS, who signs, seals and publishes) get their own design review before §5 is amended |
 | total-loss recovery onto a phone | yes | §12 scenarios 3/4, same checks as the Mac |
 | scenario 8 (a surviving device after compromise) | yes | exposure set = the whole vault for a full-vault device |
 | restore a damaged record from a peer (§3.6, §15) | yes | the peer's committed revision, verified and AEAD-opened |
@@ -219,9 +254,12 @@ The same journaled rotation and one-transaction merge (shared engine). On
 iOS a rotation is **fully staged before the new RK sheet is shown**, runs
 inside a background task, and if the app is killed the journal rolls back
 and the UI says plainly that the shown sheet is void. Security-driven
-publications retry at every foreground and via a `BGProcessingTask`; the
-banner persists. Staging is in memory (Phase F deviation), re-staged from
-`pending_remote` after a restart.
+publications retry at every foreground; **a security-driven cutoff
+completes only when the app is next opened** (stated honestly: staging is
+in memory, re-staging needs the unlocked vault, and the key blobs are
+`WhenUnlockedThisDeviceOnly`); the banner persists until then. If the
+owner chooses on-disk staging (F2-D5), a `BGProcessingTask` can finish a
+fully staged publication while locked.
 
 ## 7. iOS platform rules
 
@@ -266,17 +304,21 @@ through the share sheet, with copy that warns about PDF copies.
    FFI outside the audited entry points (§7.2).
 2. Every accepted state, from the provider or a peer, verifies against the
    device's accepted registry and the manifest signature before any
-   envelope is opened; forwarded states are provisional (§4.3).
+   envelope is opened (the §5 enrollment bundle is anchored on the
+   QR-pinned channel); forwarded states are provisional and never move
+   the committed tier (§4.3).
 3. Anything only a revoked device delivered is refused on revocation
    (§4.5); a revoked or pending-revocation device gets nothing (§4.2).
 4. Singleton changes only as verified provider transitions (§4.4, with
    the two stated exceptions).
-5. Rollback: a peer cannot move a device below its provider floor; §3.2
-   revoked-author deletions still apply (the only removals).
+5. Rollback: a peer cannot move a device below its provider floor; the
+   only removals are §3.2 revoked-author deletions and §4.5 provenance
+   refusals.
 6. No automatic deletion of key material or the store from any peer or
    provider response (§5).
 7. Crash safety: the shared journal and one-transaction merge.
-8. The passcode alone never changes authority (§6.2).
+8. A device passcode or login password alone never changes authority
+   (§6.2).
 
 ## 9. Tests (spec §16 additions)
 
@@ -287,12 +329,16 @@ through the share sheet, with copy that warns about PDF copies.
 - **PS** peer exchange: missing parents, stale generation waits, unknown
   author waits, caps and quotas, forged tombstone refused by AEAD,
   forwarded forged / substituted / uncommitted state (provisional, blamed,
-  never COMPROMISED), revocation still possible afterwards, provenance
-  cutoff on revocation.
+  never COMPROMISED), a chained-but-uncommitted singleton state (never
+  adopted), the honest NEEDS_USER-redo case (no COMPROMISED), revocation
+  still possible afterwards, provenance cutoff on revocation, a revoked
+  phone still getting `peer_status`, a LOCKED receiver's bounded inbox.
 - **EN** iPhone-authorized enrollment (if F2-D4). **MT** first
   materialization (forged-vault join refused).
-- **IO** iOS: Keychain class, file protection, backup exclusion (on
-  device), lock on background during rotation, capture hiding.
+- **IO** iOS: Keychain class, agreement key biometry-bound and signing
+  key not, Face ID re-registration → MP unlock path, file protection,
+  backup exclusion (on device), lock on background during rotation,
+  capture hiding.
 - **FFI** surface lint; **XV-PEER** vectors for the new TLVs.
 - Phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD for
   recovery on a phone, RC-01 step by step (with the set-new-MP branch),
@@ -310,24 +356,40 @@ superseded); §4.8 (enrollment consumer); §5 (reverse enrollment, pin
 rules); §11 intro, §11.3.2 (phone publisher copy and retries), §11.4
 (peer vs provider signing); §12 scenarios 1, 2 (stolen full-vault phone),
 7, 8; §13 (phone states); §14 (iOS capture); §15 (peer errors); §16 (§9);
-§17.3 (iOS supply chain); §19; architecture §1, §5, §10.2, §11.1, §16 and
-C8.
+§17.3 (iOS supply chain); §19; plus §3.2 (provenance, open-before-admit,
+waiting, parent closure), §2.10/§11.3 (re-seal only provider-confirmed or
+own-journal revisions — a Mac behaviour change too), §4.6/§15 (forwarder
+attribution; the peer-path exception to COMPROMISED), §11.8 (revoked
+devices still get `peer_status`), §12 scenario 5 and §6.4 item 5 (F2-D3),
+§7.1 (whether Phase G reuses PeerRequest); architecture §1, §5, §10.2,
+§11.1, §16 and C8.
 
 ## 11. Owner decisions
 
 - **F2-D1** One Rust engine on both platforms (recommended).
 - **F2-D2** The vault in its own iPhone app (recommended) vs inside SOURCE
-  Mobile with mitigations.
-- **F2-D3** On the phone, the MP (not the passcode) for authority changes,
-  and the RK for an MP reset (recommended).
+  Mobile with mitigations. Consequences of (a): its own QR pairing and
+  pin, existing enrolled phones re-enroll as new devices, and Phase G
+  approvals move into it.
+- **F2-D3** On **both** the Mac and the iPhone, the MP (never the device
+  passcode / login password) for authority changes, the RK for any MP
+  reset; the phone's agreement key biometry-bound (recommended). Changes
+  owner-approved §12 scenario 5 and architecture §10.2; Face ID
+  re-registration means an MP unlock and a key refresh.
 - **F2-D4** The iPhone can authorize a replacement Mac (recommended — else,
   after losing the Mac, getting a Mac back needs total-loss recovery,
-  which removes the phone).
-- **F2-D5** Inherited from Phase F: in-memory staging (#2), SY-13 restore
-  behaviour (#5), and how a user leaves COMPROMISED (still unspecified).
+  which removes the phone). Its protocol gets its own review first.
+- **F2-D5** Inherited from Phase F: #1 COMPROMISED only on verified fork
+  evidence (this design's peer-path rule depends on it); #2 in-memory vs
+  on-disk staging (decides whether a phone can finish a security cutoff in
+  the background); #5 SY-13 restore behaviour; and how a user leaves
+  COMPROMISED (still unspecified).
 
 ## 12. Review
 
-Revision 2 addresses the revision-1 findings (security SEC-B1…B4,
-I1…I10; spec SPEC-B1…B4, I1…I12). One bounded re-review, then the owner
-decisions, then the spec amendment, then code.
+Revision 2 addressed the revision-1 findings (security SEC-B1…B4, I1…I10;
+spec SPEC-B1…B4, I1…I12); revision 3 addresses the bounded re-review
+(security SEC-NB1/NB2, NI1–NI4, NO1–NO3; spec SPEC-B5…B7, I13–I18,
+O6–O8). The review loop for this design is closed. Next: the owner
+decisions, then the spec amendment (its own review), then code; F2-D4's
+reverse-enrollment protocol gets its own design review.
