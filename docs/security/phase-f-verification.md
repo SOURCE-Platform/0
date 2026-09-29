@@ -156,6 +156,22 @@ Vault crates: **278 passed, 0 failed, 1 ignored (U-1)**; `vault-provider`
 4 passed; iPhone 36 passed (unchanged since `dd77a90`); file lengths,
 `tsc` and `cargo check -p SOURCE` clean.
 
+### 3.2 Phase F gate (2026-09-29)
+
+`scripts/phase-f-gate.sh`, run with the owner's EV-03 device log and
+without the nested Phase E regression: **16 of 17 checks PASS** — Phase F
+crates 93, helper Phase F tests 30, full helper suite 196, vault-provider
+4 + `cargo audit` (186 crates), file lengths, PR-01 and BK-18 canary scans,
+release helper free of debug origins, UI-05 surface, app check + frontend
+build, supply chain (`cargo vet`: 51 audited, 759 exempted; helper
+dependencies 97), Dependabot #108 still open, no ignored test outside the
+U-1 allowlist, U-1 recorded (mean 11.7 ms, p95 17.2 ms → per-request
+signing), EV-03 on the device. The one FAIL is the nested Phase E → D → C
+→ B → A regression, skipped deliberately: it rebuilds and signs the helper
+and the app and needs several GB the disk did not have (1–3 GB free), and
+it may raise Keychain prompts. It is the remaining step of the gate of
+record.
+
 ## 4. Phase F exit — what remains
 
 1. ~~iPhone §4.7 envelope catch-up~~ — done (§2.4).
