@@ -274,7 +274,7 @@ These changes supersede conflicting statements in v0.1/v0.2.
 | C5 | Autofill explicitly handles IDN/punycode, confusables, iframes, subdomains, HTTP downgrade, and real-domain AitM limitations. | §12 |
 | C6 | Revocation means denying future use/sync plus automatic VK rotation; it never retroactively protects secrets already exposed. | §9 |
 | C7 | Clipboard controls are mitigation only; prefer direct fill and gate copy/reveal. | §§12, 15, 17 |
-| C8 | Normal sync prefers direct peer-to-peer, but durable remote ciphertext backup is required so disaster recovery has something to restore. The backup is not trusted and cannot authorize. **v0.4 note:** Phase F implements the provider-mediated multi-writer protocol and tests it with simulated Mac devices; a product vault in Phase F has one Mac writer, because Mac-to-Mac enrollment is not yet specified (adding a second physical Mac awaits an owner decision). Direct Mac⇄iPhone peer sync and the iPhone vault client follow in Phase F.2. The provider still cannot authorize anything: it authenticates requests with device and recovery public keys and enforces structure, but clients verify every accepted state themselves. | §11 |
+| C8 | Normal sync prefers direct peer-to-peer, but durable remote ciphertext backup is required so disaster recovery has something to restore. The backup is not trusted and cannot authorize. **v0.4 note:** Phase F implements the provider-mediated multi-writer protocol and tests it with simulated Mac devices; a product vault in Phase F has one Mac writer, because Mac-to-Mac enrollment is not yet specified (adding a second physical Mac awaits an owner decision). Direct Mac⇄iPhone peer sync and the iPhone vault client follow in Phase F.2 (specified in spec v0.5 §22; peer-forwarded state is provisional and never moves committed trust). The provider still cannot authorize anything: it authenticates requests with device and recovery public keys and enforces structure, but clients verify every accepted state themselves. | §11 |
 | C9 | Keychain and Secure Enclave roles are distinct; SE holds asymmetric keys, Keychain holds protected wrapped material/metadata. | §§6, 15, 16 |
 | C10 | FileVault is a strong recommendation rather than a hard vault-creation gate. Source Vault must remain independently secure at rest. | §§15, 17, 19 |
 | C11 | Recovery is fully specified: either master password or RK can recover the current backed-up vault; Source has neither. | §10 |
@@ -419,6 +419,9 @@ Boundary rules:
 - The iPhone may approve an action by signing a short-lived challenge after
   user presence. The approval is authorization, not a transfer of the user's
   password or biometric template.
+- **Spec v0.5 (§22.3):** on the iPhone the vault boundary is a separate
+  **SOURCE Vault** app — its own process and Keychain access group, with no
+  agent, audio or capture code — not the SOURCE Mobile app.
 - Source's capture/agent subsystems have no vault authorization scope.
 - The remote backup/relay is an untrusted storage/mailbox component. It may
   withhold, replay, reorder, or delete ciphertext; signatures/manifests detect
@@ -539,6 +542,11 @@ that service carries only an opaque challenge/notification, never a secret.
 - **High-risk operations** always require fresh user presence with no ordinary
   fill grace: export, reveal/copy secret, add/revoke device, change master
   password, rotate RK, reveal/fill card number, bulk operation, and import.
+- **Authority changes (spec v0.5 §22.4, owner decision F2-D3):** adding or
+  revoking a device, changing the master password, rotating the RK and bulk
+  deletion additionally require the **current master password**; resetting
+  a forgotten master password requires the **Recovery Key**. A device
+  passcode or login password is never enough, on the Mac or the iPhone.
 
 ### 6.6 Parameter provenance
 
@@ -629,7 +637,7 @@ sequenceDiagram
     participant N as New device
     participant B as Backup/relay (untrusted)
 
-    E->>E: Add Device + fresh user presence
+    E->>E: Add Device + fresh user presence + master password (spec v0.5 §22.4)
     E->>E: Create single-use enrollment secret (short TTL)
     E-->>N: QR {address, TLS fingerprint, secret}
     N->>N: Generate signing + agreement keypairs
@@ -677,7 +685,9 @@ presence gate must not be able to approve fills.
 ## 9. Device revocation
 
 From any trusted device: Settings → Security → Trusted Devices → device →
-Revoke. Fresh user presence is required.
+Revoke. Fresh user presence **and the current master password** are
+required (spec v0.5 §22.4, owner decision F2-D3: a device passcode or
+login password alone never changes authority).
 
 **Owner decision: VK rotates on every revocation, without asking why the
 device is being removed.**
@@ -733,11 +743,11 @@ The remote storage is not a recovery authority. It only returns ciphertext.
 
 | Situation | Recovery path |
 |---|---|
-| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. *(v0.4: requires the iPhone vault client, Phase F.2; until then, total-loss recovery on a new Mac, which revokes every prior device — spec v0.4 §12 scenario 1.)* |
+| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. *(v0.4: requires the iPhone vault client, Phase F.2; until then, total-loss recovery on a new Mac, which revokes every prior device — spec v0.4 §12 scenario 1. v0.5: the SOURCE Vault iPhone revokes the Mac with the master password (§22.4); the iPhone authorizing the replacement Mac (owner decision F2-D4) awaits its own design review, §22.13.)* |
 | iPhone lost, Mac retained | Symmetric. |
 | Both devices lost, master password remembered | Fresh supported device downloads encrypted backup → MP unwraps current VK locally → create new device identity/recovery epoch → rotate device registry credentials → re-enroll future devices. |
 | Both devices lost, master password forgotten, RK retained | Same flow, but RK unwraps current VK. |
-| Master password forgotten, trusted device retained | Fresh user presence on trusted device → set new MP → re-wrap current VK. |
+| Master password forgotten, trusted device retained | Fresh user presence **and the Recovery Key** on a trusted device → set new MP → re-wrap current VK. *(Spec v0.5 §22.4, owner decision F2-D3, 2026-09-29: presence alone no longer suffices, on the Mac or the iPhone.)* |
 | RK lost, trusted device retained | Generate new RK **and rotate VK**; print new RK; re-wrap under new MP/RK/device set. |
 | RK stolen or suspected copied | Treat as security incident: generate new RK **and rotate VK immediately**; publish new current state. Old RK must not unlock current/future vault state. |
 | Device compromised while unlocked | Revoke + VK rotation + rotate every credential plausibly exposed. This is breach response, not ordinary recovery. |
@@ -808,6 +818,14 @@ authenticates requests only with device Secure Enclave public keys and
 MP/RK-derived recovery public keys (no symmetric backup secret exists),
 and cannot produce a vault state any client accepts without valid
 manifest, registry and checkpoint verification.
+
+**v0.5 (spec §22.5 – §22.9, Phase F.2):** direct Mac⇄iPhone peer sync is
+specified. Peer messages are signed by device Secure Enclave keys under
+their own prefixes; a state a peer forwards is **provisional** and can
+never move a device's committed trust (registry, keys, fork decisions),
+which only states its own provider confirmed can do; revisions delivered
+only by a later-revoked peer are refused; the Mac's status answer to the
+phone is signed by the Mac helper and never causes automatic deletion.
 
 ### 11.2 Durable remote backup: required for disaster recovery
 
@@ -1159,7 +1177,12 @@ because Source already has global keyboard capture.
 - Use separate Secure-Enclave-backed P-256 signing and agreement keys.
 - Keychain items are device-bound (`ThisDeviceOnly`-class semantics) and
   scoped to the vault.
-- Face ID/passcode is the normal local user-presence gate.
+- Face ID/passcode is the normal local user-presence gate for individual
+  operations. **Spec v0.5 (§22.4):** vault *unlock* on the iPhone uses an
+  agreement key bound to the current Face ID set (`.biometryCurrentSet`),
+  so the passcode alone never opens the vault; the master password is the
+  fallback; authority changes need the master password and an MP reset
+  needs the Recovery Key; the vault lives in its own SOURCE Vault app.
 - The iPhone can act as a **remote approval device** for an enrolled Mac:
   after local user presence it signs a short-lived challenge bound to the
   Mac/action/origin. It does not send a password or biometric template.
