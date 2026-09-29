@@ -1427,7 +1427,8 @@ event-driven refresh points (no background polling):
 4. Verify the registry: the phone's accepted chain (Mac-verified, seeded
    at enrollment; and the provider-path floor) must be an exact prefix (by
    entry hash) of the served one, and every new suffix entry a signed
-   genesis/enroll/revoke under §4.4 rules 1–5, 7, 8. A new
+   enroll or revoke under §4.4 rules 1–5, 7, 8 (a genesis is valid only at
+   seq 0, rule 4). A new
    `recovery_epoch` after the accepted head → "unable to verify — confirm
    on your Mac", no state change. With no accepted chain yet → "unable to
    verify".
@@ -1454,6 +1455,10 @@ is believed only if its proof verifies under the VK it holds, for the
 manifest it last accepted; otherwise the state is refused with no change.
 The Mac refresh (the pinned channel) believes a new `recovery_epoch` only
 in the S-4 shape — every device active before it revoked after it.
+Residual (accepted): whoever serves the pinned channel is the main
+process, not the helper; a compromised main process could present a
+complete S-4-shaped chain and force the phone to re-enroll. No secret is
+exposed, and main-process code injection is outside the §1.4 boundary.
 
 **On this provider path a `revoke` naming this phone is never acted on
 destructively.** A provider (possibly colluding with a stolen, revoked
@@ -3763,7 +3768,7 @@ publishes), and RC-01 must be green before Phase J.
 | RL-04 | an MP-class window is full (attacker refilling it) | RK-class recovery for the same vault still completes; RK requests consume no slots |
 | EV-01 | published envelope set | equals the active device set in every state |
 | EV-02 | Mac offline during a rotation | fetches and opens its new envelope from the provider |
-| EV-03 | iPhone envelope catch-up (§4.7), **on a physical A15+ iPhone** (SE required); the gate checks these tests ran by name | steps 1–8 pass in the §4.8 order; the phone verifies the checkpoint binding to the manifest core hash; a provider-served revoke naming the phone is not acted on destructively; floors raised |
+| EV-03 | iPhone envelope catch-up (§4.7), **on a physical A15+ iPhone** (SE required); the gate checks these tests ran by name | steps 1–8 pass in the v0.4.1 order (registry → manifest signature → envelope → checkpoint); the phone verifies the checkpoint binding to the manifest core hash; a provider-served revoke naming the phone is not acted on destructively; floors raised |
 | EV-04 | revoked device | gets nothing openable; provider `401`; no key material deleted on `401`/`403` |
 | EV-05 | envelope missing without a revoke entry | "unable to verify"; nothing deleted |
 | TR-01…TR-08 | §1.3 streams: cross-session read refused; write off the need list refused; out-of-order chunk; SHA-256 mismatch; oversize; cancel cleanup; disconnect cleanup; restart sweep | `TRANSFER_INVALID`/cleanup as specified |

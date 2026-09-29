@@ -148,7 +148,13 @@ else fail "U-1 SE signing latency recorded" "no measurement"; fi
 
 # --- 14. EV-03 on a physical iPhone --------------------------------------------------------------
 # The xcodebuild log of the physical-device run: a real device destination
-# (never the simulator) and the EV-03 tests passing by name.
+# (never the simulator) and the EV-03 tests passing by name. Run ONLY the
+# two safe suites on the owner's iPhone — the whole target includes tests
+# that reset the app's stored keys:
+#   xcodebuild test -project SourceMobile.xcodeproj -scheme SourceMobile \
+#     -destination 'platform=iOS,id=<device-udid>' \
+#     -only-testing:SourceMobileTests/VaultCatchUpTests \
+#     -only-testing:SourceMobileTests/VaultEV03Tests
 EV03_LOG="${PHASE_F_EV03_LOG:-}"
 EV03_OK=1
 for t in ev03EnclaveOpensAV2Envelope ev03EnclaveSignsStateGet; do

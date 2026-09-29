@@ -12,10 +12,10 @@ and the UI surfaces for all of it. **Synthetic vaults and synthetic
 credentials only.** No real credential, Dashlane export, APNs key, S3
 account or production origin was touched.
 
-**Status: Mac side reviewed and closed; Phase F itself is not yet
-closed.** What stops the Phase F exit (§4) is the iPhone §4.7 envelope
-catch-up (next milestone), EV-03 on the owner's physical iPhone, and the
-owner decisions in §5.
+**Status: Mac side and iPhone catch-up reviewed and closed (spec
+v0.4.1); Phase F itself is not yet closed.** What stops the Phase F exit
+(§4) is EV-03 on the owner's physical iPhone, the fresh-environment
+rehearsal, and the owner decisions in §5.
 
 ---
 
@@ -99,6 +99,42 @@ exact codes (VER-I5); BK-28 crash consistency and post-commit refusal
 | SPEC-O14 enrollment pending not in the same commit as the append | a crash leaves an enrollment without its status line; the next publish still carries it |
 | SEC-I6 "MP changed on another device" notice | UI; noted that it would make a skip-generation equivocation more visible |
 
+### 2.4 iPhone §4.7 catch-up milestone and spec v0.4.1
+
+The iPhone envelope catch-up (iPhone `ebda5ad`, Mac `6e92fb5`) was
+reviewed by the security and verification reviewers, fixed, and
+re-reviewed once (iPhone `39ac11c`, Mac `6a2156e`); the re-review's
+findings were fixed in the final commits.
+
+**The security finding that changed the spec (owner-approved v0.4.1).** A
+device envelope is HPKE base mode, which authenticates no sender: a
+provider can seal a VK of its choosing to any device's public agreement
+key, and a checkpoint under that VK vouches only for itself. The v0.4
+§4.7 order (envelope → checkpoint → registry, recovery epochs anchored by
+that checkpoint) therefore let a provider acting alone get a forged state
+accepted on the iPhone (SEC-B1/B2) and — on the Mac, in code already
+reviewed — adopt a VK the provider chose and re-seal the vault under it
+(SEC-B3; reproduced by `provider_forgery.rs`, which the unfixed code
+accepted). Fixes:
+
+| Where | Fix | Tests |
+|---|---|---|
+| Mac `apply` | a `recovery_epoch` the device has not accepted is believed only if its proof verifies under the VK it holds, for the manifest it last accepted; otherwise `SIGNATURE_INVALID`, no change | `provider_forgery.rs` (forged refused; a genuine recovery still revokes an up-to-date old device) |
+| iPhone catch-up | order: registry (exact prefix of the Mac floor and the provider floor; only enroll/revoke after it; a new epoch → "confirm on your Mac"; nothing without a floor) → manifest signature → envelope → checkpoint | `VaultCatchUpTests` (forged epoch, fabricated vault, mid-chain genesis, swapped index, wrong size, signature flip, foreign checkpoint binding, wide key generation, rollback/fork/continuity) |
+| iPhone registry verifier | §4.4 rule 4: a genesis only at seq 0 (a pre-existing gap the re-review found — SEC-B1-R) | `theVerifierRefusesAMidChainGenesis` |
+| iPhone Mac refresh | a new recovery epoch believed only in the S-4 shape; recovered chains accepted (the E.1 defect) | `aRecoveryWithoutItsRevocationsIsNotBelieved`, `aGenuineRecoveryIsBelievedOnTheMacChannel` |
+| iPhone floors | manifest floor = the Mac's last-accepted provider state (from the bundle); registry floor seeded at enrollment; the provider-path floor kept apart from the Mac's and undone (with the envelope and checkpoint) when the Mac's chain shows a fork | `storedOutcomeRaisesTheFloors` |
+| iPhone robustness | strict checkpoint decode (a crafted key generation crashed the app), streamed size caps, no redirects, Keychain replace-in-place | `anOversizedKeyGenerationIsRefusedNotACrash` |
+
+Accepted residual (recorded in §4.7): a compromised main process serving
+the pinned channel could present a complete S-4-shaped chain and force a
+phone to re-enroll; no secret is exposed. `sync/join.rs` (test-only in
+Phase F) keeps a weak anchor, documented for F.2.
+
+**Running EV-03 on the owner's iPhone** — only the two safe suites (the
+whole target includes tests that reset the app's stored keys):
+`-only-testing:SourceMobileTests/VaultCatchUpTests -only-testing:SourceMobileTests/VaultEV03Tests`.
+
 ## 3. Tests and measurements
 
 Final run (the review-fix commit after `b27e024`): §3.1. Earlier runs: `efbdca2` 266
@@ -122,9 +158,7 @@ Vault crates: **278 passed, 0 failed, 1 ignored (U-1)**; `vault-provider`
 
 ## 4. Phase F exit — what remains
 
-1. iPhone §4.7 envelope catch-up: provider client with SE-signed
-   requests, manifest v2, checkpoint binding to the manifest core hash,
-   recovered chains in the status refresh (SPEC-B4).
+1. ~~iPhone §4.7 envelope catch-up~~ — done (§2.4).
 2. EV-03 on a physical A15+ iPhone, gated by name.
 3. Fresh-environment rehearsal (kill both devices, recover) — needs a fresh
    macOS account and a reachable provider.

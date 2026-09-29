@@ -111,3 +111,34 @@ fn an_unproven_recovery_epoch_never_hands_over_the_key() {
     assert_eq!(b.titles(), vec!["secret-record"], "still sealed under the real VK");
     assert!(vault_helper::storage::compromised::load(&b.store().conn).unwrap().is_none());
 }
+
+/// The other direction: a genuine total-loss recovery (its epoch proven
+/// under the VK of the state it recovered from) still reaches an
+/// up-to-date old device as `Revoked` — refused only when unprovable.
+#[test]
+fn a_proven_recovery_epoch_still_revokes_the_old_device() {
+    use vault_helper::recovery::complete::Plan;
+    use vault_helper::recovery::total_loss::Credential;
+    use vault_helper::sync::apply::Applied;
+    let cloud = Cloud::new("proven-epoch");
+    let mut a = Mac::new("proven-epoch-a");
+    a.setup(&cloud, "synthetic-proven-epoch@example.test").unwrap();
+    a.add("kept");
+    a.publish(&cloud).unwrap();
+    // A is current; a recovery elsewhere binds A's last accepted manifest.
+    let out = mfx::recover::run(&cloud, "synthetic-proven-epoch@example.test", Credential::Mp(MP), Plan { new_mp: None, keep_rk: None }, None).unwrap();
+    let recovered = mfx::recover::into_mac(out);
+    // A is refused at the provider now, so it is handed the state directly.
+    let state = recovered.read(&cloud, Operation::StateGet, None).body;
+    let remote = remote::parse(&state).unwrap();
+    let index_bytes = recovered.read(&cloud, Operation::BlobGet, Some(remote.manifest.object_index_hash)).body;
+    let (index, need) = fetch::plan(a.store(), &remote, &index_bytes).unwrap();
+    let blobs: std::collections::HashMap<[u8; 32], Vec<u8>> =
+        need.into_iter().map(|h| (h, recovered.read(&cloud, Operation::BlobGet, Some(h)).body)).collect();
+    let vid = a.vid();
+    let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
+    let tag = a.dev.key_tag().to_string();
+    let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
+    let r = vault_helper::sync::apply::apply(store, vk, &remote, &index, &blobs, a.dev.device_id(), &open);
+    assert!(matches!(r, Ok(Applied::Revoked(_))), "a proven recovery revokes the old device");
+}

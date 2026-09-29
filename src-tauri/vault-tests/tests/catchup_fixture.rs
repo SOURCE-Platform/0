@@ -54,7 +54,10 @@ fn forge(real_state: &[u8], entries: &[vault_helper::crypto::registry::RegistryE
     use vault_helper::backup::index::{IndexEntry, ObjectIndex, Role};
     let real = vault_helper::sync::remote::parse(real_state).unwrap();
     let vid = real.manifest.vault_id;
-    let st = vault_helper::registry::chain::verify_chain_with(entries, &vid, &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
+    // Head and epoch straight from the entries: some forgeries (a mid-chain
+    // genesis) are deliberately not valid chains.
+    let head = vault_helper::crypto::registry::entry_hash(entries.last().unwrap()).unwrap();
+    let epoch = entries.last().unwrap().epoch;
     let registry = vault_helper::registry::file::encode(entries).unwrap();
     let vk_prime: vault_helper::crypto::secret::SecretBytes<32> = vault_helper::crypto::secret::random_secret();
     let next_gen = real.vk_generation + 1;
@@ -70,7 +73,7 @@ fn forge(real_state: &[u8], entries: &[vault_helper::crypto::registry::RegistryE
         vault_id: vid,
         generation: real.generation + 1,
         created_at: now(),
-        registry_head: st.head,
+        registry_head: head,
         vk_generation: next_gen,
         object_index_hash: index.hash(),
         prev_manifest_hash: real.manifest_hash,
@@ -79,7 +82,7 @@ fn forge(real_state: &[u8], entries: &[vault_helper::crypto::registry::RegistryE
     }
     .sign(evil)
     .unwrap();
-    let cp = vault_helper::backup::checkpoint::RegistryCheckpoint::create(&vk_prime, &manifest, st.epoch).unwrap().encode();
+    let cp = vault_helper::backup::checkpoint::RegistryCheckpoint::create(&vk_prime, &manifest, epoch).unwrap().encode();
     let m = manifest.encode();
     let mut v: Value = serde_json::from_slice(real_state).unwrap();
     let digest = vault_proto::state::recovery_auth_digest(&real.recovery_auth).unwrap();
@@ -139,6 +142,21 @@ fn build() -> Value {
     let st = vault_helper::registry::chain::verify_chain_with(std::slice::from_ref(&genesis), &a.vid(), &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap();
     let fabricated_chain = vec![genesis.clone(), vault_helper::registry::build::enroll(&st, &evil, &FixedPhone).unwrap()];
     let fabricated = forge(&state, &fabricated_chain, &evil, &header_bytes);
+    // A self-signed "genesis" appended mid-chain (§4.4 rule 4 violation).
+    let mut mid_chain = vault_helper::registry::file::decode(&a.read(&cloud, Operation::BlobGet, Some(index.find(&vault_helper::backup::index::Role::Registry).unwrap().blob)).body).unwrap();
+    let last = mid_chain.last().unwrap().clone();
+    let mut g = vault_helper::registry::build::genesis(&evil).unwrap();
+    g.seq = last.seq + 1;
+    g.prev_hash = vault_helper::crypto::registry::entry_hash(&last).unwrap();
+    g.epoch = last.epoch;
+    g.signature = None;
+    g.signature = Some(evil.sign_prehash(&vault_helper::crypto::registry::sign_input(&g).unwrap()).unwrap());
+    mid_chain.push(g);
+    let mid_chain_genesis = forge(&state, &mid_chain, &evil, &header_bytes);
+    // A genuine total-loss recovery (S-4: the epoch, then every prior
+    // device revoked) — what the Mac refresh must still believe.
+    let recovered = mfx::recover::into_mac(mfx::recover::run(&cloud, "synthetic-catchup@example.test", vault_helper::recovery::total_loss::Credential::Mp(MP), vault_helper::recovery::complete::Plan { new_mp: None, keep_rk: None }, None).unwrap());
+    let recovered_registry = hex::encode(vault_helper::registry::file::encode(&recovered.registry().entries).unwrap());
 
     // A state_get request the phone signs, with fixed t and n.
     let key_id = vault_proto::crypto::recovery_auth::key_id(&FixedPhone.sign_pub());
@@ -174,6 +192,8 @@ fn build() -> Value {
         },
         "forged_epoch": forged_epoch,
         "fabricated": fabricated,
+        "mid_chain_genesis": mid_chain_genesis,
+        "recovered_registry": recovered_registry,
         "state_get_request": {
             "t": 1_900_000_000u64,
             "n": hex::encode([0x0D; 16]),
