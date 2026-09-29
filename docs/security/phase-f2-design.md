@@ -2,7 +2,7 @@
 
 Date: 2026-09-29. **Revision 3** (after the reviews of revision 1,
 `088c37f`, and the bounded re-review of revision 2, `dfd088a`). Status:
-**design ready for owner decisions; no code.**
+**owner decisions recorded (§11.1); next: spec amendment; no code.**
 Authorized by the owner ("yes i want direct Mac ↔ iPhone sync"); spec
 v0.4.1 §18 requires this design review before implementation. Owner
 decisions are marked **F2-D*n*** (§11).
@@ -384,6 +384,19 @@ devices still get `peer_status`), §12 scenario 5 and §6.4 item 5 (F2-D3),
   on-disk staging (decides whether a phone can finish a security cutoff in
   the background); #5 SY-13 restore behaviour; and how a user leaves
   COMPROMISED (still unspecified).
+
+### 11.1 Decisions recorded (owner, 2026-09-29)
+
+| Decision | Choice |
+|---|---|
+| F2-D1 | **One Rust engine on both platforms.** |
+| F2-D2 | **(a) A separate "SOURCE Vault" iOS app** (own pairing and pin; existing phones re-enroll; Phase G approvals move into it). |
+| F2-D3 | **Yes, on both Mac and iPhone:** the MP for authority changes, the RK for any MP reset; the phone's agreement key biometry-bound. |
+| F2-D4 | **Yes:** the iPhone can authorize a replacement Mac; its protocol gets its own design review first. |
+| F2-D5 #1 | COMPROMISED only on fork evidence signed by the vault's own devices (confirms the v0.4.1 implementation; §15 `SIGNATURE_INVALID` erratum). |
+| F2-D5 #2 | **On-disk staging** of fully staged publications (ciphertext and public data only), so a security cutoff can finish in the background. |
+| F2-D5 #5 | SY-13: a restored older store opens **read-only until it has synced** (instead of refusing to unlock). |
+| F2-D5 exit | Design a safe exit from COMPROMISED, for owner review. |
 
 ## 12. Review
 
