@@ -141,3 +141,49 @@ fn rf05_finalize_replay_and_conflict() {
     let r3 = s.call(Operation::StateCommit, None, &t2.encode().unwrap(), Who::Rec(&key, RecoveryClass::Mp), Some(t2.expected_state));
     assert_eq!(Sim::error(&r3), "FINALIZE_CONFLICT");
 }
+
+/// Delegating state store that fails the next CAS replace (a provider
+/// crash between the blob writes and the state commit).
+struct CrashOnReplace {
+    inner: std::sync::Arc<vault_provider_core::fs::FsStores>,
+    armed: std::sync::atomic::AtomicBool,
+}
+impl vault_provider_core::stores::StateStore for CrashOnReplace {
+    fn load(&self, vid: &[u8; 16]) -> vault_provider_core::stores::StoreResult<Option<(Vec<u8>, vault_provider_core::stores::Etag)>> {
+        self.inner.load(vid)
+    }
+    fn create(&self, vid: &[u8; 16], bytes: &[u8]) -> vault_provider_core::stores::StoreResult<Option<vault_provider_core::stores::Etag>> {
+        self.inner.create(vid, bytes)
+    }
+    fn replace(&self, vid: &[u8; 16], bytes: &[u8], etag: &vault_provider_core::stores::Etag) -> vault_provider_core::stores::StoreResult<Option<vault_provider_core::stores::Etag>> {
+        if self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            return Err(vault_provider_core::stores::StoreError);
+        }
+        self.inner.replace(vid, bytes, etag)
+    }
+    fn delete(&self, vid: &[u8; 16], etag: &vault_provider_core::stores::Etag) -> vault_provider_core::stores::StoreResult<bool> {
+        vault_provider_core::stores::StateStore::delete(&*self.inner, vid, etag)
+    }
+}
+
+/// RF-06: a provider failure mid-finalize leaves the old head
+/// authoritative (the old Mac still authenticates, nothing half-applied);
+/// the byte-identical re-send then commits once.
+#[test]
+fn rf06_crash_mid_finalize() {
+    let mut s = Sim::created("rf06");
+    let hook = std::sync::Arc::new(CrashOnReplace { inner: s.fs.clone(), armed: std::sync::atomic::AtomicBool::new(true) });
+    s.p = std::sync::Arc::new(vault_provider_core::Provider::new(
+        vault_provider_core::Config::new(ORIGIN, [0x5e; 32]), hook.clone(), s.fs.clone(), s.fs.clone()));
+    let before = s.call(Operation::StateGet, None, b"", Who::Dev(&s.mac), None);
+    let new_dev = SoftwareDevice::generate("Synthetic Mac (recovered)", PLATFORM_MACOS);
+    let d = finalize_draft(&s, &new_dev);
+    let (t, r) = post_finalize(&s, &d, &new_dev);
+    assert_eq!(r.status, 503, "the injected crash");
+    let after = s.call(Operation::StateGet, None, b"", Who::Dev(&s.mac), None);
+    assert_eq!((after.status, &after.body), (200, &before.body), "old head authoritative, nothing half-applied");
+    let key = s.auth_key(RecoveryClass::Mp, &s.cur.as_ref().unwrap().header);
+    let again = s.call(Operation::StateCommit, None, &t.encode().unwrap(), Who::Rec(&key, RecoveryClass::Mp), Some(t.expected_state));
+    assert_eq!(again.status, 200, "{}", Sim::error(&again));
+    assert_eq!(s.call(Operation::StateGet, None, b"", Who::Dev(&s.mac), None).status, 401, "now the old Mac is revoked");
+}

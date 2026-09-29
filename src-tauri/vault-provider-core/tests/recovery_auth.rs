@@ -155,3 +155,24 @@ fn bk08_bk21_gc() {
     let r = s.commit(&t, Who::Dev(&s.mac));
     assert_eq!(r.status, 200);
 }
+
+/// RL-03: an instance that crashed between reserving a throttle slot and
+/// releasing it leaves that slot behind — it counts as one failure in that
+/// window only (L−1 wrong guesses remain there), and the next window has
+/// all L again.
+#[test]
+fn rl03_crash_between_reserve_and_release() {
+    use vault_provider_core::stores::OpsStore;
+    let s = Sim::created("rl03");
+    let window = s.now / 3600;
+    let stray = format!("v2/ratelimit/{}/recovery-mp/{window}/0", hex::encode(s.vault_id));
+    assert!(OpsStore::create(&*s.fs, &stray, b"").unwrap().is_some(), "the crashed instance's slot");
+    let bad = wrong_mp_key(&s);
+    let fails = |sim: &Sim| (0..20).filter(|_| sim.call(Operation::StateGet, None, b"", Who::Rec(&bad, RecoveryClass::Mp), None).status == 401).count();
+    assert_eq!(fails(&s), 9, "the stray slot costs exactly one failure in its window");
+    let mut later = Sim::on(s.fs.clone(), s.dir.join("unused-rl03"), "synthetic-unused-rl03@example.test");
+    later.vault_id = s.vault_id;
+    later.now = s.now + 3600;
+    assert_eq!(fails(&later), 10, "the next window is whole");
+    std::mem::forget(later);
+}

@@ -226,7 +226,9 @@ impl Mac {
         let mut blobs = HashMap::new();
         for h in need {
             let b = self.read(cloud, Operation::BlobGet, Some(h));
-            assert_eq!(b.status, 200);
+            if b.status != 200 {
+                return Err(ErrorCode::BackupObjectMissing); // as main reports a failed blob_get
+            }
             blobs.insert(h, b.body);
         }
         let tag = self.dev.key_tag().to_string();

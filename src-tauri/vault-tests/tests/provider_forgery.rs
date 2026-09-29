@@ -112,7 +112,7 @@ fn an_unproven_recovery_epoch_never_hands_over_the_key() {
     assert!(vault_helper::storage::compromised::load(&b.store().conn).unwrap().is_none());
 }
 
-/// The other direction: a genuine total-loss recovery (its epoch proven
+/// CP-08 — the other direction: a genuine total-loss recovery (its epoch proven
 /// under the VK of the state it recovered from) still reaches an
 /// up-to-date old device as `Revoked` — refused only when unprovable.
 #[test]

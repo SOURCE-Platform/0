@@ -291,3 +291,59 @@ fn a_provider_built_registry_is_refused_not_a_fork() {
     let reopened = vault_helper::storage::VaultStore::open(&dir).unwrap();
     assert!(vault_helper::storage::compromised::load(&reopened.conn).unwrap().is_none(), "no evidence recorded");
 }
+
+/// BK-03: an object the index names is gone at the provider — detected,
+/// nothing applied.
+#[test]
+fn bk03_deleted_object_is_detected() {
+    let (cloud, mut a, mut b) = pair("bk03");
+    a.add("to-be-deleted");
+    a.publish(&cloud).unwrap();
+    let vid = vault_helper::crypto::hex::encode(a.vid());
+    for e in std::fs::read_dir(cloud.dir.join(format!("v2/vaults/{vid}/blobs"))).unwrap() {
+        let p = e.unwrap().path();
+        if std::fs::read(&p).is_ok_and(|b| b.starts_with(b"OV0OBJ02")) {
+            std::fs::remove_file(p).unwrap();
+        }
+    }
+    assert!(b.sync(&cloud).is_err(), "a missing object stops the sync");
+    assert!(!b.titles().contains(&"to-be-deleted".to_string()));
+}
+
+/// BK-06: the backup is older than the local vault (local edits not yet
+/// published): the local state is kept; the backup is a floor only.
+#[test]
+fn bk06_stale_remote_fresher_local() {
+    let (cloud, mut a, _b) = pair("bk06");
+    a.add("local-only");
+    assert!(a.sync(&cloud).unwrap().is_none(), "nothing newer remotely");
+    assert!(a.titles().contains(&"local-only".to_string()), "local state kept");
+}
+
+/// ST-02: a lock during SYNCING aborts the sync (its apply is one
+/// transaction; nothing half-applied) and leaves the vault LOCKED.
+#[test]
+fn st02_lock_during_syncing() {
+    use serde_json::json;
+    use vault_helper::state::VaultState;
+    let _g = vault_fx::serial();
+    let (cloud, a, mut b) = pair("st02");
+    b.add("from-b");
+    b.publish(&cloud).unwrap();
+    let mut fx = vault_fx::fx();
+    let mut core = vault_helper::vault::VaultCore::boot(a.dir.clone());
+    core.store = Some(vault_helper::storage::VaultStore::open(&a.dir).unwrap());
+    core.vk = Some(vault_helper::crypto::secret::SecretBytes::new(*a.vk.as_ref().unwrap().expose()));
+    core.state = VaultState::Unlocked;
+    fx.core = std::sync::Arc::new(std::sync::Mutex::new(core));
+    let state = String::from_utf8(a.read(&cloud, Operation::StateGet, None).body).unwrap();
+    let r = fx.op(json!({ "op": "backup_state_offer", "state": state }));
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(fx.core.lock().unwrap().reported_state(), VaultState::Syncing);
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    let c = fx.core.lock().unwrap();
+    assert!(c.provider.sync.is_none() && c.state == VaultState::Locked);
+    drop(c);
+    assert!(!vault_helper::storage::VaultStore::open(&a.dir).unwrap().list_records(a.vk.as_ref().unwrap()).unwrap().iter().any(|i| i["title"] == "from-b"), "nothing applied");
+    fx.remove_dir();
+}

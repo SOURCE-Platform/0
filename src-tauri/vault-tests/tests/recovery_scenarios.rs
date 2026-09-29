@@ -294,3 +294,20 @@ fn ru03_pending_change_survives_a_restart() {
     assert!(pending::load(&mac.store().conn).unwrap().is_none(), "cleared by the publish");
     assert_eq!(can_read(&cloud, &handle, Credential::Mp(NEW_MP)), 200);
 }
+
+/// CP-07: a stale but complete, valid state served to a fresh device still
+/// recovers (the §11.7 limitation); its preview shows the older generation
+/// the printed sheet lets the user compare.
+#[test]
+fn cp07_stale_valid_state_still_recovers() {
+    let (cloud, mut mac, handle) = world("cp07");
+    let stale_dir = tmp("cp07-stale");
+    copy_tree(&cloud.dir, &stale_dir);
+    let old_gen = remote::parse(&mac.read(&cloud, Operation::StateGet, None).body).unwrap().generation;
+    mac.add("newer");
+    mac.publish(&cloud).unwrap();
+    let stale = Cloud::at(&stale_dir);
+    let out = recover::run(&stale, &handle, Credential::Mp(MP), Plan { new_mp: None, keep_rk: None }, None).expect("still recovers");
+    assert_eq!(out.preview.generation, old_gen, "the preview names the older generation");
+    assert_eq!(into_mac(out).titles(), vec!["kept"]);
+}
