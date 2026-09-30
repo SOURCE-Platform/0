@@ -200,22 +200,6 @@ export async function vaultDeleteItem(reference: string): Promise<void> {
   await invoke("vault_delete_item", { reference });
 }
 
-export interface DeletedItem {
-  ref: string;
-  kind: string;
-  title: string | null;
-  revision_id: string;
-}
-
-export async function vaultListDeleted(): Promise<DeletedItem[]> {
-  const resp = await invoke<{ items: DeletedItem[] }>("vault_list_deleted");
-  return resp.items ?? [];
-}
-
-export async function vaultRestoreRevision(reference: string, revisionId: string): Promise<void> {
-  await invoke("vault_restore_revision", { reference, revisionId });
-}
-
 export async function vaultReveal(
   reference: string,
 ): Promise<Record<string, string>> {

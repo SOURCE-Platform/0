@@ -4,12 +4,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
-import {
-  vaultErrorMessage,
-  vaultListDeleted,
-  vaultRestoreRevision,
-  type DeletedItem,
-} from "@/lib/vault";
+import { vaultErrorMessage } from "@/lib/vault";
+import { vaultListDeleted, vaultRestoreRevision, type DeletedItem } from "@/lib/vaultHistory";
 
 export function DeletedItems({
   refreshKey,
