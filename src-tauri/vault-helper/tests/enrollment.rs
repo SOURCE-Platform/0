@@ -47,6 +47,7 @@ fn enrollment_end_to_end() {
     let new_id = hex::decode_array::<16>(reply["new_device_id"].as_str().unwrap()).unwrap();
 
     // The user compares, confirms, and passes the Mac's presence check.
+    fx.push_panel(submitted(MP));
     let confirmed = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(confirmed["ok"], true, "enroll_confirm: {confirmed}");
     let bundle = &confirmed["bundle"];
@@ -167,6 +168,7 @@ fn forged_ack_is_rejected_and_writes_nothing() {
     assert_eq!(hello["ok"], true);
     let mac_id =
         hex::decode_array::<16>(hello["reply"]["mac_device_id"].as_str().unwrap()).unwrap();
+    fx.push_panel(submitted(MP));
     let confirmed = fx.op(json!({"op": "enroll_confirm"}));
     let head =
         hex::decode_array::<32>(confirmed["bundle"]["registry_head"].as_str().unwrap()).unwrap();
@@ -194,6 +196,7 @@ fn ack_over_a_different_head_is_rejected() {
     let hello = fx.op(phone.hello(&secret, [4u8; 16]));
     let mac_id =
         hex::decode_array::<16>(hello["reply"]["mac_device_id"].as_str().unwrap()).unwrap();
+    fx.push_panel(submitted(MP));
     assert_eq!(fx.op(json!({"op": "enroll_confirm"}))["ok"], true);
     let bogus: [u8; 32] = Sha256::digest(b"some other registry head").into();
     let sig = phone.dev.sign_prehash(&transcript::ack_digest(&bogus, &mac_id)).unwrap();
@@ -262,6 +265,26 @@ fn presence_denial_stops_confirmation() {
     let resp = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(err_code(&resp), "PRESENCE_DENIED", "{resp}");
     assert_eq!(log::read_entries(&fx.dir).unwrap().len(), 1);
+}
+
+/// AU-02 (§22.4, F2-D3): presence alone never adds a device — a wrong or
+/// missing master password stops enrollment before anything is signed.
+#[test]
+fn enrollment_needs_the_master_password() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let phone = Phone::new("no-mp");
+    let begun = begin(&fx);
+    let secret = begun["secret"].as_str().unwrap().to_string();
+    assert_eq!(fx.op(phone.hello(&secret, [8u8; 16]))["ok"], true);
+    let resp = fx.op(json!({"op": "enroll_confirm"}));
+    assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
+    fx.push_panel(submitted(b"not the master password"));
+    let resp = fx.op(json!({"op": "enroll_confirm"}));
+    assert_eq!(err_code(&resp), "WRONG_CREDENTIAL", "{resp}");
+    assert_eq!(log::read_entries(&fx.dir).unwrap().len(), 1, "no registry entry");
+    assert_eq!(fx.state(), vault_helper::state::VaultState::Unlocked);
 }
 
 /// The epoch the chain ends at, as both sides compute it: the last

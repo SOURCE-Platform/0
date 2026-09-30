@@ -17,7 +17,7 @@ use crate::crypto::wrap::{self, RecoveryWrapPayload};
 use crate::errors::ErrorCode;
 use crate::storage::header::KdfBlock;
 use crate::storage::rotation::{self, MpWrap, RkWrap, RotationOutcome};
-use crate::storage::store::{now_epoch, PASSWORD_WRAP_NAME};
+use crate::storage::store::{now_epoch, PASSWORD_WRAP_NAME, RECOVERY_WRAP_NAME};
 use crate::storage::VaultStore;
 
 /// PK for the current MP, proven against the live wrap.
@@ -28,6 +28,23 @@ pub fn prove_mp(store: &VaultStore, mp: &[u8]) -> Result<SecretBytes<32>, ErrorC
     let pk = kdf::derive_pk(mp, &salt, params).map_err(|_| ErrorCode::Internal)?;
     wrap::open_wrap_mp(&file, &pk, &store.header.vault_id.0).map_err(|_| ErrorCode::WrongCredential)?;
     Ok(pk)
+}
+
+/// §22.4 (F2-D3): the typed Recovery Key opens the committed
+/// `recovery.wrap` and yields exactly the resident VK at the header's
+/// generation. Presence alone never resets a master password.
+pub fn prove_rk(store: &VaultStore, vk: &SecretBytes<32>, words: &[u8]) -> Result<(), ErrorCode> {
+    use subtle::ConstantTimeEq;
+    // §2.4: normalize + wordlist + checksum, offline, before any use.
+    let rk = match std::str::from_utf8(words).ok().map(crate::crypto::bip39::decode_rk) {
+        Some(Ok(rk)) => rk,
+        _ => return Err(ErrorCode::RecoveryKeyInvalid),
+    };
+    let bytes = std::fs::read(store.dir.join(RECOVERY_WRAP_NAME)).map_err(|_| ErrorCode::WrapCorrupt)?;
+    let file: wrap::RecoveryWrapFile = serde_json::from_slice(&bytes).map_err(|_| ErrorCode::WrapCorrupt)?;
+    let payload = wrap::open_wrap_rk(&file, &rk, &store.header.vault_id.0).map_err(|_| ErrorCode::WrongCredential)?;
+    let same = bool::from(payload.vk.expose().ct_eq(vk.expose())) && payload.vk_generation == store.header.vk_generation;
+    if same { Ok(()) } else { Err(ErrorCode::WrongCredential) }
 }
 
 pub struct RkRotation {

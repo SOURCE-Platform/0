@@ -221,10 +221,28 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
 }
 
 /// `change_master_password {mode:"reset"}` — §12 scenario 5 on this Mac:
-/// the MP is forgotten but the vault is unlocked (e.g. via the Recovery
-/// Key); presence + a new MP re-wrap the resident VK. No rotation.
+/// the MP is forgotten but the vault is unlocked. Presence **and the
+/// Recovery Key** (§22.4, F2-D3), then a new MP re-wraps the resident VK.
+/// No rotation.
 pub fn reset_master_password(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     if let Err(e) = authorize(core, deps, "Source Vault: set a new master password") {
+        return finish(core, deps, Err(e));
+    }
+    emit_panel(deps, true, PanelRequest::RkEntry);
+    let outcome = deps.panel.run(PanelRequest::RkEntry, PANEL_TIMEOUT);
+    emit_panel(deps, false, PanelRequest::RkEntry);
+    let PanelOutcome::Submitted(words) = outcome else {
+        return finish(core, deps, Err(ErrorCode::PanelCancelled));
+    };
+    let proven = {
+        let c = lock_core(core);
+        match (c.store.as_ref(), c.vk.as_ref()) {
+            (Some(store), Some(vk)) if c.state == VaultState::Authorizing => super::recovery_ops::prove_rk(store, vk, &words),
+            _ => return OpOutcome::err(ErrorCode::BadState),
+        }
+    };
+    drop(words);
+    if let Err(e) = proven {
         return finish(core, deps, Err(e));
     }
     emit_panel(deps, true, PanelRequest::MpCreate);

@@ -114,6 +114,7 @@ pub fn enroll_phone(fx: &Fx, phone: &Phone) -> [u8; 16] {
     );
     let new_id = hex::decode_array::<16>(reply["new_device_id"].as_str().unwrap()).unwrap();
     let mac_id = hex::decode_array::<16>(reply["mac_device_id"].as_str().unwrap()).unwrap();
+    fx.push_panel(crate::vault_fx::submitted(crate::vault_fx::MP));
     let confirmed = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(confirmed["ok"], true, "enroll_confirm: {confirmed}");
     let head =

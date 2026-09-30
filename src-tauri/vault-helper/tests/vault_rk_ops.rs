@@ -131,6 +131,37 @@ fn rotate_recovery_key_op() {
     assert_no_secrets(&fx, &[ok, rev], &[MP]);
 }
 
+/// AU-01 (§22.4, F2-D3): presence alone never resets the master password.
+#[test]
+fn mp_reset_needs_the_recovery_key() {
+    let _g = serial();
+    let fx = fx();
+    setup_vault(&fx, MP);
+    assert_eq!(unlock(&fx, MP)["ok"], true);
+    let real = fx.panel.shown_rk.lock().unwrap().clone().unwrap();
+    // No Recovery Key typed: the panel is cancelled.
+    *fx.panel.shown_rk.lock().unwrap() = None;
+    let r = fx.op(json!({"op": "change_master_password", "mode": "reset"}));
+    assert_eq!(err_code(&r), "PANEL_CANCELLED", "{r}");
+    // Not a Recovery Key at all.
+    *fx.panel.shown_rk.lock().unwrap() = Some("these are not recovery words".into());
+    fx.push_panel(submitted(MP_NEW));
+    let r = fx.op(json!({"op": "change_master_password", "mode": "reset"}));
+    assert_eq!(err_code(&r), "RECOVERY_KEY_INVALID", "{r}");
+    // A valid key that is not this vault's: rotate, then type the old one.
+    fx.panel.queue.lock().unwrap().clear();
+    *fx.panel.shown_rk.lock().unwrap() = Some(real.clone());
+    fx.push_panel(submitted(MP));
+    assert_eq!(fx.op(json!({"op": "rotate_recovery_key"}))["ok"], true);
+    *fx.panel.shown_rk.lock().unwrap() = Some(real);
+    fx.push_panel(submitted(MP_NEW));
+    let r = fx.op(json!({"op": "change_master_password", "mode": "reset"}));
+    assert_eq!(err_code(&r), "WRONG_CREDENTIAL", "{r}");
+    fx.panel.queue.lock().unwrap().clear();
+    lock(&fx);
+    assert_eq!(unlock(&fx, MP)["ok"], true, "the master password is unchanged");
+}
+
 #[test]
 fn forgotten_mp_reset_after_rk_unlock() {
     let _g = serial();

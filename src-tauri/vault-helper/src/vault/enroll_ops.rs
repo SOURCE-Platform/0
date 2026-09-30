@@ -237,7 +237,9 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         c.state = VaultState::Authorizing;
     }
     deps.events.emit(ev_state(VaultState::Authorizing));
-    let allowed = deps.la.check("Source Vault: add this device");
+    // §22.4 (F2-D3): presence and the current master password — a login
+    // password alone never adds a device.
+    let verdict = if deps.la.check("Source Vault: add this device") { prove_current_mp(core, deps) } else { Err(ErrorCode::PresenceDenied) };
     {
         let mut c = lock_core(core);
         if c.state == VaultState::Authorizing {
@@ -245,8 +247,8 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
             deps.events.emit(ev_state(VaultState::Unlocked));
         }
     }
-    if !allowed {
-        return OpOutcome::err(ErrorCode::PresenceDenied);
+    if let Err(e) = verdict {
+        return OpOutcome::err(e);
     }
     // A passed presence check restarts the auto-lock window, like every
     // other presence-gated op (§1.6).
@@ -255,6 +257,21 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         Ok(bundle) => OpOutcome::ok(deliver_bundle(&mut lock_core(core), bundle)),
         Err(e) => OpOutcome::err(e),
     }
+}
+
+/// The helper panel collects the MP; it must open the committed wrap.
+fn prove_current_mp(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Result<(), ErrorCode> {
+    use super::setup::{emit_panel, PANEL_TIMEOUT_PUB};
+    use super::{PanelOutcome, PanelRequest};
+    emit_panel(deps, true, PanelRequest::MpEntry);
+    let outcome = deps.panel.run(PanelRequest::MpEntry, PANEL_TIMEOUT_PUB);
+    emit_panel(deps, false, PanelRequest::MpEntry);
+    let PanelOutcome::Submitted(mp) = outcome else {
+        return Err(ErrorCode::PanelCancelled);
+    };
+    let c = lock_core(core);
+    let store = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing).ok_or(ErrorCode::BadState)?;
+    super::recovery_ops::prove_mp(store, &mp).map(|_| ())
 }
 
 /// Bundles up to this size travel inline in the `enroll_confirm` answer.

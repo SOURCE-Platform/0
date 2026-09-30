@@ -130,7 +130,7 @@ export function VaultPage() {
               disabled={busy || state !== "unlocked"}
               className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-4 py-2 text-sm text-foreground transition-colors hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <KeyRound className="h-4 w-4" /> Forgot master password
+              <KeyRound className="h-4 w-4" /> Forgot master password (needs Recovery Key)
             </button>
             <button
               onClick={() => run(vaultChangeMasterPassword)}
