@@ -148,6 +148,8 @@ pub fn run() {
             vault_add_login,
             vault_update_item,
             vault_delete_item,
+            vault_list_deleted,
+            vault_restore_revision,
             vault_reveal,
             vault_set_auto_lock_minutes,
             vault_begin_enrollment,

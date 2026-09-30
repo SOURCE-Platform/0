@@ -222,6 +222,19 @@ pub async fn vault_delete_item(reference: String) -> Result<Value, String> {
     call(json!({"op": "delete_item", "ref": reference})).await
 }
 
+/// Tombstoned records, metadata only (spec §22.4).
+#[tauri::command]
+pub async fn vault_list_deleted() -> Result<Value, String> {
+    call(json!({"op": "list_deleted"})).await
+}
+
+/// Bring a retained revision back (presence; a deleted record returns as
+/// a new record, §22.4).
+#[tauri::command]
+pub async fn vault_restore_revision(reference: String, revision_id: String) -> Result<Value, String> {
+    call(json!({"op": "restore_revision", "ref": reference, "revision_id": revision_id})).await
+}
+
 /// One-shot reveal of one record's secret fields (§14.4: the helper
 /// verifies capture suppression with this process first; refusal is
 /// `CAPTURE_UNSAFE` and nothing is returned).

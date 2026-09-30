@@ -31,6 +31,7 @@ import { DevicesPanel } from "./DevicesPanel";
 import { RecoverCard } from "./RecoverCard";
 import { SetupCard } from "./SetupCard";
 import { ItemList } from "./ItemList";
+import { DeletedItems } from "./DeletedItems";
 import { AddLoginForm } from "./AddLoginForm";
 
 export function VaultPage() {
@@ -259,6 +260,11 @@ export function VaultPage() {
               />
             )}
             <ItemList refreshKey={refreshKey} onError={(m) => setError(m)} />
+            <DeletedItems
+              refreshKey={refreshKey}
+              onRestored={() => setRefreshKey((k) => k + 1)}
+              onError={(m) => setError(m)}
+            />
             <DevicesPanel onError={(m) => setError(m)} />
           </div>
         )}
