@@ -112,6 +112,7 @@ pub fn setup_retry_handle(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
         Ok((store, new_vk, staging)) => {
             let t = super::backup_ops::transfer_for(&staging);
             let summary = super::backup_ops::staging_summary(&t, &staging);
+            let _ = crate::sync::staged_disk::persist(&store, &staging); // §22.11 (best effort)
             c.header = Some(store.header.clone());
             c.store = Some(store);
             c.vk = Some(new_vk.mlock_best_effort());

@@ -76,11 +76,22 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         };
         let t = transfer_for(&staging);
         let out = staging_summary(&t, &staging);
+        // §22.11: kept on disk so it survives a restart (best effort — an
+        // unpersisted staging is simply rebuilt at the next unlock).
+        let _ = crate::sync::staged_disk::persist(store, &staging);
         c.provider.publish = Some(PublishSession { t, staging });
         deps.events.emit(ev_state(c.reported_state()));
         Ok(out)
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
+}
+
+/// §22.11: at launch, resume a publication staged on disk before the
+/// restart — validated against `vault.db`, never trusted on its own.
+pub fn resume_staged(vault_dir: &std::path::Path) -> Option<PublishSession> {
+    let store = VaultStore::open(vault_dir).ok()?;
+    let staging = crate::sync::staged_disk::load(&store).ok()??;
+    Some(PublishSession { t: transfer_for(&staging), staging })
 }
 
 /// The vault's first `create`, staged again from the pending
@@ -190,6 +201,8 @@ pub fn backup_commit_result(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &
         }
         if resend {
             c.provider.publish = Some(session);
+        } else {
+            crate::sync::staged_disk::forget(&store.dir, &store.conn)?;
         }
         deps.events.emit(ev_state(c.reported_state()));
         Ok(out)

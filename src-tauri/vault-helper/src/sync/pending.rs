@@ -171,6 +171,8 @@ pub fn add(
     }
     p.recovery_auth_updates.sort_by_key(|u| u.class);
     save(conn, &p)?;
+    // §22.11: a publication staged on disk before this change is stale.
+    crate::storage::kv::delete(conn, super::staged_disk::KEY)?;
     Ok(p)
 }
 

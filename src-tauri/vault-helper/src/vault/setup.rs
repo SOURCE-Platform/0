@@ -138,6 +138,7 @@ pub fn stage_create(
     let seen_updates = crate::sync::change::seen_auth(&updates);
     pending::add(&store.conn, PendingOp::VaultCreate, false, Base::of(&store.header), seen_updates, crate::storage::store::now_epoch())?;
     staging.carries_pending = crate::sync::publish::carry_create(&store, Some(handle.to_string()))?;
+    let _ = crate::sync::staged_disk::persist(&store, &staging); // §22.11 (best effort)
     Ok(super::provider_ops::PublishSession { t: super::backup_ops::transfer_for(&staging), staging })
 }
 

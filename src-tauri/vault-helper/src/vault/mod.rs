@@ -185,6 +185,7 @@ impl VaultCore {
         } else {
             (None, None)
         };
+        let publish = if state == VaultState::Locked { backup_ops::resume_staged(&vault_dir) } else { None };
         VaultCore {
             state,
             vk: None,
@@ -196,7 +197,7 @@ impl VaultCore {
             auto_lock_minutes: crate::keychain::read_auto_lock_minutes(),
             vault_dir,
             enroll: None,
-            provider: Default::default(),
+            provider: provider_ops::Sessions { publish, ..Default::default() },
             behind: false,
         }
     }

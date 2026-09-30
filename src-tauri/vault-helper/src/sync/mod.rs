@@ -15,3 +15,4 @@ pub mod remote;
 pub mod seen;
 pub mod session;
 pub mod sign;
+pub mod staged_disk;
