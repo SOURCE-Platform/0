@@ -26,7 +26,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
 
 /// §22.14: every op that authors a revision or changes authority.
 const AUTHORING: &[&str] = &[
-    "add_item", "update_item", "delete_item", "resolve_conflict", "backup_prepare", "change_master_password",
+    "add_item", "update_item", "delete_item", "restore_revision", "resolve_conflict", "backup_prepare", "change_master_password",
     "rotate_recovery_key", "setup_retry_handle", "revoke_device", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
 ];
 
@@ -57,6 +57,9 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "update_item" => items::update_item(core, frame, deps),
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),
+        "list_history" => history::list_history(core, frame),
+        "list_deleted" => history::list_deleted(core),
+        "restore_revision" => history::restore_revision(core, frame, deps),
         "resolve_conflict" => resolve::resolve_conflict(core, frame, deps),
         "begin_enrollment" => enroll_ops::begin_enrollment(core, frame),
         "enroll_hello" => enroll_ops::enroll_hello(core, frame),

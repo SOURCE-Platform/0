@@ -131,9 +131,13 @@ pub fn delete_item(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
     if let Err(o) = presence_gate(core, deps, "Source Vault: delete item") {
         return o;
     }
+    // §22.4: the eleventh deletion inside ten minutes needs the MP.
+    let gate = super::history::deletion_gate(core, deps);
     finish_authorized!(core, deps, move |store: &mut VaultStore,
                                          vk: &SecretBytes<32>| {
+        gate?;
         store.tombstone(vk, r)?;
+        super::history::record_deletion(store)?;
         Ok(json!({}))
     })
 }

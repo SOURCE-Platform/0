@@ -13,6 +13,7 @@ pub mod compromised;
 pub mod db;
 pub mod flip;
 pub mod header;
+pub mod history;
 pub mod import_log;
 pub mod kv;
 pub mod manifest;

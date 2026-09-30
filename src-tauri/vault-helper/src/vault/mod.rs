@@ -31,6 +31,7 @@ pub use dispatch::dispatch;
 pub mod enroll_commit;
 pub mod enroll_ops;
 pub mod gate;
+pub mod history;
 pub mod items;
 pub mod recovery_ops;
 pub mod registry_status;
