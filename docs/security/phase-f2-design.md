@@ -429,3 +429,20 @@ disposition was recorded.
 | SPEC-I11 — tests without IDs; §19; EV-03 in the nested gate; XV independence | **Accepted** (§22.16 table, §19 item 31, gate text, CryptoKit-only Swift target). |
 | SPEC-I12 — bulk-deletion counter, restore from history | **Accepted** (`kv` counter, `restore_revision`, AU-06/07). |
 | SEC-O1…O4, SPEC-O1…O11 | **Accepted** except none rejected; O7 footer/header wording aligned. |
+
+**Bounded re-review of revision 2 (`4930568`), 2026-09-30: no blockers
+from either reviewer.** Their remaining text-level findings were fixed in
+revision 3 of the candidate and the loop is closed:
+
+| Finding | Fix |
+|---|---|
+| SPEC-N1 / SEC-I1 — publish-first index not ancestor-closed | it omits D-only revisions and their descendants; best-effort; never delays the revocation (§22.7) |
+| SPEC-N4 / SEC-I2 — "active" and the racing revocation | active = in the provider-confirmed registry, own unpublished entries not counted; §11.3 rule-2 exception unchanged; CX-05 (§22.12, §4.6) |
+| SPEC-N3 / SEC-I3 — post-recovery `peer_status` unreachable | the exception is dropped: after a recovery the phone shows `BACKUP_ACCESS_LOST` and re-enrolls; PS-14 and the §11.8 marker amended. This narrows this design's §4.1 claim: `peer_status` reaches a device revoked by an ordinary revocation, not one cut off by a recovery epoch |
+| SPEC-N2 / SEC-I4 — restore vs the tombstone rule | restore of a deleted record creates a new record; `list_history` / `list_deleted` added (§22.4) |
+| SEC-I5 — re-enrollment losing the phone's unpublished edits | the phone publishes first, or the user is told the count (§22.4) |
+| SPEC-N5…N11, SEC-O1 | wording aligned (signed vs unsigned limits, gating, annex scope, SY-10/11, lock copy, device-test marks, PV-01, pin wording, token storage, counter clock) |
+
+Open for the owner: the COMPROMISED exit procedure (§22.12 proposal).
+Open for a separate review: reverse enrollment (F2-D4) and, before F.2c
+code, the peer wire annex.

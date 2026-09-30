@@ -266,7 +266,8 @@ human-safe context.
 | `list_items` | metadata list | UNLOCKED | `[{ref, kind, title, username, hosts}]`, no secrets |
 | `add_item` / `update_item` | create/modify record | UNLOCKED + fresh presence | one record's fields cross IPC once, main→helper only |
 | `delete_item` | delete record (tombstone revision) | UNLOCKED + fresh presence; **current MP** once the bulk-deletion threshold is reached (v0.5, §22.4) | §3.2 revision model |
-| `restore_revision` (v0.5) | restore a record from retained history | UNLOCKED + fresh presence | `{ref, revision_id}` → a new revision with that retained revision's content (§22.4) |
+| `list_history` / `list_deleted` (v0.5) | retained revisions of a record; tombstoned records | UNLOCKED | metadata only, no secrets (§22.4) |
+| `restore_revision` (v0.5) | restore a record from retained history | UNLOCKED + fresh presence | `{ref, revision_id}` → a new revision on a live record, or a new record when the record is tombstoned (§22.4) |
 | `resolve_conflict` | pick/merge a conflicted record | UNLOCKED + fresh presence | `{ref, chosen_rev, edits?}` → new merge revision (§3.2) |
 | `reveal` | show one password in capture-suppressed UI | UNLOCKED + fresh presence + capture check | one-shot, §14 fail-closed |
 | `change_master_password` | re-wrap VK under new PK | UNLOCKED + fresh presence | helper panel collects old+new MP; main sees status only |
@@ -689,7 +690,8 @@ nonces.
 **iPhone (SOURCE Vault, v0.5, §22.10):** the same item kinds in the
 app's own access group — the rollback-evidence item (committed registry
 head and provider floor), the two SE keys (agreement key biometry-bound,
-§22.4) and the separately stored vault pin.
+§22.4) and the separately stored vault pin and `peer_endpoint` token
+(`WhenUnlockedThisDeviceOnly`).
 
 The Keychain never stores VK, wrap payloads, MP, RK, or backup
 credentials. Unlock uses the
@@ -1095,8 +1097,10 @@ transition, §11.4). `Admit(D)` = the D-authored `revision_id`s listed in
 - The **revoker** defines `Admit(D)` as every D-authored revision in its
   local database at the moment of its *local* revocation commit — the
   history the person authorizing the revocation had accepted. **v0.5
-  (§22.7):** excluding revisions whose only source is D as a peer; those
-  are refused at that commit. The rotation
+  (§22.7):** limited to those with an `own` or `provider` source; a
+  revision held only through peer delivery (from D or anyone else) is not
+  in `Admit(D)` — D-only ones are refused at that commit, the rest set
+  aside. "Re-seals them" below means this narrowed set. The rotation
   re-seals them, so they appear in `M_rev`. From that commit on, any
   incoming D-authored `revision_id` it does not already hold is refused.
 - **Every other device**, on accepting `M_rev`, keeps `Admit(D)` as ordinary
@@ -1396,7 +1400,8 @@ recovery_proof = HMAC-SHA256(recovery_key,
   equivocation or confirmed vault-level tamper; writes are frozen and both
   tips are surfaced. The state persists across lock and restart. **v0.5
   (§22.12):** only fork evidence whose conflicting objects are each signed
-  by a key this device's committed registry installed qualifies; an
+  by a device **active** in this device's provider-confirmed registry
+  qualifies (§22.12); an
   invalid or foreign signature never does, and peer-forwarded
   (provisional) evidence never does. **How a user exits COMPROMISED is not
   yet specified** (§22.12 holds a proposal for owner review);
@@ -3295,7 +3300,7 @@ is zeroized once the re-encryption completes and is never used after
 finalize. **There is no post-finalize VK rotation.** Other devices — all of
 them now revoked — cannot read the provider any more; a Mac surfaces
 `BACKUP_ACCESS_LOST` (§11.3.2), and a phone learns its revocation through
-the §4.7 refresh once it is re-paired with a Mac of the recovered vault (the §4.7 route serves only already-paired devices). **v0.5 (§22.9):** revoked devices still receive the signed `peer_status`; a SOURCE Vault phone learns its revocation from it and is never wiped automatically.
+the §4.7 refresh once it is re-paired with a Mac of the recovered vault (the §4.7 route serves only already-paired devices). **v0.5 (§22.9):** a SOURCE Vault phone is not reached by `peer_status` after a recovery (the recovered device is a new identity); it shows `BACKUP_ACCESS_LOST`, is never wiped automatically, and rejoins by re-enrolling. A phone revoked by an ordinary revocation does receive the signed `peer_status`.
 
 ---
 
@@ -3518,7 +3523,7 @@ state: it outlives lock and restart and coexists with every state.
 | UNLOCKING | transient (unwrap in flight) | transient during entry | none | only the in-flight op | — | spinner, cancel |
 | UNLOCKED | resident (helper only) | never resident | never resident as a set; per-record transient during an op | all §1.5 ops; with `behind: true` (v0.5, §22.14) read ops and sync only | sync/backup ok | full vault UI |
 | AUTHORIZING | resident | never | the one approved record, transient, post-approval | the in-flight authorize op only for that request_id | approval relay | presence prompt / phone sheet |
-| SYNCING | resident | never | none (ciphertext merge; decrypt only for duplicate-id comparison, §3.2) | reads blocked ≤ 5 s, presence ops continue; `backup_state_offer`/stream/`backup_apply` | backup download | sync badge |
+| SYNCING | resident | never | none (ciphertext merge; decrypt only for duplicate-id comparison, §3.2) | reads blocked ≤ 5 s, presence ops continue; `backup_state_offer`/stream/`backup_apply`; `peer_serve` (v0.5) | backup download | sync badge |
 | BACKING_UP | resident while staging; not needed once fully staged | never | none (seal only) | all (the staged state is consistent) plus the publication ops | upload + state transition | backup badge |
 | ROTATING_KEYS (internal) | old+new transient, old zeroized at flip | never | per-record transient re-seal | fill ops queue ≤ 30 s; high-risk ops refused | publish staged at end | `rotation_progress` status |
 | RECOVERING | old VK transient post-unwrap; fresh VK generated before finalize; old zeroized once re-encryption completes | MP/RK themselves only during entry; derived material held until named points: `PK` (MP path) or `RK_bytes` (RK path) until the new wraps are sealed; the recovery-auth key `sk_c` until the finalize transition commits or the session aborts; a kept RK's `RK_bytes` until `recovery.wrap` is re-sealed. None is persisted; all are zeroized on commit, abort, lock or timeout | verify + per-record transient re-seal | recovery ops only (`recovery_*`, streams, `sign_provider_request` for recovery classes and finalize, §11.4 table) | download, then upload of re-encrypted blobs and the finalize transition | recovery wizard |
@@ -3902,8 +3907,8 @@ commit.
 | SY-07 | parent_count > 8, trailing bytes, unknown object magic | rejected (`FORMAT_TOO_NEW` / `FORMAT_INVALID`) |
 | SY-08 | `resolve_conflict` revision syncs | all devices converge to identical tips |
 | SY-09 | (v0.4) any topologically valid permutation / out-of-order delivery of the same revision set | identical heads, conflicts and freezes on every device (property test) |
-| SY-10 | (v0.4) VK rotation | `revision_id`s and parents unchanged; blob hashes change; a device with pending local work re-seals it with the same ids |
-| SY-11 | (v0.4) unseen revisions from a revoked author (§3.2) | refused and counted; `Admit(D)` kept; trusted descendants re-authored only by their author |
+| SY-10 | (v0.4) VK rotation | `revision_id`s and parents unchanged; blob hashes change; a device with pending local work re-seals it with the same ids (v0.5: except own descendants of a set-aside or refused revision, which are re-authored — §22.7, PS-10) |
+| SY-11 | (v0.4; v0.5: `Admit(D)` excludes peer-only deliveries, §22.7) unseen revisions from a revoked author (§3.2) | refused and counted; `Admit(D)` kept; trusted descendants re-authored only by their author |
 | SY-12 | (v0.4) duplicate `revision_id` with different blob at the same `vk_generation` | benign if identical content, else freeze |
 | SY-13 | (v0.4; amended v0.5) local rollback (vault older than Keychain last-seen) | unlocks read-only; authoring refused with `VAULT_BEHIND` until synced (§22.14) |
 
@@ -4056,7 +4061,7 @@ pass-through + zeroize of the fill response (`zeroize` allowed, cheap).
 CryptoKit (HPKE `Sender`/`Recipient` directly, including with
 `SecureEnclave.P256.KeyAgreement.PrivateKey` per §2.12 Path A; P-256,
 HKDF), LocalAuthentication, Security, Network/
-URLSession with SPKI pinning (existing pattern in the iOS repo, for the paired Mac channels only; the Phase F provider client uses standard public-CA validation with **no** pinning, §11.1). BIP-39
+URLSession with certificate pinning (existing pattern in the iOS repo — `SHA-256(cert DER)` for the enrollment channel, the SPKI hash for the v0.5 peer channel, §22.8 — for the paired Mac channels only; the Phase F provider client uses standard public-CA validation with **no** pinning, §11.1). BIP-39
 wordlist asset + in-house codec (§2.4). This keeps the iOS supply chain
 at Apple-only. **v0.5 (§22.2, §22.17):** the SOURCE Vault app links the
 Rust vault engine as a static library; its crates are vetted for the iOS
@@ -4279,7 +4284,7 @@ Every item must be verifiably green, with the named evidence:
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
 | 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Remaining before the first real credential: enforce the floor at runtime** — today it is documentation, and the app would run on hardware nobody has measured |
-| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…04, FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
+| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
 
 
 Only then may the first real credential be imported.
@@ -4464,8 +4469,8 @@ app's secure entry (iPhone) and verified by opening the committed
 | rotate the RK | `rotate_recovery_key` | fresh presence + current MP (unchanged) |
 | **reset a forgotten MP** | `change_master_password {mode:"reset"}` | fresh presence + **the RK** (was presence only) |
 | revoke with a new MP (the stolen-device branch) | `revoke_device` | fresh presence + **the RK**, then the new MP (was: a new MP with presence only) |
-| bulk deletion | any op deleting more than one record, and any `delete_item` after 10 deletions by this device within the previous 10 minutes (the count is kept in `kv`, so lock or restart does not reset it) | fresh presence + current MP |
-| restore a record from retained history | `restore_revision {ref, revision_id}` (new in v0.5) | UNLOCKED + fresh presence; writes a new revision carrying the chosen retained revision's content (§3.2); the mitigation for deletions and for changes made last by a later-revoked device |
+| bulk deletion | any op deleting more than one record, and any `delete_item` after 10 deletions by this device within the previous 10 minutes (the count is kept in `kv` against a stored non-decreasing timestamp, so lock, restart or a clock change does not reset it) | fresh presence + current MP |
+| restore a record from retained history | `list_history {ref}` and `list_deleted` (UNLOCKED; metadata only: `revision_id`, author device, date, deleted flag; for deleted records the last title) and `restore_revision {ref, revision_id}` (new in v0.5) | UNLOCKED + fresh presence. On a live record it writes an ordinary new revision (parents = current heads) carrying the chosen retained revision's content. On a **tombstoned** record it creates a **new record** (new `record_id`) with that content; the tombstone stands, so §3.2's "never a resurrection" rule is untouched and every device merges it as a plain new record. The mitigation for deletions and for changes made last by a later-revoked device |
 
 The 10-in-10-minutes threshold is this specification's concrete form of
 the design's "bulk deletion needs the MP".
@@ -4507,7 +4512,11 @@ RK that fails to open the wrap never reveals which check failed beyond
   unlocks with the MP from then on. Face ID unlock is restored by **a
   normal re-enrollment**: the Mac enrolls the phone again through §5 as a
   new device identity and revokes the old one (an ordinary revocation,
-  with rotation). A phone-side self-refresh would be a phone-authorized
+  with rotation). **Before it starts, the phone publishes its pending
+  revisions** (its signing key still works), so they are
+  provider-confirmed and survive the revocation cutoff (§22.7); if the
+  provider is unreachable the flow says how many unpublished changes on
+  this phone would be lost and asks the user to retry later or continue. A phone-side self-refresh would be a phone-authorized
   enrollment and is therefore part of the §22.13 review, not of this
   amendment.
 - **Residuals (stated).** Whoever can change the MP can also rotate the
@@ -4606,7 +4615,12 @@ channel).
   starts itself is preceded, when the provider is reachable, by an
   ordinary publication, which makes peer-delivered revisions
   provider-confirmed. When the rotation is a revocation of D, that
-  publication **excludes revisions whose only source is D**.
+  publication **omits every revision whose only source is D and every
+  revision with such an ancestor** (those descendants are re-authored at
+  the revocation commit, below), so its index stays ancestor-closed. The
+  step is best-effort and bounded (one attempt, 30 s): its failure or
+  timeout never delays or blocks the rotation's or revocation's local
+  commit.
 - **Revocation cutoff.** Revisions whose **only** source is D are refused
   (`PROVENANCE_REFUSED`, counted) — whatever author they claim (§3.2's
   author rule alone does not stop a thief holding the old VK):
@@ -4686,8 +4700,10 @@ exception aside) → signature → `SHA-256(body)` = `body_sha256`. The replay
 cache holds `(sender_device_id, n)` for 600 s and is **persisted** across
 restarts; a device that cannot load it refuses every request with `t`
 earlier than its start time **+ 300 s**. Authentication failures
-(`PEER_AUTH_INVALID`, `PEER_REPLAY`, `PEER_NOT_PERMITTED`) and rate-limit
-refusals are answered **unsigned** — HTTP `403` / `429` with an empty body
+(`PEER_AUTH_INVALID`, `PEER_REPLAY`, `PEER_NOT_PERMITTED`) and the
+per-sender request-rate limit are answered **unsigned** — HTTP `403` /
+`429` with an empty body; the size, count and quota caps below are
+answered with the signed status 2
 (the responder spends no signature on an unauthenticated or flooding
 party); the requester treats any unsigned, unverifiable or mis-addressed
 response as "unable to verify".
@@ -4713,16 +4729,18 @@ therefore only ever the phone.
 bytes; iPhone: engine entry points). `peer_serve` is allowed in LOCKED,
 UNLOCKED, BACKING_UP, SYNCING and COMPROMISED (in COMPROMISED only
 `peer_status` and read operations 1–4; `peer_revs_put` is refused with
-status 1), and this is added to the §13.2 rows:
+status 1), and this is added to the §13.2 rows. In the table, "serving"
+means any of those states; BACKING_UP and SYNCING behave as UNLOCKED when
+the VK is resident and as LOCKED otherwise:
 
 | u16 | op | receiver state | request body → response body |
 |---|---|---|---|
-| 1 | `peer_hello` | LOCKED or UNLOCKED | floors (committed registry head seq + hash; committed provider generation + manifest hash) and the heads digest → the same from the responder |
-| 2 | `peer_state` | LOCKED or UNLOCKED | the requester's committed generation → the responder's latest **provider-committed** state verbatim (§11.2 objects + `recovery_auth`), or status 3 |
-| 3 | `peer_heads` | LOCKED or UNLOCKED | bucket numbers → per record in those buckets: `record_id` and its sorted head `revision_id`s |
-| 4 | `peer_revs_get` | LOCKED or UNLOCKED | wanted `record_id`s with the requester's heads → revision objects (§3.7) with their parent closure (§22.7) |
+| 1 | `peer_hello` | serving | floors (committed registry head seq + hash; committed provider generation + manifest hash) and the heads digest → the same from the responder |
+| 2 | `peer_state` | serving | the requester's committed generation → the responder's latest **provider-committed** state verbatim (§11.2 objects + `recovery_auth`), or status 3 |
+| 3 | `peer_heads` | serving | bucket numbers → per record in those buckets: `record_id` and its sorted head `revision_id`s |
+| 4 | `peer_revs_get` | serving | wanted `record_id`s with the requester's heads → revision objects (§3.7) with their parent closure (§22.7) |
 | 5 | `peer_revs_put` | UNLOCKED; LOCKED into the inbox | revision objects with parent closure → counts (admitted, waiting, refused) |
-| 6 | `peer_status` | any state with a vault | empty → §22.9 status body |
+| 6 | `peer_status` | serving | empty → §22.9 status body |
 
 *Heads digest:* `record_id` is the 16-byte uuid. 256 buckets by the
 first byte of `SHA-256(record_id)`; bucket digest = SHA-256 over, for each
@@ -4741,8 +4759,10 @@ encodings of each operation body, the carriage of bodies larger than one
 64 KiB IPC frame (a `peer` stream session under §1.3 rules, with its own
 state gating), and the split of a `peer_state` answer into per-object
 fetches so that a 4 MiB registry and an 8 MiB index fit the caps, are
-specified in a wire annex with XV-PEER vectors. It may not change anything
-stated here.
+specified in a wire annex with XV-PEER vectors. The annex may refine the
+body definitions of operations 1–5 (including splitting one into several
+requests); it may not change the signed envelopes, the verification
+order, who may speak, the gating or the caps.
 
 *Caps:* request body ≤ 1 MiB; response body ≤ 8 MiB; ≤ 2,000 revisions
 per batch; ≤ 64 MiB per exchange; ≤ 10,000 waiting revisions and 64 MiB
@@ -4789,34 +4809,36 @@ provider generation and manifest hash.
   registry at its accepted head, or (for an epoch) when the epoch's proof
   verifies under the VK the phone holds for its last accepted manifest
   (§4.8, v0.4.1). Anything else is "unable to verify".
-- **After a total-loss recovery** the responder is a device the phone's
-  committed registry has never seen, so the general order (§22.8) would
-  discard the response unread. Exception, for `peer_status` only: the
-  phone parses the chain first; if it extends the phone's committed chain
-  by a structurally valid `recovery_epoch` in the S-4 shape (§4.4 rule 6)
-  and the response signature verifies under a device that chain installs
-  after the epoch, the phone treats it as "removed — not yet confirmed".
-  If the epoch's proof also verifies under the VK the phone holds for its
-  last accepted manifest, it is confirmed.
-- **The revocation lock is provisional until the provider confirms it.**
-  While so locked the phone makes no peer exchange and authors nothing,
-  but it **keeps making its own provider `state_get`**. A provider-
-  confirmed state in which the phone is still active lifts the lock
-  (`PEER_STATE_UNCONFIRMED`); a provider `401` or a confirmed chain
-  revoking it leaves it in place. A revocation that appears only among the
-  responder's unpublished entries (`seq > committed_seq`) is shown as
-  "removal pending".
+- **After a total-loss recovery** the recovered vault's device has a new
+  identity (and, on another Mac, another TLS key), so the phone can
+  neither address it nor verify it: `peer_status` does **not** reach a
+  phone in that case. The phone sees its own provider requests refused
+  and shows `BACKUP_ACCESS_LOST` (§11.3.2: "this device may have been
+  removed, or your vault may have been recovered on another device"); it
+  stays readable, deletes nothing, and rejoins by re-enrolling. This is
+  the stated behaviour, not a gap to be closed by trusting an unknown
+  responder.
+- **The revocation lock can be lifted only by the provider.** A
+  `peer_status` revocation — published, or still among the responder's
+  unpublished entries (`seq > committed_seq`, shown as "removal pending")
+  — locks the vault either way. While so locked the phone makes no peer
+  exchange and authors nothing, but it **keeps making its own provider
+  `state_get`**. A provider-confirmed state in which the phone is still
+  active lifts the lock (`PEER_STATE_UNCONFIRMED`). A genuine revocation
+  is never positively confirmed by the provider (a revoked key only gets
+  `401`, which §4.7 forbids reading as revocation); after the §11.3.2
+  `BACKUP_ACCESS_LOST` condition is met the copy changes from "removal
+  pending" to "this iPhone was removed".
 - **No automatic deletion (normative).** Learning of its own revocation
   locks the vault and offers "Remove this vault from this iPhone"; key
   material and the store are deleted only by that explicit user action,
-  and while the lock is unconfirmed the offer warns that this may be the
+  and until `BACKUP_ACCESS_LOST` corroborates it the offer warns that this may be the
   only remaining copy. This closes the v0.4.1 residual (a compromised main process
   could force a re-enroll) and prevents data loss.
 - §4.7's "no general sync" and "not from a Mac route" statements, and the
   Phase F two-floor model (Mac-refresh floor + provider-path floor), are
   superseded for SOURCE Vault devices: they keep one committed registry
   floor.
-- §11.8: devices revoked by a recovery epoch still receive `peer_status`.
 - The unsigned `GET /v1/vault/registry` route is removed from the Mac in
   the release that ships F.2c; SOURCE Mobile's vault screens are retired
   with it (§22.3).
@@ -4917,9 +4939,14 @@ class would be an owner decision and is not proposed.
 - A device enters COMPROMISED only on **fork evidence signed by the
   vault's own devices**: two registry entries or two manifests that
   conflict (§4.6), **each** carrying a valid signature by a device that is
-  **active in the device's committed registry at its accepted head** (a
-  revoked device's key never qualifies, so a stolen revoked device cannot
-  freeze the vault). Evidence reaching the committed tier from the
+  **active in the provider-confirmed registry this device last accepted —
+  not counting this device's own unpublished entries** (a key whose
+  revocation the provider has committed never qualifies, so a stolen
+  revoked device cannot freeze the vault). The §11.3 rule-2 exception is
+  unchanged: while this device's revocation of D is still pending, an
+  entry D commits at the provider after the revocation's base **is** fork
+  evidence (D is still active in the provider-confirmed registry) and
+  enters COMPROMISED, as the Phase F implementation does (CX-05). Evidence reaching the committed tier from the
   provider path qualifies; provisional (peer) evidence never does (§22.5).
   "Confirmed vault-level tamper" in §3.2, §4.6 and §13 means exactly this
   evidence and nothing broader.
@@ -5029,23 +5056,23 @@ the gate asserts them by name.
 | PS-11 | LOCKED inbox | bounded; admitted at unlock through §22.7; purged on the peer's revocation |
 | PS-12 | freshness discipline, push and serve, including a LOCKED Mac | local-only revisions withheld without a provider check in the last 15 min |
 | PS-13 | `peer_status` for a wrongly reported or unpublished revocation | provisional lock; provider `state_get` continues; lock lifted when the provider shows the phone active; nothing deleted |
-| PS-14 | `peer_status` after total-loss recovery | "removed — not yet confirmed"; confirmed when the epoch proof verifies; removal only by the user |
+| PS-14 | a phone after a total-loss recovery elsewhere; and a `peer_status` from a responder not in its committed registry | the response is "unable to verify" and changes nothing; the phone reaches `BACKUP_ACCESS_LOST`; nothing deleted; re-enrollment works |
 | AU-01 | MP reset without the RK, with a wrong RK, with an RK for a retired generation (Mac and iPhone) | refused |
 | AU-02 | `enroll_confirm` without the current MP | refused; no registry entry |
 | AU-03 | revoke's set-a-new-MP branch without the RK | refused |
-| AU-04 | stolen iPhone with its passcode | vault does not open; no authority op possible |
+| AU-04 | stolen iPhone with its passcode (device) | vault does not open; no authority op possible |
 | AU-05 | stolen Mac with its login password | reads possible (stated residual); no revoke, enroll, MP/RK change or reset |
 | AU-06 | bulk deletion and the 10-in-10 counter across lock and restart | MP required; counter persists |
-| AU-07 | `restore_revision` after a deletion and after a change by a later-revoked device | content restored as a new revision |
+| AU-07 | `restore_revision` after a deletion and after a change by a later-revoked device | after a deletion: a new record with the old content, tombstone intact, all devices converge without a conflict; on a live record: an ordinary new revision |
 | MT-01 | first materialization from a forged vault or with a wrong order | refused |
 | MT-02 | SOURCE Mobile phone re-enrolled as a SOURCE Vault device | old identity revoked with rotation; old app holds nothing usable |
 | IO-01 | Keychain classes; agreement key biometry-bound, signing key not (device) | as §22.4 |
 | IO-02 | Face ID re-registration (device) | envelope unusable; MP unlock offered; re-enrollment restores Face ID |
 | IO-03 | file protection and backup exclusion (device) | as §22.10 |
-| IO-04 | app killed during rotation, before and after the commit marker | rolls back or forward; copy matches |
-| IO-05 | capture: recording, app switcher, RK-sheet screenshot | hidden, blanked, warning |
-| IO-06 | staged security publication with the phone screen-locked, then unlocked | does not finish while locked; finishes after unlock; banner until commit |
-| IO-07 | transport: no pin, wrong pin, public source address, missing bearer token | no connection / refused before any helper call |
+| IO-04 | app killed during rotation, before and after the commit marker (device) | rolls back or forward; copy matches |
+| IO-05 | capture: recording, app switcher, RK-sheet screenshot (device) | hidden, blanked, warning |
+| IO-06 | staged security publication with the phone screen-locked, then unlocked (device) | does not finish while locked; finishes after unlock; banner until commit |
+| IO-07 | transport: no pin, wrong pin, public source address, missing bearer token (device) | no connection / refused before any helper call |
 | SG-01 | staged publication across a helper restart | completes while LOCKED |
 | SG-02 | tampered, partial or stale staging (a newer change committed) | discarded; never signed; re-staged at unlock |
 | SG-03 | canary scan of the staging directory | no VK, PK, MP, RK, `sk_c` or plaintext |
@@ -5053,11 +5080,12 @@ the gate asserts them by name.
 | CX-02 | fork signed by a **revoked** device's key | no COMPROMISED |
 | CX-03 | fork signed by devices active in the committed registry, via the provider | COMPROMISED |
 | CX-04 | the same evidence via a peer | never COMPROMISED |
+| CX-05 | racing revocation: this device's revoke(D) is pending and D commits a registry entry at the same seq | COMPROMISED (§11.3 rule-2 exception, §11.4); never a silent adoption that leaves a D-enrolled device active |
 | SY-13 | (amended) restored older store | unlocks read-only; authoring `VAULT_BEHIND`; sync clears it |
 | FFI-01 | exported symbols vs the catalogue | lint fails on any extra entry |
 | XV-PEER | both TLVs, prehashes and the heads digest | Rust engine and the CryptoKit-only Swift target agree |
 
-Also: phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD
+Also, as **PV-01** (one gate item, listing each variant by name): phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD
 for recovery on a phone; RC-01 step by step (with the set-new-MP branch);
 and PR-01/BK-18 canaries (VK, plaintext, MP, RK, `sk_c`) over peer
 transcripts, the phone's disk and logs. **SY-11's expected result is
