@@ -51,11 +51,31 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
     Ok(Offer::Index(remote.manifest.object_index_hash))
 }
 
-/// The served manifest verifies under a device active in the local,
-/// already-trusted registry.
+/// The served manifest verifies under a device active in the
+/// provider-confirmed registry this device last accepted — its own
+/// unpublished entries (a pending change's) do not count (§22.12). A
+/// device this Mac is still revoking therefore still counts, as §11.3
+/// rule 2 requires.
 pub(crate) fn signed_by_our_registry(store: &VaultStore, remote: &RemoteState) -> Result<bool, ErrorCode> {
-    let reg = crate::registry::log::read_state(&store.dir, &store.header.vault_id.0, &crate::registry::chain::EpochPolicy::CheckpointAnchored)?;
+    let reg = confirmed_registry(store)?;
     Ok(reg.active_device(&remote.manifest.signer_device_id).is_some_and(|d| remote.manifest.verify(&d.sign_pub).is_ok()))
+}
+
+/// The local registry cut at the pending change's base head, when a
+/// pending change still rides on that base.
+pub(crate) fn confirmed_registry(store: &VaultStore) -> Result<crate::registry::chain::RegistryState, ErrorCode> {
+    use crate::registry::chain::{verify_chain_with, EpochPolicy, RegistryState};
+    let mut entries = crate::registry::log::read_entries(&store.dir)?;
+    if let Some(p) = super::pending::load(&store.conn)?.filter(|p| !p.needs_user) {
+        let hashes: Vec<[u8; 32]> = entries.iter().map(|e| vault_proto::crypto::registry::entry_hash(e).map_err(|_| ErrorCode::Internal)).collect::<Result<_, _>>()?;
+        if let Some(i) = hashes.iter().position(|h| *h == p.base.registry_head.0) {
+            entries.truncate(i + 1);
+        }
+    }
+    if entries.is_empty() {
+        return Ok(RegistryState::empty());
+    }
+    verify_chain_with(&entries, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)
 }
 
 /// §11.5 step 2: verify the index against the manifest and list the
