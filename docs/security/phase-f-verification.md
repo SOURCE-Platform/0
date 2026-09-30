@@ -172,6 +172,30 @@ and the app and needs several GB the disk did not have (1–3 GB free), and
 it may raise Keychain prompts. It is the remaining step of the gate of
 record.
 
+### 3.3 Gate of record and the regression policy (2026-09-30)
+
+- **Full run (2026-09-29/30):** 16 of 17 checks PASS, including EV-03 on
+  the device. The one FAIL was inside the nested regression: Phase C's
+  "auto-lock fires after idle window" read `STATE=backing_up` instead of
+  `STATE=locked`. The lock had fired (`"event":"locked","reason":"timeout"`);
+  since Phase F a locked vault whose first backup is still staged reports
+  `backing_up` (§13). The check was too literal, not the helper wrong.
+- **Fix (`scripts/phase-c-gate.sh`):** the check now accepts `locked` or
+  `backing_up` **and** requires `list_items` to be refused with
+  `BAD_STATE` after the timeout, which proves the key is gone.
+- **Re-run:** `scripts/phase-c-gate.sh` alone — **PASS, 19 of 19**
+  (including its nested Phase B and A regression and the fuzz smoke).
+- **Not re-run:** the Phase D and E gates and a second complete
+  `phase-f-gate.sh` run. A re-run was started and **stopped at the owner's
+  instruction (2026-09-30)**: full nested regression runs are no longer
+  repeated per phase. In the first full run the Phase D and E gates
+  reported one failure each, and that failure was the nested Phase C
+  check above; their own checks passed.
+- **Policy from here (owner decision):** targeted tests for each change
+  during a phase; no full nested regression at each phase close. One
+  complete run of every gate remains part of the Phase J release gate
+  (spec §19) before the first real credential.
+
 ## 4. Phase F exit — what remains
 
 1. ~~iPhone §4.7 envelope catch-up~~ — done (§2.4).

@@ -246,11 +246,14 @@ OPLOG="$T/ops-autolock.log"
 start_helper "$T/v4" OV0_VAULT_PANEL_SCRIPT="submit:$MP" OV0_VAULT_AUTO_LOCK_SECS=3
 c setup >/dev/null; c unlock-mp >/dev/null
 "$CLIENT" "$SOCK" watch-events 8 >"$T/events-al.log" 2>&1
-OUT_ST=$(c state); stop_helper
+OUT_ST=$(c state); OUT_AL_LIST=$(c list); stop_helper
 WHY=""
 grep -q '"event":"locked"' "$T/events-al.log" || WHY+="no-locked-event "
 grep -q '"reason":"timeout"' "$T/events-al.log" || WHY+="reason-not-timeout "
-has "$OUT_ST" "STATE=locked" || WHY+="state:$OUT_ST "
+# Since Phase F a locked vault whose first backup is still staged
+# reports backing_up; the key is gone either way, so reading must fail.
+has "$OUT_ST" "STATE=locked" || has "$OUT_ST" "STATE=backing_up" || WHY+="state:$OUT_ST "
+has "$OUT_AL_LIST" "OP_ERROR=BAD_STATE" || WHY+="list-after-lock:$(first "$OUT_AL_LIST") "
 verdict "auto-lock fires after idle window (3 s test override)" \
     "$(grep -o '"event":"locked"[^}]*' "$T/events-al.log" | head -1); post-state $OUT_ST"
 
