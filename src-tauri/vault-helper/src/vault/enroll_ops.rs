@@ -269,9 +269,18 @@ fn prove_current_mp(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Result<(), Err
     let PanelOutcome::Submitted(mp) = outcome else {
         return Err(ErrorCode::PanelCancelled);
     };
-    let c = lock_core(core);
-    let store = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing).ok_or(ErrorCode::BadState)?;
-    super::recovery_ops::prove_mp(store, &mp).map(|_| ())
+    let mut c = lock_core(core);
+    if c.state != VaultState::Authorizing {
+        return Err(ErrorCode::BadState);
+    }
+    let proved = super::recovery_ops::prove_mp_resident(&c, &mp).map(|_| ());
+    if proved == Err(ErrorCode::WrongCredential) {
+        // §15 backoff, as every other master-password entry.
+        let delay = c.record_failed_attempt();
+        drop(c);
+        std::thread::sleep(delay);
+    }
+    proved
 }
 
 /// Bundles up to this size travel inline in the `enroll_confirm` answer.

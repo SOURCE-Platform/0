@@ -20,9 +20,14 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         return OpOutcome::err(ErrorCode::VaultBehind);
     }
     let out = route(core, frame, deps, op);
-    clear_behind(core);
+    if out.response["ok"] == Value::Bool(true) && FLOOR_OPS.contains(&op) {
+        tend_floor(core);
+    }
     out
 }
+
+/// Ops after which the accepted provider state may have moved.
+const FLOOR_OPS: &[&str] = &["backup_state_offer", "backup_apply", "backup_commit_result"];
 
 /// §22.14: every op that authors a revision or changes authority.
 const AUTHORING: &[&str] = &[
@@ -30,13 +35,19 @@ const AUTHORING: &[&str] = &[
     "rotate_recovery_key", "setup_retry_handle", "revoke_device", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
 ];
 
-/// A sync that reached the Keychain floor ends the read-only mode.
-fn clear_behind(core: &Arc<Mutex<VaultCore>>) {
+/// §22.14: while behind, a verified provider exchange may catch the store
+/// up (never by lowering the floor); otherwise the floor follows the
+/// accepted provider state.
+fn tend_floor(core: &Arc<Mutex<VaultCore>>) {
     let mut c = lock_core(core);
-    let Some(generation) = c.store.as_ref().filter(|_| c.behind).map(|s| s.header.manifest_generation) else {
+    let behind = c.behind;
+    let Some(store) = c.store.as_mut() else {
         return;
     };
-    if crate::keychain::read_seen_generation().is_ok_and(|seen| seen.is_none_or(|s| s <= generation)) {
+    if !behind {
+        let _ = floor::raise(store);
+    } else if floor::catch_up(store).unwrap_or(false) {
+        c.header = c.store.as_ref().map(|s| s.header.clone());
         c.behind = false;
     }
 }

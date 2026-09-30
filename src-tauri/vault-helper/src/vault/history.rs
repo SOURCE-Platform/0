@@ -6,6 +6,7 @@
 //! deleted stays restorable from retained history.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -17,37 +18,44 @@ use crate::crypto::hex;
 use crate::crypto::secret::SecretBytes;
 use crate::errors::ErrorCode;
 use crate::state::VaultState;
-use crate::storage::store::now_epoch;
 use crate::storage::{kv, VaultStore};
 
-const KEY: &str = "deletion_window";
+const KEY: &str = "deletion_ages";
 pub const WINDOW_SECS: u64 = 600;
 pub const FREE_DELETIONS: usize = 10;
 
-/// Deletion times against a clock that never runs backwards here, so a
-/// restart or a changed system clock does not reset the count.
+/// Each recent deletion's age in seconds. Ages grow only by time this
+/// helper itself observed on a monotonic clock — never by the wall clock,
+/// and not across a restart — so neither a clock change nor a restart
+/// shortens the window (review SEC-I2).
 #[derive(Serialize, Deserialize, Default)]
 struct Window {
-    last: u64,
-    times: Vec<u64>,
+    ages: Vec<u64>,
 }
 
-fn load(store: &VaultStore) -> Result<(Window, u64), ErrorCode> {
+static OBSERVED: Mutex<Option<Instant>> = Mutex::new(None);
+
+fn load(store: &VaultStore) -> Result<Window, ErrorCode> {
     let mut w: Window = kv::get(&store.conn, KEY)?.unwrap_or_default();
-    let now = now_epoch().max(w.last);
-    w.times.retain(|t| now.saturating_sub(*t) < WINDOW_SECS);
-    Ok((w, now))
+    let mut seen = OBSERVED.lock().unwrap_or_else(|e| e.into_inner());
+    let elapsed = seen.map_or(0, |i| i.elapsed().as_secs());
+    *seen = Some(Instant::now());
+    for a in &mut w.ages {
+        *a = a.saturating_add(elapsed);
+    }
+    w.ages.retain(|a| *a < WINDOW_SECS);
+    kv::put(&store.conn, KEY, &w)?;
+    Ok(w)
 }
 
 /// Whether the next deletion needs the master password.
 pub fn needs_mp(store: &VaultStore) -> Result<bool, ErrorCode> {
-    Ok(load(store)?.0.times.len() >= FREE_DELETIONS)
+    Ok(load(store)?.ages.len() >= FREE_DELETIONS)
 }
 
 pub fn record_deletion(store: &VaultStore) -> Result<(), ErrorCode> {
-    let (mut w, now) = load(store)?;
-    w.times.push(now);
-    w.last = now;
+    let mut w = load(store)?;
+    w.ages.push(0);
     kv::put(&store.conn, KEY, &w)
 }
 
@@ -66,9 +74,18 @@ pub fn deletion_gate(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Result<(), Er
     let PanelOutcome::Submitted(mp) = outcome else {
         return Err(ErrorCode::PanelCancelled);
     };
-    let c = lock_core(core);
-    let store = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing).ok_or(ErrorCode::BadState)?;
-    super::recovery_ops::prove_mp(store, &mp).map(|_| ())
+    let mut c = lock_core(core);
+    if c.state != VaultState::Authorizing {
+        return Err(ErrorCode::BadState);
+    }
+    let proved = super::recovery_ops::prove_mp_resident(&c, &mp).map(|_| ());
+    if proved == Err(ErrorCode::WrongCredential) {
+        // §15 backoff, as every other master-password entry.
+        let delay = c.record_failed_attempt();
+        drop(c);
+        std::thread::sleep(delay);
+    }
+    proved
 }
 
 fn read<T>(core: &Arc<Mutex<VaultCore>>, f: impl FnOnce(&VaultStore, &SecretBytes<32>) -> Result<T, ErrorCode>) -> Result<T, ErrorCode> {

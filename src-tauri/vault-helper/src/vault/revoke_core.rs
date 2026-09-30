@@ -48,7 +48,7 @@ pub fn revoke(
     if state.active_device(&target).is_none() {
         return Err(ErrorCode::NotFound);
     }
-    prove_mp(&store, mp)?;
+    prove_mp(&store, vk, mp)?;
     let base = pending::base_for(&store.conn, &store.header)?;
     let mut entries = state.entries.clone();
     entries.push(build::revoke(&state, me, target)?);

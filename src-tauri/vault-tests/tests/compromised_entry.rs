@@ -84,3 +84,21 @@ fn cx05_racing_revocation_is_fork_evidence() {
     // Not published: the provider still lists B as active.
     assert_eq!(fetch::offer(a.store(), &fork(&a, &cloud, &b.dev)), Err(ErrorCode::RegistryFork));
 }
+
+/// CX-05, registry-entry form (§11.3 rule 2, review VER-I3): while this
+/// Mac's revoke(B) is pending, B commits an entry at the same seq (it
+/// enrolls a device of its own). That is fork evidence — never adopted,
+/// so the device B enrolled never becomes active here.
+#[test]
+fn cx05_racing_revocation_entry_is_never_adopted() {
+    let (cloud, mut a, mut b) = pair("cx05r");
+    let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
+    let done = vault_helper::vault::revoke_core::revoke(store, &vk, &a.dev, b.dev.device_id(), MP, &a.rk_fresh()).unwrap();
+    a.store = Some(done.store);
+    a.vk = Some(done.vk);
+    let thief = SoftwareDevice::generate("Thief's device", PLATFORM_MACOS);
+    b.enroll_device(&cloud, &thief);
+    assert_eq!(a.sync(&cloud).err(), Some(ErrorCode::RegistryFork));
+    assert!(a.registry().active_device(&thief.device_id()).is_none(), "nothing adopted");
+    assert!(a.registry().active_device(&b.dev.device_id()).is_none(), "the revocation stands locally");
+}

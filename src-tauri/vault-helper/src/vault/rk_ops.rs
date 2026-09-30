@@ -172,7 +172,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
         let Some(store) = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing) else {
             return OpOutcome::err(ErrorCode::BadState);
         };
-        let pk = match super::recovery_ops::prove_mp(store, &mp) {
+        let pk = match super::recovery_ops::prove_mp_resident(&c, &mp) {
             Ok(pk) => pk,
             Err(e) => {
                 drop(c);
@@ -200,10 +200,9 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
     match reopened {
         Ok((r, store)) => {
             c.header = Some(store.header.clone());
-            let generation = store.header.manifest_generation;
+            let _ = super::floor::raise(&store);
             c.store = Some(store);
             c.vk = Some(r.new_vk.mlock_best_effort());
-            let _ = crate::keychain::write_seen_generation(generation);
             drop(c);
             finish(core, deps, Ok(()))
         }
@@ -243,6 +242,10 @@ pub fn reset_master_password(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOut
     };
     drop(words);
     if let Err(e) = proven {
+        if e == ErrorCode::WrongCredential {
+            let delay = lock_core(core).record_failed_attempt();
+            std::thread::sleep(delay);
+        }
         return finish(core, deps, Err(e));
     }
     emit_panel(deps, true, PanelRequest::MpCreate);

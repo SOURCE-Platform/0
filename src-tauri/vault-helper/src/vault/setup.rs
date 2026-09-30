@@ -20,7 +20,6 @@ use crate::state::VaultState;
 use crate::storage::header::Header;
 use crate::storage::store::PASSWORD_WRAP_NAME;
 use crate::storage::VaultStore;
-use crate::keychain;
 
 /// §13.3: UNLOCKING aborts after 120 s (also bounds panel waits).
 const PANEL_TIMEOUT: Duration = Duration::from_secs(120);
@@ -107,9 +106,11 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
             return OpOutcome::err(e);
         }
     };
-    // Rollback-evidence bookkeeping (§2.8). Keychain failure is not fatal
-    // to creation; the vault opens without it (first-seen semantics).
-    let _ = keychain::write_seen_generation(header.manifest_generation);
+    // Rollback-evidence bookkeeping (§2.8): the floor starts over for this
+    // vault. Keychain failure is not fatal to creation (first-seen).
+    if let Ok(store) = VaultStore::open(&vault_dir) {
+        let _ = super::floor::reset(&store);
+    }
     let mut c = lock_core(core);
     c.header = Some(header);
     c.state = VaultState::Locked;
@@ -269,10 +270,10 @@ pub(super) fn install_unlock(
         Ok(s) => s,
         Err(e) => return unlock_failed_fatal(core, e, deps),
     };
-    // §2.8 rollback evidence, §22.14: a directory older than the last
-    // generation this helper has seen opens read-only until it syncs.
-    let behind = match keychain::read_seen_generation() {
-        Ok(seen) => seen.is_some_and(|s| s > header.manifest_generation),
+    // §2.8 rollback evidence, §22.14: judged on the store just opened (not
+    // a cached header); an older store opens read-only until it syncs.
+    let behind = match super::floor::behind(&store) {
+        Ok(b) => b,
         Err(_) => return unlock_failed_fatal(core, ErrorCode::Internal, deps),
     };
     let mut c = lock_core(core);
@@ -280,7 +281,6 @@ pub(super) fn install_unlock(
         // A lock preempted while we unwrapped; VK drops here (zeroized).
         return OpOutcome::err(ErrorCode::BadState);
     }
-    let generation = header.manifest_generation;
     c.vk = Some(payload.vk.mlock_best_effort());
     c.store = Some(store);
     c.header = Some(header.clone());
@@ -290,7 +290,7 @@ pub(super) fn install_unlock(
     c.behind = behind;
     if !behind {
         // Never lowers the floor.
-        let _ = keychain::write_seen_generation(generation);
+        let _ = c.store.as_ref().map(super::floor::raise);
     }
     deps.events.emit(ev_state(c.state));
     OpOutcome::ok(json!({"state": c.state.as_str()}))

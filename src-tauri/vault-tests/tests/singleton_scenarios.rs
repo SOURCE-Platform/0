@@ -48,11 +48,11 @@ fn bk26_mp_change_vs_committed_mp_change() {
     let rep = a.sync(&cloud).unwrap().unwrap();
     assert!(rep.needs_user && rep.adopted_singletons);
     assert!(pending::load(&a.store().conn).unwrap().unwrap().needs_user);
-    assert!(prove_mp(a.store(), MP_B).is_ok(), "the committed MP opens the adopted wrap");
-    assert!(prove_mp(a.store(), MP_A).is_err(), "A's superseded MP is gone");
+    assert!(prove_mp(a.store(), a.vk.as_ref().unwrap(), MP_B).is_ok(), "the committed MP opens the adopted wrap");
+    assert!(prove_mp(a.store(), a.vk.as_ref().unwrap(), MP_A).is_err(), "A's superseded MP is gone");
     a.publish(&cloud).unwrap();
     b.sync(&cloud).unwrap();
-    assert!(prove_mp(b.store(), MP_B).is_ok(), "A published nothing of its superseded MP");
+    assert!(prove_mp(b.store(), b.vk.as_ref().unwrap(), MP_B).is_ok(), "A published nothing of its superseded MP");
 }
 
 /// BK-26 (c): A's pending revocation (a local rotation to generation 2)
@@ -68,7 +68,7 @@ fn bk26_revocation_vs_committed_rotation() {
     a.store = Some(done.store);
     a.vk = Some(done.vk);
     let (store, vk) = (b.store.take().unwrap(), b.vk.take().unwrap());
-    let pk = prove_mp(&store, MP).unwrap();
+    let pk = prove_mp(&store, &vk, MP).unwrap();
     let rot = rotate_recovery_key(store, &vk, &pk, false).unwrap();
     b.store = Some(vault_helper::storage::VaultStore::open(&b.dir).unwrap());
     b.vk = Some(rot.rotation.new_vk);
@@ -95,7 +95,7 @@ fn bk27_records_across_a_concurrent_rotation() {
     let (cloud, mut a, mut b, _c) = trio("bk27");
     b.add("offline-edit");
     let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
-    let pk = prove_mp(&store, MP).unwrap();
+    let pk = prove_mp(&store, &vk, MP).unwrap();
     let rot = rotate_recovery_key(store, &vk, &pk, false).unwrap();
     a.store = Some(vault_helper::storage::VaultStore::open(&a.dir).unwrap());
     a.vk = Some(rot.rotation.new_vk);

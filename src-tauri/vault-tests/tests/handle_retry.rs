@@ -46,7 +46,7 @@ fn bk28_handle_taken_then_retry() {
     let mut rk = SecretBytes::new(*rk0.expose());
     for (handle, taken) in [(TAKEN_2, true), (FREE, false)] {
         let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
-        let pk_now = recovery_ops::prove_mp(&store, MP).unwrap();
+        let pk_now = recovery_ops::prove_mp(&store, &vk, MP).unwrap();
         rk = random_secret();
         let new_vk = retry_handle::rotate(store, &vk, &pk_now, &rk, handle).unwrap();
         let store = VaultStore::open(&a.dir).unwrap();
@@ -115,7 +115,7 @@ fn bk28_retry_crash_is_old_or_new() {
         let handle = format!("synthetic-crash-{i}@example.test");
         let before = snapshot(a.store());
         let (store, vk) = (a.store.take().unwrap(), a.vk.take().unwrap());
-        let pk = recovery_ops::prove_mp(&store, MP).unwrap();
+        let pk = recovery_ops::prove_mp(&store, &vk, MP).unwrap();
         let rk = random_secret();
         let old_vk = SecretBytes::new(*vk.expose());
         assert!(retry_handle::rotate_failing(store, &vk, &pk, &rk, &handle, Some(fail)).is_err());
@@ -130,7 +130,10 @@ fn bk28_retry_crash_is_old_or_new() {
             // The new VK was lost with the "crash"; a committed rotation is
             // opened by the MP, as an unlock would.
             let f: vault_helper::crypto::wrap::PasswordWrapFile = serde_json::from_slice(&std::fs::read(a.dir.join(vault_helper::storage::store::PASSWORD_WRAP_NAME)).unwrap()).unwrap();
-            a.vk = Some(vault_helper::crypto::wrap::open_wrap_mp(&f, &recovery_ops::prove_mp(&store, MP).unwrap(), &store.header.vault_id.0).unwrap().vk);
+            let salt = vault_helper::crypto::hex::decode_array::<16>(&f.argon2id.salt).unwrap();
+            let params = vault_helper::crypto::kdf::Argon2Params { m: f.argon2id.m, t: f.argon2id.t, p: f.argon2id.p };
+            let pk = vault_helper::crypto::kdf::derive_pk(MP, &salt, params).unwrap();
+            a.vk = Some(vault_helper::crypto::wrap::open_wrap_mp(&f, &pk, &store.header.vault_id.0).unwrap().vk);
         }
         a.store = Some(store);
         assert_eq!(a.titles(), vec!["kept"], "{fail:?}: records readable");

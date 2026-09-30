@@ -147,7 +147,15 @@ impl Flows<'_> {
     /// most three times (§11.3), then `BACKUP_CONFLICT`.
     pub fn backup_now(&self) -> Outcome<Value> {
         for _ in 0..=MAX_MERGES {
-            let prep = ok(self.helper.op(json!({ "op": "backup_prepare" })))?;
+            let prep = match ok(self.helper.op(json!({ "op": "backup_prepare" }))) {
+                // §22.14: a store older than this Mac has seen publishes
+                // nothing; syncing is what lets it catch up.
+                Err(Failure::Helper(code)) if code == "VAULT_BEHIND" => {
+                    let synced = self.run_sync()?;
+                    return Ok(json!({ "nothing_to_publish": true, "behind": true, "sync": synced }));
+                }
+                other => other?,
+            };
             if prep["nothing_to_publish"] == true {
                 return Ok(prep);
             }

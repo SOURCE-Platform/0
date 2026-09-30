@@ -4468,12 +4468,19 @@ app's secure entry (iPhone) and verified by opening the committed
 | change the MP | `change_master_password` | fresh presence + current MP (unchanged) |
 | rotate the RK | `rotate_recovery_key` | fresh presence + current MP (unchanged) |
 | **reset a forgotten MP** | `change_master_password {mode:"reset"}` | fresh presence + **the RK** (was presence only) |
-| revoke with a new MP (the stolen-device branch) | `revoke_device` | fresh presence + **the RK**, then the new MP (was: a new MP with presence only) |
-| bulk deletion | any op deleting more than one record, and any `delete_item` after 10 deletions by this device within the previous 10 minutes (the count is kept in `kv` against a stored non-decreasing timestamp, so lock, restart or a clock change does not reset it) | fresh presence + current MP |
+| revoke with a new MP (the stolen-device branch) | `revoke_device` then the RK reset | the Mac has no set-a-new-MP branch inside `revoke_device` (erratum, review VER-I8): a wrong MP is refused, and a user who no longer knows it resets it with **the RK** (`mode:"reset"`) first, then revokes |
+| bulk deletion | any op deleting more than one record, and any `delete_item` after 10 deletions by this device within the previous 10 minutes (the count is kept in `kv` as ages that grow only by time the helper observed on a monotonic clock, so lock, restart or a clock change does not shorten the window) | fresh presence + current MP |
 | restore a record from retained history | `list_history {ref}` and `list_deleted` (UNLOCKED; metadata only: `revision_id`, author device, date, deleted flag; for deleted records the last title) and `restore_revision {ref, revision_id}` (new in v0.5) | UNLOCKED + fresh presence. On a live record it writes an ordinary new revision (parents = current heads) carrying the chosen retained revision's content. On a **tombstoned** record it creates a **new record** (new `record_id`) with that content; the tombstone stands, so §3.2's "never a resurrection" rule is untouched and every device merges it as a plain new record. The mitigation for deletions and for changes made last by a later-revoked device |
 
 The 10-in-10-minutes threshold is this specification's concrete form of
 the design's "bulk deletion needs the MP".
+
+**Every MP proof is bound to the vault (erratum, review SEC-B1).** A
+master-password check opens `password.wrap` **and** requires the
+unwrapped key to equal the resident VK at the header's generation
+(constant-time), exactly as the RK proof does; a wrap someone replaced on
+disk with one sealed under a password they chose therefore passes no
+gate. Wrong MPs at every gate drive the §15 backoff.
 
 **MP reset with the RK (normative).** The panel collects the 24 RK words
 (offline checksum first, §2.4), derives the RK wrap key, and opens the
@@ -5007,8 +5014,23 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
   `import_dashlane`, `backup_prepare`, MP/RK changes, revocation,
   enrollment) is refused with `VAULT_BEHIND`. `behind` is a flag on
   UNLOCKED in §13.2, not a new state.
-- Sync (provider or peer) is allowed; the flag clears when an applied
-  committed state reaches at least the Keychain generation.
+- **The floor (erratum, review SEC-B2/B3, VER-B2).** The §2.8 Keychain
+  item is bound to one `vault_id` and records the highest local
+  generation this helper saw **and** the provider state it last accepted
+  (generation, `state_commit`, confirmed registry head). A store is behind
+  when its accepted provider generation is below the floor's, or — at the
+  same provider generation — its local generation is.
+- Sync (provider or peer) is allowed; publication is not, and the backup
+  cycle syncs instead. The flag clears when a verified provider exchange
+  shows the store's accepted provider state has reached the floor's (the
+  same `state_commit` at equal generation), including "the provider has
+  nothing newer"; the store's local generation is then raised to the
+  floor, so **the floor itself never goes down**.
+- While behind, the restored store's own registry is not a trust anchor:
+  a served state is adopted only if its registry contains the head the
+  floor recorded (else `SIGNATURE_INVALID`, nothing adopted), and fork
+  evidence is not acted on (no COMPROMISED).
+- Setup and total-loss recovery start a fresh floor for their vault.
 - UI copy: "This copy of your vault is older than one this device has
   already seen. It's read-only until it catches up."
 

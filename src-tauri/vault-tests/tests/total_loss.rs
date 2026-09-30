@@ -53,8 +53,8 @@ fn rc04_rk_recovery_sets_a_new_mp() {
     let mac = into_mac(out);
     assert_eq!(mac.titles(), vec!["kept-one", "kept-two"]);
     // The new MP now opens the vault's wrap; the old one does not.
-    assert!(vault_helper::vault::recovery_ops::prove_mp(mac.store(), NEW_MP).is_ok());
-    assert!(vault_helper::vault::recovery_ops::prove_mp(mac.store(), MP).is_err());
+    assert!(vault_helper::vault::recovery_ops::prove_mp(mac.store(), mac.vk.as_ref().unwrap(), NEW_MP).is_ok());
+    assert!(vault_helper::vault::recovery_ops::prove_mp(mac.store(), mac.vk.as_ref().unwrap(), MP).is_err());
     // A second recovery with the new MP (MP class re-keyed by finalize).
     drop(mac);
     let again = recover::run(&cloud, &handle, Credential::Mp(NEW_MP), Plan { new_mp: None, keep_rk: Some(&rk) }, None);

@@ -39,7 +39,7 @@ fn mp_change(m: &mut Mac, old: &[u8], new: &[u8]) {
 
 fn rk_rotation(m: &mut Mac, mp: &[u8], security_driven: bool) {
     let (store, vk) = (m.store.take().unwrap(), m.vk.take().unwrap());
-    let pk = prove_mp(&store, mp).unwrap();
+    let pk = prove_mp(&store, &vk, mp).unwrap();
     let rot = rotate_recovery_key(store, &vk, &pk, security_driven).unwrap();
     m.store = Some(VaultStore::open(&m.dir).unwrap());
     m.vk = Some(rot.rotation.new_vk);
@@ -80,7 +80,7 @@ fn lost_200_on_mp_change_is_recognized() {
     let rep = a.sync(&cloud).unwrap().unwrap();
     assert!(!rep.needs_user, "our own change is not someone else's");
     assert_eq!(pending_ops(&a), None);
-    assert!(prove_mp(a.store(), MP2).is_ok());
+    assert!(prove_mp(a.store(), a.vk.as_ref().unwrap(), MP2).is_ok());
     a.add("after");
     a.publish(&cloud).unwrap();
 }

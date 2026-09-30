@@ -78,7 +78,7 @@ pub fn setup_retry_handle(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
         let Some(store) = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing) else {
             return OpOutcome::err(ErrorCode::BadState);
         };
-        super::recovery_ops::prove_mp(store, &mp).map(|pk| (pk, store.header.vault_id.0, store.header.registry_head.0))
+        super::recovery_ops::prove_mp_resident(&c, &mp).map(|pk| (pk, store.header.vault_id.0, store.header.registry_head.0))
     };
     drop(mp);
     let (pk, vault_id, head) = match proved {

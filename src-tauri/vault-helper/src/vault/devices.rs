@@ -129,7 +129,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
         let Some(store) = c.store.as_ref().filter(|_| c.state == VaultState::Authorizing) else {
             return OpOutcome::err(ErrorCode::BadState);
         };
-        match super::recovery_ops::prove_mp(store, &mp) {
+        match super::recovery_ops::prove_mp_resident(&c, &mp) {
             Ok(pk) => (
                 pk,
                 store.header.manifest_generation + 1,
@@ -192,10 +192,10 @@ fn commit_revocation(
     };
     drop(vk);
     let generation = done.store.header.manifest_generation;
+    let _ = super::floor::raise(&done.store);
     c.header = Some(done.store.header.clone());
     c.store = Some(done.store);
     c.vk = Some(done.vk.mlock_best_effort());
-    let _ = crate::keychain::write_seen_generation(generation);
     Ok(json!({
         "device_id": hex::encode(target),
         "registry_head": hex::encode(done.registry_head),

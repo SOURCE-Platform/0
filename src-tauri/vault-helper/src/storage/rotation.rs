@@ -109,7 +109,7 @@ pub fn rotate(
 
     // 2. Stage the wraps.
     let mut new_header = old.clone();
-    stage_wraps(&dir, &mut new_header, &new_vk, new_gen, mp, &rk)?;
+    stage_wraps(&dir, &mut new_header, old_vk, &new_vk, new_gen, mp, &rk)?;
     let staged_extra = match extra {
         Some(e) => e.stage(&dir, &new_vk, new_gen)?,
         None => Vec::new(),
@@ -217,9 +217,11 @@ pub(super) fn reseal_db(
     Ok(objects)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn stage_wraps(
     dir: &std::path::Path,
     new_header: &mut Header,
+    old_vk: &SecretBytes<32>,
     new_vk: &SecretBytes<32>,
     new_gen: u32,
     mp: MpWrap<'_>,
@@ -236,8 +238,10 @@ fn stage_wraps(
             let bytes = std::fs::read(dir.join(PASSWORD_WRAP_NAME)).map_err(|_| ErrorCode::WrapCorrupt)?;
             let current: wrap::PasswordWrapFile =
                 serde_json::from_slice(&bytes).map_err(|_| ErrorCode::WrapCorrupt)?;
-            // Prove the PK against the live wrap before trusting it.
-            wrap::open_wrap_mp(&current, pk, &vault_id).map_err(|_| ErrorCode::WrongCredential)?;
+            // Prove the PK against the live wrap, bound to the retiring VK
+            // (§22.4): a replaced wrap opens to some other key.
+            let live = wrap::open_wrap_mp(&current, pk, &vault_id).map_err(|_| ErrorCode::WrongCredential)?;
+            crate::vault::recovery_ops::bound_to(&live, old_vk, new_gen - 1)?;
             crate::crypto::rotate::rotate_wrap_mp(&current, pk, &vault_id, new_vk, super::store::now_epoch(), new_gen)
                 .map_err(|_| ErrorCode::Internal)?
         }

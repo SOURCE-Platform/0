@@ -20,21 +20,40 @@ use crate::storage::rotation::{self, MpWrap, RkWrap, RotationOutcome};
 use crate::storage::store::{now_epoch, PASSWORD_WRAP_NAME, RECOVERY_WRAP_NAME};
 use crate::storage::VaultStore;
 
-/// PK for the current MP, proven against the live wrap.
-pub fn prove_mp(store: &VaultStore, mp: &[u8]) -> Result<SecretBytes<32>, ErrorCode> {
+/// PK for the current MP, proven against the live wrap **and bound to
+/// the resident VK** (§22.4): the wrap must open to exactly this vault's
+/// key at the header's generation. A `password.wrap` someone replaced on
+/// disk with one sealed under a password they chose opens to some other
+/// key and is refused, so a login password never becomes authority.
+pub fn prove_mp(store: &VaultStore, vk: &SecretBytes<32>, mp: &[u8]) -> Result<SecretBytes<32>, ErrorCode> {
     let bytes = std::fs::read(store.dir.join(PASSWORD_WRAP_NAME)).map_err(|_| ErrorCode::WrapCorrupt)?;
     let file: wrap::PasswordWrapFile = serde_json::from_slice(&bytes).map_err(|_| ErrorCode::WrapCorrupt)?;
     let (salt, params) = crate::vault::setup::wrap_kdf(&file)?;
     let pk = kdf::derive_pk(mp, &salt, params).map_err(|_| ErrorCode::Internal)?;
-    wrap::open_wrap_mp(&file, &pk, &store.header.vault_id.0).map_err(|_| ErrorCode::WrongCredential)?;
+    let payload = wrap::open_wrap_mp(&file, &pk, &store.header.vault_id.0).map_err(|_| ErrorCode::WrongCredential)?;
+    bound_to(&payload, vk, store.header.vk_generation)?;
     Ok(pk)
+}
+
+/// `prove_mp` against the unlocked core's own store and resident VK.
+pub fn prove_mp_resident(c: &crate::vault::VaultCore, mp: &[u8]) -> Result<SecretBytes<32>, ErrorCode> {
+    match (c.store.as_ref(), c.vk.as_ref()) {
+        (Some(store), Some(vk)) => prove_mp(store, vk, mp),
+        _ => Err(ErrorCode::BadState),
+    }
+}
+
+/// The unwrapped payload is the resident VK at the current generation.
+pub fn bound_to(payload: &RecoveryWrapPayload, vk: &SecretBytes<32>, generation: u32) -> Result<(), ErrorCode> {
+    use subtle::ConstantTimeEq;
+    let same = bool::from(payload.vk.expose().ct_eq(vk.expose())) && payload.vk_generation == generation;
+    if same { Ok(()) } else { Err(ErrorCode::WrongCredential) }
 }
 
 /// §22.4 (F2-D3): the typed Recovery Key opens the committed
 /// `recovery.wrap` and yields exactly the resident VK at the header's
 /// generation. Presence alone never resets a master password.
 pub fn prove_rk(store: &VaultStore, vk: &SecretBytes<32>, words: &[u8]) -> Result<(), ErrorCode> {
-    use subtle::ConstantTimeEq;
     // §2.4: normalize + wordlist + checksum, offline, before any use.
     let rk = match std::str::from_utf8(words).ok().map(crate::crypto::bip39::decode_rk) {
         Some(Ok(rk)) => rk,
@@ -43,8 +62,7 @@ pub fn prove_rk(store: &VaultStore, vk: &SecretBytes<32>, words: &[u8]) -> Resul
     let bytes = std::fs::read(store.dir.join(RECOVERY_WRAP_NAME)).map_err(|_| ErrorCode::WrapCorrupt)?;
     let file: wrap::RecoveryWrapFile = serde_json::from_slice(&bytes).map_err(|_| ErrorCode::WrapCorrupt)?;
     let payload = wrap::open_wrap_rk(&file, &rk, &store.header.vault_id.0).map_err(|_| ErrorCode::WrongCredential)?;
-    let same = bool::from(payload.vk.expose().ct_eq(vk.expose())) && payload.vk_generation == store.header.vk_generation;
-    if same { Ok(()) } else { Err(ErrorCode::WrongCredential) }
+    bound_to(&payload, vk, store.header.vk_generation)
 }
 
 pub struct RkRotation {
@@ -108,7 +126,7 @@ pub fn change_mp(store: VaultStore, vk: &SecretBytes<32>, old_mp: Option<&[u8]>,
     use crate::sync::change::{seen_auth, updates_for};
     use crate::sync::pending::{self, PendingOp};
     if let Some(old) = old_mp {
-        prove_mp(&store, old)?;
+        prove_mp(&store, vk, old)?;
     }
     let dir = store.dir.clone();
     let salt = crate::crypto::secret::random_salt();

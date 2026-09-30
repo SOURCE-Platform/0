@@ -30,6 +30,7 @@ pub mod dispatch;
 pub use dispatch::dispatch;
 pub mod enroll_commit;
 pub mod enroll_ops;
+pub mod floor;
 pub mod gate;
 pub mod history;
 pub mod items;

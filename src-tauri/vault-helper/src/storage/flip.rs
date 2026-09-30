@@ -46,6 +46,23 @@ impl VaultStore {
         Ok(m)
     }
 
+    /// §22.14 catch-up: move the local generation up to `at_least` (the
+    /// rollback floor), so the floor itself never has to go down.
+    pub fn raise_generation(&mut self, at_least: u64) -> Result<(), ErrorCode> {
+        if self.header.manifest_generation >= at_least {
+            return Ok(());
+        }
+        let mut h = self.header.clone();
+        h.manifest_generation = at_least;
+        stamp(&self.conn, &h)?;
+        let m = self.manifest_for(&h)?;
+        write_atomic(&self.dir.join(VAULT_HEADER_NAME), &header::write_header(&h)?)?;
+        write_atomic(&self.dir.join(MANIFEST_NAME), &manifest::write_manifest(&m)?)?;
+        self.header = h;
+        self.manifest = m;
+        Ok(())
+    }
+
     /// Flip to `next` (its `manifest_generation` is set here).
     pub fn flip(&mut self, next: Header) -> Result<(), ErrorCode> {
         let h = self.flip_target(next);

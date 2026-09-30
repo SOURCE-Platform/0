@@ -62,10 +62,16 @@ impl VaultStore {
             .map_err(|_| ErrorCode::DbCorrupt)?;
         let mut out = Vec::new();
         for rid in ids {
-            let rows = self.record_rows(&rid)?;
-            let Some(last) = rows.iter().rev().find(|r| !r.deleted) else {
+            // The revision the tombstone replaced (its parent), never an
+            // author-supplied timestamp (review VER-O7).
+            let [head] = heads(&self.conn, &rid)?[..] else {
                 continue;
             };
+            let tomb = get_row(&self.conn, &head)?.ok_or(ErrorCode::DbCorrupt)?;
+            let Some(last) = tomb.parent_ids.iter().find_map(|p| get_row(&self.conn, p).ok().flatten()).filter(|r| !r.deleted) else {
+                continue;
+            };
+            let last = &last;
             let title = self
                 .open_row_meta(vk, last)
                 .ok()

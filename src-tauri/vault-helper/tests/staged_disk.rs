@@ -53,6 +53,15 @@ fn damaged_or_stale_staging_is_discarded() {
     // Re-staged at the next unlock.
     assert_eq!(unlock(&fx, MP)["ok"], true);
     assert_eq!(fx.op(json!({"op": "backup_prepare"}))["kind"], "create");
+    // A descriptor edited to list one blob fewer (review SEC-O1).
+    let ready_path = staged_disk::dir(&fx.dir).join("ready.json");
+    let mut ready: serde_json::Value = serde_json::from_slice(&std::fs::read(&ready_path).unwrap()).unwrap();
+    ready["blobs"].as_array_mut().unwrap().pop();
+    std::fs::write(&ready_path, serde_json::to_vec(&ready).unwrap()).unwrap();
+    fx.reboot();
+    assert_eq!(staged(&fx), None, "an edited blob list is not resumed");
+    assert_eq!(unlock(&fx, MP)["ok"], true);
+    assert_eq!(fx.op(json!({"op": "backup_prepare"}))["kind"], "create");
     // Partial: the descriptor is missing.
     std::fs::remove_file(staged_disk::dir(&fx.dir).join("ready.json")).unwrap();
     fx.reboot();
@@ -64,6 +73,12 @@ fn damaged_or_stale_staging_is_discarded() {
     let changed = fx.op(json!({"op": "change_master_password"}));
     assert_eq!(changed["ok"], true, "{changed}");
     assert!(!files(&fx).is_empty(), "files remain, but the record is gone");
+    {
+        let dir = fx.dir.clone();
+        let store = vault_helper::storage::VaultStore::open(&dir).unwrap();
+        let record: Option<serde_json::Value> = vault_helper::storage::kv::get(&store.conn, staged_disk::KEY).unwrap();
+        assert!(record.is_none(), "the authority change deleted the record in its own commit");
+    }
     fx.reboot();
     assert_eq!(staged(&fx), None, "stale staging is not resumed");
     assert!(files(&fx).is_empty());
@@ -80,7 +95,9 @@ fn staging_holds_no_secrets() {
     assert_eq!(fx.op(json!({"op": "backup_prepare"}))["kind"], "create");
     let rk = fx.panel.shown_rk.lock().unwrap().clone().unwrap();
     let first_words: Vec<&str> = rk.split_whitespace().take(4).collect();
-    let needles: Vec<Vec<u8>> = vec![MP.to_vec(), PASSWORD.as_bytes().to_vec(), first_words.join(" ").into_bytes(), b"fixture@example.test".to_vec()];
+    let vk = fx.core.lock().unwrap().vk.as_ref().map(|v| v.expose().to_vec()).unwrap();
+    let hex_vk = vault_helper::crypto::hex::encode(&vk).into_bytes();
+    let needles: Vec<Vec<u8>> = vec![MP.to_vec(), PASSWORD.as_bytes().to_vec(), first_words.join(" ").into_bytes(), b"fixture@example.test".to_vec(), vk, hex_vk];
     let all = files(&fx);
     assert!(all.len() > 3, "blobs, body and descriptor");
     for f in all {

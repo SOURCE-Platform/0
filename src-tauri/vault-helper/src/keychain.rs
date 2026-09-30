@@ -176,19 +176,35 @@ pub fn delete_item(service_base: &str) {
 
 // --- Typed accessors for the two §2.8 items --------------------------------
 
-/// Last manifest generation the helper has seen (rollback evidence).
-/// `Ok(None)` = never recorded (pre-Phase-C vault or fresh machine).
-pub fn read_seen_generation() -> Result<Option<u64>, ErrorCode> {
-    let Some(bytes) = read_item(STATE_SERVICE)? else {
-        return Ok(None);
-    };
-    let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| ErrorCode::Internal)?;
-    Ok(v.get("manifest_generation").and_then(|g| g.as_u64()))
+/// §2.8 rollback evidence, bound to one vault (§22.14): the highest local
+/// generation this helper saw, and the provider state it last accepted
+/// (generation, state commitment, confirmed registry head). Maintained by
+/// `vault::floor`; public data only.
+#[derive(Debug, Default, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Floor {
+    #[serde(default)]
+    pub vault_id: Option<String>,
+    #[serde(default)]
+    pub manifest_generation: Option<u64>,
+    #[serde(default)]
+    pub provider_generation: Option<u64>,
+    #[serde(default)]
+    pub state_commit: Option<String>,
+    #[serde(default)]
+    pub registry_head: Option<String>,
 }
 
-pub fn write_seen_generation(generation: u64) -> Result<(), ErrorCode> {
-    let body = serde_json::json!({"manifest_generation": generation});
-    upsert_item(STATE_SERVICE, body.to_string().as_bytes())
+/// `Ok(default)` = never recorded (fresh machine).
+pub fn read_floor() -> Result<Floor, ErrorCode> {
+    let Some(bytes) = read_item(STATE_SERVICE)? else {
+        return Ok(Floor::default());
+    };
+    serde_json::from_slice(&bytes).map_err(|_| ErrorCode::Internal)
+}
+
+pub fn write_floor(floor: &Floor) -> Result<(), ErrorCode> {
+    let body = serde_json::to_vec(floor).map_err(|_| ErrorCode::Internal)?;
+    upsert_item(STATE_SERVICE, &body)
 }
 
 const DEFAULT_AUTO_LOCK_MINUTES: u32 = 15;

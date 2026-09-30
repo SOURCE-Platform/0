@@ -196,3 +196,27 @@ fn a_wrong_master_password_stops_the_revocation() {
     );
     se::delete_keys(phone.dev.key_tag());
 }
+
+/// AU-03 (§22.4, F2-D3): revocation never proceeds on presence alone —
+/// with the master password missing, wrong, or replaced on disk, nothing
+/// is revoked and no new Recovery Key is shown. (A forgotten MP is reset
+/// with the Recovery Key first; revocation has no set-a-new-MP branch.)
+#[test]
+fn revocation_needs_the_current_master_password() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let phone = Phone::new("au03");
+    let phone_id = enroll_phone(&fx, &phone);
+    let before = log::read_entries(&fx.dir).unwrap().len();
+    let sheets = fx.panel.sheets.lock().unwrap().len();
+    let target = hex::encode(phone_id);
+    assert_eq!(err_code(&fx.op(json!({"op": "revoke_device", "device_id": target}))), "PANEL_CANCELLED");
+    fx.push_panel(submitted(b"not the master password"));
+    assert_eq!(err_code(&fx.op(json!({"op": "revoke_device", "device_id": target}))), "WRONG_CREDENTIAL");
+    assert_eq!(log::read_entries(&fx.dir).unwrap().len(), before, "no revoke entry");
+    assert_eq!(fx.panel.sheets.lock().unwrap().len(), sheets, "no new Recovery Key shown");
+    assert_eq!(header_of(&fx).vk_generation, 1, "no rotation");
+    assert_eq!(fx.state(), VaultState::Unlocked);
+    fx.remove_dir();
+}

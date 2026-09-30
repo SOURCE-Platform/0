@@ -39,7 +39,13 @@ struct Record {
     body_sha256: String,
     expected_state: String,
     carries: Option<(u64, Base)>,
+    /// SHA-256 over the descriptor's blob list: the files resumed are
+    /// exactly the ones staged (review SEC-O1).
+    blobs_sha256: String,
 }
+
+/// Nothing staged is larger than an index (§11.2 caps).
+const MAX_FILE: u64 = 8 << 20;
 
 /// Written last: the body hash and every blob's hash and size.
 #[derive(Serialize, Deserialize)]
@@ -63,8 +69,15 @@ pub fn persist(store: &VaultStore, st: &Staging) -> Result<(), ErrorCode> {
     }
     write_atomic(&d.join(BODY), &st.body)?;
     let ready = Ready { body_sha256: hex::encode(st.body_sha256), blobs: st.blobs.iter().map(|(h, b)| (hex::encode(h), b.len() as u64)).collect() };
-    write_atomic(&d.join(READY), &serde_json::to_vec(&ready).map_err(|_| ErrorCode::Internal)?)?;
-    let record = Record { body_sha256: hex::encode(st.body_sha256), expected_state: hex::encode(st.expected_state), carries: st.carries_pending.clone() };
+    let ready_bytes = serde_json::to_vec(&ready).map_err(|_| ErrorCode::Internal)?;
+    write_atomic(&d.join(READY), &ready_bytes)?;
+    std::fs::File::open(&d).and_then(|f| f.sync_all()).map_err(|_| ErrorCode::Internal)?;
+    let record = Record {
+        body_sha256: hex::encode(st.body_sha256),
+        expected_state: hex::encode(st.expected_state),
+        carries: st.carries_pending.clone(),
+        blobs_sha256: blob_list_hash(&ready),
+    };
     kv::put(&store.conn, KEY, &record)
 }
 
@@ -91,8 +104,14 @@ fn read(store: &VaultStore) -> Result<Option<Staging>, ErrorCode> {
         return Ok(None);
     };
     let bad = ErrorCode::TransferInvalid;
-    let ready: Ready = std::fs::read(d.join(READY)).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or(bad)?;
-    let body = std::fs::read(d.join(BODY)).map_err(|_| bad)?;
+    if crate::storage::compromised::load(&store.conn)?.is_some() {
+        return Err(bad); // COMPROMISED writes nothing (§13.2)
+    }
+    let ready: Ready = read_capped(&d.join(READY)).ok().and_then(|b| serde_json::from_slice(&b).ok()).ok_or(bad)?;
+    if blob_list_hash(&ready) != record.blobs_sha256 {
+        return Err(bad);
+    }
+    let body = read_capped(&d.join(BODY))?;
     let body_sha256: [u8; 32] = Sha256::digest(&body).into();
     if ready.body_sha256 != record.body_sha256 || hex::encode(body_sha256) != record.body_sha256 {
         return Err(bad);
@@ -100,7 +119,7 @@ fn read(store: &VaultStore) -> Result<Option<Staging>, ErrorCode> {
     let mut blobs = BTreeMap::new();
     for (name, size) in &ready.blobs {
         let sha = hex::decode_array::<32>(name).ok_or(bad)?;
-        let blob = std::fs::read(d.join(name)).map_err(|_| bad)?;
+        let blob = read_capped(&d.join(name))?;
         if blob.len() as u64 != *size || <[u8; 32]>::from(Sha256::digest(&blob)) != sha {
             return Err(bad);
         }
@@ -113,13 +132,13 @@ fn read(store: &VaultStore) -> Result<Option<Staging>, ErrorCode> {
     let committed = seen.as_ref().map_or([0u8; 32], |s| s.state_commit.0);
     let current = pending::load(&store.conn)?;
     let carried = record.carries.as_ref().map(|(v, _)| *v);
-    let updates_match = match &current {
-        Some(p) if carried.is_some() => {
-            let own = seen::Seen { recovery_auth: p.recovery_auth_updates.clone(), ..seen.clone().unwrap_or_else(empty_seen) }.auth_entries()?;
-            own.iter().all(|u| t.recovery_auth_updates.contains(u))
-        }
-        _ => true,
+    // The body carries exactly the pending change's public updates (none
+    // for an ordinary publication).
+    let expected = match &current {
+        Some(p) if carried.is_some() => seen::Seen { recovery_auth: p.recovery_auth_updates.clone(), ..seen.clone().unwrap_or_else(empty_seen) }.auth_entries()?,
+        _ => Vec::new(),
     };
+    let updates_match = expected.len() == t.recovery_auth_updates.len() && expected.iter().all(|u| t.recovery_auth_updates.contains(u));
     if t.expected_state != committed
         || hex::encode(t.expected_state) != record.expected_state
         || t.vault_id != store.header.vault_id.0
@@ -149,6 +168,25 @@ fn read(store: &VaultStore) -> Result<Option<Staging>, ErrorCode> {
         body_manifest: t.manifest.clone(),
         body,
     }))
+}
+
+fn blob_list_hash(ready: &Ready) -> String {
+    let mut h = Sha256::new();
+    for (name, size) in &ready.blobs {
+        h.update(name.as_bytes());
+        h.update(size.to_be_bytes());
+    }
+    hex::encode(<[u8; 32]>::from(h.finalize()))
+}
+
+/// Read a staged file, refusing anything over the largest cap before
+/// allocating for it.
+fn read_capped(path: &Path) -> Result<Vec<u8>, ErrorCode> {
+    let len = std::fs::metadata(path).map_err(|_| ErrorCode::TransferInvalid)?.len();
+    if len > MAX_FILE {
+        return Err(ErrorCode::TransferInvalid);
+    }
+    std::fs::read(path).map_err(|_| ErrorCode::TransferInvalid)
 }
 
 fn empty_seen() -> seen::Seen {

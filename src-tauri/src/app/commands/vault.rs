@@ -14,8 +14,8 @@ use crate::core::vault_client;
 /// Ops after which the backup worker runs a cycle (§11.3.2: the change
 /// is published — or, for a vault-wide change, tracked as pending).
 #[cfg(target_os = "macos")]
-const BACKUP_AFTER: [&str; 11] = [
-    "unlock", "begin_recovery_unlock", "add_item", "update_item", "delete_item", "resolve_conflict",
+const BACKUP_AFTER: [&str; 12] = [
+    "unlock", "begin_recovery_unlock", "add_item", "update_item", "delete_item", "restore_revision", "resolve_conflict",
     "change_master_password", "rotate_recovery_key", "revoke_device", "enroll_ack", "import_dashlane",
 ];
 
@@ -216,10 +216,11 @@ pub async fn vault_update_item(
     call(json!({"op": "update_item", "ref": reference, field: value})).await
 }
 
-/// Tombstone one record (§3.2 revision model).
+/// Tombstone one record (§3.2 revision model). Past the bulk-deletion
+/// threshold the helper's MP panel opens (§22.4), so it gets activation.
 #[tauri::command]
-pub async fn vault_delete_item(reference: String) -> Result<Value, String> {
-    call(json!({"op": "delete_item", "ref": reference})).await
+pub async fn vault_delete_item(app: tauri::AppHandle, reference: String) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "delete_item", "ref": reference})).await
 }
 
 /// Tombstoned records, metadata only (spec §22.4).
@@ -231,8 +232,8 @@ pub async fn vault_list_deleted() -> Result<Value, String> {
 /// Bring a retained revision back (presence; a deleted record returns as
 /// a new record, §22.4).
 #[tauri::command]
-pub async fn vault_restore_revision(reference: String, revision_id: String) -> Result<Value, String> {
-    call(json!({"op": "restore_revision", "ref": reference, "revision_id": revision_id})).await
+pub async fn vault_restore_revision(app: tauri::AppHandle, reference: String, revision_id: String) -> Result<Value, String> {
+    call_with_panel(app, json!({"op": "restore_revision", "ref": reference, "revision_id": revision_id})).await
 }
 
 /// One-shot reveal of one record's secret fields (§14.4: the helper

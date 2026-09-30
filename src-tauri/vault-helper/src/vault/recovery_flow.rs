@@ -231,6 +231,8 @@ pub fn finalize_result(core: &Arc<Mutex<VaultCore>>, status: u64, body: &Value, 
         drop(done);
         move_into_place(&staging_dir, &c.vault_dir)?;
         let store = VaultStore::open(&c.vault_dir)?;
+        // A recovered vault starts a fresh floor on this Mac (§2.8).
+        let _ = super::floor::reset(&store);
         c.header = Some(store.header.clone());
         c.store = Some(store);
         c.vk = Some(vk.mlock_best_effort());

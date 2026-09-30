@@ -158,7 +158,7 @@ fn run_unlocked(flows: &Flows<'_>) -> Result<Option<Value>, Failure> {
         return Ok(None);
     }
     let out = flows.backup_now()?;
-    if out["nothing_to_publish"] == true {
+    if out["nothing_to_publish"] == true && out["behind"] != true {
         flows.run_sync()?;
     }
     Ok(Some(out))

@@ -66,6 +66,9 @@ pub fn backup_state_offer(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
                 deps.events.emit(ev_state(c.reported_state()));
                 Ok(out)
             }
+            // §22.14: while behind, "our registry" is a restored older copy,
+            // so nothing it vouches for is fork evidence.
+            Err(ErrorCode::RegistryFork) if c.behind => Err(ErrorCode::SignatureInvalid),
             Err(ErrorCode::RegistryFork) => {
                 // §4.6: verified fork evidence (fetch::offer checked the
                 // served manifest's signature against our registry).
@@ -111,6 +114,17 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
             return Ok(json!({ "need": need_json(&session.t) }));
         }
         let session = c.provider.sync.take().ok_or(ErrorCode::Internal)?;
+        if c.behind {
+            // §22.14: the restored store's registry is not the anchor; the
+            // served one must contain the head this helper accepted.
+            let index = session.index.as_ref().ok_or(ErrorCode::Internal)?;
+            let reg = index.find(&Role::Registry).and_then(|e| session.t.received.get(&e.blob)).ok_or(ErrorCode::ManifestMismatch)?;
+            let entries = crate::registry::file::decode(reg).map_err(|_| ErrorCode::SignatureInvalid)?;
+            if !super::floor::anchored(c.store.as_ref().ok_or(ErrorCode::Internal)?, &entries)? {
+                deps.events.emit(ev_state(c.reported_state()));
+                return Err(ErrorCode::SignatureInvalid);
+            }
+        }
         let (store, vk) = (c.store.take().ok_or(ErrorCode::Internal)?, c.vk.take().ok_or(ErrorCode::Internal)?);
         let dir = store.dir.clone();
         // A refused state never costs the user their unlocked vault
@@ -160,6 +174,9 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                     Some(h) => {
                         c.header = Some(h);
                         let recorded = e != ErrorCode::RegistryFork || c.store.as_ref().is_some_and(|s| crate::storage::compromised::mark(&s.conn, e).is_ok());
+                        if let Some(s) = c.store.as_ref() {
+                            let _ = crate::sync::staged_disk::forget(&s.dir, &s.conn); // §22.11 terminal
+                        }
                         c.provider.publish = None;
                         c.store = None;
                         // Re-entered COMPROMISED at unlock; evidence that
@@ -182,6 +199,9 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
 fn enter_compromised(c: &mut VaultCore, deps: &Deps) {
     c.provider.publish = None;
     c.provider.sync = None;
+    if let Some(s) = c.store.as_ref() {
+        let _ = crate::sync::staged_disk::forget(&s.dir, &s.conn); // §22.11 terminal
+    }
     let marked = c.store.as_ref().map(|s| crate::storage::compromised::mark(&s.conn, ErrorCode::RegistryFork));
     if matches!(marked, Some(Ok(()))) {
         c.state = VaultState::Compromised;

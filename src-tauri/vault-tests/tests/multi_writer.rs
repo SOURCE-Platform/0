@@ -46,7 +46,7 @@ fn rotation_adopted_from_envelope() {
     b.sync(&cloud).unwrap();
     let vk = a.vk.take().unwrap();
     let store = a.store.take().unwrap();
-    let pk = vault_helper::vault::recovery_ops::prove_mp(&store, MP).unwrap();
+    let pk = vault_helper::vault::recovery_ops::prove_mp(&store, &vk, MP).unwrap();
     let rot = vault_helper::vault::recovery_ops::rotate_recovery_key(store, &vk, &pk, false).unwrap();
     a.store = Some(vault_helper::storage::VaultStore::open(&a.dir).unwrap());
     a.vk = Some(rot.rotation.new_vk);

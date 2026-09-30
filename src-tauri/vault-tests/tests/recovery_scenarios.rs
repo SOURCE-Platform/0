@@ -67,7 +67,7 @@ fn rc07_suspected_stolen_rk() {
     let (cloud, mut mac, handle) = world("rc07");
     let old_rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
     let (store, vk) = (mac.store.take().unwrap(), mac.vk.take().unwrap());
-    let pk = prove_mp(&store, MP).unwrap();
+    let pk = prove_mp(&store, &vk, MP).unwrap();
     let rot = rotate_recovery_key(store, &vk, &pk, true).unwrap();
     mac.store = Some(vault_helper::storage::VaultStore::open(&mac.dir).unwrap());
     mac.vk = Some(rot.rotation.new_vk);
@@ -87,7 +87,7 @@ fn bk10_historical_snapshot_and_the_old_rk() {
     let old_rk = SecretBytes::new(*mac.rk.as_ref().unwrap().expose());
     let old_wrap = std::fs::read(mac.dir.join(vault_helper::storage::store::RECOVERY_WRAP_NAME)).unwrap();
     let (store, vk) = (mac.store.take().unwrap(), mac.vk.take().unwrap());
-    let pk = prove_mp(&store, MP).unwrap();
+    let pk = prove_mp(&store, &vk, MP).unwrap();
     let rot = rotate_recovery_key(store, &vk, &pk, false).unwrap();
     mac.store = Some(vault_helper::storage::VaultStore::open(&mac.dir).unwrap());
     mac.vk = Some(rot.rotation.new_vk);
