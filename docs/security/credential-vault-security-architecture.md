@@ -1,8 +1,8 @@
 # O / Source Credential Vault — Security Architecture
 
-**Status:** v0.3, with v0.4 alignment notes (2026-09-24) — owner decisions incorporated; canonical security reference. The Phase F backup/sync design it constrains is specified in `credential-vault-implementation-spec.md` v0.4 (§11).  
+**Status:** v0.3, with v0.4 alignment notes (2026-09-24) and v0.5 notes (2026-09-30, spec §22, Phase F.2) — owner decisions incorporated; canonical security reference. The Phase F backup/sync design it constrains is specified in `credential-vault-implementation-spec.md` v0.4 (§11).  
 **Supersedes:** Proposal v0.2 and the unresolved decisions in `o-source-credential-vault-threat-model-v0.1.md`  
-**Phase:** Phases A–E and E.1 implemented and verified; Phase F specified (spec v0.4) but not authorized or started. No real credentials may be imported and no credential-vault implementation is authorized merely by this document.  
+**Phase:** Phases A–E and E.1 implemented and verified; Phase F implemented (spec v0.4 / v0.4.1; see `phase-f-verification.md`); Phase F.2 authorized and specified (spec v0.5 candidate §22), not started. No real credentials may be imported and no credential-vault implementation is authorized merely by this document.  
 **Author basis:** Adversarial review of the v0.1 threat model against the actual O/Source repository, plus owner UX/security decisions made on 2026-09-17.
 
 ---

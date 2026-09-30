@@ -406,3 +406,26 @@ spec SPEC-B1…B4, I1…I12); revision 3 addresses the bounded re-review
 O6–O8). The review loop for this design is closed. Next: the owner
 decisions, then the spec amendment (its own review), then code; F2-D4's
 reverse-enrollment protocol gets its own design review.
+
+### 12.1 Spec v0.5 amendment review (2026-09-30)
+
+Candidate `bc59691` (spec §22 + markers), reviewed by the security and
+spec reviewers; every finding was checked against the repository before a
+disposition was recorded.
+
+| Finding | Disposition |
+|---|---|
+| SEC-B1 / SPEC-B1 — key refresh "in the same publication" not acceptable to other devices (`apply.rs:111`), and a phone-authorized enrollment outside §5 | **Accepted.** Reverted to this design's wording: MP unlock, then a normal re-enrollment through the Mac; a phone-side self-refresh belongs to the F2-D4 review. |
+| SEC-B2 / SPEC-B2 — re-seal rule vs §3.2/§2.10; unpublishable parent (`422 INDEX_INVALID`) | **Accepted.** §22.7 now defines sources, set-aside, re-authoring of own descendants, publish-first, and the revoker's cutoff; §3.2 and §2.10 marked; PS-08/09/10, SY-11 amended. |
+| SEC-I1, SEC-I3, SPEC-I6 — provisional revocation lock, post-recovery `peer_status`, which registry is served | **Accepted** (§22.9). |
+| SEC-I2, SPEC-I5 — one-way protocol; serve-side freshness | **Accepted** (§22.7, §22.8). |
+| SEC-I4, SPEC-I2, SPEC-I3 — staging validation and `pending_remote` fields | **Accepted** (§22.11, §11.3.2: `version`, `in_flight`, `awaiting_redo`, `target_device_id`, `staged_publication`). |
+| SEC-I5 — FFI list vs the envelope-open callback | **Accepted** (§22.2 audited crossings). |
+| SEC-I6, SPEC-I8 — background completion on a screen-locked iPhone | **Accepted** as a stated limit; protection classes unchanged (changing them would be an owner decision). |
+| SEC-I7, SPEC-I7 — "installed" vs "active" | **Accepted**; "active at the accepted head", CX-02. |
+| SEC-I8, SPEC-I1, I9, I10, I13, I14 — stale or unmarked passages; pin wording | **Accepted**; passages amended, §5.2 pin erratum, `peer_endpoint`. |
+| SEC-I9 — exit proposal may not be able to publish | **Recorded** in the proposal as an open point for the owner's review. |
+| SPEC-I4 — body encodings, stream carriage, `peer_state` size | **Accepted in part**: gating, status value and direction fixed now; byte encodings go to a wire annex reviewed before F.2c code. |
+| SPEC-I11 — tests without IDs; §19; EV-03 in the nested gate; XV independence | **Accepted** (§22.16 table, §19 item 31, gate text, CryptoKit-only Swift target). |
+| SPEC-I12 — bulk-deletion counter, restore from history | **Accepted** (`kv` counter, `restore_revision`, AU-06/07). |
+| SEC-O1…O4, SPEC-O1…O11 | **Accepted** except none rejected; O7 footer/header wording aligned. |
