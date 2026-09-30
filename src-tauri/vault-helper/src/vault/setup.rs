@@ -268,15 +268,12 @@ pub(super) fn install_unlock(
         Ok(s) => s,
         Err(e) => return unlock_failed_fatal(core, e, deps),
     };
-    // §2.8 rollback evidence: a directory older than the last generation
-    // this helper has seen is refused.
-    match keychain::read_seen_generation() {
-        Ok(Some(seen)) if seen > header.manifest_generation => {
-            return unlock_failed_fatal(core, ErrorCode::ManifestRollback, deps);
-        }
+    // §2.8 rollback evidence, §22.14: a directory older than the last
+    // generation this helper has seen opens read-only until it syncs.
+    let behind = match keychain::read_seen_generation() {
+        Ok(seen) => seen.is_some_and(|s| s > header.manifest_generation),
         Err(_) => return unlock_failed_fatal(core, ErrorCode::Internal, deps),
-        _ => {}
-    }
+    };
     let mut c = lock_core(core);
     if c.state != VaultState::Unlocking {
         // A lock preempted while we unwrapped; VK drops here (zeroized).
@@ -289,7 +286,11 @@ pub(super) fn install_unlock(
     c.failed_attempts = 0;
     c.note_authorization();
     c.state = c.open_state();
-    let _ = keychain::write_seen_generation(generation);
+    c.behind = behind;
+    if !behind {
+        // Never lowers the floor.
+        let _ = keychain::write_seen_generation(generation);
+    }
     deps.events.emit(ev_state(c.state));
     OpOutcome::ok(json!({"state": c.state.as_str()}))
 }

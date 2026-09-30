@@ -123,6 +123,9 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
                 let c = lock_core(&ctx.core);
                 let mut v = ops::ok_with_state(c.reported_state());
                 v["vault_open"] = serde_json::json!(c.vk.is_some());
+                if c.behind {
+                    v["behind"] = serde_json::json!(true);
+                }
                 v
             }
             // Already applied by the read side on arrival; answer in order.

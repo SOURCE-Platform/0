@@ -16,6 +16,32 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     if let Some(ev) = lock_core(core).expire_sessions() {
         deps.events.emit(ev);
     }
+    if AUTHORING.contains(&op) && lock_core(core).behind {
+        return OpOutcome::err(ErrorCode::VaultBehind);
+    }
+    let out = route(core, frame, deps, op);
+    clear_behind(core);
+    out
+}
+
+/// §22.14: every op that authors a revision or changes authority.
+const AUTHORING: &[&str] = &[
+    "add_item", "update_item", "delete_item", "resolve_conflict", "backup_prepare", "change_master_password",
+    "rotate_recovery_key", "setup_retry_handle", "revoke_device", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
+];
+
+/// A sync that reached the Keychain floor ends the read-only mode.
+fn clear_behind(core: &Arc<Mutex<VaultCore>>) {
+    let mut c = lock_core(core);
+    let Some(generation) = c.store.as_ref().filter(|_| c.behind).map(|s| s.header.manifest_generation) else {
+        return;
+    };
+    if crate::keychain::read_seen_generation().is_ok_and(|seen| seen.is_none_or(|s| s <= generation)) {
+        c.behind = false;
+    }
+}
+
+fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> OpOutcome {
     match op {
         "setup_vault" => setup::setup_vault(core, frame, deps),
         "unlock" => device_unlock::unlock(core, deps),

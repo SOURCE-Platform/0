@@ -73,6 +73,9 @@ pub enum ErrorCode {
     TooLarge,
     /// `422` on `blob_put`: the body does not hash to the named blob.
     HashMismatch,
+    /// §22.14: the local store is older than this device's Keychain
+    /// floor; read-only until a sync catches up.
+    VaultBehind,
     // Generic
     InvalidInput,
     Internal,
@@ -134,6 +137,7 @@ impl ErrorCode {
             ErrorCode::RecoveryThrottled => "RECOVERY_THROTTLED",
             ErrorCode::CounterRegression => "COUNTER_REGRESSION",
             ErrorCode::RevokedAuthorRefused => "REVOKED_AUTHOR_REFUSED",
+            ErrorCode::VaultBehind => "VAULT_BEHIND",
             ErrorCode::Internal => "INTERNAL",
         }
     }

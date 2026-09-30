@@ -93,16 +93,40 @@ fn record_corruption_fails_closed_at_read() {
 
 // --- §2.8 rollback evidence -----------------------------------------------------
 
+/// SY-13 (§22.14): an older restored store unlocks read-only; authoring
+/// and authority ops are refused; the Keychain floor is never lowered.
 #[test]
-fn rollback_evidence_refuses_older_generation() {
+fn older_store_unlocks_read_only() {
     let _g = serial();
     let fx = fx();
-    assert_eq!(setup_vault(&fx, MP)["ok"], true); // fresh vault: generation 1
+    setup_and_unlock(&fx);
+    let r = add_login(&fx);
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
     // The keychain remembers a NEWER generation than this directory holds
-    // (§2.8: a stale/rolled-back copy presented later) → fatal refusal.
-    keychain::write_seen_generation(2).unwrap();
-    let resp = unlock(&fx, MP);
-    assert_eq!(err_code(&resp), "MANIFEST_ROLLBACK", "{resp}");
-    assert_eq!(fx.state(), VaultState::Error);
+    // (§2.8: a stale/rolled-back copy presented later).
+    let held = vault_helper::storage::VaultStore::read_header(&fx.dir).unwrap().manifest_generation;
+    keychain::write_seen_generation(held + 1).unwrap();
+    assert_eq!(unlock(&fx, MP)["ok"], true);
+    assert_eq!(fx.state(), VaultState::Unlocked);
+    assert!(fx.core.lock().unwrap().behind);
+    assert_eq!(fx.op(json!({"op": "list_items"}))["ok"], true);
+    assert_eq!(fx.op(json!({"op": "reveal", "ref": r}))["secret"]["password"], PASSWORD);
+    for frame in [
+        json!({"op": "add_item", "kind": "login", "title": "t", "username": "u", "password": "p", "hosts": []}),
+        json!({"op": "update_item", "ref": r, "title": "x"}),
+        json!({"op": "delete_item", "ref": r}),
+        json!({"op": "backup_prepare"}),
+        json!({"op": "change_master_password"}),
+        json!({"op": "rotate_recovery_key"}),
+        json!({"op": "begin_enrollment", "fp": "00"}),
+    ] {
+        assert_eq!(err_code(&fx.op(frame.clone())), "VAULT_BEHIND", "{frame}");
+    }
+    assert_eq!(keychain::read_seen_generation().unwrap(), Some(held + 1), "floor not lowered");
+    // Catching up (here: the floor matches again) ends read-only mode.
+    keychain::write_seen_generation(held).unwrap();
+    assert_eq!(fx.op(json!({"op": "list_items"}))["ok"], true);
+    assert!(!fx.core.lock().unwrap().behind);
+    assert_eq!(fx.op(json!({"op": "update_item", "ref": r, "title": "x"}))["ok"], true);
     fx.remove_dir();
 }

@@ -157,6 +157,9 @@ pub struct VaultCore {
     /// v0.4 provider work (§11): at most one publication, one sync and
     /// one recovery session.
     pub provider: crate::vault::provider_ops::Sessions,
+    /// §22.14 (SY-13): unlocked over a store older than the Keychain
+    /// floor — reads only until a sync reaches it.
+    pub behind: bool,
 }
 
 impl VaultCore {
@@ -193,6 +196,7 @@ impl VaultCore {
             vault_dir,
             enroll: None,
             provider: Default::default(),
+            behind: false,
         }
     }
 
@@ -205,6 +209,7 @@ impl VaultCore {
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)
         self.store = None;
+        self.behind = false;
         // An enrollment in flight does not survive a lock: its secret is
         // zeroized and the phone must rescan (§5.3).
         self.enroll = None;

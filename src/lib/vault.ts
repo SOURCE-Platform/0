@@ -226,6 +226,8 @@ export function vaultErrorMessage(code: string): string {
   switch (code) {
     case "WRONG_CREDENTIAL":
       return "Incorrect password.";
+    case "VAULT_BEHIND":
+      return "This copy of your vault is older than one this device has already seen. It's read-only until it catches up.";
     case "PRESENCE_DENIED":
       return "Confirmation was not completed.";
     case "PANEL_CANCELLED":
