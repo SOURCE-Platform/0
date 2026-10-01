@@ -79,6 +79,9 @@ impl ExtraStaging for RemoteChange<'_> {
         }
         let updates = updates_for(new_header, self.mp, self.rk)?;
         pending::add(conn, self.op, self.security_driven, self.base.clone(), seen_auth(&updates), now_epoch())?;
+        if let Some((target, _)) = &self.revoke {
+            pending::note_target(conn, target)?;
+        }
         Ok(())
     }
 }

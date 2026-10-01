@@ -199,3 +199,30 @@ fn an_unredone_revocation_survives_another_change() {
     assert_eq!(pending_ops(&a), None);
     assert_eq!(c.read(&cloud, Operation::StateGet, None).status, 401);
 }
+
+/// PW-10 (wire annex A.4): two revocations, both adopted away; redoing
+/// one keeps the other's target and redo prompt — tracked per target.
+#[test]
+fn two_adopted_away_revocations_are_tracked_per_target() {
+    let (cloud, mut a, mut b, c) = trio("two-revokes");
+    let e = Mac::new("two-revokes-e");
+    a.enroll(&cloud, &e);
+    b.sync(&cloud).unwrap();
+    let d = Mac::new("two-revokes-d");
+    revoke(&mut a, c.dev.device_id());
+    revoke(&mut a, e.dev.device_id());
+    let targets = pending::revocation_targets(&a.store().conn).unwrap();
+    assert!(targets.contains(&c.dev.device_id()) && targets.contains(&e.dev.device_id()), "both pending");
+    b.enroll(&cloud, &d);
+    assert_eq!(a.publish(&cloud), Err(ErrorCode::StateMoved));
+    assert!(a.sync(&cloud).unwrap().unwrap().needs_user);
+    let targets = pending::revocation_targets(&a.store().conn).unwrap();
+    assert!(targets.contains(&c.dev.device_id()) && targets.contains(&e.dev.device_id()), "both still named after adoption");
+    // Redo only C's revocation.
+    revoke(&mut a, c.dev.device_id());
+    let p = pending::load(&a.store().conn).unwrap().unwrap();
+    let targets = pending::revocation_targets(&a.store().conn).unwrap();
+    assert!(targets.contains(&e.dev.device_id()), "E still may not speak");
+    assert!(p.awaiting_redo.contains(&pending::PendingOp::Revocation), "E's redo prompt stays");
+    assert!(p.awaiting_redo_targets.contains(&vault_helper::crypto::hex::encode(e.dev.device_id())));
+}

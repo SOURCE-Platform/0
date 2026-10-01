@@ -224,6 +224,8 @@ pub fn apply(
             let mut p = p.clone();
             p.ops = p.all_ops();
             p.security_driven = p.security();
+            p.target_device_ids = p.revocation_targets();
+            p.awaiting_redo_targets.clear();
             p.awaiting_redo.clear();
             p.awaiting_security = false;
             p.needs_user = true;

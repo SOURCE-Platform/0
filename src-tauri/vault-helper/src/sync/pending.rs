@@ -77,6 +77,14 @@ pub struct PendingRemote {
     pub awaiting_redo: Vec<PendingOp>,
     #[serde(default)]
     pub awaiting_security: bool,
+    /// v0.5 (§11.3.2, wire annex A.4): the devices this record's
+    /// revocations name, kept while pending.
+    #[serde(default)]
+    pub target_device_ids: Vec<String>,
+    /// Revocation targets adopted away and not yet redone — per target, so
+    /// redoing one never clears another's prompt.
+    #[serde(default)]
+    pub awaiting_redo_targets: Vec<String>,
 }
 
 impl PendingRemote {
@@ -85,6 +93,13 @@ impl PendingRemote {
         let mut ops = self.ops.clone();
         ops.extend(self.awaiting_redo.iter().filter(|o| !self.ops.contains(o)));
         ops
+    }
+
+    /// Every revocation target, pending or awaiting redo.
+    pub fn revocation_targets(&self) -> Vec<String> {
+        let mut t = self.target_device_ids.clone();
+        t.extend(self.awaiting_redo_targets.iter().filter(|x| !self.target_device_ids.contains(x)).cloned());
+        t
     }
 
     /// The record's own updates are stale, or something awaits a redo.
@@ -144,6 +159,11 @@ pub fn add(
         Some(p) => (p.awaiting_redo.clone(), p.awaiting_security),
         None => (Vec::new(), false),
     };
+    let awaiting_targets: Vec<String> = match &prior {
+        Some(p) if p.needs_user => p.revocation_targets(),
+        Some(p) => p.awaiting_redo_targets.clone(),
+        None => Vec::new(),
+    };
     let mut p = prior.filter(|p| !p.needs_user).unwrap_or(PendingRemote {
         ops: Vec::new(),
         security_driven: false,
@@ -157,9 +177,14 @@ pub fn add(
         in_flight: Vec::new(),
         awaiting_redo: Vec::new(),
         awaiting_security: false,
+        target_device_ids: Vec::new(),
+        awaiting_redo_targets: Vec::new(),
     });
     p.version = version;
-    p.awaiting_redo = awaiting.into_iter().filter(|o| *o != op).collect();
+    p.awaiting_redo_targets = awaiting_targets;
+    // A revocation's redo is per target (`note_target` clears its own);
+    // only a revocation with no other target awaiting leaves the list.
+    p.awaiting_redo = awaiting.into_iter().filter(|o| *o != op || (op == PendingOp::Revocation && !p.awaiting_redo_targets.is_empty())).collect();
     p.awaiting_security = awaiting_security && !p.awaiting_redo.is_empty();
     if !p.ops.contains(&op) {
         p.ops.push(op);
@@ -174,6 +199,33 @@ pub fn add(
     // §22.11: a publication staged on disk before this change is stale.
     crate::storage::kv::delete(conn, super::staged_disk::KEY)?;
     Ok(p)
+}
+
+/// The revocation just recorded by `add` names `target`: kept while this
+/// record is pending; its own redo, if one was awaited, is done.
+pub fn note_target(conn: &Connection, target: &[u8; 16]) -> Result<(), ErrorCode> {
+    let Some(mut p) = load(conn)? else { return Ok(()) };
+    let t = crate::crypto::hex::encode(target);
+    if !p.target_device_ids.contains(&t) {
+        p.target_device_ids.push(t.clone());
+    }
+    p.awaiting_redo_targets.retain(|x| *x != t);
+    if p.awaiting_redo_targets.is_empty() {
+        // No other revocation awaits a redo: the prompt is answered.
+        p.awaiting_redo.retain(|o| *o != PendingOp::Revocation);
+    }
+    save(conn, &p)
+}
+
+/// Every device a pending or adopted-away revocation names (§22.8 "who
+/// may speak").
+pub fn revocation_targets(conn: &Connection) -> Result<Vec<[u8; 16]>, ErrorCode> {
+    Ok(load(conn)?
+        .map(|p| p.revocation_targets())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|h| crate::crypto::hex::decode_array::<16>(h))
+        .collect())
 }
 
 /// The base a new change builds on: the pending record's, unless it needs
@@ -214,6 +266,8 @@ pub fn settle(conn: &Connection, version: u64, landed: Base) -> Result<Vec<Pendi
             // What still awaits a redo stays, prompt and warning intact.
             let rest = PendingRemote {
                 ops: std::mem::take(&mut p.awaiting_redo),
+                target_device_ids: std::mem::take(&mut p.awaiting_redo_targets),
+                awaiting_redo_targets: Vec::new(),
                 security_driven: p.awaiting_security,
                 recovery_auth_updates: Vec::new(),
                 base: landed,

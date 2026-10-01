@@ -80,7 +80,7 @@ mod tests {
 
     fn rec(ops: Vec<PendingOp>, attempts: u32) -> PendingRemote {
         let base = Base { vk_generation: 1, kdf_salt: Hex16([0; 16]), auth_salt_mp: Hex16([0; 16]), auth_salt_rk: Hex16([0; 16]), registry_head: Hex32([0; 32]) };
-        PendingRemote { ops, security_driven: true, local_committed_at: 0, recovery_auth_updates: Vec::new(), base, needs_user: false, attempts, last_error: None, version: 1, in_flight: Vec::new(), awaiting_redo: Vec::new(), awaiting_security: false }
+        PendingRemote { ops, security_driven: true, local_committed_at: 0, recovery_auth_updates: Vec::new(), base, needs_user: false, attempts, last_error: None, version: 1, in_flight: Vec::new(), awaiting_redo: Vec::new(), awaiting_security: false, target_device_ids: Vec::new(), awaiting_redo_targets: Vec::new() }
     }
 
     /// RU-04: a pending revocation surfaces BACKUP_REVOCATION_FAILED after
