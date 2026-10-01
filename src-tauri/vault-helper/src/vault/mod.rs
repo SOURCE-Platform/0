@@ -215,6 +215,11 @@ impl VaultCore {
     pub fn lock(&mut self, reason: LockReason) -> Vec<Value> {
         // An abandoned recovery returns to where the device was before it
         // (no local vault → UNINITIALIZED, never a vault-less LOCKED).
+        // Last chance to vouch for a resident key whose commitment failed
+        // to sign (review SEC-B1): after this the key is gone.
+        if self.vk_commit_pending {
+            super::vault::vk_commit::commit_resident(self);
+        }
         let left = self.leave_recovery();
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)

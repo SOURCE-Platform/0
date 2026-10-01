@@ -159,6 +159,7 @@ pub fn rotate_failing(
         vault_id: vid,
         devices: reg.devices.iter().filter(|d| !d.revoked).map(|d| (d.device_id, d.agree_pub)).collect(),
         fresh: Vec::new(),
+        commit_tag: crate::device::SeDevice::load(&store.dir).ok().map(|d| d.key_tag().to_string()),
     };
     let base = pending::load(&store.conn)?.ok_or(ErrorCode::BadState)?.base;
     let change = RemoteChange { envelopes: Some(&envelopes), op: pending::PendingOp::VaultCreate, security_driven: false, base, mp: None, rk: Some(rk), revoke: None, registry: None };

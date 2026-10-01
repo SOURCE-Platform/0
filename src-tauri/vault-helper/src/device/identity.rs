@@ -199,6 +199,10 @@ impl DeviceIdentity for SeDevice {
     /// SE signing is randomized (§2.7): normalize to low-S before the
     /// bytes enter any hash-chained object, and verify against our own
     /// recorded public key so a wrong-key signature never ships.
+    fn commit_tag(&self) -> Option<String> {
+        Some(self.key_tag.clone())
+    }
+
     fn sign_prehash(&self, digest: &[u8; 32]) -> Result<[u8; SIGNATURE_LEN], CryptoError> {
         let raw = se::sign_digest(&self.key_tag, digest).map_err(|_| CryptoError::SignatureInvalid)?;
         let sig = ecdsa::normalize_low_s(&raw)?;

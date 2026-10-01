@@ -29,6 +29,8 @@ pub struct Adoption {
     /// Exactly the active devices' envelopes.
     pub envelopes: Vec<([u8; 16], Vec<u8>)>,
     pub registry: Vec<u8>,
+    /// The adopted key's commitment (§22.4), committed with it.
+    pub commitment: Option<Vec<u8>>,
 }
 
 /// `reseal = Some((old_vk, adopted_vk))` when the committed state is at a
@@ -68,6 +70,10 @@ pub fn adopt(store: VaultStore, a: &Adoption, reseal: Option<(&SecretBytes<32>, 
     }
     write_atomic(&journal::next_path(&dir, VAULT_REGISTRY_NAME), &a.registry)?;
     stage.push(VAULT_REGISTRY_NAME.to_string());
+    if let Some(c) = &a.commitment {
+        write_atomic(&journal::next_path(&dir, crate::vault::vk_commit::FILE), c)?;
+        stage.push(crate::vault::vk_commit::FILE.to_string());
+    }
     let mut remove: Vec<String> = envelope::list_envelopes(&dir)
         .iter()
         .filter(|id| !a.envelopes.iter().any(|(e, _)| e == *id))

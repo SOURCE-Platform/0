@@ -97,7 +97,7 @@ pub fn begin_rk_unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         None => return unlock_failed_nonfatal(core, ErrorCode::WrongCredential, deps),
     };
     match wrap::open_wrap_rk(&file, &rk, &header.vault_id.0) {
-        Ok(payload) => install_unlock(core, &header, &dir, payload, deps),
+        Ok(payload) => install_unlock(core, &header, &dir, payload, deps, false),
         Err(_) => unlock_failed_nonfatal(core, ErrorCode::WrongCredential, deps),
     }
 }

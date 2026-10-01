@@ -42,7 +42,11 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
 }
 
 /// Ops after which the accepted provider state may have moved.
-const FLOOR_OPS: &[&str] = &["backup_state_offer", "backup_apply", "backup_commit_result"];
+const FLOOR_OPS: &[&str] = &[
+    "backup_state_offer", "backup_apply", "backup_commit_result",
+    // Every local authority change is recorded at once (re-review SEC-B2).
+    "change_master_password", "rotate_recovery_key", "revoke_device", "enroll_ack", "setup_retry_handle",
+];
 
 /// §22.14: every op that authors a revision or changes authority.
 const AUTHORING: &[&str] = &[

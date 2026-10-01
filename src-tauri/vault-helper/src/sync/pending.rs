@@ -173,8 +173,6 @@ pub fn add(
     save(conn, &p)?;
     // §22.11: a publication staged on disk before this change is stale.
     crate::storage::kv::delete(conn, super::staged_disk::KEY)?;
-    // Redoing a security change answers a "lost change" warning.
-    crate::storage::kv::delete(conn, "lost_security_change")?;
     Ok(p)
 }
 

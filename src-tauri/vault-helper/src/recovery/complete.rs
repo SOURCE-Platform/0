@@ -114,6 +114,7 @@ impl Recovery {
             vault_id: vid,
             devices: Vec::new(),
             fresh: vec![(new_device.device_id(), new_device.agree_pub(), nonce)],
+            commit_tag: new_device.commit_tag(),
         };
         // A new RK re-keys the RK class (§11.4 table): `SealNew`.
         let rk_plan = if new_rk.is_some() { RkWrap::SealNew(rk_for_wrap) } else { RkWrap::Seal(rk_for_wrap) };

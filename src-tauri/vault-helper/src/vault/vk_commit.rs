@@ -20,7 +20,6 @@ use crate::crypto::secret::SecretBytes;
 use crate::crypto::{ecdsa, hex, hkdf};
 use crate::device::{se, SeDevice};
 use crate::errors::ErrorCode;
-use crate::registry::device::DeviceIdentity;
 use crate::storage::store::write_atomic;
 
 pub const FILE: &str = "vk_commit.json";
@@ -43,12 +42,27 @@ fn digest(vault_id: &[u8; 16], generation: u32, vk: &SecretBytes<32>) -> Result<
     Ok(h.finalize().into())
 }
 
-/// Sign the commitment for a key the helper trusts.
-pub fn record(dir: &Path, vault_id: &[u8; 16], generation: u32, vk: &SecretBytes<32>) -> Result<(), ErrorCode> {
-    let dev = SeDevice::load(dir)?;
-    let sig = dev.sign_prehash(&digest(vault_id, generation, vk)?).map_err(|_| ErrorCode::KeychainUnavailable)?;
+/// The commitment file's bytes for a key the helper trusts, signed by the
+/// SE key behind `tag` (low-S). Staged by every journal that changes the
+/// key, so key and commitment commit together (review SEC-B1).
+pub fn encode_with_tag(tag: &str, vault_id: &[u8; 16], generation: u32, vk: &SecretBytes<32>) -> Result<Vec<u8>, ErrorCode> {
+    let d = digest(vault_id, generation, vk)?;
+    let raw = se::sign_digest(tag, &d).map_err(|_| ErrorCode::KeychainUnavailable)?;
+    let sig = ecdsa::normalize_low_s(&raw).map_err(|_| ErrorCode::Internal)?;
+    ecdsa::verify_prehash(&se::signing_public(tag)?, &d, &sig).map_err(|_| ErrorCode::Internal)?;
     let body = Commit { v: 1, vk_generation: generation, signature: hex::encode(sig) };
-    write_atomic(&dir.join(FILE), &serde_json::to_vec(&body).map_err(|_| ErrorCode::Internal)?)
+    serde_json::to_vec(&body).map_err(|_| ErrorCode::Internal)
+}
+
+/// `encode_with_tag` for this vault directory's own device.
+pub fn encode(dir: &Path, vault_id: &[u8; 16], generation: u32, vk: &SecretBytes<32>) -> Result<Vec<u8>, ErrorCode> {
+    encode_with_tag(SeDevice::load(dir)?.key_tag(), vault_id, generation, vk)
+}
+
+/// Sign the commitment for a key the helper trusts (outside a journal:
+/// a new vault, and the retry of a commitment that failed to sign).
+pub fn record(dir: &Path, vault_id: &[u8; 16], generation: u32, vk: &SecretBytes<32>) -> Result<(), ErrorCode> {
+    write_atomic(&dir.join(FILE), &encode(dir, vault_id, generation, vk)?)
 }
 
 /// How a key about to become resident relates to this device's identity.

@@ -232,7 +232,7 @@ fn finish_mp_unlock(
             OpOutcome::err(ErrorCode::WrongCredential)
         }
         Err(_) => unlock_failed_nonfatal(core, ErrorCode::WrapCorrupt, deps),
-        Ok(payload) => install_unlock(core, header, vault_dir, payload, deps),
+        Ok(payload) => install_unlock(core, header, vault_dir, payload, deps, false),
     }
 }
 
@@ -262,6 +262,7 @@ pub(super) fn install_unlock(
     vault_dir: &std::path::Path,
     payload: RecoveryWrapPayload,
     deps: &Deps,
+    envelope_path: bool,
 ) -> OpOutcome {
     if payload.vk_generation != header.vk_generation {
         // Wrap predates the header's generation — treated as wrap damage;
@@ -283,6 +284,9 @@ pub(super) fn install_unlock(
     // wrap or envelope planted on disk opens to some other key.
     let unverified = match super::vk_commit::verify(vault_dir, &store.header.vault_id.0, store.header.vk_generation, &payload.vk) {
         Ok(super::vk_commit::Verdict::Committed) => false,
+        // The envelope path just used this device's SE key, so "no
+        // identity" there is a contradiction — refuse (re-review SEC-I1).
+        Ok(super::vk_commit::Verdict::NoIdentity) if envelope_path => return unlock_failed_nonfatal(core, ErrorCode::WrongCredential, deps),
         Ok(super::vk_commit::Verdict::NoIdentity) => true,
         Err(_) => return unlock_failed_nonfatal(core, ErrorCode::WrongCredential, deps),
     };

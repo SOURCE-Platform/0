@@ -26,6 +26,9 @@ pub struct EnvelopePlan {
     /// Devices getting their first envelope here (a recovery's new
     /// device), with the enrollment nonce to bind it to.
     pub fresh: Vec<([u8; 16], [u8; 65], [u8; 16])>,
+    /// The SE tag of the device that vouches for the new key: its
+    /// commitment (§22.4) is staged in the same journal as the key.
+    pub commit_tag: Option<String>,
 }
 
 fn staged_name(device_id: &[u8; 16]) -> String {
@@ -71,6 +74,11 @@ impl ExtraStaging for EnvelopePlan {
                 &serde_json::to_vec_pretty(&file).map_err(|_| ErrorCode::Internal)?,
             )?;
             names.push(name);
+        }
+        if let Some(tag) = &self.commit_tag {
+            let bytes = crate::vault::vk_commit::encode_with_tag(tag, &self.vault_id, new_vk_generation, new_vk)?;
+            crate::storage::store::write_atomic(&next_path(dir, crate::vault::vk_commit::FILE), &bytes)?;
+            names.push(crate::vault::vk_commit::FILE.to_string());
         }
         Ok(names)
     }

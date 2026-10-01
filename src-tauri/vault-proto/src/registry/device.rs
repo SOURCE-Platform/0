@@ -24,6 +24,12 @@ pub trait DeviceIdentity: Send + Sync {
     fn agree_pub(&self) -> [u8; PUBKEY_LEN];
     /// Sign a 32-byte digest (low-S, §2.7).
     fn sign_prehash(&self, digest: &[u8; 32]) -> Result<[u8; SIGNATURE_LEN], CryptoError>;
+
+    /// The Secure Enclave tag a vault-key commitment is signed under
+    /// (helper spec §22.4); `None` for identities with no SE key.
+    fn commit_tag(&self) -> Option<String> {
+        None
+    }
 }
 
 pub struct SoftwareDevice {

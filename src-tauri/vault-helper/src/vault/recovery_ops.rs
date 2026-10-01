@@ -111,6 +111,7 @@ pub fn rotate_with_rk(
         vault_id: vid,
         devices: reg.devices.iter().filter(|d| !d.revoked).map(|d| (d.device_id, d.agree_pub)).collect(),
         fresh: Vec::new(),
+        commit_tag: crate::device::SeDevice::load(&store.dir).ok().map(|d| d.key_tag().to_string()),
     };
     let change = crate::sync::change::RemoteChange {
         envelopes: Some(&envelopes),

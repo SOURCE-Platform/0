@@ -216,6 +216,7 @@ pub fn apply(
         wrap_rk: index.find(&Role::WrapRk).map(|_| get(&Role::WrapRk).cloned()).transpose()?,
         envelopes: index.envs().map(|(id, e)| Ok((*id, blobs.get(&e.blob).ok_or(ErrorCode::BackupObjectMissing)?.clone()))).collect::<Result<_, ErrorCode>>()?,
         registry: get(&Role::Registry)?.clone(),
+        commitment: None,
     };
     let keep_local = match &pending {
         Some(p) if pending::base_unchanged(p, &header) => true,
@@ -236,6 +237,13 @@ pub fn apply(
         rvk if !keep_local => {
             let dir = store.dir.clone();
             let reseal = rvk.expose() != vk.expose();
+            // The adopted key's commitment commits with it (§22.4); with no
+            // SE identity (tests with software devices) none is staged.
+            let commitment = match crate::device::SeDevice::load(&dir) {
+                Ok(_) => Some(crate::vault::vk_commit::encode(&dir, &vid, committed.header.vk_generation, &rvk)?),
+                Err(_) => None,
+            };
+            let committed = Adoption { commitment, ..committed };
             adopt(store, &committed, reseal.then_some((&vk, &rvk)))?;
             report.adopted_singletons = true;
             report.adopted_vk = reseal;

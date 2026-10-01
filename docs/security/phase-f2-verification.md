@@ -113,3 +113,35 @@ close on them unfixed); everything else is fixed or recorded.
 | VER-O17 — Deleted Items refetched on every parent render | **Accepted** (stable error callback). The annex and the Deleted Items UI get their own reviews (annex next; UI in the F.2a closing pass). |
 | VER-O13, VER-O15, VER-O18 — tests missing for rotation-Reseal binding, exact update equality, enroll/retry-handle gates with a planted wrap, other-vault floor and recovery reset | **Recorded.** The shared `bound_to` / `prove_mp_resident` path is tested; the remaining direct tests are listed for the F.2a closing pass. |
 | SEC-O3 (new) — recovery resets a same-vault floor | **Recorded** (recovery revokes every prior device; surfacing the older served state in FR-01 is an option for later). |
+
+### 1.3 Focused security check of the vault-key commitment (`30539be`)
+
+A narrow security check of the two security-critical fixes above.
+
+| Finding | Disposition and fix |
+|---|---|
+| SEC-B1 — key change and commitment not atomic: a crash or error between them, or a lock with a pending retry, locked the user out permanently (every unlock `WRONG_CREDENTIAL`) | **Accepted.** The commitment is staged in the same journal as the key: `EnvelopePlan.commit_tag` stages it with every rotation (revoke, RK replacement, handle retry, recovery); adoption stages it with the adopted key and aborts if it cannot be signed; `lock()` makes a last attempt at a pending retry. Test `a_rotation_commits_its_key_commitment` (library rotation, no op-level retry). |
+| SEC-B2 — a lost security change could still go unreported (pending row deleted, edited copy, MP change/enrollment never recorded) | **Accepted.** `floor::raise` checks the recorded change at every unlock and after every authority/provider op; "landed" requires the produced base **and** a newly accepted provider state; every authority op records its change at once; the lost list lives in the Keychain floor and is mirrored to `vault.db`. Test `a_vanished_pending_change_is_reported_at_unlock`. |
+| SEC-B3 — the Secure Enclave key blobs are login-keychain items a thief with the login password can extract and use from any process | **Confirmed** with a throwaway key (a second process signed with the blob). **Pre-existing (Phase E); escalated to the owner** — the fix (data-protection keychain under a signed access group, or a biometry-bound agreement key) needs an Apple signing decision. See §2. |
+| SEC-B4 — before the first provider state the registry was unanchored | **Accepted.** `floor::reset` anchors on the genesis entry. Test `a_rewritten_registry_before_the_first_commit_is_not_trusted`. |
+| SEC-I1 — the envelope path could be steered into the read-only "no identity" fallback | **Accepted.** The envelope path refuses instead of falling back. |
+| SEC-I2 — any new pending change cleared a lost-change warning | **Accepted.** Only the redone operation's warning clears. |
+
+## 2. Owner checkpoint (open)
+
+**Secure Enclave keys on the Mac (SEC-B3).** The helper stores each
+Secure Enclave key's device-bound blob as a generic password in the login
+keychain. Anyone who can approve a login-keychain prompt (a thief who
+knows the Mac login password) can copy the blob and use the key from any
+program on that Mac — open the device envelope (the vault key) and sign as
+the device. That defeats F2-D3 on the Mac. Options:
+
+1. **Data-protection keychain under the helper's own access group** —
+   other programs cannot read the items at all, password or not. Needs
+   the helper signed with a provisioning profile carrying
+   `keychain-access-groups` (Apple Developer Program for a long-lived
+   profile; free profiles expire every 7 days). Recommended.
+2. **Biometry-bound agreement key on the Mac** (as on the iPhone) — the
+   blob is useless without your fingerprint; Macs without Touch ID unlock
+   with the master password instead. Changes approved unlock behaviour.
+3. Both.

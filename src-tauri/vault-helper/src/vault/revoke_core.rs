@@ -57,6 +57,7 @@ pub fn revoke(
         vault_id: vid,
         devices: after.devices.iter().filter(|d| !d.revoked).map(|d| (d.device_id, d.agree_pub)).collect(),
         fresh: Vec::new(),
+        commit_tag: me.commit_tag(),
     };
     let change = RemoteChange {
         envelopes: Some(&envelopes),

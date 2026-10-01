@@ -4492,7 +4492,11 @@ Mac, a wiped key — §2.8's "re-enroll or recover" case) still unlocks with
 the MP or RK, but **read-only for the whole session**: only list, reveal,
 history, device list and status ops are served; everything that authors,
 signs or changes authority is `DEVICE_NOT_AUTHORIZED`, and no commitment
-is ever signed for such a key. Such a device cannot sign anything anyway,
+is ever signed for such a key. The device-envelope path never falls back
+(it has just used the SE key, so "no identity" there is refused). The
+commitment is **staged in the same journal** as every key change
+(rotation, adoption, recovery), so key and commitment commit together.
+Such a device cannot sign anything anyway,
 so this costs no function it had, and pointing the device file at a
 missing key cannot be used to slip a planted key past the check.
 The helper signs a commitment only for a key it already trusts: a new
@@ -5057,14 +5061,22 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
   a served state is adopted only if its registry contains the head the
   floor recorded (else `SIGNATURE_INVALID`, nothing adopted), and fork
   evidence is not acted on (no COMPROMISED).
-- Setup and total-loss recovery start a fresh floor for their vault.
+- Setup and total-loss recovery start a fresh floor for their vault,
+  anchored on the vault's genesis entry until a provider state is
+  accepted (a rewritten registry before the first commit is behind).
 - **A lost security change is never silent (erratum, re-review SEC-B1).**
   The floor also records a security change committed locally but not yet
   published (its operations and the base it produced). If a catch-up
   ends read-only mode on a store that neither still carries that change
   nor shows it landed, the change is reported (`remote_update_status`
   `lost_change`, e.g. a revocation or a Recovery Key replacement) for the
-  user to redo; redoing any security change clears it.
+  user to redo. The check runs at **every** unlock and after every
+  authority or provider op, not only at catch-up: a recorded change counts
+  as landed only if the store's base is the one it produced **and** a
+  provider state was accepted since; a deleted pending record or an edited
+  copy is therefore reported too. The list lives in the Keychain floor
+  (mirrored in `vault.db`), and redoing a change clears **only that**
+  change's warning.
 - Catch-up happens only on a verified outcome (the provider has nothing
   newer than the accepted state, or a completed apply), and a raise of
   the local generation is journaled so a crash rolls forward to it. At

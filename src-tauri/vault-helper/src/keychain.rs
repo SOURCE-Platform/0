@@ -196,6 +196,9 @@ pub struct Floor {
     /// (`{ops, base}`), so a restore that loses it is noticed (§22.14).
     #[serde(default)]
     pub unpublished: Option<serde_json::Value>,
+    /// Security changes lost with a restored or edited copy, until redone.
+    #[serde(default)]
+    pub lost: Vec<String>,
 }
 
 /// `Ok(default)` = never recorded (fresh machine).

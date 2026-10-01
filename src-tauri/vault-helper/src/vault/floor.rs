@@ -45,14 +45,41 @@ pub fn behind(store: &VaultStore) -> Result<bool, ErrorCode> {
     Ok(provider_behind || local_behind || commit_differs || head_missing)
 }
 
-/// Record this store as seen: never lowers anything. Called only when the
-/// store is not behind.
+/// Record this store as seen: never lowers anything. Called whenever the
+/// store is not behind — at unlock and after every authority or provider
+/// op — and first checks the security change the floor last recorded
+/// (re-review SEC-B1/B2): it must still be carried, or have landed
+/// (the store's base is the one it produced **and** a provider state was
+/// accepted since). Anything else — a deleted pending record, a restored
+/// or edited copy — is lost, and is reported until it is redone.
 pub fn raise(store: &VaultStore) -> Result<(), ErrorCode> {
     let mut f = floor_for(store)?;
     let before = f.clone();
     f.vault_id = Some(hex::encode(store.header.vault_id.0));
     f.manifest_generation = Some(f.manifest_generation.unwrap_or(0).max(store.header.manifest_generation));
-    f.unpublished = unpublished(store)?;
+    let accepted = provider_generation(store)?;
+    let pending_now = pending::load(&store.conn)?;
+    let now_ops: Vec<String> = pending_now.as_ref().map(|p| p.all_ops().iter().map(op_name).collect()).unwrap_or_default();
+    if let Some(u) = f.unpublished.clone() {
+        let ops: Vec<String> = serde_json::from_value(u["ops"].clone()).unwrap_or_default();
+        let carried = ops.iter().all(|o| now_ops.contains(o));
+        let base: Option<pending::Base> = serde_json::from_value(u["base"].clone()).ok();
+        let since = u["since"].as_u64().unwrap_or(0);
+        let landed = base.is_some_and(|b| pending::Base::of(&store.header) == b) && accepted > since;
+        if !carried && !landed {
+            for o in ops {
+                if !f.lost.contains(&o) {
+                    f.lost.push(o);
+                }
+            }
+        }
+    }
+    // A change being made again answers its warning (only that one).
+    f.lost.retain(|o| !now_ops.contains(o));
+    f.unpublished = pending_now.filter(|p| !p.needs_user).map(|p| {
+        let since = before.unpublished.as_ref().filter(|u| u["ops"] == serde_json::json!(now_ops)).and_then(|u| u["since"].as_u64()).unwrap_or(accepted);
+        serde_json::json!({ "ops": p.all_ops().iter().map(op_name).collect::<Vec<_>>(), "base": pending::Base::of(&store.header), "since": since })
+    });
     if let Some(s) = seen::load(&store.conn)? {
         if f.provider_generation.is_none_or(|p| s.generation > p) {
             f.provider_generation = Some(s.generation);
@@ -63,7 +90,16 @@ pub fn raise(store: &VaultStore) -> Result<(), ErrorCode> {
     if f != before {
         keychain::write_floor(&f)?;
     }
+    if f.lost.is_empty() {
+        kv::delete(&store.conn, LOST_KEY)?;
+    } else {
+        kv::put(&store.conn, LOST_KEY, &f.lost)?;
+    }
     Ok(())
+}
+
+fn op_name(op: &pending::PendingOp) -> String {
+    serde_json::to_value(op).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
 /// A fresh vault on this Mac (setup, total-loss recovery): the floor
@@ -71,6 +107,11 @@ pub fn raise(store: &VaultStore) -> Result<(), ErrorCode> {
 pub fn reset(store: &VaultStore) -> Result<(), ErrorCode> {
     let mut f = Floor { vault_id: Some(hex::encode(store.header.vault_id.0)), ..Floor::default() };
     f.manifest_generation = Some(store.header.manifest_generation);
+    // Before any provider state exists the floor anchors on this vault's
+    // genesis, so a rewritten registry cannot pass (review SEC-B4).
+    if let Some(genesis) = crate::registry::log::read_entries(&store.dir)?.first() {
+        f.registry_head = Some(hex::encode(vault_proto::crypto::registry::entry_hash(genesis).map_err(|_| ErrorCode::Internal)?));
+    }
     keychain::write_floor(&f)?;
     raise(store)
 }
@@ -91,34 +132,9 @@ pub fn catch_up(store: &mut VaultStore) -> Result<bool, ErrorCode> {
             return Ok(false);
         }
     }
-    note_lost_change(store, f.unpublished.as_ref())?;
     store.raise_generation(f.manifest_generation.unwrap_or(0))?;
     raise(store)?;
     Ok(true)
-}
-
-/// The store's pending security change, as the floor records it.
-fn unpublished(store: &VaultStore) -> Result<Option<serde_json::Value>, ErrorCode> {
-    Ok(pending::load(&store.conn)?.filter(|p| !p.needs_user).map(|p| {
-        serde_json::json!({ "ops": p.ops, "base": pending::Base::of(&store.header) })
-    }))
-}
-
-/// Review SEC-B1 (re-review): a security change this Mac committed but
-/// had not published — a revocation, a Recovery Key or master-password
-/// change — that the restored copy neither carries nor shows landed is
-/// lost. Never silent: it is recorded for the user to redo.
-fn note_lost_change(store: &VaultStore, recorded: Option<&serde_json::Value>) -> Result<(), ErrorCode> {
-    let Some(u) = recorded else {
-        return Ok(());
-    };
-    let base: Option<pending::Base> = serde_json::from_value(u["base"].clone()).ok();
-    let still_pending = unpublished(store)?.is_some_and(|now| now["ops"] == u["ops"] && now["base"] == u["base"]);
-    let landed = base.is_some_and(|b| pending::Base::of(&store.header) == b);
-    if !still_pending && !landed {
-        kv::put(&store.conn, LOST_KEY, &u["ops"])?;
-    }
-    Ok(())
 }
 
 pub const LOST_KEY: &str = "lost_security_change";
