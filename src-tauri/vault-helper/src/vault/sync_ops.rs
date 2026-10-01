@@ -143,6 +143,8 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                 c.header = Some(store.header.clone());
                 c.store = Some(store);
                 c.vk = Some(vk.mlock_best_effort());
+                // A verified adoption may have brought a new key.
+                super::vk_commit::commit_resident(c);
                 Ok(json!({
                     "generation": rep.generation, "admitted": rep.admitted, "refused": rep.refused,
                     "adopted_vk": rep.adopted_vk, "needs_user": rep.needs_user, "reauthored": rep.reauthored,
@@ -155,6 +157,23 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
                 drop(store);
                 c.state = VaultState::Locked;
                 Ok(json!({ "revoked": true }))
+            }
+            // §22.14 (review SEC-I1): while behind, the restored copy's own
+            // registry vouches for nothing, so no fork is acted on.
+            Err(ErrorCode::RegistryFork) if c.behind => {
+                c.store = crate::storage::VaultStore::open(&dir).ok();
+                match c.store.as_ref().map(|s| s.header.clone()) {
+                    Some(h) if crate::sync::pending::Base::of(&h) == keep.1 => {
+                        c.header = Some(h);
+                        c.vk = Some(keep.0.mlock_best_effort());
+                        c.state = VaultState::Unlocked;
+                    }
+                    _ => {
+                        c.store = None;
+                        c.state = VaultState::Locked;
+                    }
+                }
+                Err(ErrorCode::SignatureInvalid)
             }
             Err(e) => {
                 // The apply is journaled/transactional: reopen whatever is

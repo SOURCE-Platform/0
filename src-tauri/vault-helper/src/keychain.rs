@@ -192,6 +192,10 @@ pub struct Floor {
     pub state_commit: Option<String>,
     #[serde(default)]
     pub registry_head: Option<String>,
+    /// A security change committed locally but not yet published
+    /// (`{ops, base}`), so a restore that loses it is noticed (§22.14).
+    #[serde(default)]
+    pub unpublished: Option<serde_json::Value>,
 }
 
 /// `Ok(default)` = never recorded (fresh machine).

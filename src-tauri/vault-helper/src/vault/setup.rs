@@ -65,6 +65,8 @@ pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> 
         Err(e) => return OpOutcome::err(e),
     };
     let result = super::create::create_vault(&vault_dir, &mp, &rk, &dev).and_then(|(header, vk)| {
+        // §22.4: the new key's commitment, signed by this device's SE key.
+        super::vk_commit::record(&vault_dir, &header.vault_id.0, header.vk_generation, &vk)?;
         // The recovery-auth public keys for both classes (§11.4 D-11),
         // derived while MP and RK are in hand; only public keys persist.
         let updates = crate::sync::change::updates_for(&header, Some(&mp), Some(&rk))?;
@@ -276,6 +278,14 @@ pub(super) fn install_unlock(
         Ok(b) => b,
         Err(_) => return unlock_failed_fatal(core, ErrorCode::Internal, deps),
     };
+    // §22.4 (review VER-B3): whatever path produced it — MP, RK or the
+    // device envelope — the key must be this vault's committed key. A
+    // wrap or envelope planted on disk opens to some other key.
+    let unverified = match super::vk_commit::verify(vault_dir, &store.header.vault_id.0, store.header.vk_generation, &payload.vk) {
+        Ok(super::vk_commit::Verdict::Committed) => false,
+        Ok(super::vk_commit::Verdict::NoIdentity) => true,
+        Err(_) => return unlock_failed_nonfatal(core, ErrorCode::WrongCredential, deps),
+    };
     let mut c = lock_core(core);
     if c.state != VaultState::Unlocking {
         // A lock preempted while we unwrapped; VK drops here (zeroized).
@@ -288,6 +298,7 @@ pub(super) fn install_unlock(
     c.note_authorization();
     c.state = c.open_state();
     c.behind = behind;
+    c.unverified_key = unverified;
     if !behind {
         // Never lowers the floor.
         let _ = c.store.as_ref().map(super::floor::raise);

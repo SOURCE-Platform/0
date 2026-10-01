@@ -19,9 +19,24 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     if AUTHORING.contains(&op) && lock_core(core).behind {
         return OpOutcome::err(ErrorCode::VaultBehind);
     }
+    // §22.4: a key no SE commitment vouches for serves reads only, for the
+    // whole unlocked session (an allowlist: anything else is refused).
+    if lock_core(core).unverified_key && !vk_commit::UNVERIFIED_OPS.contains(&op) {
+        return OpOutcome::err(ErrorCode::DeviceNotAuthorized);
+    }
     let out = route(core, frame, deps, op);
+    {
+        let mut c = lock_core(core);
+        if c.vk_commit_pending {
+            vk_commit::commit_resident(&mut c);
+        }
+    }
     if out.response["ok"] == Value::Bool(true) && FLOOR_OPS.contains(&op) {
-        tend_floor(core);
+        // Catch-up only on verified outcomes: "nothing newer than what you
+        // accepted", or a completed apply (review VER-O12).
+        let r = &out.response;
+        let verified = r["up_to_date"] == true || r.get("admitted").is_some() || r["committed"] == true;
+        tend_floor(core, verified);
     }
     out
 }
@@ -38,7 +53,7 @@ const AUTHORING: &[&str] = &[
 /// §22.14: while behind, a verified provider exchange may catch the store
 /// up (never by lowering the floor); otherwise the floor follows the
 /// accepted provider state.
-fn tend_floor(core: &Arc<Mutex<VaultCore>>) {
+fn tend_floor(core: &Arc<Mutex<VaultCore>>, verified: bool) {
     let mut c = lock_core(core);
     let behind = c.behind;
     let Some(store) = c.store.as_mut() else {
@@ -46,7 +61,7 @@ fn tend_floor(core: &Arc<Mutex<VaultCore>>) {
     };
     if !behind {
         let _ = floor::raise(store);
-    } else if floor::catch_up(store).unwrap_or(false) {
+    } else if verified && floor::catch_up(store).unwrap_or(false) {
         c.header = c.store.as_ref().map(|s| s.header.clone());
         c.behind = false;
     }

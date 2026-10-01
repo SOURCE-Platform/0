@@ -37,9 +37,19 @@ pub fn summary(p: Option<&PendingRemote>) -> Value {
     })
 }
 
+/// The summary plus a security change lost with a restored older copy
+/// (§22.14), which the user must redo.
+pub fn status_of(store: &VaultStore) -> Result<Value, ErrorCode> {
+    let mut s = summary(pending::load(&store.conn)?.as_ref());
+    if let Some(lost) = crate::storage::kv::get::<Value>(&store.conn, super::floor::LOST_KEY)? {
+        s["lost_change"] = lost;
+    }
+    Ok(s)
+}
+
 /// The `remote_update` event for the current record.
 pub fn event(store: &VaultStore) -> Result<Value, ErrorCode> {
-    let s = summary(pending::load(&store.conn)?.as_ref());
+    let s = status_of(store)?;
     let status = if s["pending"] == true { "remote_update_pending" } else { "remote_committed" };
     Ok(json!({ "event": "remote_update", "status": status, "detail": s }))
 }
@@ -57,7 +67,7 @@ pub fn remote_update_status(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
             }
             None => return Ok(summary(None)),
         };
-        Ok(summary(pending::load(&store.conn)?.as_ref()))
+        status_of(store)
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
 }

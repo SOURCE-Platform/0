@@ -94,6 +94,7 @@ export interface RemotePending {
   needs_user?: boolean;
   attempts?: number;
   revocation_failed?: boolean;
+  lost_change?: string[];
 }
 
 export async function vaultBackupStatus(): Promise<{ status: BackupStatus; provider: string | null }> {

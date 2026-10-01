@@ -273,7 +273,7 @@ human-safe context.
 | `change_master_password` | re-wrap VK under new PK | UNLOCKED + fresh presence | helper panel collects old+new MP; main sees status only |
 | `change_master_password {mode:"reset"}` | set a new MP without the old one | UNLOCKED + fresh presence + **the RK** (v0.5, §22.4) | §12 scenario 5 on this device: the panel collects the RK words, proves them against the committed `recovery.wrap` (§22.4), then new+confirm; no VK rotation; `password.wrap` is replaced atomically |
 | `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel collects the **current MP** (the MP wrap is re-sealed under the new VK, §12 scenario 6), then displays/prints the new RK and only commits once the user acknowledges it; main sees status only |
-| `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | the panel collects the MP (verified against the committed wrap; or, when the MP is forgotten, the RK is proven and a new MP is set — v0.5, §22.4) and shows a new Recovery Key for acknowledgement; then registry `revoke` + VK rotation + both recovery classes re-keyed are committed locally, followed by one `publish` state transition that cuts the device off at the provider (§11.4); tracked as `REMOTE_UPDATE_PENDING` until committed (§11.3). The confirmation lists every device the target itself authorized (enroll entries with `authorizer` = target) and recommends revoking them too |
+| `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | the panel collects the MP (verified against the committed wrap and bound to the vault key, §22.4; a wrong MP is refused with the §15 backoff — v0.5 erratum: there is no set-a-new-MP branch inside `revoke_device`; a forgotten MP is first reset with the RK, `mode:"reset"`) and shows a new Recovery Key for acknowledgement; then registry `revoke` + VK rotation + both recovery classes re-keyed are committed locally, followed by one `publish` state transition that cuts the device off at the provider (§11.4); tracked as `REMOTE_UPDATE_PENDING` until committed (§11.3). The confirmation lists every device the target itself authorized (enroll entries with `authorizer` = target) and recommends revoking them too |
 | `registry_status` | signed registry for a paired device's status refresh (§4.7) — **retired for SOURCE Vault devices by `peer_status` (v0.5, §22.9)** | LOCKED or UNLOCKED | read-only; returns the registry and `vault_id` and nothing else. Deliberately answers while locked: the registry involves no VK, and a revoked device must be able to find that out without the vault being unlocked. |
 | `begin_enrollment` | start §5 flow | UNLOCKED | `{fp}` (the ephemeral server's certificate fingerprint) → `{secret, mac_device_id, vault_id, expires_in}`; main renders the QR (§5.2) |
 | `enroll_hello` | the phone's ENROLL_HELLO, relayed | UNLOCKED | helper verifies the single-use secret, assigns the new `device_id`, fixes the transcript → `{reply, sas}`; the SAS is shown on the Mac and **never** sent to the phone |
@@ -683,7 +683,7 @@ nonces.
 
 | Item | Class | ACL | Purpose |
 |---|---|---|---|
-| `com.racker.zero.vault.state` | generic password, data blob | `WhenUnlockedThisDeviceOnly` | helper runtime bookkeeping (last manifest generation/head hash seen — rollback evidence) |
+| `com.racker.zero.vault.state` | generic password, data blob | `WhenUnlockedThisDeviceOnly` | helper runtime bookkeeping (last manifest generation/head hash seen — rollback evidence; v0.5: one vault's floor with the accepted provider state and any unpublished security change, §22.14) |
 | SE keys (both) | key class | §2.7 | device identity |
 | `com.racker.zero.vault.helper-prefs` | generic password | `WhenUnlockedThisDeviceOnly` | auto-lock minutes, non-secret prefs |
 
@@ -731,6 +731,7 @@ retried (§1.6); no ACL is changed.
 | `ov0/provider-recovery-auth/mp/v2` ‖ `vault_id` | MP recovery-auth `ikm_mp` from PK (salt `auth_salt_mp`), input to `DeriveKeyPair` (§11.4) |
 | `ov0/provider-recovery-auth/rk/v2` ‖ `vault_id` | RK recovery-auth `ikm_rk` from RK_bytes (salt `auth_salt_rk`) (§11.4) |
 | `ov0/import-fingerprint/v1` | import idempotency HMAC key from VK (§10.3) |
+| `ov0/vk-commit/v1` | vault-key commitment tag from VK, signed by the device SE key (v0.5, §22.4) |
 | `ov0/enroll/sas/v1` | SAS display bytes from enrollment transcript |
 | `ov0/approval/…` | not used — approvals are plain ECDSA over TLV (§6.5) |
 
@@ -3050,11 +3051,10 @@ re-sealed under the MP the flow collects), and the RK class with the new
 RK. The entered MP is **verified against the committed `password.wrap`**
 (after adopting any committed singletons). If it does not open it — for
 example because the device being revoked changed the master password
-while it was still trusted — the panel offers to set a new master password
-**after the Recovery Key is proven against the committed `recovery.wrap`**
-(v0.5, §22.4; then new + confirm, as `change_master_password
-{mode:"reset"}`); a typo can never silently become the vault's master
-password. Re-keying both classes guarantees that no
+while it was still trusted — the revocation is refused (v0.5 erratum,
+§22.4: the user first resets the master password with **the Recovery Key**,
+`change_master_password {mode:"reset"}`, then revokes); a typo can never
+silently become the vault's master password. Re-keying both classes guarantees that no
 recovery-auth key a revoked device may have registered while it was still
 active survives the revocation. The provider verifies the
 `revoke` against the registry in the same request, requires the rotation
@@ -4475,6 +4475,29 @@ app's secure entry (iPhone) and verified by opening the committed
 The 10-in-10-minutes threshold is this specification's concrete form of
 the design's "bulk deletion needs the MP".
 
+**The vault-key commitment (erratum, review VER-B3).** Every file in the
+vault directory can be rewritten by a same-user process, so a wrap or an
+envelope on disk proves nothing about which key is the vault's (anyone can
+seal a key they chose to this device's public agreement key, or under a
+password they chose). The helper therefore keeps `vk_commit.json`: an
+ECDSA signature by this device's Secure Enclave signing key over
+`SHA-256("ov0/vk-commit/v1" ‖ vault_id ‖ u32 vk_generation ‖
+HKDF-SHA256(VK, info = "ov0/vk-commit/v1"))`, verified under the public
+key the Secure Enclave reports (never the device file on disk). **Every
+unlock path — envelope, MP, RK — verifies it before the key becomes
+resident**; a missing, stale or forged commitment is `WRONG_CREDENTIAL`.
+A device with **no usable Secure Enclave identity** (a moved or restored
+Mac, a wiped key — §2.8's "re-enroll or recover" case) still unlocks with
+the MP or RK, but **read-only for the whole session**: only list, reveal,
+history, device list and status ops are served; everything that authors,
+signs or changes authority is `DEVICE_NOT_AUTHORIZED`, and no commitment
+is ever signed for such a key. Such a device cannot sign anything anyway,
+so this costs no function it had, and pointing the device file at a
+missing key cannot be used to slip a planted key past the check.
+The helper signs a commitment only for a key it already trusts: a new
+vault, a rotation it performed, a verified adoption, a completed
+recovery. HKDF prefix `ov0/vk-commit/v1` is added to §2.9.
+
 **Every MP proof is bound to the vault (erratum, review SEC-B1).** A
 master-password check opens `password.wrap` **and** requires the
 unwrapped key to equal the resident VK at the header's generation
@@ -4873,7 +4896,7 @@ as on the Mac (§4.8) or through §22.9.
 |---|---|---|
 | add / edit / delete / reveal | yes | bulk deletion needs the MP (§22.4) |
 | restore records whose latest change came from a later-revoked device | yes | from retained history |
-| revoke the Mac, rotate, publish (RC-01) | yes | MP; the set-a-new-MP branch needs the RK (§22.4) |
+| revoke the Mac, rotate, publish (RC-01) | yes | MP; if the MP was changed by the stolen Mac, reset it with the RK first, then revoke (§22.4) |
 | RK rotation, MP change | yes | §22.4 |
 | revoke another phone | yes | §22.4 |
 | authorize enrolling a replacement Mac | not yet | F2-D4, §22.13 |
@@ -5031,6 +5054,19 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
   floor recorded (else `SIGNATURE_INVALID`, nothing adopted), and fork
   evidence is not acted on (no COMPROMISED).
 - Setup and total-loss recovery start a fresh floor for their vault.
+- **A lost security change is never silent (erratum, re-review SEC-B1).**
+  The floor also records a security change committed locally but not yet
+  published (its operations and the base it produced). If a catch-up
+  ends read-only mode on a store that neither still carries that change
+  nor shows it landed, the change is reported (`remote_update_status`
+  `lost_change`, e.g. a revocation or a Recovery Key replacement) for the
+  user to redo; redoing any security change clears it.
+- Catch-up happens only on a verified outcome (the provider has nothing
+  newer than the accepted state, or a completed apply), and a raise of
+  the local generation is journaled so a crash rolls forward to it. At
+  unlock, a store whose accepted state commitment differs from the
+  floor's at the same generation, or whose registry lacks the floor's
+  head, is behind too.
 - UI copy: "This copy of your vault is older than one this device has
   already seen. It's read-only until it catches up."
 
@@ -5081,7 +5117,7 @@ the gate asserts them by name.
 | PS-14 | a phone after a total-loss recovery elsewhere; and a `peer_status` from a responder not in its committed registry | the response is "unable to verify" and changes nothing; the phone reaches `BACKUP_ACCESS_LOST`; nothing deleted; re-enrollment works |
 | AU-01 | MP reset without the RK, with a wrong RK, with an RK for a retired generation (Mac and iPhone) | refused |
 | AU-02 | `enroll_confirm` without the current MP | refused; no registry entry |
-| AU-03 | revoke's set-a-new-MP branch without the RK | refused |
+| AU-03 | revocation with a missing or wrong MP (there is no set-a-new-MP branch; the RK reset precedes it) | refused with the backoff; no registry entry, no rotation, no new RK sheet |
 | AU-04 | stolen iPhone with its passcode (device) | vault does not open; no authority op possible |
 | AU-05 | stolen Mac with its login password | reads possible (stated residual); no revoke, enroll, MP/RK change or reset |
 | AU-06 | bulk deletion and the 10-in-10 counter across lock and restart | MP required; counter persists |
@@ -5108,7 +5144,7 @@ the gate asserts them by name.
 | XV-PEER | both TLVs, prehashes and the heads digest | Rust engine and the CryptoKit-only Swift target agree |
 
 Also, as **PV-01** (one gate item, listing each variant by name): phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD
-for recovery on a phone; RC-01 step by step (with the set-new-MP branch);
+for recovery on a phone; RC-01 step by step (including the RK reset first when the stolen Mac changed the MP);
 and PR-01/BK-18 canaries (VK, plaintext, MP, RK, `sk_c`) over peer
 transcripts, the phone's disk and logs. **SY-11's expected result is
 amended:** the revoker's `Admit(D)` excludes D-only peer deliveries

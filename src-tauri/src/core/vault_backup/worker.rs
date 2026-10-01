@@ -124,9 +124,17 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
         }
         Ok(Some(ran)) => {
             watch.success();
+            // §22.14: a restored older copy that the sync could not yet
+            // catch up is not "backed up" (review VER-O16).
+            let still_behind = ran["behind"] == true
+                && vault_coordinator::Helper::op(&AppHelper, json!({"op": "get_state"})).is_ok_and(|s| s["behind"] == true);
             set_status(app, |s| {
                 let cleared = strings(&ran["cleared"]);
-                *s = BackupStatus { state: "ok".into(), last_success: Some(now()), pending, cleared, ..Default::default() };
+                *s = if still_behind {
+                    BackupStatus { state: "behind".into(), last_error: Some("VAULT_BEHIND".into()), pending, ..Default::default() }
+                } else {
+                    BackupStatus { state: "ok".into(), last_success: Some(now()), pending, cleared, ..Default::default() }
+                };
             });
             PERIOD
         }

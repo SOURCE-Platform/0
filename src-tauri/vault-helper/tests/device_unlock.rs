@@ -83,8 +83,20 @@ fn a_missing_secure_enclave_key_refuses_the_unlock() {
     assert_eq!(err_code(&resp), "DEVICE_NOT_AUTHORIZED", "{resp}");
     assert_eq!(fx.state(), VaultState::Locked);
     // The master-password path still works, which is what makes the
-    // refusal recoverable rather than terminal.
+    // refusal recoverable rather than terminal — read-only (§22.4): with
+    // no SE identity nothing verifies the key, so nothing it does may
+    // carry authority.
     assert_eq!(unlock(&fx, MP)["ok"], true);
+    assert_eq!(fx.op(json!({"op": "list_items"}))["ok"], true);
+    for frame in [
+        json!({"op": "add_item", "kind": "login", "title": "t", "username": "u", "password": "p", "hosts": ["example.test"]}),
+        json!({"op": "change_master_password"}),
+        json!({"op": "begin_enrollment", "fp": "00"}),
+        json!({"op": "backup_prepare"}),
+        json!({"op": "sign_provider_request", "operation": "state_get"}),
+    ] {
+        assert_eq!(err_code(&fx.op(frame.clone())), "DEVICE_NOT_AUTHORIZED", "{frame}");
+    }
 }
 
 /// DU-04: a revoked device keeps its envelope on disk, and still cannot

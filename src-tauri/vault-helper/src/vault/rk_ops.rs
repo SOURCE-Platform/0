@@ -176,6 +176,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
             Ok(pk) => pk,
             Err(e) => {
                 drop(c);
+                super::recovery_ops::backoff(core, e);
                 return finish(core, deps, Err(e));
             }
         };
@@ -203,6 +204,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
             let _ = super::floor::raise(&store);
             c.store = Some(store);
             c.vk = Some(r.new_vk.mlock_best_effort());
+            super::vk_commit::commit_resident(&mut c);
             drop(c);
             finish(core, deps, Ok(()))
         }

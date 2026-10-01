@@ -43,6 +43,14 @@ pub fn prove_mp_resident(c: &crate::vault::VaultCore, mp: &[u8]) -> Result<Secre
     }
 }
 
+/// §15 backoff after a wrong master password at any gate (§22.4).
+pub fn backoff(core: &std::sync::Arc<std::sync::Mutex<crate::vault::VaultCore>>, e: ErrorCode) {
+    if e == ErrorCode::WrongCredential {
+        let delay = crate::vault::lock_core(core).record_failed_attempt();
+        std::thread::sleep(delay);
+    }
+}
+
 /// The unwrapped payload is the resident VK at the current generation.
 pub fn bound_to(payload: &RecoveryWrapPayload, vk: &SecretBytes<32>, generation: u32) -> Result<(), ErrorCode> {
     use subtle::ConstantTimeEq;

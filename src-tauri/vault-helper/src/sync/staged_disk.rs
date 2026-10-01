@@ -182,11 +182,20 @@ fn blob_list_hash(ready: &Ready) -> String {
 /// Read a staged file, refusing anything over the largest cap before
 /// allocating for it.
 fn read_capped(path: &Path) -> Result<Vec<u8>, ErrorCode> {
-    let len = std::fs::metadata(path).map_err(|_| ErrorCode::TransferInvalid)?.len();
-    if len > MAX_FILE {
+    use std::io::Read;
+    // Regular files only: no symlink, FIFO or device (review SEC-O2).
+    let meta = std::fs::symlink_metadata(path).map_err(|_| ErrorCode::TransferInvalid)?;
+    if !meta.file_type().is_file() || meta.len() > MAX_FILE {
         return Err(ErrorCode::TransferInvalid);
     }
-    std::fs::read(path).map_err(|_| ErrorCode::TransferInvalid)
+    let mut out = Vec::new();
+    std::fs::File::open(path)
+        .and_then(|f| f.take(MAX_FILE + 1).read_to_end(&mut out))
+        .map_err(|_| ErrorCode::TransferInvalid)?;
+    if out.len() as u64 > MAX_FILE {
+        return Err(ErrorCode::TransferInvalid);
+    }
+    Ok(out)
 }
 
 fn empty_seen() -> seen::Seen {

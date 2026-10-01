@@ -119,6 +119,7 @@ pub fn cleanup_partial_vault(dir: &Path) {
         crate::VAULT_REGISTRY_NAME,
         PASSWORD_WRAP_NAME,
         RECOVERY_WRAP_NAME,
+        super::vk_commit::FILE,
     ] {
         let _ = std::fs::remove_file(dir.join(name));
     }

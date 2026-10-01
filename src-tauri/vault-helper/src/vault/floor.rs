@@ -14,7 +14,8 @@ use crate::crypto::hex;
 use crate::errors::ErrorCode;
 use crate::keychain::{self, Floor};
 use crate::storage::VaultStore;
-use crate::sync::{fetch, seen};
+use crate::storage::kv;
+use crate::sync::{fetch, pending, seen};
 
 /// The floor for this store's vault (another vault's floor counts as none).
 fn floor_for(store: &VaultStore) -> Result<Floor, ErrorCode> {
@@ -34,7 +35,14 @@ pub fn behind(store: &VaultStore) -> Result<bool, ErrorCode> {
     let provider_behind = f.provider_generation.is_some_and(|p| accepted < p);
     let same_provider = f.provider_generation.is_none_or(|p| accepted == p);
     let local_behind = same_provider && f.manifest_generation.is_some_and(|l| l > store.header.manifest_generation);
-    Ok(provider_behind || local_behind)
+    // Edited files cannot fake being current (review SEC-O1): at the same
+    // provider generation the commitment must match, and the local chain
+    // must contain the registry head this helper accepted.
+    let seen_commit = seen::load(&store.conn)?.map(|s| hex::encode(s.state_commit.0));
+    let commit_differs = f.provider_generation == Some(accepted) && f.state_commit.is_some() && f.state_commit != seen_commit;
+    let entries = crate::registry::log::read_entries(&store.dir).unwrap_or_default();
+    let head_missing = !anchored(store, &entries)?;
+    Ok(provider_behind || local_behind || commit_differs || head_missing)
 }
 
 /// Record this store as seen: never lowers anything. Called only when the
@@ -44,6 +52,7 @@ pub fn raise(store: &VaultStore) -> Result<(), ErrorCode> {
     let before = f.clone();
     f.vault_id = Some(hex::encode(store.header.vault_id.0));
     f.manifest_generation = Some(f.manifest_generation.unwrap_or(0).max(store.header.manifest_generation));
+    f.unpublished = unpublished(store)?;
     if let Some(s) = seen::load(&store.conn)? {
         if f.provider_generation.is_none_or(|p| s.generation > p) {
             f.provider_generation = Some(s.generation);
@@ -82,10 +91,37 @@ pub fn catch_up(store: &mut VaultStore) -> Result<bool, ErrorCode> {
             return Ok(false);
         }
     }
+    note_lost_change(store, f.unpublished.as_ref())?;
     store.raise_generation(f.manifest_generation.unwrap_or(0))?;
     raise(store)?;
     Ok(true)
 }
+
+/// The store's pending security change, as the floor records it.
+fn unpublished(store: &VaultStore) -> Result<Option<serde_json::Value>, ErrorCode> {
+    Ok(pending::load(&store.conn)?.filter(|p| !p.needs_user).map(|p| {
+        serde_json::json!({ "ops": p.ops, "base": pending::Base::of(&store.header) })
+    }))
+}
+
+/// Review SEC-B1 (re-review): a security change this Mac committed but
+/// had not published — a revocation, a Recovery Key or master-password
+/// change — that the restored copy neither carries nor shows landed is
+/// lost. Never silent: it is recorded for the user to redo.
+fn note_lost_change(store: &VaultStore, recorded: Option<&serde_json::Value>) -> Result<(), ErrorCode> {
+    let Some(u) = recorded else {
+        return Ok(());
+    };
+    let base: Option<pending::Base> = serde_json::from_value(u["base"].clone()).ok();
+    let still_pending = unpublished(store)?.is_some_and(|now| now["ops"] == u["ops"] && now["base"] == u["base"]);
+    let landed = base.is_some_and(|b| pending::Base::of(&store.header) == b);
+    if !still_pending && !landed {
+        kv::put(&store.conn, LOST_KEY, &u["ops"])?;
+    }
+    Ok(())
+}
+
+pub const LOST_KEY: &str = "lost_security_change";
 
 /// While behind: a served registry must contain the head the floor
 /// recorded, so a registry older than one this helper accepted — e.g.

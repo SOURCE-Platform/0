@@ -47,6 +47,7 @@ pub mod rk_ops;
 pub mod sync_ops;
 pub mod secure_ui;
 pub mod setup;
+pub mod vk_commit;
 
 pub use secure_ui::{
     PanelOutcome, PanelRequest, PanelRunner, RecoverySheet, SheetReason, RK_SHEET_TITLE,
@@ -162,6 +163,10 @@ pub struct VaultCore {
     /// §22.14 (SY-13): unlocked over a store older than the Keychain
     /// floor — reads only until a sync reaches it.
     pub behind: bool,
+    /// The resident key's commitment could not be signed yet (§22.4).
+    pub vk_commit_pending: bool,
+    /// Unlocked without a usable SE identity: reads only (§22.4).
+    pub unverified_key: bool,
 }
 
 impl VaultCore {
@@ -200,6 +205,8 @@ impl VaultCore {
             enroll: None,
             provider: provider_ops::Sessions { publish, ..Default::default() },
             behind: false,
+            vk_commit_pending: false,
+            unverified_key: false,
         }
     }
 
@@ -213,6 +220,8 @@ impl VaultCore {
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)
         self.store = None;
         self.behind = false;
+        self.vk_commit_pending = false;
+        self.unverified_key = false;
         // An enrollment in flight does not survive a lock: its secret is
         // zeroized and the phone must rescan (§5.3).
         self.enroll = None;

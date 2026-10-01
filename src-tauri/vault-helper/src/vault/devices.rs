@@ -138,6 +138,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
             ),
             Err(e) => {
                 drop(c);
+                super::recovery_ops::backoff(core, e);
                 return super::rk_ops::finish_pub(core, deps, Err(e));
             }
         }
@@ -196,6 +197,7 @@ fn commit_revocation(
     c.header = Some(done.store.header.clone());
     c.store = Some(done.store);
     c.vk = Some(done.vk.mlock_best_effort());
+    super::vk_commit::commit_resident(&mut c);
     Ok(json!({
         "device_id": hex::encode(target),
         "registry_head": hex::encode(done.registry_head),

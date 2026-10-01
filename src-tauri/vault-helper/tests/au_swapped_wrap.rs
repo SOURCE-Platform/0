@@ -73,3 +73,38 @@ fn a_recovery_wrap_over_another_key_does_not_reset_the_mp() {
     assert_eq!(unlock(&fx, MP)["ok"], true, "the master password is unchanged");
     fx.remove_dir();
 }
+
+/// VER-B3: unlocking THROUGH a planted wrap must fail — otherwise the
+/// planted key becomes resident and every later gate compares against
+/// it. The key must match the commitment this Mac's Secure Enclave
+/// signed. The same holds for a planted Recovery Key wrap and a planted
+/// device envelope (anyone can seal to the public agreement key).
+#[test]
+fn unlocking_through_a_planted_key_is_refused() {
+    use vault_helper::device::{envelope, SeDevice};
+    use vault_helper::registry::device::DeviceIdentity;
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    add_login(&fx);
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    let real_wrap = std::fs::read(fx.dir.join(PASSWORD_WRAP_NAME)).unwrap();
+    swap_password_wrap(&fx);
+    assert_eq!(err_code(&unlock(&fx, CHOSEN)), "WRONG_CREDENTIAL");
+    assert_eq!(fx.state(), VaultState::Locked, "the planted key never became resident");
+
+    // A planted device envelope over another key.
+    std::fs::write(fx.dir.join(PASSWORD_WRAP_NAME), &real_wrap).unwrap();
+    let header = vault_helper::storage::VaultStore::read_header(&fx.dir).unwrap();
+    let dev = SeDevice::load(&fx.dir).unwrap();
+    let payload = vault_helper::crypto::wrap::DeviceEnvelopePayload { vk: random_secret(), wrapped_at: 1, vk_generation: header.vk_generation };
+    let env = envelope::seal_envelope(&dev.agree_pub(), &header.vault_id.0, &dev.device_id(), &[7u8; 16], &payload).unwrap();
+    envelope::write_envelope(&fx.dir, &dev.device_id(), &env).unwrap();
+    assert_eq!(err_code(&fx.op(json!({"op": "unlock"}))), "WRONG_CREDENTIAL");
+    assert_eq!(fx.state(), VaultState::Locked);
+
+    // The real master password still opens the real key.
+    assert_eq!(unlock(&fx, MP)["ok"], true);
+    assert_eq!(fx.op(json!({"op": "list_items"}))["items"].as_array().unwrap().len(), 1);
+    fx.remove_dir();
+}

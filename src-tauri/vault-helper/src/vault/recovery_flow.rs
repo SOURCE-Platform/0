@@ -236,6 +236,7 @@ pub fn finalize_result(core: &Arc<Mutex<VaultCore>>, status: u64, body: &Value, 
         c.header = Some(store.header.clone());
         c.store = Some(store);
         c.vk = Some(vk.mlock_best_effort());
+        super::vk_commit::commit_resident(&mut c);
         c.state = VaultState::Unlocked;
         c.note_authorization();
         deps.events.emit(ev_state(VaultState::Unlocked));

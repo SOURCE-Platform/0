@@ -2,7 +2,7 @@
 //! button. A restore needs presence and brings the item back as a new
 //! item; nothing secret is shown here.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RotateCcw, Trash2 } from "lucide-react";
 import { vaultErrorMessage } from "@/lib/vault";
 import { vaultListDeleted, vaultRestoreRevision, type DeletedItem } from "@/lib/vaultHistory";
@@ -20,13 +20,16 @@ export function DeletedItems({
   const [open, setOpen] = useState(false);
   const [busyRef, setBusyRef] = useState<string | null>(null);
 
+  // A ref, so a parent re-render (a new inline callback) does not refetch.
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const refresh = useCallback(async () => {
     try {
       setItems(await vaultListDeleted());
     } catch (e) {
-      onError(vaultErrorMessage(String(e)));
+      onErrorRef.current(vaultErrorMessage(String(e)));
     }
-  }, [onError]);
+  }, []);
 
   useEffect(() => {
     refresh();

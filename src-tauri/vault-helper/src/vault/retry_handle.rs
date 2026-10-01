@@ -83,7 +83,10 @@ pub fn setup_retry_handle(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
     drop(mp);
     let (pk, vault_id, head) = match proved {
         Ok(v) => v,
-        Err(e) => return finish_pub(core, deps, Err(e)),
+        Err(e) => {
+            super::recovery_ops::backoff(core, e);
+            return finish_pub(core, deps, Err(e));
+        }
     };
     // The new key is seen and acknowledged before anything commits.
     let rk = random_secret();
@@ -116,6 +119,7 @@ pub fn setup_retry_handle(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
             c.header = Some(store.header.clone());
             c.store = Some(store);
             c.vk = Some(new_vk.mlock_best_effort());
+            super::vk_commit::commit_resident(&mut c);
             c.provider.publish = Some(super::provider_ops::PublishSession { t, staging });
             c.state = VaultState::Unlocked;
             c.note_authorization();

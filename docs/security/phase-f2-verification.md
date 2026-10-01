@@ -80,3 +80,36 @@ Targeted runs after the fixes (all green): helper `au_swapped_wrap`,
 `handle_retry`, `multi_writer`, `retry_ipc`, `ipc_backup`,
 `publish_sync`, `sync_scenarios`, `provider_forgery`, `catchup_fixture`,
 `ipc_transcript`; `vault-coordinator`; `cargo check -p SOURCE`.
+
+**Dispositions omitted above:** VER-O4 (AU-01's "no RK typed" case also
+passes without the RK check) — **accepted as noted**; the RK binding is
+now proven by `a_recovery_wrap_over_another_key_does_not_reset_the_mp`.
+VER-O5 (CX `not_compromised()` cannot fail at the fetch layer; no
+"invalid signature by an active id" case) — **recorded**; the dispatch-
+level COMPROMISED paths are covered by `behind_sync` and
+`cx05_racing_revocation_entry_is_never_adopted`.
+
+### 1.2 Bounded re-review of the fixes (`5133dc3`) and closure
+
+Both reviewers closed most findings and found new ones. The security
+blockers were fixed (they are security-critical, so the loop does not
+close on them unfixed); everything else is fixed or recorded.
+
+| Finding | Disposition and fix |
+|---|---|
+| VER-B3 — unlocking **through** a planted `password.wrap` (or `recovery.wrap`, or a device envelope sealed to the public agreement key) made the planted key resident; every later gate compared against it (reproduced: a device enrolled) | **Accepted.** `vault::vk_commit`: a Secure-Enclave-signed commitment to the vault key (verified under the public key the SE reports, not the device file) must verify on every unlock path before a key becomes resident; the helper signs it only for keys it already trusts (setup, its own rotations, verified adoption, recovery); a failed signature is retried while the key stays resident. Test `unlocking_through_a_planted_key_is_refused` (MP path and envelope path). Spec §22.4 erratum, §2.9 row. |
+| SEC-B1 (new) — catch-up silently dropped a security change committed locally but unpublished | **Accepted.** The floor records the unpublished change (ops + base); a catch-up on a store that neither carries it nor shows it landed records `lost_change`, shown as a warning banner; redoing any security change clears it. Test `sy13_a_lost_unpublished_security_change_is_reported`. Spec §22.14. |
+| SEC-I1 / VER-I13 — apply could enter COMPROMISED while behind | **Accepted.** While behind, a fork from apply is `SIGNATURE_INVALID`, nothing recorded. |
+| SEC-I2 — `raise_generation` not crash-safe | **Accepted.** A `raise_target` is recorded first; `open` rolls forward to it (several generations, same registry head); cleared afterwards. |
+| SEC-I3 / VER-I11 — backoff missing at revoke, RK rotation, handle retry | **Accepted** (`recovery_ops::backoff` at every MP gate). |
+| VER-I9 — the behind offer arm untested | **Accepted.** `sy13_behind_never_enters_compromised_on_an_offer`. |
+| VER-I10 — catch-up persistence across relock untested | **Accepted** (both SY-13 catch-up tests relock). |
+| VER-I12 — spec still prescribed a set-new-MP branch in revoke | **Accepted.** §1.5 row, §11.4, §22.10 scope row, PV-01 and AU-03 now describe the RK reset first. |
+| VER-I14 — dispositions for VER-O4/O5 | **Accepted** (above). |
+| VER-O12 — catch-up after an unverified offer | **Accepted.** Only after `up_to_date`, a completed apply, or a commit. |
+| SEC-O1 (new) — edited files could fake "not behind" | **Accepted.** At unlock: a commitment mismatch at the same provider generation, or a local registry without the floor's head, is behind. |
+| SEC-O2 (new) — staged-file read followed symlinks/FIFOs | **Accepted** (regular files only, bounded read). |
+| VER-O16 — worker reported "ok" while still behind | **Accepted** (status `behind` with the §22.14 copy). |
+| VER-O17 — Deleted Items refetched on every parent render | **Accepted** (stable error callback). The annex and the Deleted Items UI get their own reviews (annex next; UI in the F.2a closing pass). |
+| VER-O13, VER-O15, VER-O18 — tests missing for rotation-Reseal binding, exact update equality, enroll/retry-handle gates with a planted wrap, other-vault floor and recovery reset | **Recorded.** The shared `bound_to` / `prove_mp_resident` path is tested; the remaining direct tests are listed for the F.2a closing pass. |
+| SEC-O3 (new) — recovery resets a same-vault floor | **Recorded** (recovery revokes every prior device; surfacing the older served state in FR-01 is an option for later). |

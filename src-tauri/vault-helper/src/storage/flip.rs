@@ -18,6 +18,8 @@ use crate::errors::ErrorCode;
 use crate::VAULT_HEADER_NAME;
 
 const KEY: &str = "flip_target";
+/// A §22.14 catch-up raise, which may jump several generations.
+const RAISE_KEY: &str = "raise_target";
 
 /// Record the next flip's complete header (joins the caller's transaction).
 pub fn stamp(conn: &Connection, next: &Header) -> Result<(), ErrorCode> {
@@ -54,10 +56,13 @@ impl VaultStore {
         }
         let mut h = self.header.clone();
         h.manifest_generation = at_least;
-        stamp(&self.conn, &h)?;
+        // Recorded first, so a crash between the two renames rolls
+        // forward to exactly this target (review SEC-I2).
+        kv::put(&self.conn, RAISE_KEY, &h)?;
         let m = self.manifest_for(&h)?;
         write_atomic(&self.dir.join(VAULT_HEADER_NAME), &header::write_header(&h)?)?;
         write_atomic(&self.dir.join(MANIFEST_NAME), &manifest::write_manifest(&m)?)?;
+        kv::delete(&self.conn, RAISE_KEY)?;
         self.header = h;
         self.manifest = m;
         Ok(())
@@ -95,11 +100,18 @@ impl VaultStore {
     /// VK generation, with the header at either end of that step. The
     /// candidate pair is checked before anything is written.
     pub(super) fn roll_forward(&mut self) -> Result<bool, ErrorCode> {
-        let Some(target) = kv::get::<Header>(&self.conn, KEY)? else {
+        // A recorded catch-up raise (several generations, nothing else
+        // changed) takes precedence over an ordinary one-step flip.
+        let raise = kv::get::<Header>(&self.conn, RAISE_KEY)?;
+        let Some(target) = raise.clone().or(kv::get::<Header>(&self.conn, KEY)?) else {
             return Ok(false);
         };
         let (m, h) = (&self.manifest, &self.header);
-        let one_step = target.manifest_generation == m.manifest_generation + 1;
+        let one_step = if raise.is_some() {
+            target.manifest_generation > m.manifest_generation && target.registry_head == m.registry_head
+        } else {
+            target.manifest_generation == m.manifest_generation + 1
+        };
         let same = target.vault_id == m.vault_id && target.vault_id == h.vault_id && target.vk_generation == m.vk_generation;
         let header_at_an_end = h.manifest_generation == m.manifest_generation || *h == target;
         if !(one_step && same && header_at_an_end) {
@@ -115,6 +127,7 @@ impl VaultStore {
         }
         write_atomic(&self.dir.join(VAULT_HEADER_NAME), &header::write_header(&self.header)?)?;
         write_atomic(&self.dir.join(MANIFEST_NAME), &manifest::write_manifest(&self.manifest)?)?;
+        kv::delete(&self.conn, RAISE_KEY)?;
         Ok(true)
     }
 }

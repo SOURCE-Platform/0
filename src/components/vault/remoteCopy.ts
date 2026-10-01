@@ -8,6 +8,18 @@ export type Banner = { tone: "warn" | "info"; text: string };
 
 export function pendingBanner(s: BackupStatus | null): Banner | null {
   const p = s?.pending;
+  // §22.14: a security change lost with a restored older copy.
+  const lost = p?.lost_change ?? [];
+  if (lost.length > 0) {
+    const what = lost.includes("revocation")
+      ? "a device removal"
+      : lost.includes("rk_replacement")
+        ? "a Recovery Key replacement"
+        : lost.includes("mp_change")
+          ? "a master password change"
+          : "a security change";
+    return { tone: "warn", text: `An older copy of this vault was restored, and ${what} made on this Mac was lost. Please do it again.` };
+  }
   if (!p?.pending) return null;
   const ops = p.ops ?? [];
   const redo = p.needs_user

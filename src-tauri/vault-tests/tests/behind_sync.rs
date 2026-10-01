@@ -98,6 +98,10 @@ fn sy13_restored_copy_catches_up_through_a_newer_provider_state() {
     let floor_after = vault_helper::keychain::read_floor().unwrap();
     assert!(floor_after.manifest_generation >= floor_before.manifest_generation, "floor never lowered");
     assert_eq!(floor_after.provider_generation, floor_before.provider_generation);
+    // The catch-up persists: a relock does not reopen read-only (VER-I10).
+    lock(&fx);
+    assert_eq!(vault_fx::unlock(&fx, vault_fx::MP)["ok"], true);
+    assert!(!behind(&fx), "still caught up after a relock");
     vault_fx::add_login(&fx);
     assert_eq!(Flows { helper: &FxHelper(&fx), transport: &net }.backup_now().unwrap()["committed"], true);
     fx.remove_dir();
@@ -123,6 +127,9 @@ fn sy13_restored_copy_catches_up_when_the_provider_has_nothing_newer() {
     assert_eq!(out["behind"], true, "{out}");
     assert!(!behind(&fx));
     assert_eq!(count(&fx), 1, "the unpublished edit is gone with the old copy");
+    lock(&fx);
+    assert_eq!(vault_fx::unlock(&fx, vault_fx::MP)["ok"], true);
+    assert!(!behind(&fx), "still caught up after a relock");
     fx.remove_dir();
 }
 
@@ -151,5 +158,69 @@ fn sy13_behind_refuses_a_registry_without_the_accepted_head() {
     }
     assert!(behind(&fx), "nothing adopted, still read-only");
     assert_eq!(count(&fx), 1);
+    fx.remove_dir();
+}
+
+/// Re-review SEC-B1: a security change committed on this Mac but never
+/// published, lost because an older copy was restored, is reported for
+/// the user to redo — never dropped silently.
+#[test]
+fn sy13_a_lost_unpublished_security_change_is_reported() {
+    let _g = vault_fx::serial();
+    let (cloud, mut fx) = world("sy13d");
+    let net = Net(&cloud);
+    vault_fx::add_login(&fx);
+    assert_eq!(Flows { helper: &FxHelper(&fx), transport: &net }.backup_now().unwrap()["committed"], true);
+    let snap = snapshot(&fx, "sy13d-snap");
+    // Recovery Key replaced while offline: committed locally, not published.
+    fx.push_panel(submitted(vault_fx::MP));
+    assert_eq!(fx.op(json!({ "op": "rotate_recovery_key", "suspected_theft": true }))["ok"], true);
+    assert_eq!(fx.op(json!({ "op": "remote_update_status" }))["pending"], true);
+    restore(&mut fx, &snap);
+    assert!(behind(&fx));
+    Flows { helper: &FxHelper(&fx), transport: &net }.backup_now().unwrap();
+    assert!(!behind(&fx));
+    let s = fx.op(json!({ "op": "remote_update_status" }));
+    assert_eq!(s["lost_change"], json!(["rk_replacement"]), "{s}");
+    // Redoing it clears the warning.
+    fx.push_panel(submitted(vault_fx::MP));
+    assert_eq!(fx.op(json!({ "op": "rotate_recovery_key", "suspected_theft": true }))["ok"], true);
+    assert!(fx.op(json!({ "op": "remote_update_status" })).get("lost_change").is_none());
+    fx.remove_dir();
+}
+
+/// VER-I9: while behind, a fork signed by a device the restored copy
+/// trusts is refused as unverifiable — never COMPROMISED.
+#[test]
+fn sy13_behind_never_enters_compromised_on_an_offer() {
+    use vault_helper::registry::device::DeviceIdentity;
+    let _g = vault_fx::serial();
+    let (cloud, mut fx) = world("sy13e");
+    let net = Net(&cloud);
+    vault_fx::add_login(&fx);
+    assert_eq!(Flows { helper: &FxHelper(&fx), transport: &net }.backup_now().unwrap()["committed"], true);
+    let snap = snapshot(&fx, "sy13e-snap");
+    vault_fx::add_login(&fx);
+    assert_eq!(Flows { helper: &FxHelper(&fx), transport: &net }.backup_now().unwrap()["committed"], true);
+    let state = Flows { helper: &FxHelper(&fx), transport: &net }.call("state_get", None, b"", None).unwrap().body;
+    restore(&mut fx, &snap);
+    assert!(behind(&fx));
+    // The served next generation, re-chained to a manifest the restored
+    // copy never accepted and signed by this Mac's own (active) key.
+    let mut v: serde_json::Value = serde_json::from_slice(&state).unwrap();
+    let r = vault_helper::sync::remote::parse(&state).unwrap();
+    let mut m = r.manifest.clone();
+    m.prev_manifest_hash = [0x77; 32];
+    let dev = vault_helper::device::SeDevice::load(&fx.dir).unwrap();
+    let m = m.sign(&dev as &dyn DeviceIdentity).unwrap();
+    let mb = m.encode();
+    let digest = vault_proto::state::recovery_auth_digest(&r.recovery_auth).unwrap();
+    use sha2::Digest;
+    let commit = vault_proto::state::state_commit(&m.vault_id, m.generation, &sha2::Sha256::digest(&mb).into(), &sha2::Sha256::digest(&r.checkpoint_bytes).into(), &digest);
+    v["manifest"] = json!(vault_proto::b64::encode(&mb));
+    v["state_commit"] = json!(vault_helper::crypto::hex::encode(commit));
+    let offer = fx.op(json!({ "op": "backup_state_offer", "state": v.to_string() }));
+    assert_eq!(vault_fx::err_code(&offer), "SIGNATURE_INVALID", "{offer}");
+    assert_eq!(fx.state(), vault_helper::state::VaultState::Unlocked, "not COMPROMISED");
     fx.remove_dir();
 }
