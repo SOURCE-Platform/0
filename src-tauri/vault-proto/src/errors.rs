@@ -76,6 +76,13 @@ pub enum ErrorCode {
     /// §22.14: the local store is older than this device's Keychain
     /// floor; read-only until a sync catches up.
     VaultBehind,
+    // Peer sync (§22.15)
+    PeerAuthInvalid,
+    PeerReplay,
+    PeerNotPermitted,
+    PeerLimit,
+    PeerStateUnconfirmed,
+    ProvenanceRefused,
     // Generic
     InvalidInput,
     Internal,
@@ -138,6 +145,12 @@ impl ErrorCode {
             ErrorCode::CounterRegression => "COUNTER_REGRESSION",
             ErrorCode::RevokedAuthorRefused => "REVOKED_AUTHOR_REFUSED",
             ErrorCode::VaultBehind => "VAULT_BEHIND",
+            ErrorCode::PeerAuthInvalid => "PEER_AUTH_INVALID",
+            ErrorCode::PeerReplay => "PEER_REPLAY",
+            ErrorCode::PeerNotPermitted => "PEER_NOT_PERMITTED",
+            ErrorCode::PeerLimit => "PEER_LIMIT",
+            ErrorCode::PeerStateUnconfirmed => "PEER_STATE_UNCONFIRMED",
+            ErrorCode::ProvenanceRefused => "PROVENANCE_REFUSED",
             ErrorCode::Internal => "INTERNAL",
         }
     }

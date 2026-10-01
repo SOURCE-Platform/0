@@ -15,3 +15,4 @@ pub mod registry;
 pub mod request;
 pub mod rev;
 pub mod state;
+pub mod peer;
