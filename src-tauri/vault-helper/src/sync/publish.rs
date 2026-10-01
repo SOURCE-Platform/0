@@ -135,6 +135,17 @@ pub fn committed_clearing(store: &VaultStore, st: &Staging, generation: u64, com
     }
     let s = Seen::with_auth(generation, st.manifest_hash, commit, &st.new_auth);
     seen::save(&store.conn, &s)?;
+    // §22.7: what this commit published is now provider-confirmed
+    // (including peer-delivered revisions it carried).
+    let manifest = vault_proto::backup::manifest::SignedManifest::decode(&st.body_manifest).map_err(|_| ErrorCode::Internal)?;
+    if let Some(bytes) = st.blobs.get(&manifest.object_index_hash) {
+        let index = crate::backup::index::ObjectIndex::decode(bytes).map_err(|_| ErrorCode::Internal)?;
+        for e in index.revs() {
+            if let crate::backup::index::Role::Rev { revision_id, .. } = &e.role {
+                crate::storage::sources::add(&store.conn, revision_id, crate::storage::sources::Source::Provider)?;
+            }
+        }
+    }
     let cleared = match &st.carries_pending {
         Some((v, base)) => super::pending::settle(&store.conn, *v, base.clone())?, // REMOTE_COMMITTED
         None => Vec::new(),

@@ -1,5 +1,5 @@
-//! `vault.db` SQLite schema (spec v0.4 §3.2, `user_version = 2`) and the
-//! corruption-mapping rules of §3.6.
+//! `vault.db` SQLite schema (spec v0.4 §3.2; v0.5 §22.7 `user_version =
+//! 3`) and the corruption-mapping rules of §3.6.
 
 use std::path::Path;
 
@@ -9,8 +9,25 @@ use crate::errors::ErrorCode;
 
 pub const DB_NAME: &str = "vault.db";
 
-/// The schema version this build reads and writes (v0.4 clean v2 break).
-pub const USER_VERSION: u32 = 2;
+/// The schema version this build reads and writes (v0.5: 3; a v2 vault is
+/// migrated in place, a v1 one refused).
+pub const USER_VERSION: u32 = 3;
+
+/// v0.5 §22.7 / wire annex A.4: where each revision came from, and the
+/// peer replay cache.
+const V3: &str = "
+CREATE TABLE rev_sources (              -- 'own', 'provider' or a 16-byte device id
+  revision_id BLOB NOT NULL,
+  source      BLOB NOT NULL,
+  PRIMARY KEY (revision_id, source)
+);
+CREATE TABLE peer_replay (
+  sender      BLOB NOT NULL,
+  n           BLOB NOT NULL,
+  received_at INTEGER NOT NULL,
+  PRIMARY KEY (sender, n)
+);
+";
 
 /// §3.2 v0.4: admitted revisions keyed by stable `revision_id`, the heads
 /// (tip / conflict set), pending revisions, per-record freeze flags,
@@ -99,6 +116,7 @@ pub fn open_db(path: &Path, create: bool) -> Result<Connection, ErrorCode> {
     if create {
         conn.execute_batch(SCHEMA)
             .map_err(|_| ErrorCode::DbCorrupt)?;
+        conn.execute_batch(V3).map_err(|_| ErrorCode::DbCorrupt)?;
         conn.pragma_update(None, "user_version", USER_VERSION)
             .map_err(|_| ErrorCode::DbCorrupt)?;
         return Ok(conn);
@@ -107,6 +125,10 @@ pub fn open_db(path: &Path, create: bool) -> Result<Connection, ErrorCode> {
     let user_version: u32 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(|_| ErrorCode::DbCorrupt)?;
+    if user_version == 2 {
+        migrate_v2(&conn)?;
+        return Ok(conn);
+    }
     if user_version != USER_VERSION {
         // v0.4 is a clean break: a v1 database is refused, not migrated.
         return Err(if user_version > USER_VERSION {
@@ -116,6 +138,26 @@ pub fn open_db(path: &Path, create: bool) -> Result<Connection, ErrorCode> {
         });
     }
     Ok(conn)
+}
+
+/// v2 → v3 in one transaction: the new tables, and every existing
+/// revision marked `own` (this device authored it) or `provider` — before
+/// v0.5 no other path existed (§22.7).
+fn migrate_v2(conn: &Connection) -> Result<(), ErrorCode> {
+    let sql = format!(
+        "BEGIN IMMEDIATE;{V3}
+         INSERT INTO rev_sources (revision_id, source)
+           SELECT revision_id,
+                  CASE WHEN author_device = (SELECT value FROM kv WHERE key = 'author_device')
+                       THEN CAST('own' AS BLOB) ELSE CAST('provider' AS BLOB) END
+           FROM record_revs;
+         PRAGMA user_version = {USER_VERSION};
+         COMMIT;"
+    );
+    conn.execute_batch(&sql).map_err(|_| {
+        let _ = conn.execute_batch("ROLLBACK;");
+        ErrorCode::DbCorrupt
+    })
 }
 
 /// §3.6 open sequence step: full-page integrity check. Failure maps to
@@ -191,12 +233,38 @@ mod tests {
         let path = tmp_db("toonew");
         {
             let conn = open_db(&path, true).unwrap();
-            conn.pragma_update(None, "user_version", 3u32).unwrap();
+            conn.pragma_update(None, "user_version", 4u32).unwrap();
         }
         assert_eq!(
             open_db(&path, false).map(|_| ()),
             Err(ErrorCode::FormatTooNew)
         );
+        std::fs::remove_dir_all(path.parent().unwrap()).ok();
+    }
+
+    /// v0.5: a v2 database is migrated in place — the provenance and
+    /// replay tables appear and every existing revision gets a source.
+    #[test]
+    fn a_v2_database_migrates_to_v3() {
+        let path = tmp_db("v2");
+        {
+            let conn = open_db(&path, true).unwrap();
+            conn.execute_batch("DROP TABLE rev_sources; DROP TABLE peer_replay;").unwrap();
+            conn.execute("INSERT INTO kv (key, value) VALUES ('author_device', 'me')", []).unwrap();
+            conn.execute(
+                "INSERT INTO record_revs VALUES (?1, 'r', X'', 'me', 1, 0, 1, 1, 1, ?2, X'00', ?2, X'00', 0, 0)",
+                rusqlite::params![vec![7u8; 32], vec![0u8; 24]],
+            )
+            .unwrap();
+            conn.pragma_update(None, "user_version", 2u32).unwrap();
+        }
+        let conn = open_db(&path, false).unwrap();
+        let v: u32 = conn.pragma_query_value(None, "user_version", |r| r.get(0)).unwrap();
+        assert_eq!(v, USER_VERSION);
+        let src: Vec<u8> = conn.query_row("SELECT source FROM rev_sources", [], |r| r.get(0)).unwrap();
+        assert_eq!(src, b"own");
+        let n: i64 = conn.query_row("SELECT count(*) FROM peer_replay", [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 0);
         std::fs::remove_dir_all(path.parent().unwrap()).ok();
     }
 

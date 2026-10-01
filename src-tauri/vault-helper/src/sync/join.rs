@@ -86,6 +86,9 @@ pub fn join(
         if rev_state::pending_count(&tx)? != 0 {
             return Err(ErrorCode::ManifestMismatch);
         }
+        for r in &rows {
+            crate::storage::sources::add(&tx, &r.revision_id, crate::storage::sources::Source::Provider)?;
+        }
         tx.commit().map_err(|_| ErrorCode::DbCorrupt)?;
     }
     store.persist_head()?;

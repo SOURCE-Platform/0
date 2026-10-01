@@ -23,6 +23,7 @@ pub mod rev_state;
 pub mod revision_rows;
 pub mod revisions;
 pub mod revoked;
+pub mod sources;
 pub mod rotation;
 pub mod rotation_journal;
 pub mod store;

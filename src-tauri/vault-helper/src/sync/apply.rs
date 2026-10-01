@@ -273,6 +273,13 @@ pub fn apply(
     {
         let tx = store.conn.unchecked_transaction().map_err(|_| ErrorCode::DbCorrupt)?;
         let outcomes = apply_batch(&tx, &rows, gen, &VkCompare { store: &store, vk: &vk })?;
+        // §22.7: everything this provider-confirmed state lists is
+        // provider-sourced (re-sealable; survives a peer's revocation).
+        for e in index.revs() {
+            if let crate::backup::index::Role::Rev { revision_id, .. } = &e.role {
+                crate::storage::sources::add(&tx, revision_id, crate::storage::sources::Source::Provider)?;
+            }
+        }
         report.admitted = outcomes.iter().filter(|o| matches!(o, MergeOutcome::Applied { .. })).count();
         report.refused = outcomes.iter().filter(|o| matches!(o, MergeOutcome::Rejected(_))).count();
         // Anything still held has a refused ancestor: never applicable.

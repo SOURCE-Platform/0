@@ -93,6 +93,7 @@ impl VaultStore {
             }
         }
         rev_state::bump_hwm(&tx, &rev.record_id, rev.counter)?;
+        super::sources::add(&tx, &rev.revision_id, super::sources::Source::Own)?;
         if unfreeze {
             rev_state::unfreeze(&tx, &rev.record_id)?;
         }

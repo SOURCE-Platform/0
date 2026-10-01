@@ -64,6 +64,9 @@ impl Recovery {
             let gen = store.header.vk_generation;
             let tx = store.conn.transaction().map_err(|_| ErrorCode::DbCorrupt)?;
             apply_batch(&tx, &v.rows, gen, &NoCompare)?;
+            for r in &v.rows {
+                crate::storage::sources::add(&tx, &r.revision_id, crate::storage::sources::Source::Provider)?;
+            }
             // The index is ancestor-closed: anything held back means the
             // state is not what it claims. Rejected-and-counted revisions
             // do not fail the restore (§3.2; review SEC-I11).
