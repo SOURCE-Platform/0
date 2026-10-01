@@ -135,7 +135,7 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
         let keep = (SecretBytes::new(*vk.expose()), crate::sync::pending::Base::of(&store.header));
         let me = SeDevice::load(&c.vault_dir)?;
         let (tag, vid) = (me.key_tag().to_string(), store.header.vault_id.0);
-        let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
+        let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope_for(&tag, "Source Vault: apply a security change from another device", &vid, f);
         let index = session.index.as_ref().ok_or(ErrorCode::Internal)?;
         let result = apply::apply(store, vk, &session.remote, index, &session.t.received, crate::registry::device::DeviceIdentity::device_id(&me), &open);
         let out = match result {

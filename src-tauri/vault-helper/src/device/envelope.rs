@@ -85,6 +85,17 @@ pub fn open_envelope(
     vault_id: &[u8; 16],
     file: &DeviceEnvelopeFile,
 ) -> Result<DeviceEnvelopePayload, ErrorCode> {
+    open_envelope_for(key_tag, "Source Vault: open your vault", vault_id, file)
+}
+
+/// `open_envelope` with the Touch ID prompt's reason (a biometry-bound
+/// agreement key asks as it decapsulates).
+pub fn open_envelope_for(
+    key_tag: &str,
+    reason: &str,
+    vault_id: &[u8; 16],
+    file: &DeviceEnvelopeFile,
+) -> Result<DeviceEnvelopePayload, ErrorCode> {
     if file.kind != "device" {
         return Err(ErrorCode::FormatInvalid);
     }
@@ -97,7 +108,7 @@ pub fn open_envelope(
     let nonce = hex::decode_array::<16>(&file.enrollment_nonce).ok_or(ErrorCode::WrapCorrupt)?;
     let enc = hex::decode(&file.enc).ok_or(ErrorCode::WrapCorrupt)?;
     let ct = hex::decode(&file.ct).ok_or(ErrorCode::WrapCorrupt)?;
-    let pt = se::hpke_open(key_tag, &info(vault_id, &device_id, &nonce), &enc, &ct)?;
+    let pt = se::hpke_open(key_tag, reason, &info(vault_id, &device_id, &nonce), &enc, &ct)?;
     DeviceEnvelopePayload::parse(&pt).map_err(|_| ErrorCode::WrapCorrupt)
 }
 

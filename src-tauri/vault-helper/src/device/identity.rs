@@ -32,6 +32,10 @@ pub struct DeviceFile {
     pub key_tag: String,
     pub sign_pub: String,
     pub agree_pub: String,
+    /// The agreement key is Touch-ID bound (owner decision 2026-10-01).
+    /// Informational only: the Enclave enforces it whatever this says.
+    #[serde(default)]
+    pub agree_biometry: bool,
 }
 
 /// A Secure-Enclave-backed device identity.
@@ -42,6 +46,7 @@ pub struct SeDevice {
     key_tag: String,
     sign_pub: [u8; PUBKEY_LEN],
     agree_pub: [u8; PUBKEY_LEN],
+    biometry: bool,
 }
 
 /// SE key-tag prefix. Debug builds honour `OV0_VAULT_SE_TAG_PREFIX` so test
@@ -55,6 +60,21 @@ fn tag_prefix() -> String {
         }
     }
     "dev.".to_string()
+}
+
+/// Real devices get a Touch-ID-bound agreement key. Automated tests
+/// (run-unique `test.` tags) and debug runs with
+/// `OV0_VAULT_SE_BIOMETRY=off` (the gate scripts, which have no finger)
+/// do not.
+fn wants_biometry(tag: &str) -> bool {
+    if tag.starts_with("test.") {
+        return false;
+    }
+    #[cfg(debug_assertions)]
+    if std::env::var("OV0_VAULT_SE_BIOMETRY").is_ok_and(|v| v == "off") {
+        return false;
+    }
+    true
 }
 
 fn path(dir: &Path) -> PathBuf {
@@ -74,7 +94,8 @@ impl SeDevice {
         let id = random_uuid();
         let key_tag = format!("{}{}", tag_prefix(), hex::encode(id));
         let sign_pub = se::create_signing_key(&key_tag)?;
-        let agree_pub = se::create_agreement_key(&key_tag)?;
+        let biometry = wants_biometry(&key_tag);
+        let agree_pub = if biometry { se::create_agreement_key_bio(&key_tag)? } else { se::create_agreement_key(&key_tag)? };
         let dev = SeDevice {
             id,
             name: name.to_string(),
@@ -82,6 +103,7 @@ impl SeDevice {
             key_tag,
             sign_pub,
             agree_pub,
+            biometry,
         };
         dev.persist(dir)?;
         Ok(dev)
@@ -123,6 +145,7 @@ impl SeDevice {
             sign_pub: hex::decode_array::<PUBKEY_LEN>(&file.sign_pub).ok_or(ErrorCode::DbCorrupt)?,
             agree_pub: hex::decode_array::<PUBKEY_LEN>(&file.agree_pub)
                 .ok_or(ErrorCode::DbCorrupt)?,
+            biometry: file.agree_biometry,
         })
     }
 
@@ -135,6 +158,7 @@ impl SeDevice {
             key_tag: self.key_tag.clone(),
             sign_pub: hex::encode(self.sign_pub),
             agree_pub: hex::encode(self.agree_pub),
+            agree_biometry: self.biometry,
         }
     }
 
@@ -145,6 +169,12 @@ impl SeDevice {
 
     pub fn key_tag(&self) -> &str {
         &self.key_tag
+    }
+
+    /// Opening this device's envelope asks for Touch ID itself, so the
+    /// unlock path skips its own presence check (one prompt, not two).
+    pub fn biometric(&self) -> bool {
+        self.biometry
     }
 
     pub fn rename(&mut self, name: &str) {

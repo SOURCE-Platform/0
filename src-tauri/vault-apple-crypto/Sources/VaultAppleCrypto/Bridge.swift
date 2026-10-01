@@ -12,6 +12,7 @@
 
 import CryptoKit
 import Foundation
+import LocalAuthentication
 import Security
 
 private let OK: Int32 = 0
@@ -20,6 +21,11 @@ private let ERR_KEYCHAIN: Int32 = -2
 private let ERR_SE: Int32 = -3
 private let ERR_CRYPTO: Int32 = -4
 private let ERR_BUFFER: Int32 = -5
+/// Biometry is not available here (no sensor, lid closed, none enrolled,
+/// locked out): the caller falls back to the master password.
+private let ERR_NO_BIOMETRY: Int32 = -6
+/// The user declined or failed the biometric check.
+private let ERR_AUTH: Int32 = -7
 
 private let suite = HPKE.Ciphersuite(kem: .P256_HKDF_SHA256, kdf: .HKDF_SHA256, aead: .chaChaPoly)
 
@@ -84,6 +90,21 @@ public func ov0_se_key_create(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutable
     let name = String(cString: tag)
     guard let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey() else { return ERR_SE }
     let rc = store(key.dataRepresentation, name, "agreement")
+    guard rc == OK else { return rc }
+    return emit(key.publicKey.x963Representation, out, 65, outLen)
+}
+
+/// As `ov0_se_key_create`, but the Secure Enclave itself requires the
+/// current set of enrolled fingerprints for every use of the key
+/// (`.biometryCurrentSet`, owner decision 2026-10-01): a copied blob is
+/// useless without the owner's finger, and a login password never opens
+/// it. Adding or removing a fingerprint invalidates it.
+@_cdecl("ov0_se_key_create_bio")
+public func ov0_se_key_create_bio(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePointer<UInt8>?, _ outLen: UnsafeMutablePointer<Int>?) -> Int32 {
+    guard let tag, SecureEnclave.isAvailable else { return ERR_SE }
+    guard let ac = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleWhenUnlockedThisDeviceOnly, [.privateKeyUsage, .biometryCurrentSet], nil),
+          let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey(compactRepresentable: false, accessControl: ac) else { return ERR_SE }
+    let rc = store(key.dataRepresentation, String(cString: tag), "agreement")
     guard rc == OK else { return rc }
     return emit(key.publicKey.x963Representation, out, 65, outLen)
 }
@@ -197,4 +218,36 @@ public func ov0_hpke_open_se(
     guard var recipient = try? HPKE.Recipient(privateKey: key, ciphersuite: suite, info: infoData, encapsulatedKey: encData),
           let pt = try? recipient.open(ctData, authenticating: aadData) else { return ERR_CRYPTO }
     return emit(pt, outPt, ptCap, outPtLen)
+}
+
+/// `ov0_hpke_open_se` for a biometry-bound key: the Secure Enclave asks
+/// for Touch ID with `reason` as the decapsulation runs. No biometry here
+/// → `ERR_NO_BIOMETRY` (the caller offers the master password); declined
+/// or failed → `ERR_AUTH`.
+@_cdecl("ov0_hpke_open_se_auth")
+public func ov0_hpke_open_se_auth(
+    _ tag: UnsafePointer<CChar>?,
+    _ reason: UnsafePointer<CChar>?,
+    _ info: UnsafePointer<UInt8>?, _ infoLen: Int,
+    _ enc: UnsafePointer<UInt8>?, _ encLen: Int,
+    _ ct: UnsafePointer<UInt8>?, _ ctLen: Int,
+    _ outPt: UnsafeMutablePointer<UInt8>?, _ ptCap: Int, _ outPtLen: UnsafeMutablePointer<Int>?
+) -> Int32 {
+    guard let tag, let reason, let infoData = data(info, infoLen),
+          let encData = data(enc, encLen), let ctData = data(ct, ctLen) else { return ERR_ARG }
+    guard let blob = loadBlob(String(cString: tag), "agreement") else { return ERR_SE }
+    // A key without biometric access control ignores the context; a
+    // biometry-bound one makes the Enclave ask for Touch ID right here.
+    let ctx = LAContext()
+    ctx.localizedReason = String(cString: reason)
+    guard let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: blob, authenticationContext: ctx) else { return ERR_SE }
+    do {
+        var recipient = try HPKE.Recipient(privateKey: key, ciphersuite: suite, info: infoData, encapsulatedKey: encData)
+        let pt = try recipient.open(ctData, authenticating: Data())
+        return emit(pt, outPt, ptCap, outPtLen)
+    } catch let e as LAError {
+        return e.code == .biometryNotAvailable || e.code == .biometryNotEnrolled || e.code == .biometryLockout ? ERR_NO_BIOMETRY : ERR_AUTH
+    } catch {
+        return ERR_CRYPTO
+    }
 }

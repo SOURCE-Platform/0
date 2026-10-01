@@ -56,19 +56,20 @@ pub fn unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     };
     deps.events.emit(ev_state(VaultState::Unlocking));
 
-    // §6.4: one LA evaluation, the same policy as every other presence
-    // gate. A refusal is not a failed credential — nothing is counted
-    // against the backoff.
-    if !deps.la.check("Source Vault: unlock") {
-        return unlock_failed_nonfatal(core, ErrorCode::PresenceDenied, deps);
-    }
-
     let me = match SeDevice::load(&dir) {
         Ok(d) => d,
         // §2.8: a missing SE key means re-enroll or recover. The MP path
         // is still open to this user, which is what makes that recovery.
         Err(_) => return unlock_failed_nonfatal(core, ErrorCode::DeviceNotAuthorized, deps),
     };
+    // §6.4: one presence evaluation. A Touch-ID-bound agreement key asks
+    // for the fingerprint itself as it opens the envelope (owner decision
+    // 2026-10-01: the login password never opens the vault); otherwise
+    // the LA check runs here. A refusal is not a failed credential —
+    // nothing is counted against the backoff.
+    if !me.biometric() && !deps.la.check("Source Vault: unlock") {
+        return unlock_failed_nonfatal(core, ErrorCode::PresenceDenied, deps);
+    }
 
     // The registry decides whether this device may still open the vault.
     // Its own envelope on disk is not the authority.
@@ -82,7 +83,7 @@ pub fn unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         Ok(f) => f,
         Err(_) => return unlock_failed_nonfatal(core, ErrorCode::DeviceNotAuthorized, deps),
     };
-    let payload = match envelope::open_envelope(me.key_tag(), &header.vault_id.0, &file) {
+    let payload = match envelope::open_envelope_for(me.key_tag(), "Source Vault: unlock", &header.vault_id.0, &file) {
         Ok(p) => p,
         Err(e) => return unlock_failed_nonfatal(core, e, deps),
     };

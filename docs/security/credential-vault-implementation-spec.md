@@ -654,7 +654,26 @@ nonces.
 - SE access control: `.privateKeyUsage` + `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`;
   on the Mac the agreement key adds no biometric ACL of its own (presence
   is enforced explicitly by LA at the operation level, §6, so prompts are
-  uniform and testable across devices). **On the iPhone (SOURCE Vault,
+  uniform and testable across devices). **Superseded for the Mac by owner
+  decision 2026-10-01 ("Require Touch ID", v0.5, §22.4):** the Mac's
+  agreement key is created with `.biometryCurrentSet` too, because its
+  device-bound blob lives in the login keychain and a thief with the login
+  password could otherwise copy and use it from any process. Opening the
+  envelope asks for Touch ID itself (the unlock path skips its own LA
+  check, so there is one prompt); without Touch ID available (no sensor,
+  lid closed, none enrolled, locked out) the envelope path answers
+  `DEVICE_NOT_AUTHORIZED` and the app offers the master password; a
+  declined fingerprint is `PRESENCE_DENIED`. The login password never
+  opens the vault. Adopting another device's rotation asks for Touch ID
+  too. **Residual (stated):** the signing key cannot be biometry-bound
+  (background provider signing), so a thief with the login password can
+  copy it and sign as the Mac — not read the vault, but publish
+  disruptive states or enroll a device that would receive later changes,
+  until the Mac is revoked. The data-protection keychain under a signed
+  access group (paid Apple Developer Program) closes this; to be
+  revisited before the §19 release gate. Automated tests and gate runs use
+  non-biometric test keys (`test.` tags, or `OV0_VAULT_SE_BIOMETRY=off` in
+  debug builds). **On the iPhone (SOURCE Vault,
   v0.5, §22.4)** the agreement key adds `.biometryCurrentSet`, so a
   passcode cannot open the envelope; the signing key stays without a
   biometric ACL.

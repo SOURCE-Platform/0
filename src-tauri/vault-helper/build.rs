@@ -24,7 +24,7 @@ fn main() {
     println!("cargo:rustc-link-lib=static=VaultAppleCrypto");
     println!("cargo:rustc-link-search=native=/usr/lib/swift");
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
-    for framework in ["CryptoKit", "Foundation", "Security"] {
+    for framework in ["CryptoKit", "Foundation", "LocalAuthentication", "Security"] {
         println!("cargo:rustc-link-lib=framework={framework}");
     }
     for lib in ["swiftCore", "swiftFoundation", "swiftDarwin", "swiftObjectiveC", "swift_Concurrency", "swiftDispatch", "swiftCoreFoundation", "swiftIOKit", "swiftXPC"] {

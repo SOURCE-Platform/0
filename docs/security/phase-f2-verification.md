@@ -179,3 +179,15 @@ offset always present; canonical Kahn order, strictly enforced; servable
 subgraph heads; `peer_endpoint` typed again; one body per operation in
 XV-PEER; PW-03 split, PW-11/12 added. The review loop for the annex is
 closed; F.2c code may start against revision 3.
+
+**Implemented (Touch ID decision):** `ov0_se_key_create_bio` creates the
+agreement key with `.biometryCurrentSet`; `ov0_hpke_open_se_auth` opens
+envelopes with a reason string (Touch ID is asked by the Enclave; no
+biometry → `DEVICE_NOT_AUTHORIZED` → master-password fallback; declined →
+`PRESENCE_DENIED`); the unlock path skips its own LA check for such a
+key; adoption asks with its own reason. Test keys stay non-biometric.
+Targeted runs green: `device_identity`, `device_unlock`, `enrollment`,
+`revocation`, `au_swapped_wrap`, `commitment_journal`. **Open (needs the
+owner's finger):** a manual check on the real Mac with a signed helper —
+create a vault, unlock with Touch ID, cancel (no password fallback),
+lid closed (master-password fallback).

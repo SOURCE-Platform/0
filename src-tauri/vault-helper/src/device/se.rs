@@ -12,6 +12,16 @@ use crate::errors::ErrorCode;
 // Linked by `build.rs` (static Swift library + OS Swift runtime).
 extern "C" {
     fn ov0_se_key_create(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
+    fn ov0_se_key_create_bio(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
+    #[allow(clippy::too_many_arguments)]
+    fn ov0_hpke_open_se_auth(
+        tag: *const i8,
+        reason: *const i8,
+        info: *const u8, info_len: usize,
+        enc: *const u8, enc_len: usize,
+        ct: *const u8, ct_len: usize,
+        out_pt: *mut u8, pt_cap: usize, out_pt_len: *mut usize,
+    ) -> i32;
     fn ov0_se_key_public(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
     fn ov0_se_key_delete(tag: *const i8) -> i32;
     fn ov0_se_sign_create(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
@@ -25,15 +35,6 @@ extern "C" {
         aad: *const u8, aad_len: usize,
         out_enc: *mut u8, out_enc_len: *mut usize,
         out_ct: *mut u8, ct_cap: usize, out_ct_len: *mut usize,
-    ) -> i32;
-    #[allow(clippy::too_many_arguments)]
-    fn ov0_hpke_open_se(
-        tag: *const i8,
-        info: *const u8, info_len: usize,
-        enc: *const u8, enc_len: usize,
-        ct: *const u8, ct_len: usize,
-        aad: *const u8, aad_len: usize,
-        out_pt: *mut u8, pt_cap: usize, out_pt_len: *mut usize,
     ) -> i32;
 }
 
@@ -69,6 +70,12 @@ fn pubkey_call(
 /// Create (replacing any existing) the SE **agreement** key for `tag`.
 pub fn create_agreement_key(tag: &str) -> Result<[u8; 65], ErrorCode> {
     pubkey_call(tag, ov0_se_key_create)
+}
+
+/// An agreement key the Enclave releases only to the current Touch ID
+/// fingerprints (owner decision 2026-10-01).
+pub fn create_agreement_key_bio(tag: &str) -> Result<[u8; 65], ErrorCode> {
+    pubkey_call(tag, ov0_se_key_create_bio)
 }
 
 pub fn agreement_public(tag: &str) -> Result<[u8; 65], ErrorCode> {
@@ -127,23 +134,30 @@ pub fn hpke_seal(recipient: &[u8; 65], info: &[u8], plaintext: &[u8]) -> Result<
 }
 
 /// HPKE open with this device's SE agreement key (DH inside the Enclave).
-pub fn hpke_open(tag: &str, info: &[u8], enc: &[u8], ct: &[u8]) -> Result<crate::crypto::secret::SecretVec, ErrorCode> {
+/// A biometry-bound key asks for Touch ID with `reason` as it runs: no
+/// biometry available → `DEVICE_NOT_AUTHORIZED` (the app offers the master
+/// password); declined → `PRESENCE_DENIED`.
+pub fn hpke_open(tag: &str, reason: &str, info: &[u8], enc: &[u8], ct: &[u8]) -> Result<crate::crypto::secret::SecretVec, ErrorCode> {
     let tag = c_tag(tag)?;
+    let reason = c_tag(reason)?;
     let mut pt = vec![0u8; ct.len() + 64];
     let mut pt_len = 0usize;
     // SAFETY: as above.
     let rc = unsafe {
-        ov0_hpke_open_se(
+        ov0_hpke_open_se_auth(
             tag.as_ptr(),
+            reason.as_ptr(),
             info.as_ptr(), info.len(),
             enc.as_ptr(), enc.len(),
             ct.as_ptr(), ct.len(),
-            [].as_ptr(), 0,
             pt.as_mut_ptr(), pt.len(), &mut pt_len,
         )
     };
-    if rc != 0 {
-        return Err(ErrorCode::IntegrityFailure);
+    match rc {
+        0 => {}
+        -6 => return Err(ErrorCode::DeviceNotAuthorized),
+        -7 => return Err(ErrorCode::PresenceDenied),
+        _ => return Err(ErrorCode::IntegrityFailure),
     }
     pt.truncate(pt_len);
     Ok(crate::crypto::secret::SecretVec::new(pt))
