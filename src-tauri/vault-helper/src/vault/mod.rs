@@ -33,6 +33,7 @@ pub mod enroll_ops;
 pub mod floor;
 pub mod gate;
 pub mod history;
+pub mod prefs;
 pub mod items;
 pub mod recovery_ops;
 pub mod registry_status;
@@ -328,25 +329,4 @@ impl VaultCore {
 
 pub fn lock_core(core: &Arc<Mutex<VaultCore>>) -> MutexGuard<'_, VaultCore> {
     core.lock().unwrap_or_else(|e| e.into_inner())
-}
-
-/// Phase C internal op (not in §1.5 — the catalog has no prefs op; the
-/// §1.6 "configurable 5–60" dial needs one). Documented in the Phase C
-/// verification report.
-pub(super) fn set_auto_lock_minutes(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
-    let minutes = frame.get("minutes").and_then(Value::as_u64);
-    let Some(minutes) = minutes else {
-        return OpOutcome::err(ErrorCode::InvalidInput);
-    };
-    let mut core = lock_core(core);
-    if core.state != VaultState::Unlocked {
-        return OpOutcome::err(ErrorCode::BadState);
-    }
-    match crate::keychain::write_auto_lock_minutes(minutes as u32) {
-        Ok(()) => {
-            core.auto_lock_minutes = minutes as u32;
-            OpOutcome::ok(json!({}))
-        }
-        Err(e) => OpOutcome::err(e),
-    }
 }

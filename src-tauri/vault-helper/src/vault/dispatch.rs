@@ -99,7 +99,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "list_devices" => devices::list_devices(core),
         "registry_status" => registry_status::registry_status(core),
         "revoke_device" => devices::revoke_device(core, frame, deps),
-        "set_auto_lock_minutes" => super::set_auto_lock_minutes(core, frame),
+        "set_auto_lock_minutes" => prefs::set_auto_lock_minutes(core, frame),
         // v0.4 provider work (§1.3, §1.5, §11).
         "backup_prepare" => backup_ops::backup_prepare(core, deps),
         "backup_blob_list" => backup_ops::backup_blob_list(core, frame),
