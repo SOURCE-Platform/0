@@ -1,7 +1,7 @@
 # Phase F.2 — peer wire annex (spec §22.8)
 
-Date: 2026-10-01. **Revision 2** (after the spec review of revision 1,
-`d9a2f13`). **Status: candidate; no F.2c peer code before it closes.**
+Date: 2026-10-01. **Revision 3** (after the spec review of revision 1, `d9a2f13`, and
+the bounded re-review of revision 2, `6260127`). **Status: candidate; no F.2c peer code before it closes.**
 Normative once accepted. It refines the bodies of the §22.8 operations and
 their carriage; it changes nothing §22.8 fixes (the signed
 `PeerRequest` / `PeerResponse` envelopes, the verification order, who may
@@ -73,8 +73,9 @@ public data only.
   does not hash to `body_sha256`; `429` the per-sender rate limit; `503`
   the helper is not in a serving state, or cannot sign right now
   (Keychain / Secure Enclave unavailable, §1.6). **Every cap the helper
-  evaluates on an authenticated request is the signed status 2** (§22.8),
-  never `413`.
+  evaluates on an authenticated request — every size, count or quota cap —
+  is the signed status 2** (§22.8), never `413`; only the per-sender
+  request rate is the unsigned `429`.
 - Main binds this route only on private-network interfaces and refuses
   public source addresses (§22.8). Main never builds a vault response.
 
@@ -84,12 +85,16 @@ public data only.
   base64 included, stays under the §1.3 64 KiB cap): `peer_serve
   {request_tlv, signature, body}` → `{response_tlv, signature, body}` (a
   response body ≤ 24 KiB), or `{refused: 403 | 429 | 503}`.
-- **Large request:** `peer_serve_begin {request_tlv, signature}`. The
-  helper runs the whole §22.8 receiver order except the body hash —
+- **Large request:** `peer_serve_begin {request_tlv, signature, size}`.
+  The helper runs the whole §22.8 receiver order except the body hash —
   canonical parse, vault, receiver, signature, time, **rate limit**,
-  replay, who may speak, the state gate (and refuses op 5 while
-  COMPROMISED) — before it accepts a single body byte → `{session, need:
-  [body_sha256]}`. Main streams the body with `stream_begin` /
+  replay, who may speak, the state gate — before it accepts a single body
+  byte. It answers `{session, need: [body_sha256]}`, **or** `{refused:
+  403 | 429 | 503}`, **or** a complete signed response with status 1
+  (op 5 while COMPROMISED; ops 2–5 while behind, §22.14), status 2 (`size`
+  over 1 MiB or another cap) or status 4, carrying the empty body. A
+  stream that fails (`TRANSFER_INVALID`, staging deleted) is `{refused:
+  403}`. Main streams the body with `stream_begin` /
   `stream_write` / `stream_end` (§1.3; cap 1 MiB). Then `peer_serve
   {session}`: the helper **re-checks who may speak and the state gate**,
   verifies the body hash (mismatch → `{refused: 403}`), and **consumes**
@@ -98,8 +103,10 @@ public data only.
   stream: sha256, size}`, read with `stream_read {session, sha256,
   offset}`; `session_close` ends it. An inline request may get a session
   for its response this way.
-- A **peer session** is its own §1.3 session kind: at most two open; idle
-  60 s; allowed in the §22.8 serving states; it never changes the reported
+- A **peer session** is its own §1.3 session kind: at most two open (a
+  third `peer_serve_begin` gets the signed status 2); idle 60 s; allowed
+  in the §22.8 serving states — so the §1.3 stream ops are allowed in
+  those states **for a peer session only** (§1.5, §13.2); it never changes the reported
   state (no BACKING_UP / SYNCING overlay); **lock aborts it** (staging
   deleted, §1.3).
 - The rate limit (60 requests per minute per sender) is counted **after
@@ -134,14 +141,16 @@ next `state_get`, and declines meanwhile.
   header `{0x01 state}` — that body, byte for byte — or status 3 when its
   committed generation ≤ `have_generation` or it holds no body. The phone
   never reads status 3 as "up to date" (it only means "not from me").
-- **Objects mode.** Request header `{0x01 have_generation, 0x02
-  state_commit}`, then ≤ 64 entries `{0x01 sha256, 0x02 offset (u64,
-  absent = 0)}`, ascending by `sha256`. If `state_commit` is not the
+- **Objects mode.** Request header `{0x02 state_commit}` (no
+  `have_generation`), then ≤ 64 entries `{0x01 sha256, 0x02 offset}`
+  (`offset` u64, **always present**, `0x00` for the start), ascending by
+  `sha256`. If `state_commit` is not the
   responder's current `seen.state_commit` → status 3. Response header
   `{0x01 complete}`, then per object, in request order, either `{0x01
   sha256, 0x02 offset, 0x03 total_len, 0x04 bytes}` (a chunk; ≤ 4 MiB per
   chunk; an object may span several requests — **byte ranges**, so an
-  8 MiB index fits the caps) or an unavailable entry `{0x01 sha256, 0x05
+  8 MiB index fits the caps; a chunk that ends before `total_len` does
+  not by itself set `complete = 0`) or an unavailable entry `{0x01 sha256, 0x05
   reason}`. Only objects referenced by that committed state (manifest,
   checkpoint, index, index-listed blobs) are served, and only if the full
   object's SHA-256 matches; the requester reassembles, checks the hash,
@@ -150,32 +159,38 @@ next `state_get`, and declines meanwhile.
 
 ### A.3.3 `peer_heads` (3) — whole buckets
 
-- Request header `{0x01 buckets}` (1–256 distinct bucket numbers,
-  ascending).
+- Request header `{0x01 buckets}` (1–256 distinct bucket numbers, **one
+  byte each**, ascending).
 - Response header `{0x01 complete}`, then, **bucket by bucket in the
   requested order, each bucket whole**, one entry per record in ascending
-  `record_id`: `{0x01 record_id, 0x02 heads}` (`heads`: 1–64 ascending
-  `revision_id`s). A bucket that does not fit is left out entirely and
+  `record_id`: `{0x01 record_id, 0x02 heads}` (`heads`: 1–64 **concatenated** 32-byte
+  `revision_id`s, ascending). An empty requested bucket simply has no
+  entries; the response header carries `0x02 buckets` — the bucket
+  numbers fully covered — so empty and omitted buckets are told apart.
+  The responder stops at the first bucket that does not fit. A bucket that does not fit is left out entirely and
   `complete = 0`; the requester re-asks the buckets it did not receive.
-- **Servable heads.** A record's heads are reported after the §22.7
-  freshness rule: local-only heads the responder may not serve are
-  omitted, so `peer_heads`, `peer_revs_get` and the heads digest agree. A
+- **Servable heads.** A record's heads are the heads of its **servable
+  subgraph** — the revisions the responder may serve under the §22.7
+  freshness rule — so `peer_heads`, `peer_revs_get` and the heads digest
+  agree. A record with no servable revision is absent from all three. A
   record with more than 64 heads is reported as `{0x01 record_id, 0x05
   reason = 4}` and left to the provider.
 
 ### A.3.4 `peer_revs_get` (4)
 
 - Request: empty header entry, then ≤ 512 entries `{0x01 record_id, 0x02
-  have_heads (absent when none; ≤ 64, ascending)}`, ascending
-  `record_id`.
+  have_heads (absent when none; ≤ 64 concatenated 32-byte ids,
+  ascending)}`, ascending `record_id`.
 - Response: header `{0x01 complete}`, then the revisions **grouped by
-  record in ascending `record_id`; within a record in topological order,
-  ties broken by ascending `revision_id`** (a canonical order; the
-  receiver additionally checks only that parents precede children):
+  record in ascending `record_id`; within a record in the order of Kahn's
+  algorithm that always emits the smallest ready `revision_id`** (the
+  canonical order; a batch in any other order is `FORMAT_INVALID`, so
+  both implementations must produce exactly this):
   `{0x01 object}` (the §3.7 `OV0OBJ02` bytes). A record's closure is
-  never split: one that does not fit is left out with `complete = 0`; one
-  that can never fit (> 2,000 revisions or > 8 MiB) is `{0x02 record_id,
-  0x05 reason = 1}`; one withheld by the freshness rule is reason 3.
+  never split: the responder stops at the first closure that does not
+  fit and sets `complete = 0`; one that would not fit even in an
+  otherwise empty response (> 2,000 revisions or over the response cap)
+  is `{0x02 record_id, 0x05 reason = 1}`; one withheld by the freshness rule is reason 3.
 
 ### A.3.5 `peer_revs_put` (5)
 
@@ -184,7 +199,7 @@ next `state_get`, and declines meanwhile.
   (the request cap is 1 MiB) and goes through the provider.
 - Response header `{0x01 admitted, 0x02 waiting, 0x03 refused}` (u64). A
   LOCKED receiver stores the objects in its bounded inbox and answers
-  `{0x00, n, 0x00}`.
+  `{0x01 0x00, 0x02 n, 0x03 0x00}`.
 
 ### A.3.6 `peer_status` (6)
 
@@ -192,14 +207,25 @@ Request: empty body. Response header `{0x01 vault_id, 0x02 registry (the
 §4 registry file bytes of the responder's local chain), 0x03
 committed_seq, 0x04 committed_generation, 0x05 committed_manifest_hash}`.
 
-## A.4 State
+## A.4 Provisioning and state
+
+- **`peer_endpoint`** (added to the §5.2 bundle by main, JSON):
+  `{spki_sha256: hex (64 chars), token: base64url without padding of 32
+  bytes from the OS RNG, port: u16, host_hints: [string] (IP literals of
+  the Mac's private-network addresses, at most 8)}`. The phone stores the
+  pin and token in its Keychain (`WhenUnlockedThisDeviceOnly`, §2.8).
 
 - **`pending_remote.target_device_ids`** (review SPEC-B2; replaces a
   single `target_device_id` in §11.3.2): one entry per revocation in the
   pending change; each stays until **that** revocation settles or is
-  redone. Awaiting-redo is tracked per target, not per operation kind, so
-  a second revocation never erases the first's. Who may speak reads the
-  whole list.
+  redone. **`awaiting_redo` entries are per target** —
+  `revocation(device_id)` rather than the bare kind (§11.3.2) — so
+  redoing one revocation clears only its own entry and a second
+  revocation never erases the first's. Who may speak reads the whole
+  list.
+- **Behind while LOCKED.** The §22.14 floor check needs no vault key, so a
+  LOCKED Mac evaluates it before serving too: a behind Mac answers only
+  `peer_hello` and `peer_status` in every state.
 - **Replay cache:** a `peer_replay (sender BLOB, n BLOB, received_at
   INTEGER, PRIMARY KEY (sender, n))` table added in the `user_version = 3`
   migration (§22.7), written **before** the body is processed, pruned by
@@ -213,11 +239,14 @@ committed_seq, 0x04 committed_generation, 0x05 committed_manifest_hash}`.
 ## A.5 Vectors (XV-PEER)
 
 Committed JSON+hex vectors, checked by the Rust engine and by the
-CryptoKit-only Swift target (§22.2): one `PeerRequest` and one
+CryptoKit-only Swift target (§22.2): **one request and one response body
+per operation** (including the `peer_revs_put` counts and the LOCKED
+reply, and the `peer_status` body); one `PeerRequest` and one
 `PeerResponse` with prehashes and a low-S signature under a fixed test
 key; the HTTP carriage entry; the empty body and its hash; a zero integer;
 a heads digest with two records in one bucket (one with two heads) and an
-empty bucket; both `peer_state` modes, including a byte-range chunk; a
+empty bucket; a `peer_revs_get` batch whose canonical order differs from
+depth-first order; the absent-offset form as an invalid case; both `peer_state` modes, including a byte-range chunk; a
 `complete = 0` page and an unavailable entry; a status-4 response; a
 two-record `peer_revs_get` batch in canonical order; one invalid case per
 A.1 rule.
@@ -228,11 +257,14 @@ A.1 rule.
 |---|---|---|
 | PW-01 | carriage, inline and streamed, both directions, at the 24 KiB boundary | identical results; no frame over 64 KiB |
 | PW-02 | body validation | every A.1 rule → status 4, nothing applied |
-| PW-03 | streamed request: bad envelope, replay, unknown or revoked sender, COMPROMISED op 5, an orphan `stream_begin`, a revocation landing while the body streams | refused before any body byte, or at completion; session single use |
+| PW-03a | streamed request with a bad envelope, a replay, an unknown or revoked sender, COMPROMISED op 5, `size` over the cap | answered at `peer_serve_begin` (refusal or signed status 1/2), before any body byte |
+| PW-03b | an orphan `stream_begin`; a revocation landing while the body streams; a failed stream | refused at completion (`403`); session single use |
 | PW-04 | objects mode | only objects of the named committed state; never bytes whose hash differs; wrong `state_commit` → status 3; byte ranges reassemble an 8 MiB index |
 | PW-05 | paging | whole buckets; `complete = 0` re-asks converge; unavailable items never repeat as truncation |
 | PW-06 | token scope | peer token only on the peer route, header only; SOURCE Mobile token refused there; token bound to `sender_device_id`; public source address refused; all before any helper call |
 | PW-07 | replay cache | survives a restart |
 | PW-08 | peer sessions | at most two; idle 60 s; no state overlay; lock aborts |
-| PW-09 | rate limit and per-exchange cap | counted after the signature; a forged sender spends nothing |
-| PW-10 | two pending revocations, one adopted away | neither target may speak (`target_device_ids`) |
+| PW-09 | rate limit and per-exchange cap | rate: unsigned `429`, counted after the signature (a forged sender spends nothing); exchange cap: signed status 2 |
+| PW-10 | two pending revocations, both adopted away, one redone | neither target may speak; the other's redo warning stays |
+| PW-11 | a behind Mac, LOCKED and UNLOCKED | ops 2–5 get status 1; hello and status are answered |
+| PW-12 | refusal mappings and token lifecycle | `413` over the transport maximum; `503` not serving / cannot sign; a revoked phone's token still reaches `peer_status` |

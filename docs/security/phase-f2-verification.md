@@ -145,3 +145,37 @@ the device. That defeats F2-D3 on the Mac. Options:
    blob is useless without your fingerprint; Macs without Touch ID unlock
    with the master password instead. Changes approved unlock behaviour.
 3. Both.
+
+**Owner decision (2026-10-01): "Require Touch ID".** The Mac's agreement
+key (the one that opens the device envelope, i.e. the vault key) becomes
+biometry-bound (`.biometryCurrentSet`), as on the iPhone; a copied blob
+is useless without the owner's fingerprint, and the login password alone
+no longer opens the vault (Macs without Touch ID, or with the lid closed,
+unlock with the master password). **Stated residual:** the Mac's
+*signing* key cannot be biometry-bound (background provider signing), so
+a thief with the login password can still copy it and sign as the Mac —
+not read the vault, but publish disruptive states or enroll a device that
+would receive *future* changes until the Mac is revoked from the iPhone.
+The data-protection keychain (paid Apple Developer Program) closes this;
+recommended to revisit before the Phase J first-credential gate.
+
+## 3. Peer wire annex review (spec §22.8) — closed
+
+Revision 1 (`d9a2f13`) review: SPEC-B1 (peer-token scope), SPEC-B2
+(single revocation target), SPEC-I1…I11, SPEC-O1…O8 — all **accepted**
+and fixed in revision 2 (`6260127`): separate peer-token store bound to
+the device id, header only; `target_device_ids`; 24 KiB inline IPC;
+signed status for helper caps; whole-bucket paging, unavailable entries,
+byte-range objects; persisted `state_get` body; byte-exact encoding;
+session re-check and single use; discovery hints; token survives
+revocation; behind Macs serve hello/status only; PW tests in §22.16/§19.
+
+Bounded re-review of revision 2: **no blockers**. SPEC-I1…I9 and
+SPEC-O1…O8 **accepted** and fixed in revision 3: `peer_serve_begin` may
+answer with a refusal or a signed status (with `size`); peer-session
+streams allowed in the serving states (§1.5, §13.2); the behind check
+also gates a LOCKED Mac; `awaiting_redo` per revocation target (§11.3.2);
+offset always present; canonical Kahn order, strictly enforced; servable
+subgraph heads; `peer_endpoint` typed again; one body per operation in
+XV-PEER; PW-03 split, PW-11/12 added. The review loop for the annex is
+closed; F.2c code may start against revision 3.

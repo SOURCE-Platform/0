@@ -287,7 +287,7 @@ human-safe context.
 | `backup_transition_body` | the staged `StateTransition` bytes | as `backup_blob_list` | ≤ 8 KiB, except a `create` with inline bootstrap blobs (≤ 1 MiB + 8 KiB), which is pulled through `stream_read` like a blob |
 | `backup_commit_result` | report the provider outcome | as `backup_blob_list` | committed → persist last-seen state; `STATE_MOVED` → sync then re-stage (≤ 3, then `BACKUP_CONFLICT`); failure → retry policy |
 | `backup_state_offer` | verify a fetched provider state | UNLOCKED → SYNCING; RECOVERING | `{state}` → signature/rollback/fork checked → `{session, need pages}` |
-| `stream_begin` / `stream_write` / `stream_end` / `stream_cancel` | inbound ciphertext | SYNCING, RECOVERING | §1.3 |
+| `stream_begin` / `stream_write` / `stream_end` / `stream_cancel` | inbound ciphertext | SYNCING, RECOVERING; v0.5: the §22.8 serving states for a **peer session** only | §1.3 |
 | `backup_apply` | merge a verified state | SYNCING → UNLOCKED | §3.2 merge + envelope refresh; counts only |
 | `recovery_begin` | start total-loss recovery | UNINITIALIZED/LOCKED → RECOVERING | `{kind, locate_response}`; the KDF-policy check (§11.5) runs **before** the panel collects MP/RK; → `{session}` |
 | `recovery_preview` | FR-01 data | RECOVERING | generation, date, item count, sheet comparison |
@@ -298,7 +298,7 @@ human-safe context.
 | `import_dashlane` | §10 import from user-picked path | UNLOCKED | helper opens the file itself |
 | `approval_result` | deliver signed iPhone approval | AUTHORIZING | §6.5 |
 | `peer_serve` (v0.5) | answer one signed peer request | per §22.8 operation table | `{request_tlv, signature, body}` (body ≤ 24 KiB) or `{session}` → `{response_tlv, signature, body}` or `{session, response_tlv, signature, stream, size}`, or `{refused: 403 \| 429 \| 503}`; the helper verifies, builds and signs everything itself (§22.8, wire annex A.2.2) |
-| `peer_serve_begin` (v0.5) | open a peer session for a large request body | as `peer_serve` | `{request_tlv, signature}` → `{session, need}`; the envelope, rate, replay, who-may-speak and state checks run before any body byte; the body arrives through §1.3 stream ops scoped to that peer session (annex A.2.2) |
+| `peer_serve_begin` (v0.5) | open a peer session for a large request body | as `peer_serve` | `{request_tlv, signature, size}` → `{session, need}`, or a refusal, or a complete signed status 1/2/4 response; the envelope, rate, replay, who-may-speak and state checks run before any body byte; the body arrives through §1.3 stream ops scoped to that peer session (annex A.2.2) |
 
 **nm-host → helper (`nm-host` class):**
 
@@ -2812,7 +2812,8 @@ pending_remote { op: vault_create | mp_change | rk_replacement | revocation | en
                  # v0.5 (already present in the Phase F implementation unless noted):
                  version: u64,            # bumped by every new change; a staging clears only its own version (§22.11)
                  in_flight: [...],        # stagings posted but not yet known to have landed
-                 awaiting_redo: [op],     # changes that became needs_user and were not redone
+                 awaiting_redo: [op],     # changes that became needs_user and were not redone;
+                                          # v0.5: a revocation is `revocation(device_id)` (wire annex A.4)
                  target_device_ids: [id] }       # new in v0.5: one per revocation, each kept while that revocation is pending
                                                  # and while awaiting redo (§22.8 "who may speak")
 ```
@@ -3520,16 +3521,16 @@ state: it outlives lock and restart and coexists with every state.
 | State | VK | MP/RK | Decrypted records | IPC ops allowed | Network (main) | UI |
 |---|---|---|---|---|---|---|
 | UNINITIALIZED | none | none | none | `setup_vault`(panel), `recovery_begin`, `begin_enrollment`(first-device) | recovery locate | setup wizard only |
-| LOCKED | none | none | none | `peer_serve` (v0.5, §22.8), `unlock*`, `get_state`, `fill_candidates`(→`locked`), `approval_result`, `sign_provider_request` (`state_get`/`blob_get`; `blob_put`/`state_commit` only for a fully staged publication, §11.4 table), `recovery_begin` | backup poll; staged publication | unlock prompt |
+| LOCKED | none | none | none | `peer_serve`, `peer_serve_begin` and the stream ops of a peer session (v0.5, §22.8, wire annex A.2.2), `unlock*`, `get_state`, `fill_candidates`(→`locked`), `approval_result`, `sign_provider_request` (`state_get`/`blob_get`; `blob_put`/`state_commit` only for a fully staged publication, §11.4 table), `recovery_begin` | backup poll; staged publication | unlock prompt |
 | UNLOCKING | transient (unwrap in flight) | transient during entry | none | only the in-flight op | — | spinner, cancel |
 | UNLOCKED | resident (helper only) | never resident | never resident as a set; per-record transient during an op | all §1.5 ops; with `behind: true` (v0.5, §22.14) read ops and sync only | sync/backup ok | full vault UI |
 | AUTHORIZING | resident | never | the one approved record, transient, post-approval | the in-flight authorize op only for that request_id | approval relay | presence prompt / phone sheet |
-| SYNCING | resident | never | none (ciphertext merge; decrypt only for duplicate-id comparison, §3.2) | reads blocked ≤ 5 s, presence ops continue; `backup_state_offer`/stream/`backup_apply`; `peer_serve` (v0.5) | backup download | sync badge |
+| SYNCING | resident | never | none (ciphertext merge; decrypt only for duplicate-id comparison, §3.2) | reads blocked ≤ 5 s, presence ops continue; `backup_state_offer`/stream/`backup_apply`; `peer_serve`, `peer_serve_begin` and peer-session streams (v0.5) | backup download | sync badge |
 | BACKING_UP | resident while staging; not needed once fully staged | never | none (seal only) | all (the staged state is consistent) plus the publication ops | upload + state transition | backup badge |
 | ROTATING_KEYS (internal) | old+new transient, old zeroized at flip | never | per-record transient re-seal | fill ops queue ≤ 30 s; high-risk ops refused | publish staged at end | `rotation_progress` status |
 | RECOVERING | old VK transient post-unwrap; fresh VK generated before finalize; old zeroized once re-encryption completes | MP/RK themselves only during entry; derived material held until named points: `PK` (MP path) or `RK_bytes` (RK path) until the new wraps are sealed; the recovery-auth key `sk_c` until the finalize transition commits or the session aborts; a kept RK's `RK_bytes` until `recovery.wrap` is re-sealed. None is persisted; all are zeroized on commit, abort, lock or timeout | verify + per-record transient re-seal | recovery ops only (`recovery_*`, streams, `sign_provider_request` for recovery classes and finalize, §11.4 table) | download, then upload of re-encrypted blobs and the finalize transition | recovery wizard |
 | ERROR | none (zeroized on entry) | none | none | `get_state`, `lock`, restore ops | restore download | error + restore path |
-| COMPROMISED | unchanged but writes frozen | none | reads allowed, writes frozen | read ops, `get_state`, `lock`, `peer_serve` without `peer_revs_put` (v0.5) | reads only | both tips surfaced; exit procedure not yet specified (§22.12 proposal awaits the owner) |
+| COMPROMISED | unchanged but writes frozen | none | reads allowed, writes frozen | read ops, `get_state`, `lock`, `peer_serve` / `peer_serve_begin` and peer-session streams, without `peer_revs_put` (v0.5) | reads only | both tips surfaced; exit procedure not yet specified (§22.12 proposal awaits the owner) |
 
 ### 13.3 Global rules
 
@@ -4285,7 +4286,7 @@ Every item must be verifiably green, with the named evidence:
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
 | 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Remaining before the first real credential: enforce the floor at runtime** — today it is documentation, and the app would run on hardware nobody has measured |
-| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, PW-01…10 (wire annex A.6), FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
+| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, PW-01…12 (wire annex A.6), FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
 
 
 Only then may the first real credential be imported.
@@ -4815,7 +4816,7 @@ TLS channel on the local network:
 - the phone **refuses to connect without a stored vault pin**. The pin
   is `SHA-256` of the SPKI of the Mac main app's long-lived mobile-server
   TLS key. It reaches SOURCE Vault only inside the §5 enrollment bundle
-  (field `peer_endpoint {spki_sha256, token}`, added by main next to the
+  (field `peer_endpoint {spki_sha256, token, port, host_hints}` — types in wire annex A.4 — added by main next to the
   provider origin), i.e. over the channel the vault QR pinned —
   camera-free pairing is never accepted for vault traffic (its 20-bit
   code is too weak) — and is stored separately from any SOURCE Mobile
@@ -5049,9 +5050,10 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
   when its accepted provider generation is below the floor's, or — at the
   same provider generation — its local generation is.
 - **Peer serving while behind (review of the wire annex, SPEC-I9):** a
-  behind Mac answers only `peer_hello` and `peer_status`; operations 2–5
-  get status 1 (its restored registry decides nothing).
-- Sync (provider or peer) is allowed; publication is not, and the backup
+  behind Mac — LOCKED or UNLOCKED; the check needs no key — answers only
+  `peer_hello` and `peer_status`; operations 2–5 get status 1 (its
+  restored registry decides nothing).
+- Sync with the provider, and the phone's own peer sync, are allowed; publication is not, and the backup
   cycle syncs instead. The flag clears when a verified provider exchange
   shows the store's accepted provider state has reached the floor's (the
   same `state_commit` at equal generation), including "the provider has
@@ -5158,7 +5160,7 @@ the gate asserts them by name.
 | SY-13 | (amended) restored older store | unlocks read-only; authoring `VAULT_BEHIND`; sync clears it |
 | FFI-01 | exported symbols vs the catalogue | lint fails on any extra entry |
 | XV-PEER | both TLVs, prehashes and the heads digest, plus the wire-annex A.5 set | Rust engine and the CryptoKit-only Swift target agree |
-| PW-01…10 | peer wire carriage, bodies, paging, token scope, sessions, rate, `target_device_ids` | as wire annex A.6 |
+| PW-01…12 | peer wire carriage, bodies, paging, token scope, sessions, rate, `target_device_ids` | as wire annex A.6 |
 
 Also, as **PV-01** (one gate item, listing each variant by name): phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD
 for recovery on a phone; RC-01 step by step (including the RK reset first when the stolen Mac changed the MP);
