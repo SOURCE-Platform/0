@@ -297,7 +297,8 @@ human-safe context.
 | `quarantine_status` | counts of refused revisions | UNLOCKED | counts only (§3.2) |
 | `import_dashlane` | §10 import from user-picked path | UNLOCKED | helper opens the file itself |
 | `approval_result` | deliver signed iPhone approval | AUTHORIZING | §6.5 |
-| `peer_serve` (v0.5) | answer one signed peer request | per §22.8 operation table | `{request_tlv, signature, body}` → `{response_tlv, signature, body}`; the helper verifies, builds and signs everything itself (§22.8) |
+| `peer_serve` (v0.5) | answer one signed peer request | per §22.8 operation table | `{request_tlv, signature, body}` (body ≤ 24 KiB) or `{session}` → `{response_tlv, signature, body}` or `{session, response_tlv, signature, stream, size}`, or `{refused: 403 \| 429 \| 503}`; the helper verifies, builds and signs everything itself (§22.8, wire annex A.2.2) |
+| `peer_serve_begin` (v0.5) | open a peer session for a large request body | as `peer_serve` | `{request_tlv, signature}` → `{session, need}`; the envelope, rate, replay, who-may-speak and state checks run before any body byte; the body arrives through §1.3 stream ops scoped to that peer session (annex A.2.2) |
 
 **nm-host → helper (`nm-host` class):**
 
@@ -2812,7 +2813,7 @@ pending_remote { op: vault_create | mp_change | rk_replacement | revocation | en
                  version: u64,            # bumped by every new change; a staging clears only its own version (§22.11)
                  in_flight: [...],        # stagings posted but not yet known to have landed
                  awaiting_redo: [op],     # changes that became needs_user and were not redone
-                 target_device_id: id | null }   # new in v0.5: the device a revocation names, kept while pending
+                 target_device_ids: [id] }       # new in v0.5: one per revocation, each kept while that revocation is pending
                                                  # and while awaiting redo (§22.8 "who may speak")
 ```
 
@@ -4284,7 +4285,7 @@ Every item must be verifiably green, with the named evidence:
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
 | 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Remaining before the first real credential: enforce the floor at runtime** — today it is documentation, and the app would run on hardware nobody has measured |
-| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
+| 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, PW-01…10 (wire annex A.6), FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
 
 
 Only then may the first real credential be imported.
@@ -4741,7 +4742,7 @@ response as "unable to verify".
 **Who may speak.** Except for `peer_status`, a sender must be **active
 in the receiver's committed registry, including its own unpublished
 entries, and not the target of a pending revocation or of a revocation
-awaiting redo** (§11.3.2 `pending_remote.target_device_id` and
+awaiting redo** (§11.3.2 `pending_remote.target_device_ids` and
 `awaiting_redo`, fields added in v0.5). An unknown, revoked or
 pending-revocation sender gets nothing. `peer_status` is answered for any
 device key the registry **ever** installed, including revoked ones — the
@@ -5043,6 +5044,9 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
   (generation, `state_commit`, confirmed registry head). A store is behind
   when its accepted provider generation is below the floor's, or — at the
   same provider generation — its local generation is.
+- **Peer serving while behind (review of the wire annex, SPEC-I9):** a
+  behind Mac answers only `peer_hello` and `peer_status`; operations 2–5
+  get status 1 (its restored registry decides nothing).
 - Sync (provider or peer) is allowed; publication is not, and the backup
   cycle syncs instead. The flag clears when a verified provider exchange
   shows the store's accepted provider state has reached the floor's (the
@@ -5141,7 +5145,8 @@ the gate asserts them by name.
 | CX-05 | racing revocation: this device's revoke(D) is pending and D commits a registry entry at the same seq | COMPROMISED (§11.3 rule-2 exception, §11.4); never a silent adoption that leaves a D-enrolled device active |
 | SY-13 | (amended) restored older store | unlocks read-only; authoring `VAULT_BEHIND`; sync clears it |
 | FFI-01 | exported symbols vs the catalogue | lint fails on any extra entry |
-| XV-PEER | both TLVs, prehashes and the heads digest | Rust engine and the CryptoKit-only Swift target agree |
+| XV-PEER | both TLVs, prehashes and the heads digest, plus the wire-annex A.5 set | Rust engine and the CryptoKit-only Swift target agree |
+| PW-01…10 | peer wire carriage, bodies, paging, token scope, sessions, rate, `target_device_ids` | as wire annex A.6 |
 
 Also, as **PV-01** (one gate item, listing each variant by name): phone variants of SY-01…13, ST-01…05, RU-01…05, BK-26…28, CP/FR/KD
 for recovery on a phone; RC-01 step by step (including the RK reset first when the stolen Mac changed the MP);
