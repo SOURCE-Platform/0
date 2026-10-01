@@ -24,6 +24,7 @@ pub mod log;
 pub mod notify;
 pub mod ops;
 pub mod panel;
+pub mod peer;
 pub mod recovery;
 pub mod registry;
 pub mod state;
