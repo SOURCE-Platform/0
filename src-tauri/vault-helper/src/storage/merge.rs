@@ -111,6 +111,11 @@ pub fn apply_revision(
     if malformed {
         return reject(conn, rev, revisions::REFUSED_MALFORMED);
     }
+    // §22.7: a revision cut off with its only (revoked) peer never enters.
+    if super::set_aside::refused(conn, &rev.revision_id)? {
+        rev_state::count_refused_once(conn, rev, revisions::REFUSED_REVOKED_AUTHOR)?;
+        return Ok(MergeOutcome::Rejected(revisions::REFUSED_REVOKED_AUTHOR));
+    }
     // §3.2: a revoked author's revisions outside Admit(D) never enter.
     if super::revoked::refuses(conn, rev)? {
         rev_state::count_refused_once(conn, rev, revisions::REFUSED_REVOKED_AUTHOR)?;

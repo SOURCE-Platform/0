@@ -191,3 +191,23 @@ Targeted runs green: `device_identity`, `device_unlock`, `enrollment`,
 owner's finger):** a manual check on the real Mac with a signed helper —
 create a vault, unlock with Touch ID, cancel (no password fallback),
 lid closed (master-password fallback).
+
+## 4. F.2c — peer sync, Mac side (in progress)
+
+| Commit | Spec | What | Tests |
+|---|---|---|---|
+| `ddc2cad` | §22.8, annex A.1–A.3 | `vault-proto::peer`: envelopes with their own prefixes and strict decoding; operation bodies; heads digest | `vault-proto/tests/peer_wire.rs` (PW-02 rules, zero/empty encodings, prefix separation, digest) |
+| `54a872d` | §22.7, annex A.4 | schema v3 (`rev_sources`, `peer_replay`; v2 migrates in place); sources recorded for own, provider, join, recovery and our own commits | `storage::db` unit tests (migration) |
+| `574a5ba` | annex A.4 | `target_device_ids` / `awaiting_redo_targets`: revocations tracked per target | PW-10 `two_adopted_away_revocations_are_tracked_per_target` |
+| `1f0d0fc`, `8cf7a51` | §22.8 | receiver order, unsigned refusals, persisted replay cache, rate after the signature, who may speak (incl. pending targets), signed responses, `peer_status` | `peer_serve.rs` (PA-01…05, PA-08, PW-07, PW-09) |
+| `ce367eb` | §22.7, annex A.3.1/3/4 | servable subgraph (freshness rule), hello digest, whole-bucket heads, canonical closures, unavailable reasons, behind/COMPROMISED gate | `peer_exchange.rs` (PS-12, PW-11, status 4) |
+| `c9d9090` | §22.7, annex A.3.5 | `peer_revs_put` on an unlocked Mac: canonical order and closure or status 4, waiting rules, AEAD-open before admit, peer provenance | `a_phones_revisions_are_opened_before_admission` (PS-01/04) |
+| (this batch) | §22.7 | revoker cutoff (`refused_peer`), cutoff on accepting a revocation, set-aside of peer-only revisions before every rotation and adoption with own descendants re-authored | `peer_cutoff.rs` (PS-08, PS-10) |
+
+**Still to do in F.2c (Mac side):** the LOCKED inbox (A.3.5); `peer_state`
+with the persisted verified `state_get` body (A.3.2); "publish first"
+before a revocation (coordinator); IPC wiring (`peer_serve`,
+`peer_serve_begin`, peer-session streams, `get_state`/`fresh` tracking);
+the main app's route, peer-token store and `peer_endpoint` in the
+enrollment bundle; XV-PEER vectors. Then the milestone review (with the
+Touch ID change).

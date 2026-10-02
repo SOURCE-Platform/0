@@ -21,6 +21,9 @@ CREATE TABLE rev_sources (              -- 'own', 'provider' or a 16-byte device
   source      BLOB NOT NULL,
   PRIMARY KEY (revision_id, source)
 );
+CREATE TABLE refused_peer (             -- §22.7 cutoff: refused for good
+  revision_id BLOB PRIMARY KEY
+);
 CREATE TABLE peer_replay (
   sender      BLOB NOT NULL,
   n           BLOB NOT NULL,

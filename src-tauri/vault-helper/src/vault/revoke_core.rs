@@ -49,6 +49,11 @@ pub fn revoke(
         return Err(ErrorCode::NotFound);
     }
     prove_mp(&store, vk, mp)?;
+    // §22.7: the revoker's cutoff — whatever only the revoked device
+    // delivered is refused for good — then nothing peer-only is carried
+    // into the new key.
+    crate::storage::set_aside::cut_off(&store, &target, &std::collections::HashSet::new())?;
+    crate::storage::set_aside::set_aside(&mut store, vk)?;
     let base = pending::base_for(&store.conn, &store.header)?;
     let mut entries = state.entries.clone();
     entries.push(build::revoke(&state, me, target)?);

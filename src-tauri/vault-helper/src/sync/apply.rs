@@ -202,6 +202,10 @@ pub fn apply(
         let author = uuid_string(&d.device_id);
         let admit: HashSet<[u8; 32]> = authors.iter().filter(|(_, a)| **a == author).map(|(id, _)| *id).collect();
         reauthor.extend(revoked::record(&store.conn, &d.device_id, &admit, &me_str)?);
+        // §22.7: anything only D delivered here, and not in the provider
+        // state that carries D's revocation, is refused for good.
+        let listed: HashSet<[u8; 32]> = authors.keys().copied().collect();
+        crate::storage::set_aside::cut_off(&store, &d.device_id, &listed)?;
     }
     let mut store = store;
     for row in reauthor.iter().filter(|r| !r.deleted) {
@@ -239,6 +243,11 @@ pub fn apply(
         rvk if !keep_local => {
             let dir = store.dir.clone();
             let reseal = rvk.expose() != vk.expose();
+            // §22.7: nothing peer-only is carried into the adopted key.
+            let mut store = store;
+            if reseal {
+                crate::storage::set_aside::set_aside(&mut store, &vk)?;
+            }
             // The adopted key's commitment commits with it (§22.4); with no
             // SE identity (tests with software devices) none is staged.
             let commitment = match crate::device::SeDevice::load(&dir) {

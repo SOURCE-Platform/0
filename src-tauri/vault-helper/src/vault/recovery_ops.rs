@@ -97,7 +97,7 @@ pub fn rotate_recovery_key(
 /// The rotation behind an RK replacement, for a caller that already
 /// issued (and had the user acknowledge) `new_rk`.
 pub fn rotate_with_rk(
-    store: VaultStore,
+    mut store: VaultStore,
     vk: &SecretBytes<32>,
     pk: &SecretBytes<32>,
     new_rk: &SecretBytes<32>,
@@ -105,6 +105,7 @@ pub fn rotate_with_rk(
 ) -> Result<RotationOutcome, ErrorCode> {
     use crate::registry::chain::EpochPolicy;
     use crate::sync::pending::{self, PendingOp};
+    crate::storage::set_aside::set_aside(&mut store, vk)?; // §22.7
     let vid = store.header.vault_id.0;
     let reg = crate::registry::log::read_state(&store.dir, &vid, &EpochPolicy::CheckpointAnchored)?;
     let envelopes = crate::device::rotate::EnvelopePlan {

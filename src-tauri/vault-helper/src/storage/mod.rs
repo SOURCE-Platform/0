@@ -26,6 +26,7 @@ pub mod revoked;
 pub mod sources;
 pub mod rotation;
 pub mod rotation_journal;
+pub mod set_aside;
 pub mod store;
 pub mod store_list;
 pub mod store_records;
