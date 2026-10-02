@@ -1,5 +1,5 @@
 //! `peer_state` (wire annex A.3.2; PW-04): the Mac forwards the verified
-//! `state_get` body of the state it accepted, byte for byte, only when
+//! `state_get` body of the state it accepted, re-encoded from its verified fields, only when
 //! newer than the requester's; after its own publication it has none
 //! until its next provider check; objects mode answers only for exactly
 //! that committed state (and holds no blobs). Synthetic data only.
@@ -56,8 +56,13 @@ fn the_mac_forwards_only_the_verified_state_it_accepted() {
     let (st, b) = ask(&w, &c, PeerOp::State, StateReq::State { have_generation: 0 }.encode());
     assert_eq!(st, PeerStatus::Ok);
     let served = state_body(&net, &w);
-    assert_eq!(b, vault_proto::peer::exchange::encode_state(&served), "byte for byte");
     let r = vault_helper::sync::remote::parse(&served).unwrap();
+    // Re-encoded from the verified fields in the annex A.3.2 order — the
+    // same state, nothing the provider added beside it.
+    let forwarded = vault_helper::sync::remote::canonical(&r);
+    assert_eq!(b, vault_proto::peer::exchange::encode_state(&forwarded));
+    assert!(forwarded.starts_with(br#"{"generation":"#), "fixed key order");
+    assert_eq!(vault_helper::sync::remote::parse(&forwarded).unwrap().state_commit, r.state_commit);
     assert_eq!(ask(&w, &c, PeerOp::State, StateReq::State { have_generation: r.generation }.encode()).0, PeerStatus::NothingNewer, "not newer");
 
     // Objects mode: only for exactly that state; no blobs are held here.

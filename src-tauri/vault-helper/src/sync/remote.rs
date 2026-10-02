@@ -70,19 +70,23 @@ pub fn parse(json: &[u8]) -> Result<RemoteState, ErrorCode> {
 /// own signature carries nothing the provider added beside them. `parse`
 /// of the result yields the same state.
 pub fn canonical(r: &RemoteState) -> Vec<u8> {
-    let auth: Vec<Value> = r
+    // Written out by hand: the annex A.3.2 key order must not depend on
+    // whether `serde_json` was built with `preserve_order` (it is only in
+    // this crate's dev-dependencies). Hex and base64 need no escaping.
+    use crate::crypto::hex::encode as hex;
+    let auth: Vec<String> = r
         .recovery_auth
         .iter()
-        .map(|e| serde_json::json!({ "class": e.class.code(), "pub": crate::crypto::hex::encode(e.public), "salt": crate::crypto::hex::encode(e.salt) }))
+        .map(|e| format!(r#"{{"class":{},"pub":"{}","salt":"{}"}}"#, e.class.code(), hex(e.public), hex(e.salt)))
         .collect();
-    serde_json::to_vec(&serde_json::json!({
-        "generation": r.generation,
-        "vk_generation": r.vk_generation,
-        "state_commit": crate::crypto::hex::encode(r.state_commit),
-        "manifest": b64::encode(&r.manifest_bytes),
-        "checkpoint": b64::encode(&r.checkpoint_bytes),
-        "recovery_auth": auth,
-    }))
-    .expect("plain JSON")
+    format!(
+        r#"{{"generation":{},"vk_generation":{},"state_commit":"{}","manifest":"{}","checkpoint":"{}","recovery_auth":[{}]}}"#,
+        r.generation,
+        r.vk_generation,
+        hex(r.state_commit),
+        b64::encode(&r.manifest_bytes),
+        b64::encode(&r.checkpoint_bytes),
+        auth.join(",")
+    )
+    .into_bytes()
 }
-
