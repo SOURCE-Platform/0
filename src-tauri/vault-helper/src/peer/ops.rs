@@ -47,12 +47,43 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
                 Err(e) => Err(e),
             },
         },
-        // Wire annex A.3.2 needs the stored verified state body: not yet.
-        PeerOp::State => return status_only(ctx, acc, PeerStatus::BadState, now),
+        PeerOp::State => match vault_proto::peer::exchange::StateReq::decode(body) {
+            Ok(req) => match state(store, &req) {
+                Ok(Some(b)) => Ok((PeerStatus::Ok, b)),
+                Ok(None) => return status_only(ctx, acc, PeerStatus::NothingNewer, now),
+                Err(e) => Err(e),
+            },
+            Err(_) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
+        },
     };
     match answered {
         Ok((st, b)) => sign(ctx, acc, st, b, now),
         Err(_) => Err(Refusal::Unavailable),
+    }
+}
+
+/// `peer_state` (annex A.3.2). State mode forwards the kept verified
+/// `state_get` body byte for byte when it is newer than the requester's;
+/// objects mode answers only for exactly that committed state — and this
+/// Mac keeps no blob copies, so every object is unavailable (reason 2) and
+/// the phone fetches them from the provider. `None` = status 3.
+fn state(store: &VaultStore, req: &vault_proto::peer::exchange::StateReq) -> Result<Option<Vec<u8>>, crate::errors::ErrorCode> {
+    use vault_proto::peer::exchange::{encode_state, ObjectItem, Objects, StateReq};
+    let Some(seen) = crate::sync::seen::load(&store.conn)? else { return Ok(None) };
+    match req {
+        StateReq::State { have_generation } => {
+            if seen.generation <= *have_generation {
+                return Ok(None);
+            }
+            Ok(crate::sync::seen::body(&store.conn)?.map(|b| encode_state(&b)))
+        }
+        StateReq::Objects { state_commit, wants } => {
+            if *state_commit != seen.state_commit.0 {
+                return Ok(None);
+            }
+            let items = wants.iter().map(|(sha, _)| ObjectItem::Unavailable { sha256: *sha, reason: vault_proto::peer::body::NOT_HELD }).collect();
+            Ok(Some(Objects { complete: true, items }.encode()))
+        }
     }
 }
 

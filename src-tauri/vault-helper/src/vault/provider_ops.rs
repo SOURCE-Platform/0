@@ -33,6 +33,8 @@ pub struct SyncSession {
     pub t: Transfer,
     pub remote: RemoteState,
     pub index: Option<ObjectIndex>,
+    /// The `state_get` body as served (kept once applied, annex A.3.2).
+    pub raw: Vec<u8>,
 }
 
 pub struct RecoverySession {

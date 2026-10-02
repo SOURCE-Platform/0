@@ -68,3 +68,26 @@ pub fn load(conn: &Connection) -> Result<Option<Seen>, ErrorCode> {
 pub fn save(conn: &Connection, seen: &Seen) -> Result<(), ErrorCode> {
     kv::put(conn, KEY, seen)
 }
+
+const BODY_KEY: &str = "seen_state_body";
+
+/// Keep the verified `state_get` body of the accepted state, only if it is
+/// exactly the state this device accepted (wire annex A.3.2).
+pub fn keep_body(conn: &Connection, state_commit: &[u8; 32], body: &[u8]) -> Result<(), ErrorCode> {
+    match load(conn)? {
+        Some(s) if &s.state_commit.0 == state_commit && body.len() <= 64 * 1024 => {
+            crate::storage::kv::put(conn, BODY_KEY, &crate::crypto::hex::encode(body))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The kept body, if it still belongs to the accepted state (after our
+/// own publication commits there is none until the next `state_get`).
+pub fn body(conn: &Connection) -> Result<Option<Vec<u8>>, ErrorCode> {
+    let Some(s) = load(conn)? else { return Ok(None) };
+    let Some(hex_body): Option<String> = crate::storage::kv::get(conn, BODY_KEY)? else { return Ok(None) };
+    let Some(bytes) = crate::crypto::hex::decode(&hex_body) else { return Ok(None) };
+    let same = crate::sync::remote::parse(&bytes).is_ok_and(|r| r.state_commit == s.state_commit.0);
+    Ok(same.then_some(bytes))
+}

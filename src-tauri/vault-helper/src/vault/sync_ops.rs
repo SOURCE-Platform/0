@@ -57,12 +57,16 @@ pub fn backup_state_offer(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &De
         }
         let store = c.store.as_ref().ok_or(ErrorCode::Internal)?;
         match fetch::offer(store, &remote) {
-            Ok(Offer::UpToDate) => Ok(json!({ "up_to_date": true })),
+            Ok(Offer::UpToDate) => {
+                // The verified body of the state this Mac accepted (A.3.2).
+                let _ = crate::sync::seen::keep_body(&store.conn, &remote.state_commit, raw.as_bytes());
+                Ok(json!({ "up_to_date": true }))
+            }
             Ok(Offer::Index(h)) => {
                 let mut t = Transfer::new(Default::default());
                 t.expect([(h, CAP_INDEX)]);
                 let out = json!({ "session": hex::encode(t.id), "need": need_json(&t) });
-                c.provider.sync = Some(SyncSession { t, remote, index: None });
+                c.provider.sync = Some(SyncSession { t, remote, index: None, raw: raw.as_bytes().to_vec() });
                 deps.events.emit(ev_state(c.reported_state()));
                 Ok(out)
             }
@@ -140,6 +144,7 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
         let result = apply::apply(store, vk, &session.remote, index, &session.t.received, crate::registry::device::DeviceIdentity::device_id(&me), &open);
         let out = match result {
             Ok(Applied::Merged(rep, store, vk)) => {
+                let _ = crate::sync::seen::keep_body(&store.conn, &session.remote.state_commit, &session.raw);
                 c.header = Some(store.header.clone());
                 c.store = Some(store);
                 c.vk = Some(vk.mlock_best_effort());
