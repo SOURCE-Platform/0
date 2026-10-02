@@ -28,6 +28,8 @@ fn db<T>(r: rusqlite::Result<T>) -> Result<T, ErrorCode> {
 /// Refuse every revision whose only source is `peer`, except `keep` (the
 /// ids its revocation's provider index lists). Returns how many.
 pub fn cut_off(store: &VaultStore, peer: &[u8; 16], keep: &HashSet<[u8; 32]>) -> Result<usize, ErrorCode> {
+    // Its held puts go too (wire annex A.3.5).
+    db(store.conn.execute("DELETE FROM peer_inbox WHERE sender = ?1", params![&peer[..]]))?;
     let mut n = 0;
     for r in revision_rows::all_rows(&store.conn)? {
         if !keep.contains(&r.revision_id) && sources::only_from(&store.conn, &r.revision_id, peer)? {

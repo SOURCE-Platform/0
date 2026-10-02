@@ -307,6 +307,13 @@ pub(super) fn install_unlock(
         // Never lowers the floor.
         let _ = c.store.as_ref().map(super::floor::raise);
     }
+    if !behind && !unverified && c.state == VaultState::Unlocked {
+        // Puts a peer sent while LOCKED are admitted now (annex A.3.5).
+        let c = &mut *c;
+        if let (Some(store), Some(vk)) = (c.store.as_mut(), c.vk.as_ref()) {
+            let _ = crate::peer::inbox::drain(store, vk);
+        }
+    }
     deps.events.emit(ev_state(c.state));
     OpOutcome::ok(json!({"state": c.state.as_str()}))
 }

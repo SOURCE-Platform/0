@@ -21,6 +21,13 @@ CREATE TABLE rev_sources (              -- 'own', 'provider' or a 16-byte device
   source      BLOB NOT NULL,
   PRIMARY KEY (revision_id, source)
 );
+CREATE TABLE peer_inbox (               -- A.3.5: a LOCKED Mac's received puts
+  id          INTEGER PRIMARY KEY,
+  sender      BLOB NOT NULL,
+  body        BLOB NOT NULL,
+  objects     INTEGER NOT NULL,
+  received_at INTEGER NOT NULL
+);
 CREATE TABLE refused_peer (             -- §22.7 cutoff: refused for good
   revision_id BLOB PRIMARY KEY
 );

@@ -39,8 +39,13 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
                 Err(crate::errors::ErrorCode::FormatInvalid) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
                 Err(e) => Err(e),
             },
-            // The LOCKED inbox (A.3.5) is not built yet.
-            None => return status_only(ctx, acc, PeerStatus::BadState, now),
+            // LOCKED: held in the bounded inbox, admitted at unlock.
+            None => match super::inbox::stash(store, &acc.req.sender_device_id, body, now) {
+                Ok(n) => Ok((PeerStatus::Ok, vault_proto::peer::body::PutCounts { admitted: 0, waiting: n, refused: 0 }.encode())),
+                Err(crate::errors::ErrorCode::PeerLimit) => return status_only(ctx, acc, PeerStatus::Limit, now),
+                Err(crate::errors::ErrorCode::FormatInvalid) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
+                Err(e) => Err(e),
+            },
         },
         // Wire annex A.3.2 needs the stored verified state body: not yet.
         PeerOp::State => return status_only(ctx, acc, PeerStatus::BadState, now),

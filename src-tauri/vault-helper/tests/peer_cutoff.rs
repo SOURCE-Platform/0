@@ -71,3 +71,26 @@ fn a_rotation_sets_aside_peer_only_revisions_and_keeps_own_edits() {
     }
     w.fx.remove_dir();
 }
+
+/// PS-11: a put that arrives while the Mac is LOCKED is held, admitted at
+/// unlock, and purged instead when the sender is revoked first.
+#[test]
+fn a_locked_mac_holds_puts_until_unlock() {
+    use vault_proto::peer::body::PutCounts;
+    let _g = serial();
+    let w = world("cut-inbox");
+    let (dir, mut ps, vk) = phone_store(&w);
+    let rid = ps.add_record(&vk, 1, PT, META).unwrap();
+    let row = row_of(&ps, &rid);
+    drop(ps);
+    let _ = std::fs::remove_dir_all(dir);
+    w.fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    let locked = vault_helper::peer::Ctx { locked: true, ..ctx(&w, true, false, false) };
+    let (st, b) = ask(&w, &locked, PeerOp::RevsPut, put_body(&[row.clone()]));
+    assert_eq!(st, vault_proto::peer::PeerStatus::Ok);
+    assert_eq!(PutCounts::decode(&b).unwrap(), PutCounts { admitted: 0, waiting: 1, refused: 0 });
+    assert!(get_row(&VaultStore::open(&w.fx.dir).unwrap().conn, &row.revision_id).unwrap().is_none(), "not admitted while locked");
+    assert_eq!(unlock(&w.fx, MP)["ok"], true);
+    assert!(get_row(&VaultStore::open(&w.fx.dir).unwrap().conn, &row.revision_id).unwrap().is_some(), "admitted at unlock");
+    w.fx.remove_dir();
+}

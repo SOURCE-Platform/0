@@ -6,6 +6,7 @@
 
 pub mod admit;
 pub mod graph;
+pub mod inbox;
 pub mod ops;
 pub mod respond;
 pub mod serve_revs;
