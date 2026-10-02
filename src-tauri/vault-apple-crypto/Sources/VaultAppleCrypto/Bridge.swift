@@ -184,8 +184,7 @@ public func ov0_hpke_open_se_auth(
     guard let tag, let reason, let infoData = data(info, infoLen),
           let encData = data(enc, encLen), let ctData = data(ct, ctLen) else { return ERR_ARG }
     guard (try? P256.KeyAgreement.PublicKey(x963Representation: encData)) != nil else { return ERR_CRYPTO }
-    let ctx = LAContext()
-    ctx.localizedReason = String(cString: reason)
+    let ctx = LAContext(); ctx.localizedReason = String(cString: reason)
     guard let key = loadAgree(String(cString: tag), ctx) else { return ERR_SE }
     var recipient: HPKE.Recipient
     do {
@@ -195,6 +194,7 @@ public func ov0_hpke_open_se_auth(
     } catch {
         return ERR_NO_BIOMETRY
     }
-    guard let pt = try? recipient.open(ctData, authenticating: Data()) else { return ERR_CRYPTO }
+    guard var pt = try? recipient.open(ctData, authenticating: Data()) else { return ERR_CRYPTO }
+    defer { pt.resetBytes(in: 0..<pt.count) } // §22.2 (a): the Swift copy of the VK is zeroed
     return emit(pt, outPt, ptCap, outPtLen)
 }

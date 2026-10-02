@@ -7382,6 +7382,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "vault-ffi"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "vault-engine",
+ "zeroize",
+]
+
+[[package]]
 name = "vault-proto"
 version = "0.1.0"
 dependencies = [

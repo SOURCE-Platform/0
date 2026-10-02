@@ -1,0 +1,21 @@
+[package]
+name = "vault-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "The SOURCE Vault iPhone app's C ABI onto vault-engine (spec v0.5 §22.2): exactly the catalogued entry points"
+publish = false
+
+# Dependency policy (spec §17.4): workspace path crates plus two crates the
+# engine already uses; nothing new enters the graph.
+
+[dependencies]
+vault-engine = { path = "../vault-engine" }
+serde_json = "1"
+zeroize = "1"
+
+[lib]
+name = "vault_ffi"
+path = "src/lib.rs"
+# staticlib: linked into SOURCE Vault; rlib: the catalogue tests here.
+crate-type = ["staticlib", "rlib"]

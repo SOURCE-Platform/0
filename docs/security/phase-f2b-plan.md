@@ -93,4 +93,12 @@ plan; the code it produces goes through the usual milestone review.
   SOURCE Vault. Dependency count (the audit-deps method): engine on iOS
   90; helper 98 (gate < 120). `cargo vet` has no per-target scope: the
   iOS graph is a subset of the audited one.
+- **Step 3 done (2026-10-03).** `vault-ffi` (staticlib + rlib): five
+  entry points (`ov0_engine_open/call/lock/free/close`), a Swift callback
+  table for secure entry, the Recovery Key sheet, presence, capture and
+  events, and an op allowlist — catalogue in `phase-f2b-ffi.md`. Every
+  entry point aborts on panic; answers are zeroed on free; the request
+  copy is zeroed once parsed; the bridge zeroes its copy of an opened
+  envelope (crossing a). FFI-01 checks the sources, the built iOS library
+  (exactly five `ov0_` exports) and the allowlist.
 
