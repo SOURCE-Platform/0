@@ -204,7 +204,19 @@ lid closed (master-password fallback).
 | `c9d9090` | §22.7, annex A.3.5 | `peer_revs_put` on an unlocked Mac: canonical order and closure or status 4, waiting rules, AEAD-open before admit, peer provenance | `a_phones_revisions_are_opened_before_admission` (PS-01/04) |
 | (this batch) | §22.7 | revoker cutoff (`refused_peer`), cutoff on accepting a revocation, set-aside of peer-only revisions before every rotation and adoption with own descendants re-authored | `peer_cutoff.rs` (PS-08, PS-10) |
 
-**Still to do in F.2c (Mac side):** the LOCKED inbox (A.3.5); `peer_state`
+| `193301c` | annex A.3.5 | LOCKED inbox (bounded; admitted at unlock; purged on cutoff) | `a_locked_mac_holds_puts_until_unlock` (PS-11) |
+| `e6f9842` | §1.5, annex A.2.2 | `peer_serve` IPC op; LOCKED floor check; freshness from the last verified provider exchange; large responses as stream sessions | `peer_ipc.rs` (PW-01, PW-08) |
+| `fe2f65a` | annex A.2.1, A.4 | main app `POST /v1/vault/peer` (private networks, header-only peer token from its own store bound to the sender, 413 before the helper); `peer_endpoint` in the enrollment bundle | `only_private_networks_reach_the_peer_route` |
+| `6990a76` | annex A.3.2 | `peer_state` from the kept verified `state_get` body; objects mode bound to the accepted state (no blobs held) | `vault-tests/peer_state.rs` (PW-04) |
+| `c99db49` | annex A.2.2 | `peer_serve_begin` and streamed request bodies; who-may-speak re-checked at completion; single-use sessions; main uses it for bodies over 24 KiB | `a_large_put_streams_in_after_the_envelope_checks` (PW-03) |
+
+**Deferred out of the Mac-side F.2c batch (recorded):** "publish first"
+before a self-started rotation (best effort, coordinator — set-asides
+remain correct without it, only rarer with it); the XV-PEER vector file
+and the CryptoKit-only Swift target (with F.2b, where the Swift side
+exists); a "Forget this device" UI for peer tokens.
+
+**Superseded list (kept for history):** Still to do in F.2c (Mac side): the LOCKED inbox (A.3.5); `peer_state`
 with the persisted verified `state_get` body (A.3.2); "publish first"
 before a revocation (coordinator); IPC wiring (`peer_serve`,
 `peer_serve_begin`, peer-session streams, `get_state`/`fresh` tracking);
