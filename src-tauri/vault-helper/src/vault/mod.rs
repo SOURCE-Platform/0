@@ -33,6 +33,7 @@ pub mod enroll_ops;
 pub mod floor;
 pub mod gate;
 pub mod history;
+pub mod peer_serve;
 pub mod prefs;
 pub mod items;
 pub mod recovery_ops;
@@ -168,6 +169,8 @@ pub struct VaultCore {
     pub vk_commit_pending: bool,
     /// Unlocked without a usable SE identity: reads only (§22.4).
     pub unverified_key: bool,
+    /// The last verified provider exchange (§22.7 freshness, 15 min).
+    pub provider_checked: Option<Instant>,
 }
 
 impl VaultCore {
@@ -208,6 +211,7 @@ impl VaultCore {
             behind: false,
             vk_commit_pending: false,
             unverified_key: false,
+            provider_checked: None,
         }
     }
 

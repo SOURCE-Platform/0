@@ -57,6 +57,8 @@ pub struct Sessions {
     /// §1.3 TR-09: an enrollment bundle too large for one frame, read by
     /// main with `stream_read` (ciphertext and public data only).
     pub bundle: Option<Transfer>,
+    /// A peer response too large for one frame (wire annex A.2.2).
+    pub peer: Option<Transfer>,
 }
 
 impl Sessions {
@@ -66,6 +68,7 @@ impl Sessions {
         self.sync = None;
         self.recovery = None;
         self.bundle = None; // the enrollment it belongs to dies with the lock
+        self.peer = None; // lock aborts a peer session (annex A.2.2)
     }
 
     pub fn transfer(&mut self, id: &Id) -> Option<&mut Transfer> {
@@ -78,6 +81,9 @@ impl Sessions {
         if let Some(b) = self.bundle.as_mut().filter(|b| &b.id == id) {
             return Some(b);
         }
+        if let Some(p) = self.peer.as_mut().filter(|p| &p.id == id) {
+            return Some(p);
+        }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
     }
 
@@ -86,6 +92,7 @@ impl Sessions {
     pub fn expire(&mut self) {
         self.sync = self.sync.take().filter(|s| !s.t.expired());
         self.bundle = self.bundle.take().filter(|b| !b.expired());
+        self.peer = self.peer.take().filter(|p| !p.expired());
         self.recovery = self.recovery.take().filter(|r| !r.t.expired());
     }
 }

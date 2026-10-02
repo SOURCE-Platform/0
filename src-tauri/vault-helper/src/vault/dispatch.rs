@@ -37,6 +37,9 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         let r = &out.response;
         let verified = r["up_to_date"] == true || r.get("admitted").is_some() || r["committed"] == true;
         tend_floor(core, verified);
+        if verified && op != "backup_commit_result" {
+            lock_core(core).provider_checked = Some(std::time::Instant::now());
+        }
     }
     out
 }
@@ -87,6 +90,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "update_item" => items::update_item(core, frame, deps),
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),
+        "peer_serve" => peer_serve::peer_serve(core, frame),
         "list_history" => history::list_history(core, frame),
         "list_deleted" => history::list_deleted(core),
         "restore_revision" => history::restore_revision(core, frame, deps),
