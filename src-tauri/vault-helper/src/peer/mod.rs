@@ -4,8 +4,10 @@
 //! `respond` builds and signs every response itself; `ops` answers each
 //! operation. Nothing here signs a caller-supplied digest.
 
+pub mod graph;
 pub mod ops;
 pub mod respond;
+pub mod serve_revs;
 pub mod verify;
 
 use std::path::PathBuf;

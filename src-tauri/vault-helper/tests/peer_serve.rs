@@ -25,12 +25,16 @@ fn ctx(fx: &Fx) -> Ctx {
 
 /// `id` is the registry id the Mac assigned at enrollment (§5.2).
 fn request(c: &Ctx, from: &SeDevice, id: [u8; 16], op: PeerOp, n: u8) -> (Vec<u8>, [u8; 64]) {
+    request_with(c, from, id, op, n, &empty())
+}
+
+fn request_with(c: &Ctx, from: &SeDevice, id: [u8; 16], op: PeerOp, n: u8, body: &[u8]) -> (Vec<u8>, [u8; 64]) {
     let req = PeerRequest {
         vault_id: c.vault_id,
         sender_device_id: id,
         receiver_device_id: c.me.device_id(),
         operation: op,
-        body_sha256: body_hash(&empty()),
+        body_sha256: body_hash(body),
         t: NOW,
         n: [n; 16],
     };
