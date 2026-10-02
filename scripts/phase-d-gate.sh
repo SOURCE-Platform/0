@@ -36,7 +36,7 @@ KC_PREFIX="ov0gated-$$-"
 RESULTS=()
 MP="synthetic-gate-d-master-password-0001"
 PW1="synthetic-gate-d-login-password"
-WORDLIST="$SRC_TAURI/vault-helper/src/crypto/data/bip39-english.txt"
+WORDLIST="$SRC_TAURI/vault-engine/src/crypto/data/bip39-english.txt"
 
 cleanup() {
     [ -n "${HELPER_PID:-}" ] && kill "$HELPER_PID" 2>/dev/null

@@ -5941,24 +5941,18 @@ version = "0.1.0"
 dependencies = [
  "argon2",
  "block2 0.5.1",
- "chacha20poly1305",
  "core-foundation 0.10.1",
- "getrandom 0.4.3",
  "hkdf 0.13.0",
- "hmac 0.13.0",
  "libc",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
  "objc2-local-authentication",
- "p256",
  "rusqlite",
- "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "subtle",
- "unicode-normalization",
+ "vault-engine",
  "vault-proto",
  "zeroize",
 ]
@@ -7362,6 +7356,29 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "vault-proto",
+]
+
+[[package]]
+name = "vault-engine"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "chacha20poly1305",
+ "core-foundation 0.10.1",
+ "getrandom 0.4.3",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "libc",
+ "p256",
+ "rusqlite",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "subtle",
+ "unicode-normalization",
+ "vault-proto",
+ "zeroize",
 ]
 
 [[package]]

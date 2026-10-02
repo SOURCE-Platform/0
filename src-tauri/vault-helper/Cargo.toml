@@ -14,34 +14,23 @@ publish = false
 # Phase F (spec v0.4 §1.1): wire types and secret-free verification,
 # shared with the provider; a workspace path crate, no new external deps.
 vault-proto = { path = "../vault-proto" }
+# F.2b: the platform-neutral engine (moved out of this crate unchanged).
+vault-engine = { path = "../vault-engine" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
 core-foundation = "0.10"
-# Phase B cryptographic core (spec §17.1). Versions are the current
-# RustCrypto releases; the spec's minor pins (argon2 0.5, chacha20poly1305
-# 0.10, hkdf 0.12, p256 0.13) predate the digest-0.11 line that the main
-# app's sha2 0.11 already uses. Same algorithms, same maintainers; each
-# version choice is recorded in the Phase B verification report and vetted
-# per §17.4. `hpke` is deliberately absent: envelope code is Phase E.
+# Phase B crypto, Phase C storage and the rest of the vault moved to
+# `vault-engine` with F.2b; the shell keeps only what its own code uses:
+# argon2 (the kdf_bench gate tool) and zeroize (the secure panel).
 argon2 = "0.6"
-chacha20poly1305 = "0.11"
-hkdf = "0.13"
-hmac = "0.13"
-sha2 = "0.11"
 zeroize = { version = "1", features = ["derive"] }
-secrecy = "0.10"
-subtle = "2"
-p256 = { version = "0.14", features = ["ecdsa"] }
-unicode-normalization = "0.1"
-getrandom = "0.4"
-# Phase C (spec §17.1): rusqlite/bundled per spec pin; objc2 family for the
-# LA presence checks and the §1.7 native secure panel (objc2-app-kit and
-# objc2-local-authentication are the same project's framework crates —
-# §17.1 lists the family; the specific framework crates are recorded as
-# reviewed in supply-chain/audits.toml). Keychain (§2.8) stays hand-rolled
+# Phase C (spec §17.1): the objc2 family for the LA presence checks and the
+# §1.7 native secure panel (objc2-app-kit and objc2-local-authentication
+# are the same project's framework crates — §17.1 lists the family; the
+# specific framework crates are recorded as reviewed in
+# supply-chain/audits.toml). Keychain (§2.8) stays hand-rolled
 # Security.framework FFI like Phase A's SecCode checks — no crate.
-rusqlite = { version = "0.32", features = ["bundled"] }
 objc2 = "0.5"
 # objc2 framework crates gate every class behind a cargo feature; enable
 # exactly the classes the panel/LA/notify code touches (§17.4 minimal
@@ -76,6 +65,10 @@ block2 = "0.5"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }
+# Tests only (they inspect the engine's database and vectors directly).
+hkdf = "0.13"
+sha2 = "0.11"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # Phase B gate tooling (never shipped in the bundle):
 [[bin]]

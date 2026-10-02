@@ -68,3 +68,21 @@ plan; the code it produces goes through the usual milestone review.
   logic changes and verified by the unchanged test suites before any
   iOS work builds on it.
 - App size and build time grow with the Rust static library.
+
+## Progress
+
+- **Step 1 done (2026-10-03).** `vault-engine` holds `backup`, `crypto`,
+  `device`, `enroll`, `errors`, `keychain`, `peer`, `recovery`,
+  `registry`, `state`, `storage`, `sync`, `vault` and `test_support`,
+  moved with `git mv` and no logic change; the §2.12 bridge build moved
+  with them. `vault-helper` keeps the macOS shell (`ipc`, `panel`, `la`,
+  `notify`, `log`, `ops`, `ffi`, `main`, the gate binaries) and re-exports
+  the engine under its old paths, so the main app, `vault-tests` and every
+  helper test compile unchanged. Finding: the engine already had no
+  macOS-only dependency — the op logic was written against the `Deps`
+  traits — and the bridge (CryptoKit, LocalAuthentication, Security) is
+  the same on iOS, so the planned `SecureEnclave` / `SecureEntry` traits
+  are not needed for the move; the iPhone app links the same bridge.
+  The helper's dependency list shrank to what the shell itself uses
+  (crypto and SQLite crates moved to the engine; three are test-only).
+

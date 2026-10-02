@@ -1,0 +1,37 @@
+[package]
+name = "vault-engine"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+description = "The platform-neutral vault engine (spec v0.5 §22.2, F2-D1): storage, sync, peer, crypto, registry, recovery and the op logic, shared by the macOS helper and the SOURCE Vault iPhone app"
+publish = false
+
+# Dependency policy (spec §15.4 / §17.4): moved unchanged from
+# vault-helper (Phase F.2b step 1); no crate added. Every dependency lands
+# in scripts/audit-deps.sh output and needs a cargo-vet audit.
+
+[dependencies]
+vault-proto = { path = "../vault-proto" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+core-foundation = "0.10"
+argon2 = "0.6"
+chacha20poly1305 = "0.11"
+hkdf = "0.13"
+hmac = "0.13"
+sha2 = "0.11"
+zeroize = { version = "1", features = ["derive"] }
+secrecy = "0.10"
+subtle = "2"
+p256 = { version = "0.14", features = ["ecdsa"] }
+unicode-normalization = "0.1"
+getrandom = "0.4"
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+[dev-dependencies]
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[lib]
+name = "vault_engine"
+path = "src/lib.rs"

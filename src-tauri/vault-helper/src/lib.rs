@@ -1,4 +1,5 @@
-//! SOURCE vault helper — Phase A skeleton (implementation spec §18 Phase A).
+//! SOURCE vault helper — the macOS shell around `vault-engine` (F.2b):
+//! originally the Phase A skeleton (implementation spec §18 Phase A).
 //!
 //! This crate implements the *boundary* the rest of the vault is built on:
 //! a separately signed `SourceVaultHelper.app` serving length-prefixed JSON
@@ -10,38 +11,25 @@
 //! no cryptography, and no ops beyond the three above. Anything else is
 //! answered `UNKNOWN_OP` (see `ops`).
 
-pub mod backup;
-pub mod crypto;
-pub mod device;
-pub mod enroll;
-pub mod errors;
+// The platform-neutral engine (F.2b step 1), re-exported under its old
+// paths so the shell, the tests and the main app's IPC client are
+// unchanged.
+pub use vault_engine::{
+    all_vectors, backup, crypto, device, enroll, errors, keychain, peer, recovery, registry, state, storage, sync, vault,
+    VAULT_HEADER_NAME, VAULT_REGISTRY_NAME,
+};
+#[cfg(debug_assertions)]
+pub use vault_engine::test_support;
+
+// The macOS shell.
 pub mod ffi;
 pub mod ipc;
-pub mod keychain;
 pub mod la;
 #[macro_use]
 pub mod log;
 pub mod notify;
 pub mod ops;
 pub mod panel;
-pub mod peer;
-pub mod recovery;
-pub mod registry;
-pub mod state;
-pub mod storage;
-pub mod sync;
-#[cfg(debug_assertions)]
-pub mod test_support;
-pub mod vault;
-
-/// Every committed cross-language vector family (§16.8): the Phase B
-/// crypto families plus Phase E's enrollment/envelope contracts.
-pub fn all_vectors() -> Vec<(&'static str, serde_json::Value)> {
-    let mut all = crypto::vectors::all();
-    all.push(("xv_enroll", enroll::vectors::xv_enroll()));
-    all.extend(crypto::vectors_v04::all());
-    all
-}
 
 /// IPC protocol major version (spec §1.4). Peers with a different major
 /// version are disconnected at `hello`.
@@ -52,13 +40,6 @@ pub const DEFAULT_VAULT_DIR: &str = ".observer_data/vault";
 
 /// Socket file name inside the vault directory (spec §1.4).
 pub const SOCKET_NAME: &str = "helper.sock";
-
-/// Presence of this file in the vault directory means a vault exists.
-pub const VAULT_HEADER_NAME: &str = "header.json";
-
-/// Append-only device registry log (spec §4). Phase C creates it empty;
-/// the genesis entry lands with Phase E enrollment.
-pub const VAULT_REGISTRY_NAME: &str = "registry.json";
 
 /// Helper exits after this long with zero connected clients (spec §1.6).
 pub const IDLE_EXIT_SECS: u64 = 30 * 60;
