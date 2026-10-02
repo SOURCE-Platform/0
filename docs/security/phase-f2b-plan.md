@@ -85,4 +85,12 @@ plan; the code it produces goes through the usual milestone review.
   are not needed for the move; the iPhone app links the same bridge.
   The helper's dependency list shrank to what the shell itself uses
   (crypto and SQLite crates moved to the engine; three are test-only).
+- **Step 2 done (2026-10-03).** `cargo build -p vault-engine` succeeds for
+  `aarch64-apple-ios` and `aarch64-apple-ios-sim` with no change (rusqlite
+  bundled SQLite, getrandom, the Security.framework FFI all build). The
+  bridge's `ov0_*` symbols stay unresolved in the static library and are
+  provided at app link time by the same `Bridge.swift` compiled into
+  SOURCE Vault. Dependency count (the audit-deps method): engine on iOS
+  90; helper 98 (gate < 120). `cargo vet` has no per-target scope: the
+  iOS graph is a subset of the audited one.
 
