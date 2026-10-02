@@ -159,6 +159,16 @@ would receive *future* changes until the Mac is revoked from the iPhone.
 The data-protection keychain (paid Apple Developer Program) closes this;
 recommended to revisit before the Phase J first-credential gate.
 
+**Owner decision (2026-10-02): "Password every time"** (review SEC-B2 —
+a Mac with no Touch ID sensor or no fingerprint enrolled, where the
+Enclave cannot make the biometry-bound key). Such a Mac never gets a plain
+key: its agreement public key is made with the private half dropped at
+once (`agree_discarded`), and every unlock goes straight to the master
+password. Rejected: refusing such Macs (recovery onto a Mac mini or Mac
+Studio would be impossible); a plain key (the login password would open
+the vault). Condition: the master-password adoption path (F.2d) lands
+before any other device can rotate.
+
 ## 3. Peer wire annex review (spec §22.8) — closed
 
 Revision 1 (`d9a2f13`) review: SPEC-B1 (peer-token scope), SPEC-B2
@@ -246,7 +256,7 @@ available to test; that case is an owner question (SEC-B2 below).
 | Finding | Disposition | Fix / where | Test |
 |---|---|---|---|
 | SEC-B1 / VER-B4 set-aside outside flip and journal | **Accepted, fixed.** The set-aside (deletions, re-authoring) is one SQLite transaction with a stamped flip target, then one flip — the vault is consistent whether or not a rotation follows. The revoker's cutoff (`refused_peer`, inbox purge) is computed before the set-aside and written **inside the rotation's staged DB** (`RemoteChange.cutoff`), so a failed rotation refuses nothing | `storage/set_aside.rs`, `sync/change.rs`, `vault/revoke_core.rs` | `a_set_aside_on_its_own_leaves_an_openable_vault`; PS-08/PS-10 still green |
-| SEC-B2 / VER-I9 no-Touch-ID Mac | **Open — owner decision** (bundled question). Creation with the lid closed was confirmed to work; a sensor-less Mac or one with no fingerprint enrolled could not be tested here. Error mapping fixed: clamshell, lockout, disconnected and non-LA refusals → `DEVICE_NOT_AUTHORIZED` (MP offered); only the user's cancel/failure → `PRESENCE_DENIED`; a malformed envelope → `INTEGRITY_FAILURE` | `Bridge.swift` | — |
+| SEC-B2 / VER-I9 no-Touch-ID Mac | **Owner decision 2026-10-02 (§2), implemented in §5.1.** Was open at this review. Creation with the lid closed was confirmed to work; a sensor-less Mac or one with no fingerprint enrolled could not be tested here. Error mapping fixed: clamshell, lockout, disconnected and non-LA refusals → `DEVICE_NOT_AUTHORIZED` (MP offered); only the user's cancel/failure → `PRESENCE_DENIED`; a malformed envelope → `INTEGRITY_FAILURE` | `Bridge.swift` | — |
 | VER-B1 migration marks own revisions `provider` | **Accepted, fixed.** TEXT vs BLOB comparison: `CAST(author_device AS BLOB)`; the test now drops all four v3 tables and stores `author_device` as production does | `storage/db.rs` | `a_v2_database_migrates_to_v3` (was red, now green) |
 | VER-B2 / SEC-I4 `device.json` flag skips presence | **Accepted, fixed.** Whether the agreement key needs the user is asked of the Enclave (`ov0_se_key_needs_user`: one key agreement with interaction forbidden); the file flag is a record only. Any failure to ask keeps the presence check. Identities from before the Touch ID decision therefore keep the LA check; they are synthetic test vaults only (no real vault exists yet) — re-creating the identity before the first real credential is a Phase J gate item, not a migration | `device/se.rs`, `device/identity.rs` | `a_planted_biometry_flag_does_not_skip_presence` |
 | VER-B3 bridge over 200 lines | **Accepted, fixed.** The dead `ov0_hpke_open_se` moved to the PoC shim (only the PoC used it); creation paths shared; 200 lines | `Bridge.swift`, `poc/hpke-se/swift/PocShim.swift` | gate line count |
@@ -256,9 +266,9 @@ available to test; that case is an owner question (SEC-B2 below).
 | SEC-I3 / VER-I6 tombstones dropped; parents | **Accepted, fixed.** Own tombstones are re-authored as tombstones (also on the revoked-author path); re-authored parents are the nearest remaining or re-authored ancestors | `storage/set_aside.rs`, `store_records.rs`, `sync/apply.rs` | `a_rotation_keeps_this_macs_deletions` |
 | SEC-I5 prompt under the mutex; no MP adoption | **Mutex part accepted, fixed:** `backup_apply` opens the envelope it will need before taking the core mutex, and the apply uses that result for exactly that file. **MP-based adoption: deferred to F.2d** (adopting another device's key change becomes live there; spec text and test with it) | `vault/adopt_prompt.rs`, `vault/sync_ops.rs` | existing adoption suites |
 | VER-I3 wire deviations | **Accepted, fixed:** unknown operation → signed status 4 (`PeerOp::Unknown`); a body on hello/status → status 4; > 2,000 revisions → status 2 (both paths); a record not held → unavailable reason 2; the LOCKED inbox checks decoding, canonical order and closure; `host_hints` are private IP literals | `vault-proto/peer`, `peer/ops.rs`, `serve_revs.rs`, `inbox.rs`, main `session.rs` | `malformed_and_oversized_requests_get_their_signed_status`, `peer_wire`, `host_hints_are_private_ip_literals` |
-| VER-I4 sessions | **Accepted, fixed:** up to two peer sessions (in + out); a third begin, or a large answer with both taken, gets status 2; idle 60 s; `session_close` closes them | `vault/provider_ops.rs`, `vault/peer_serve.rs` | `peer_ipc` |
+| VER-I4 sessions | **Accepted, fixed:** up to two peer sessions (in + out); a third begin, or a large answer with both taken, gets status 2; idle 60 s; `session_close` closes them | `vault/provider_ops.rs`, `vault/peer_serve.rs` | since §5.1, `at_most_two_peer_sessions_and_close_frees_one` (idle expiry untested) |
 | VER-I5 objects mode serves nothing | **Deferred to the F.2c phone side** (added to the list below). The Mac answers honestly (reason 2) and the phone fetches from the provider; serving byte ranges needs the Mac to keep the registry and index blobs | — | — |
-| VER-I7 freshness across sleep and lock | **Accepted, fixed:** cleared at every lock; fresh only while both the monotonic and the wall clock say < 15 min | `vault/peer_serve.rs`, `vault/mod.rs` | `peer_ipc` |
+| VER-I7 freshness across sleep and lock | **Accepted, fixed:** cleared at every lock; fresh only while both the monotonic and the wall clock say < 15 min | `vault/peer_serve.rs`, `vault/mod.rs` | since §5.1, `freshness_ends_at_lock` (wall-clock check untested) |
 | VER-I8 test gaps | **Accepted, mostly fixed:** who may speak with a pending target; Kahn tie-break and served heads pinned; heads digest pinned; inbox bounds, validation and purge; main token scope, binding, 401/413/403. **Open:** the LOCKED behind evaluation through `peer_serve` (PW-11) and provider provenance at publish/apply are covered only indirectly | `peer_hardening.rs`, `peer_wire.rs`, main route tests | as listed |
 | VER-I10 discard count; reason code | **Accepted, fixed:** `list_devices` reports per device the changes only it delivered (`unpublished`), shown beside "Remove" in Settings; cutoffs count as `REFUSED_PROVENANCE` (6) | `vault/devices.rs`, `DevicesPanel.tsx`, `rev.rs` | — |
 | VER-I11 deferred list | **Accepted:** Rust-side pins added now (Kahn, digest); the deferred list below is complete | — | — |
@@ -286,4 +296,42 @@ vault-tests `peer_state`, `pending_scenarios`, `behind_sync`,
 `restore_converges`, `compromised_entry`, `staged_resume` — 18 suites,
 all green. The PoC builds against the trimmed bridge. Next: one bounded
 re-review of these fixes.
+
+### 5.1 Bounded re-review of the fixes (`37e945c`) and closure
+
+The same two reviewers, fresh contexts, on `git diff c779e8b 37e945c`.
+Both confirmed every original finding closed in code (SEC-B2 aside), and
+both found the same new blocker in a fix.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B3 / VER-B5 `nearest` exponential on many-path peer graphs (a compromised phone could hang its own revocation) | **Accepted, fixed.** Nearest remaining ancestors computed once per leaving revision in parents-first order and remembered; no recursion | `storage/set_aside.rs` | `a_set_aside_over_a_many_path_peer_graph_finishes` (40 diamond levels, 2^40 paths) |
+| SEC-I6 / VER-I12 failed rotation refusing nothing untested; flip test not discriminating | **Accepted, tests added** | — | `a_failed_revocation_rotation_refuses_nothing`, `a_set_aside_with_nothing_to_reauthor_still_flips` |
+| VER-I13 exchange cap test exercised only the counter | **Accepted, test added** through the serving path, constant pinned | — | `the_serving_path_answers_status_2_at_the_exchange_cap` |
+| VER-I14 overclaimed / missing tests | **Accepted:** sessions, freshness at lock, nothing left waiting now tested; report rows corrected | — | `at_most_two_peer_sessions_and_close_frees_one`, `freshness_ends_at_lock`, `a_peer_leaves_nothing_waiting_here` |
+| VER-I15 open/deferred list incomplete | **Accepted:** owner decision recorded (§2); list below completed | this report | — |
+| VER-I16 "byte for byte" vs re-encoding | **Accepted:** annex A.3.2 and §22.5 now specify the re-encoding (fixed key order, compact) | annex, spec | `peer_state` |
+| VER-I17 Touch ID asked before the served state is authenticated | **Accepted, fixed:** the early open only for a state signed by a device of the confirmed registry; otherwise the apply verifies fully before any prompt | `vault/adopt_prompt.rs` | — |
+| SEC-O4 / VER-O7 any failure read as "needs the user" | **Fixed:** 1 only for an LAError refusal (checked on hardware with throwaway keys: biometry-bound → LAError, plain → silent); other failures keep the presence check | `Bridge.swift` (200 lines) | DU-02b |
+| SEC-O5 cut-off revisions servable | **Fixed:** never served | `peer/graph.rs` | — |
+| VER-O8 unknown op on a behind Mac got status 1 | **Fixed:** status 4 before the gate | `peer/ops.rs` | — |
+| VER-O9 re-arriving cut-off revision counted as reason 2 | **Fixed:** `REFUSED_PROVENANCE` | `storage/merge.rs` | — |
+| VER-O10 cap charged before side effects; VER-O11 trivially passing host-hint test, merge-rejected child counted as waiting | **Noted, not changed:** the charge only affects the next answer (the put's own counts are already committed and the phone re-asks); the host-hint test checks form only; a merge-rejected child is re-offered and refused again — no state grows | — | — |
+| SEC-B2 owner decision "password every time" | **Implemented:** discarded agreement key when the bio key cannot be made; unlock straight to the MP, no prompt first; never a plain key | `device/identity.rs`, `vault/device_unlock.rs`, spec §2.7 | `a_mac_without_touch_id_unlocks_with_the_master_password_only` |
+
+**Deferred (complete):** "publish first"; XV-PEER file and CryptoKit-only
+Swift target (F.2b); "Forget this device" and old-token removal at
+re-pairing (F.2b); objects-mode byte ranges (F.2c phone side);
+**master-password adoption (F.2d — must land before any other device can
+rotate)**; cached LOCKED store open (F.2d); header refresh and
+items-changed event after a peer put (F.2d); tests still missing: the
+LOCKED-behind evaluation through `peer_serve` (PW-11), provider
+provenance at publish/apply, peer session idle expiry, the freshness
+wall-clock check, SEC-O3; legacy non-biometric test identities are
+re-created before the first real credential (Phase J gate item).
+
+**Closure.** No security-critical or spec-blocking finding remains; per
+the bounded loop the checkpoint closes with the dispositions above (the
+fix for the one new blocker is small, local and covered by a test that
+hangs without it).
 

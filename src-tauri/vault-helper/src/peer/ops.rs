@@ -20,12 +20,15 @@ use crate::storage::VaultStore;
 /// the resident key while UNLOCKED (a put needs it to open revisions).
 pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, acc: &Accepted, body: &[u8], now: u64) -> Result<Signed, Refusal> {
     let op = acc.req.operation;
+    if matches!(op, PeerOp::Unknown(_)) {
+        return status_only(ctx, acc, PeerStatus::FormatInvalid, now); // before the gate (annex A.1)
+    }
     let gated = (ctx.behind && !matches!(op, PeerOp::Hello | PeerOp::Status)) || (ctx.compromised && op == PeerOp::RevsPut);
     if gated {
         return status_only(ctx, acc, PeerStatus::BadState, now);
     }
     let bodiless = matches!(op, PeerOp::Hello | PeerOp::Status);
-    if matches!(op, PeerOp::Unknown(_)) || (bodiless && body != vault_proto::peer::body::empty().as_slice()) {
+    if bodiless && body != vault_proto::peer::body::empty().as_slice() {
         return status_only(ctx, acc, PeerStatus::FormatInvalid, now);
     }
     let answered = match op {

@@ -29,6 +29,11 @@ pub fn servable(ctx: &Ctx, store: &VaultStore) -> Result<Servable, ErrorCode> {
         let rid = uuid_bytes(&row.record_id).ok_or(ErrorCode::DbCorrupt)?;
         seen_records.insert(rid);
         let confirmed = sources::of(&store.conn, &row.revision_id)?.contains(&Source::Provider);
+        // A cut-off revision is never passed on (review SEC-O5): serving
+        // it would launder the revoked peer's provenance.
+        if crate::storage::set_aside::refused(&store.conn, &row.revision_id)? {
+            continue;
+        }
         if confirmed || local_ok {
             records.entry(rid).or_default().push(row);
         }

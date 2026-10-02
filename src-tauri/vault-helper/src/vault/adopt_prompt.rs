@@ -4,7 +4,9 @@
 //! finger as it does; held under the mutex, that prompt would block lock,
 //! auto-lock and every other op until answered. So `backup_apply` opens
 //! the envelope first, unlocked, and the apply under the mutex uses that
-//! result — for exactly the envelope file it was opened from.
+//! result — for exactly the envelope file it was opened from. It does so
+//! only for a state signed by a device this Mac's confirmed registry
+//! knows; any other state is fully verified before any prompt.
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
@@ -47,6 +49,13 @@ pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id) -> Option<Opened> {
         let base = crate::sync::pending::load(&store.conn).ok()?.map_or(local, |p| p.base.vk_generation);
         if session.remote.vk_generation == local && base == local {
             return None; // our own key: no envelope is opened
+        }
+        // Never ask for a finger over a state no enrolled device signed
+        // (review VER-I17): a hostile provider must not be able to raise
+        // the prompt at will. Anything else is opened, if at all, by the
+        // apply after its full verification.
+        if !crate::sync::fetch::signed_by_our_registry(store, &session.remote).unwrap_or(false) {
+            return None;
         }
         let me = SeDevice::load(&c.vault_dir).ok()?;
         let blob = index.find(&Role::Env { device_id: me.device_id() }).and_then(|e| session.t.received.get(&e.blob))?;

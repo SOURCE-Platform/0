@@ -669,7 +669,15 @@ nonces.
   own) the envelope path answers `DEVICE_NOT_AUTHORIZED` and the app
   offers the master password; a declined or failed fingerprint is
   `PRESENCE_DENIED`. The login password never
-  opens the vault. Adopting another device's rotation asks for Touch ID
+  opens the vault. **A Mac where the Enclave cannot make a
+  Touch-ID-bound key** (no sensor, no fingerprint enrolled; owner decision
+  2026-10-02, "password every time", review SEC-B2) never falls back to a
+  plain key: its registered agreement public key is generated and its
+  private half dropped at once, so envelopes sealed to it open nowhere,
+  `device.json` records `agree_discarded`, and every unlock goes straight
+  to the master password (no presence prompt first). Adopting another
+  device's key change there needs the master-password adoption path
+  (F.2d), which must land before any other device can rotate. Adopting another device's rotation asks for Touch ID
   too. **Residual (stated):** the signing key cannot be biometry-bound
   (background provider signing), so a thief with the login password can
   copy it and sign as the Mac — not read the vault, but publish
@@ -4612,8 +4620,9 @@ provider never committed. Every device therefore keeps two tiers:
   or your backup provider disagrees" (a provider equivocating between
   devices looks the same) and never recommends revoking the forwarder on
   this evidence alone.
-- A forwarder forwards only a provider-committed state, byte-for-byte
-  with its `recovery_auth`, or declines.
+- A forwarder forwards only a provider-committed state with its
+  `recovery_auth`, re-encoded from the verified fields (annex A.3.2), or
+  declines.
 - Consequence (stated): a singleton change (rotation, revocation, MP or RK
   change) reaches a device that cannot reach the provider only as
   revisions it cannot yet open (they wait) plus a banner; it is adopted at

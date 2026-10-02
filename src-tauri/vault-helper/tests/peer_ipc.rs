@@ -142,3 +142,21 @@ fn a_large_put_streams_in_after_the_envelope_checks() {
     assert_eq!(w.fx.op(json!({"op": "peer_serve", "session": session}))["refused"], 403);
     w.fx.remove_dir();
 }
+
+/// PW-08 (review VER-I4): at most two peer sessions; a third begin gets
+/// the signed status 2; `session_close` frees a slot.
+#[test]
+fn at_most_two_peer_sessions_and_close_frees_one() {
+    let _g = serial();
+    let w = world("ipc-two");
+    let body = vec![7u8; 30 * 1024];
+    let begin = |w: &W| w.fx.op(begin_frame(w, PeerOp::RevsPut, &body, body.len() as u64));
+    let first = begin(&w)["session"].as_str().expect("first session").to_string();
+    assert!(begin(&w)["session"].is_string(), "second session");
+    let third = begin(&w);
+    let resp = PeerResponse::decode(&b64::decode(third["response_tlv"].as_str().expect("signed answer")).unwrap()).unwrap();
+    assert_eq!(resp.status, PeerStatus::Limit);
+    assert_eq!(w.fx.op(json!({"op": "session_close", "session": first}))["ok"], true);
+    assert!(begin(&w)["session"].is_string(), "a slot is free again");
+    w.fx.remove_dir();
+}

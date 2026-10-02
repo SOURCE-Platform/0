@@ -38,6 +38,13 @@ pub struct DeviceFile {
     /// from this file (review VER-B2 / SEC-I4).
     #[serde(default)]
     pub agree_biometry: bool,
+    /// No usable agreement key (owner decision 2026-10-02, "password every
+    /// time"): this Mac could not make a Touch-ID-bound one, so its
+    /// agreement public key has no private half anywhere and every unlock
+    /// uses the master password. Setting it on another Mac only forces the
+    /// master password there.
+    #[serde(default)]
+    pub agree_discarded: bool,
 }
 
 /// A Secure-Enclave-backed device identity.
@@ -49,6 +56,7 @@ pub struct SeDevice {
     sign_pub: [u8; PUBKEY_LEN],
     agree_pub: [u8; PUBKEY_LEN],
     biometry: bool,
+    discarded: bool,
 }
 
 /// SE key-tag prefix. Debug builds honour `OV0_VAULT_SE_TAG_PREFIX` so test
@@ -79,6 +87,29 @@ fn wants_biometry(tag: &str) -> bool {
     true
 }
 
+/// A P-256 agreement public key whose private half is dropped as soon as
+/// it is made: envelopes sealed to it open nowhere.
+fn discarded_agreement_key() -> [u8; PUBKEY_LEN] {
+    loop {
+        let scalar = crate::crypto::secret::random_secret();
+        if let Ok(k) = p256::ecdsa::SigningKey::from_bytes(&p256::FieldBytes::from(*scalar.expose())) {
+            let mut out = [0u8; PUBKEY_LEN];
+            out.copy_from_slice(&k.verifying_key().to_sec1_bytes());
+            return out;
+        }
+    }
+}
+
+/// Debug builds: `OV0_VAULT_SE_BIOMETRY=absent` stands in for a Mac with no
+/// Touch ID, so tests reach the master-password-only path.
+fn biometry_absent() -> bool {
+    #[cfg(debug_assertions)]
+    if std::env::var("OV0_VAULT_SE_BIOMETRY").is_ok_and(|v| v == "absent") {
+        return true;
+    }
+    false
+}
+
 fn path(dir: &Path) -> PathBuf {
     dir.join(DEVICE_FILE_NAME)
 }
@@ -97,7 +128,16 @@ impl SeDevice {
         let key_tag = format!("{}{}", tag_prefix(), hex::encode(id));
         let sign_pub = se::create_signing_key(&key_tag)?;
         let biometry = wants_biometry(&key_tag);
-        let agree_pub = if biometry { se::create_agreement_key_bio(&key_tag)? } else { se::create_agreement_key(&key_tag)? };
+        // No Touch ID here (no sensor, none enrolled): never a plain key —
+        // an agreement key nobody holds, and the master password every
+        // time (owner decision 2026-10-02, review SEC-B2).
+        let (agree_pub, discarded) = if biometry_absent() {
+            (discarded_agreement_key(), true)
+        } else if biometry {
+            se::create_agreement_key_bio(&key_tag).map_or_else(|_| (discarded_agreement_key(), true), |p| (p, false))
+        } else {
+            (se::create_agreement_key(&key_tag)?, false)
+        };
         let dev = SeDevice {
             id,
             name: name.to_string(),
@@ -105,7 +145,8 @@ impl SeDevice {
             key_tag,
             sign_pub,
             agree_pub,
-            biometry,
+            biometry: biometry && !discarded,
+            discarded,
         };
         dev.persist(dir)?;
         Ok(dev)
@@ -118,7 +159,7 @@ impl SeDevice {
         let file = read_file(dir)?;
         let dev = SeDevice::from_file(&file)?;
         if se::signing_public(&dev.key_tag)? != dev.sign_pub
-            || se::agreement_public(&dev.key_tag)? != dev.agree_pub
+            || (!dev.discarded && se::agreement_public(&dev.key_tag)? != dev.agree_pub)
         {
             return Err(ErrorCode::DeviceNotAuthorized);
         }
@@ -148,6 +189,7 @@ impl SeDevice {
             agree_pub: hex::decode_array::<PUBKEY_LEN>(&file.agree_pub)
                 .ok_or(ErrorCode::DbCorrupt)?,
             biometry: file.agree_biometry,
+            discarded: file.agree_discarded,
         })
     }
 
@@ -161,6 +203,7 @@ impl SeDevice {
             sign_pub: hex::encode(self.sign_pub),
             agree_pub: hex::encode(self.agree_pub),
             agree_biometry: self.biometry,
+            agree_discarded: self.discarded,
         }
     }
 
@@ -181,6 +224,12 @@ impl SeDevice {
     /// presence check.
     pub fn biometric(&self) -> bool {
         se::agreement_needs_user(&self.key_tag)
+    }
+
+    /// This Mac has no usable agreement key: unlock goes straight to the
+    /// master password.
+    pub fn agreement_discarded(&self) -> bool {
+        self.discarded
     }
 
     /// What `device.json` records (status display only).

@@ -91,14 +91,14 @@ public func ov0_se_key_create_bio(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMut
     createAgree(tag, true, out, outLen)
 }
 
-/// 1 if the agreement key needs the user (biometry-bound), 0 if not — asked
-/// of the Enclave with interaction forbidden, never of an editable file.
+/// 1 if the Enclave refuses the agreement key for want of the user (biometry-
+/// bound), 0 if usable silently, an error otherwise (the LA check then stays).
 @_cdecl("ov0_se_key_needs_user")
 public func ov0_se_key_needs_user(_ tag: UnsafePointer<CChar>?) -> Int32 {
     let ctx = LAContext()
     ctx.interactionNotAllowed = true
     guard let tag, let key = loadAgree(String(cString: tag), ctx) else { return ERR_SE }
-    return (try? key.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PrivateKey().publicKey)) == nil ? 1 : 0
+    do { _ = try key.sharedSecretFromKeyAgreement(with: P256.KeyAgreement.PrivateKey().publicKey); return 0 } catch is LAError { return 1 } catch { return ERR_CRYPTO }
 }
 
 @_cdecl("ov0_se_key_public")

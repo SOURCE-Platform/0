@@ -112,17 +112,23 @@ fn leaving(conn: &Connection, rows: &[RevisionRow]) -> Result<HashSet<[u8; 32]>,
 
 /// §22.7 "parents = the nearest re-sealed ancestors": a remaining parent
 /// stays; a re-authored one is replaced by its new id; any other leaving
-/// parent is replaced by its own nearest ancestors (review VER-I6).
-fn nearest(p: &[u8; 32], gone: &HashSet<[u8; 32]>, renamed: &HashMap<[u8; 32], [u8; 32]>, by_id: &HashMap<[u8; 32], &RevisionRow>, out: &mut Vec<[u8; 32]>) {
-    if !gone.contains(p) {
-        out.push(*p);
-    } else if let Some(n) = renamed.get(p) {
-        out.push(*n);
-    } else if let Some(r) = by_id.get(p) {
-        for q in &r.parent_ids {
-            nearest(q, gone, renamed, by_id, out);
+/// parent by its own nearest ancestors (review VER-I6) — computed once per
+/// revision and remembered, so a peer-built graph with many paths costs
+/// its size, not its path count (review SEC-B3 / VER-B5).
+fn nearest(parents: &[[u8; 32]], gone: &HashSet<[u8; 32]>, renamed: &HashMap<[u8; 32], [u8; 32]>, memo: &HashMap<[u8; 32], Vec<[u8; 32]>>) -> Vec<[u8; 32]> {
+    let mut out: Vec<[u8; 32]> = Vec::new();
+    for p in parents {
+        if !gone.contains(p) {
+            out.push(*p);
+        } else if let Some(n) = renamed.get(p) {
+            out.push(*n);
+        } else if let Some(m) = memo.get(p) {
+            out.extend(m);
         }
     }
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Before a rotation or an adoption under `vk`: drop unconfirmed and
@@ -156,14 +162,18 @@ pub fn set_aside(store: &mut VaultStore, vk: &SecretBytes<32>) -> Result<usize, 
             super::merge::recompute_heads(&tx, rid)?;
         }
         rev_state::purge_pending(&tx)?;
+        // Leaving revisions in parents-first order: each one's nearest
+        // remaining ancestors are known before any child asks for them.
         let mut renamed: HashMap<[u8; 32], [u8; 32]> = HashMap::new();
-        for old in &mine {
-            let mut parents = Vec::new();
-            for p in &old.parent_ids {
-                nearest(p, &gone, &renamed, &by_id, &mut parents);
+        let mut memo: HashMap<[u8; 32], Vec<[u8; 32]>> = HashMap::new();
+        let own: HashSet<[u8; 32]> = mine.iter().map(|r| r.revision_id).collect();
+        for r in parents_first(&rows).into_iter().filter(|r| gone.contains(&r.revision_id)) {
+            let mut parents = nearest(&r.parent_ids, &gone, &renamed, &memo);
+            if !own.contains(&r.revision_id) {
+                memo.insert(r.revision_id, parents);
+                continue;
             }
-            parents.sort();
-            parents.dedup();
+            let old = r;
             parents.truncate(MAX_PARENTS);
             let rev = store.reauthored(vk, old, parents)?;
             match apply_revision(&tx, &rev, gen, &NoCompare)? {

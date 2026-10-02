@@ -113,8 +113,8 @@ pub fn apply_revision(
     }
     // §22.7: a revision cut off with its only (revoked) peer never enters.
     if super::set_aside::refused(conn, &rev.revision_id)? {
-        rev_state::count_refused_once(conn, rev, revisions::REFUSED_REVOKED_AUTHOR)?;
-        return Ok(MergeOutcome::Rejected(revisions::REFUSED_REVOKED_AUTHOR));
+        rev_state::count_refused_once(conn, rev, revisions::REFUSED_PROVENANCE)?;
+        return Ok(MergeOutcome::Rejected(revisions::REFUSED_PROVENANCE));
     }
     // §3.2: a revoked author's revisions outside Admit(D) never enter.
     if super::revoked::refuses(conn, rev)? {

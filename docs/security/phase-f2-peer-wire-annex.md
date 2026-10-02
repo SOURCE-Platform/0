@@ -138,7 +138,12 @@ publication commits (the provider returns no body) it has none until its
 next `state_get`, and declines meanwhile.
 
 - **State mode.** Request header `{0x01 have_generation}`. Response
-  header `{0x01 state}` — that body, byte for byte — or status 3 when its
+  header `{0x01 state}` — that body **re-encoded from its verified fields
+  only** (review SEC-O2 / VER-I16: UTF-8 JSON, keys in the order
+  `generation`, `vk_generation`, `state_commit` (hex), `manifest`,
+  `checkpoint` (base64), `recovery_auth` [`class`, `pub`, `salt`], no
+  whitespace; the requester recomputes `state_commit` from the fields, so
+  the encoding carries no trust) — or status 3 when its
   committed generation ≤ `have_generation` or it holds no body. The phone
   never reads status 3 as "up to date" (it only means "not from me").
 - **Objects mode.** Request header `{0x02 state_commit}` (no

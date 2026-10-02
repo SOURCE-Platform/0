@@ -62,6 +62,11 @@ pub fn unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         // is still open to this user, which is what makes that recovery.
         Err(_) => return unlock_failed_nonfatal(core, ErrorCode::DeviceNotAuthorized, deps),
     };
+    // A Mac without Touch ID holds no agreement key (owner decision
+    // 2026-10-02): the master password, with no prompt first.
+    if me.agreement_discarded() {
+        return unlock_failed_nonfatal(core, ErrorCode::DeviceNotAuthorized, deps);
+    }
     // §6.4: one presence evaluation. A Touch-ID-bound agreement key asks
     // for the fingerprint itself as it opens the envelope (owner decision
     // 2026-10-01: the login password never opens the vault); otherwise
