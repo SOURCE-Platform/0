@@ -92,7 +92,8 @@ fn wants_biometry(tag: &str) -> bool {
 fn discarded_agreement_key() -> [u8; PUBKEY_LEN] {
     loop {
         let scalar = crate::crypto::secret::random_secret();
-        if let Ok(k) = p256::ecdsa::SigningKey::from_bytes(&p256::FieldBytes::from(*scalar.expose())) {
+        // Straight from the zeroizing buffer: no stray copy of the scalar.
+        if let Ok(k) = p256::ecdsa::SigningKey::from_slice(scalar.expose()) {
             let mut out = [0u8; PUBKEY_LEN];
             out.copy_from_slice(&k.verifying_key().to_sec1_bytes());
             return out;
@@ -134,7 +135,7 @@ impl SeDevice {
         let (agree_pub, discarded) = if biometry_absent() {
             (discarded_agreement_key(), true)
         } else if biometry {
-            se::create_agreement_key_bio(&key_tag).map_or_else(|_| (discarded_agreement_key(), true), |p| (p, false))
+            se::create_agreement_key_bio(&key_tag)?.map_or_else(|| (discarded_agreement_key(), true), |p| (p, false))
         } else {
             (se::create_agreement_key(&key_tag)?, false)
         };

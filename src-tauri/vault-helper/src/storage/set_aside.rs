@@ -128,6 +128,10 @@ fn nearest(parents: &[[u8; 32]], gone: &HashSet<[u8; 32]>, renamed: &HashMap<[u8
     }
     out.sort();
     out.dedup();
+    // Only the smallest `MAX_PARENTS` are ever used, and the smallest of a
+    // union are among the smallest of its parts: keeping just those gives
+    // the same result and bounds every entry (review SEC-I1, 99760e0).
+    out.truncate(MAX_PARENTS);
     out
 }
 

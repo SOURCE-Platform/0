@@ -74,9 +74,21 @@ pub fn create_agreement_key(tag: &str) -> Result<[u8; 65], ErrorCode> {
 }
 
 /// An agreement key the Enclave releases only to the current Touch ID
-/// fingerprints (owner decision 2026-10-01).
-pub fn create_agreement_key_bio(tag: &str) -> Result<[u8; 65], ErrorCode> {
-    pubkey_call(tag, ov0_se_key_create_bio)
+/// fingerprints (owner decision 2026-10-01). `Ok(None)`: the Enclave
+/// would not make one here (no sensor, none enrolled) — the caller's
+/// "password every time" case; any other failure (the Keychain) is an
+/// error, never a reason to give up Touch ID (review SEC-O2, 99760e0).
+pub fn create_agreement_key_bio(tag: &str) -> Result<Option<[u8; 65]>, ErrorCode> {
+    let tag = c_tag(tag)?;
+    let mut out = [0u8; 65];
+    let mut len = 0usize;
+    // SAFETY: fixed 65-byte buffer; the bridge writes at most that.
+    let rc = unsafe { ov0_se_key_create_bio(tag.as_ptr(), out.as_mut_ptr(), &mut len) };
+    match rc {
+        0 if len == 65 && out[0] == 0x04 => Ok(Some(out)),
+        -3 => Ok(None), // the Enclave made no key; -2 (Keychain) stays an error
+        rc => Err(map(rc)),
+    }
 }
 
 /// Whether the agreement key needs the user (is biometry-bound), as the
@@ -164,7 +176,9 @@ pub fn hpke_open(tag: &str, reason: &str, info: &[u8], enc: &[u8], ct: &[u8]) ->
     };
     match rc {
         0 => {}
-        -6 => return Err(ErrorCode::DeviceNotAuthorized),
+        // No biometry, or no agreement key at all (a Mac on the master
+        // password, a wiped key): not tampering (review SEC-I2, 99760e0).
+        -6 | -3 => return Err(ErrorCode::DeviceNotAuthorized),
         -7 => return Err(ErrorCode::PresenceDenied),
         _ => return Err(ErrorCode::IntegrityFailure),
     }

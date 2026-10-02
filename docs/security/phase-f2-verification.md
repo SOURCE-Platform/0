@@ -167,7 +167,7 @@ once (`agree_discarded`), and every unlock goes straight to the master
 password. Rejected: refusing such Macs (recovery onto a Mac mini or Mac
 Studio would be impossible); a plain key (the login password would open
 the vault). Condition: the master-password adoption path (F.2d) lands
-before any other device can rotate.
+before any other device can publish (widened at §5.2).
 
 ## 3. Peer wire annex review (spec §22.8) — closed
 
@@ -334,4 +334,21 @@ re-created before the first real credential (Phase J gate item).
 the bounded loop the checkpoint closes with the dispositions above (the
 fix for the one new blocker is small, local and covered by a test that
 hangs without it).
+
+### 5.2 Focused security check of `99760e0`
+
+One `security-reviewer` pass over `git diff 37e945c 99760e0` (the
+`nearest` fix and the owner decision). **No blockers.**
+
+| Finding | Disposition | Fix / where |
+|---|---|---|
+| SEC-I1 memo entries quadratic on a comb-shaped peer graph | **Fixed:** each entry keeps only its `MAX_PARENTS` smallest ids — provably the same result (the smallest of a union are among the smallest of its parts) and bounded | `storage/set_aside.rs` |
+| SEC-I2 a discarded-key Mac cannot verify a served state at a key it lacks (incl. catch-up after its own directory is restored) | **Accepted:** precondition widened to "MP adoption (F.2d) before any other device can publish"; restore-after-own-rotation recorded as a stated limitation (way out: RK recovery); a missing agreement key now maps to `DEVICE_NOT_AUTHORIZED`, not `INTEGRITY_FAILURE` | spec §2.7, `device/se.rs` |
+| SEC-O1 stack copies of the throwaway scalar | **Fixed:** `SigningKey::from_slice` on the zeroizing buffer | `device/identity.rs` |
+| SEC-O2 a transient Keychain error made a Touch ID Mac password-only forever | **Fixed:** only the Enclave's refusal (`-3`) means "no Touch ID here"; a Keychain failure (`-2`) is an error | `device/se.rs` |
+| SEC-O3 early prompt skipped for a signer only the served registry knows | **Noted for F.2d** (unreachable until another device can enroll and rotate) | — |
+| SEC-O4 `cut_off` autocommits before the adoption's set-aside (pre-existing) | **Noted for F.2d** (low probability; refused rows are no longer served) | — |
+
+Targeted runs: `peer_followups` (7), `device_unlock` (7),
+`device_identity` (7) green. **The F.2c Mac-side checkpoint is closed.**
 
