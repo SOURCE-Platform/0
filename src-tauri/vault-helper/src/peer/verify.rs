@@ -88,7 +88,9 @@ fn remember(store: &VaultStore, req: &PeerRequest, now: u64) -> Result<(), Refus
     if fresh == 0 { Err(Refusal::Forbidden) } else { Ok(()) }
 }
 
-#[cfg(test)]
-pub fn reset_rate_for_tests() {
+/// Forget the in-memory rate counts (tests; a helper restart does the
+/// same — the cap limits load, not authority).
+#[doc(hidden)]
+pub fn reset_rate() {
     *RATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }
