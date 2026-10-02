@@ -113,6 +113,9 @@ async fn hello(Json(body): Json<Value>) -> Reply {
     };
     match resp {
         Ok(resp) if resp["ok"] == Value::Bool(true) => {
+            if let Some(id) = resp["reply"]["new_device_id"].as_str() {
+                session::record_device(id.to_string());
+            }
             if let Some(s) = resp.get("sas").and_then(Value::as_str) {
                 eprintln!("vault-enroll: hello accepted, SAS shown on both screens");
                 session::record_sas(s.to_string());

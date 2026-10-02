@@ -37,6 +37,9 @@ pub struct Session {
     pub bundle: watch::Sender<Option<Value>>,
     pub handle: super::server::EnrollHandle,
     pub acked: bool,
+    /// The registry id the helper assigned the phone (§5.2), from the
+    /// hello reply: its peer-sync token is issued to this id.
+    pub new_device_id: Option<String>,
 }
 
 impl Session {
@@ -117,6 +120,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
         bundle,
         handle,
         acked: false,
+        new_device_id: None,
     });
     Ok(response)
 }
@@ -143,6 +147,10 @@ pub fn sas() -> Option<String> {
 
 pub(super) fn record_sas(value: String) {
     with_session(|s| s.sas = Some(value));
+}
+
+pub(super) fn record_device(id: String) {
+    with_session(|s| s.new_device_id = Some(id));
 }
 
 pub(super) fn record_ack() {
@@ -172,9 +180,36 @@ pub async fn confirm() -> Result<Value, String> {
         Some(b) => b.clone(),
         None => pull_bundle(&resp).await?,
     };
+    let bundle = with_peer_endpoint(bundle).await;
     publish_bundle(bundle)?;
     eprintln!("vault-enroll: bundle published to the waiting device");
     Ok(json!({"ok": true}))
+}
+
+/// Wire annex A.4: the peer-sync endpoint a SOURCE Vault phone needs —
+/// the SPKI pin of the long-lived mobile server, a fresh token bound to
+/// the phone's registry id, the port and the address hint (untrusted; the
+/// pin decides). Delivered only over this QR-pinned channel, after the
+/// SAS was compared. Absent if the mobile server is not running.
+async fn with_peer_endpoint(mut bundle: Value) -> Value {
+    let (id, host) = match with_session(|s| (s.new_device_id.clone(), s.payload.host.clone())) {
+        Some((Some(id), host)) => (id, host),
+        _ => return bundle,
+    };
+    let (Some(tokens), Some(spki)) = (crate::core::mobile::peer_tokens::shared(), crate::core::mobile::peer_tokens::spki_sha256()) else {
+        return bundle;
+    };
+    let port = crate::core::mobile::mobile_port();
+    if port == 0 {
+        return bundle;
+    }
+    match tokens.issue(&id).await {
+        Ok(token) => {
+            bundle["peer_endpoint"] = json!({ "spki_sha256": spki, "token": token, "port": port, "host_hints": [host] });
+        }
+        Err(e) => eprintln!("vault-enroll: no peer endpoint: {e}"),
+    }
+    bundle
 }
 
 /// §1.3 TR-09: a bundle larger than one frame arrives as a stream; read

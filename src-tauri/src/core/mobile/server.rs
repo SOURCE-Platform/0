@@ -52,6 +52,11 @@ pub async fn serve_mobile(
         .ok()
         .and_then(|name| name.into_string().ok())
         .unwrap_or_else(|| "Source".to_string());
+    // Peer-sync tokens and the SPKI pin SOURCE Vault phones store (§22.8).
+    match super::peer_tokens::spki_of_key_pem(&key_pem) {
+        Ok(spki) => super::peer_tokens::install(db.clone(), spki),
+        Err(e) => eprintln!("vault peer route unavailable: {e}"),
+    }
     let pairing = Arc::new(PairingManager::new(db.clone()));
     let pair_requests = Arc::new(PairRequests::new());
     let enrollment = Arc::new(Enrollment::new());
@@ -84,6 +89,10 @@ pub async fn serve_mobile(
         .route("/v1/clips/status", get(super::routes_clips::clip_status))
         // The vault's only route here: read-only registry status (§4.7).
         .route("/v1/vault/registry", get(super::routes_vault::registry_status))
+        .route(
+            "/v1/vault/peer",
+            post(super::routes_vault_peer::peer).layer(DefaultBodyLimit::max(super::routes_vault_peer::MAX_HTTP_BODY + 1)),
+        )
         .route("/v1/stream", get(stream_ws))
         .route("/v1/agent", get(super::agent_socket::agent_ws))
         .with_state(state.clone());
@@ -103,7 +112,7 @@ pub async fn serve_mobile(
         let state_clone = state.clone();
         tokio::spawn(async move {
             let _ = axum_server::bind_rustls(addr, tls)
-                .serve(server.into_make_service())
+                .serve(server.into_make_service_with_connect_info::<SocketAddr>())
                 .await;
         });
         // Advertise after bind attempt (best effort).
