@@ -58,9 +58,10 @@ fn ask(w: &W, c: &Ctx, op: PeerOp, body: Vec<u8>) -> (PeerStatus, Vec<u8>) {
         n: [w.n.get(); 16],
     };
     let sig = w.phone_dev.sign_prehash(&req.prehash()).unwrap();
-    let store = VaultStore::open(&w.fx.dir).unwrap();
+    let mut store = VaultStore::open(&w.fx.dir).unwrap();
     let acc = authenticate(c, &store, &req.encode(), &sig, Some(&body), NOW).expect("authenticated");
-    let signed = ops::serve(c, &store, &acc, &body, NOW).expect("served");
+    let vk = w.fx.core.lock().unwrap().vk.as_ref().map(|v| vault_helper::crypto::secret::SecretBytes::new(*v.expose()));
+    let signed = ops::serve(c, &mut store, vk.as_ref(), &acc, &body, NOW).expect("served");
     let resp = PeerResponse::decode(&signed.response_tlv).unwrap();
     assert_eq!(resp.body_sha256, body_hash(&signed.body));
     (resp.status, signed.body)
@@ -141,5 +142,80 @@ fn a_malformed_body_is_status_four() {
     let c = ctx(&w, true, false, false);
     assert_eq!(ask(&w, &c, PeerOp::Heads, vec![0, 0, 0, 0, 1, 0xFF]).0, PeerStatus::FormatInvalid);
     assert_eq!(ask(&w, &c, PeerOp::RevsGet, encode_heads_req(&[1])).0, PeerStatus::FormatInvalid);
+    w.fx.remove_dir();
+}
+
+/// A copy of the Mac's vault standing in for the phone's store: same key,
+/// authoring as the phone's registry id (what a SOURCE Vault phone does).
+fn phone_store(w: &W) -> (std::path::PathBuf, VaultStore, vault_helper::crypto::secret::SecretBytes<32>) {
+    let dir = std::env::temp_dir().join(format!("vhphone-store-{}-{}", std::process::id(), w.n.get()));
+    let _ = std::fs::remove_dir_all(&dir);
+    fx_copy(&w.fx.dir, &dir);
+    let store = VaultStore::open(&dir).unwrap();
+    store.set_author_device(&w.id).unwrap();
+    let vk = w.fx.core.lock().unwrap().vk.as_ref().map(|v| vault_helper::crypto::secret::SecretBytes::new(*v.expose())).unwrap();
+    (dir, store, vk)
+}
+
+fn fx_copy(from: &std::path::Path, to: &std::path::Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for e in std::fs::read_dir(from).unwrap().flatten() {
+        let dst = to.join(e.file_name());
+        if e.file_type().unwrap().is_dir() {
+            fx_copy(&e.path(), &dst);
+        } else if !e.file_name().to_string_lossy().ends_with(".sock") {
+            std::fs::copy(e.path(), dst).unwrap();
+        }
+    }
+}
+
+fn row_of(store: &VaultStore, record: &str) -> vault_helper::storage::revisions::RevisionRow {
+    let h = vault_helper::storage::revisions::heads(&store.conn, record).unwrap();
+    vault_helper::storage::revisions::get_row(&store.conn, &h[0]).unwrap().unwrap()
+}
+
+fn put_body(rows: &[vault_helper::storage::revisions::RevisionRow]) -> Vec<u8> {
+    Revs { complete: None, objects: rows.iter().map(|r| object::encode(r).unwrap()).collect(), unavailable: vec![] }.encode()
+}
+
+/// PS-01/04 and provenance: a phone's new record is admitted and recorded
+/// as delivered by that phone; a forged revision is refused by AEAD; a
+/// batch with a missing parent or out of order is refused whole.
+#[test]
+fn a_phones_revisions_are_opened_before_admission() {
+    use vault_helper::storage::sources::{self, Source};
+    use vault_proto::peer::body::PutCounts;
+    let _g = serial();
+    let w = world("px-put");
+    let c = ctx(&w, true, false, false);
+    let (pdir, mut ps, vk) = phone_store(&w);
+    let pt = br#"{"title":"from the phone","username":"p@example.test","password":"synthetic","urls":[{"host":"example.test","match":"exact","allow_http":false}]}"#;
+    let meta = br#"{"title":"from the phone","username":"p@example.test","hosts":["example.test"]}"#;
+    let rid = ps.add_record(&vk, 1, pt, meta).unwrap();
+    let first = row_of(&ps, &rid);
+
+    // Out of order / missing parent: a child alone, its parent unknown here.
+    ps.write_successor(&vk, &rid, 1, 1, pt, meta, first.created_at).unwrap();
+    let child = row_of(&ps, &rid);
+    assert_eq!(ask(&w, &c, PeerOp::RevsPut, put_body(&[child.clone()])).0, PeerStatus::FormatInvalid);
+    assert_eq!(ask(&w, &c, PeerOp::RevsPut, put_body(&[child.clone(), first.clone()])).0, PeerStatus::FormatInvalid);
+
+    // A forged revision: garbage ciphertext under a valid-looking row.
+    let mut forged = first.clone();
+    forged.revision_id = [0x77; 32];
+    forged.ct = vec![0u8; first.ct.len()];
+    let (st, b) = ask(&w, &c, PeerOp::RevsPut, put_body(&[forged]));
+    assert_eq!(st, PeerStatus::Ok);
+    assert_eq!(PutCounts::decode(&b).unwrap(), PutCounts { admitted: 0, waiting: 0, refused: 1 });
+
+    // The genuine closure, in canonical order.
+    let (st, b) = ask(&w, &c, PeerOp::RevsPut, put_body(&[first.clone(), child.clone()]));
+    assert_eq!(st, PeerStatus::Ok);
+    assert_eq!(PutCounts::decode(&b).unwrap().admitted, 2);
+    let mac = VaultStore::open(&w.fx.dir).unwrap();
+    assert_eq!(sources::of(&mac.conn, &child.revision_id).unwrap(), vec![Source::Peer(w.id)]);
+    assert!(w.fx.op(serde_json::json!({"op": "list_items"}))["items"].to_string().contains("from the phone"));
+    drop(ps);
+    let _ = std::fs::remove_dir_all(pdir);
     w.fx.remove_dir();
 }

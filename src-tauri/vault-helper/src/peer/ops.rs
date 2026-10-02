@@ -11,10 +11,12 @@ use super::respond::{sign, status_only, Signed};
 use super::serve_revs::{heads_for, revs_for};
 use super::verify::Accepted;
 use super::{Ctx, Refusal};
+use crate::crypto::secret::SecretBytes;
 use crate::storage::VaultStore;
 
-/// Answer an authenticated request whose body hashed correctly.
-pub fn serve(ctx: &Ctx, store: &VaultStore, acc: &Accepted, body: &[u8], now: u64) -> Result<Signed, Refusal> {
+/// Answer an authenticated request whose body hashed correctly. `vk` is
+/// the resident key while UNLOCKED (a put needs it to open revisions).
+pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, acc: &Accepted, body: &[u8], now: u64) -> Result<Signed, Refusal> {
     let op = acc.req.operation;
     let gated = (ctx.behind && !matches!(op, PeerOp::Hello | PeerOp::Status)) || (ctx.compromised && op == PeerOp::RevsPut);
     if gated {
@@ -31,9 +33,17 @@ pub fn serve(ctx: &Ctx, store: &VaultStore, acc: &Accepted, body: &[u8], now: u6
             Ok(wants) => servable(ctx, store).and_then(|s| revs_for(&s, &wants)).map(|r| (PeerStatus::Ok, r.encode())),
             Err(_) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
         },
-        // Wire annex A.3.2 needs the stored verified state body, and A.3.5
-        // the admission path with provenance: not served yet.
-        PeerOp::State | PeerOp::RevsPut => return status_only(ctx, acc, PeerStatus::BadState, now),
+        PeerOp::RevsPut => match vk.filter(|_| !ctx.locked) {
+            Some(vk) => match super::admit::put(store, vk, acc.req.sender_device_id, body) {
+                Ok(counts) => Ok((PeerStatus::Ok, counts.encode())),
+                Err(crate::errors::ErrorCode::FormatInvalid) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
+                Err(e) => Err(e),
+            },
+            // The LOCKED inbox (A.3.5) is not built yet.
+            None => return status_only(ctx, acc, PeerStatus::BadState, now),
+        },
+        // Wire annex A.3.2 needs the stored verified state body: not yet.
+        PeerOp::State => return status_only(ctx, acc, PeerStatus::BadState, now),
     };
     match answered {
         Ok((st, b)) => sign(ctx, acc, st, b, now),

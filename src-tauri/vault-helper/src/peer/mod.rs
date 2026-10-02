@@ -4,6 +4,7 @@
 //! `respond` builds and signs every response itself; `ops` answers each
 //! operation. Nothing here signs a caller-supplied digest.
 
+pub mod admit;
 pub mod graph;
 pub mod ops;
 pub mod respond;
