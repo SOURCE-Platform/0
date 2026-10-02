@@ -29,15 +29,36 @@ fn empty(code: StatusCode) -> Response {
     (code, Bytes::new()).into_response()
 }
 
-/// RFC 1918, link-local, unique-local, loopback.
+/// Any non-200 answer from this route carries a zero-length body,
+/// including the 413 axum's body limit produces itself.
+pub async fn bare_refusals(r: Response) -> Response {
+    if r.status() == StatusCode::OK { r } else { empty(r.status()) }
+}
+
+/// RFC 1918, link-local, unique-local — the phone's private network
+/// (annex A.2.1; no loopback: the phone is never on this Mac).
 pub fn private(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local() || v4.is_loopback(),
+        IpAddr::V4(v4) => v4.is_private() || v4.is_link_local(),
         IpAddr::V6(v6) => {
             let seg = v6.segments()[0];
-            v6.is_loopback() || (seg & 0xfe00) == 0xfc00 || (seg & 0xffc0) == 0xfe80 || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_private() || v4.is_loopback())
+            (seg & 0xfe00) == 0xfc00 || (seg & 0xffc0) == 0xfe80 || v6.to_ipv4_mapped().is_some_and(|v4| v4.is_private() || v4.is_link_local())
         }
     }
+}
+
+/// `peer_endpoint.host_hints` (annex A.4): IP literals of this Mac's
+/// private-network addresses, at most 8 — here the address of the default
+/// route's interface, found by a UDP `connect` that sends nothing. Empty
+/// when there is none; the phone then browses mDNS, and the SPKI pin
+/// decides either way.
+pub fn private_addresses() -> Vec<String> {
+    let probe = |bind: &str, to: &str| {
+        let s = std::net::UdpSocket::bind(bind).ok()?;
+        s.connect(to).ok()?;
+        s.local_addr().ok().map(|a| a.ip()).filter(|ip| private(*ip))
+    };
+    [probe("0.0.0.0:0", "192.0.2.1:9"), probe("[::]:0", "[2001:db8::1]:9")].into_iter().flatten().map(|ip| ip.to_string()).take(8).collect()
 }
 
 pub async fn peer(ConnectInfo(addr): ConnectInfo<SocketAddr>, headers: HeaderMap, body: Bytes) -> Response {
@@ -157,14 +178,97 @@ async fn call(frame: Value) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::private;
+    use axum::body::Bytes;
+    use axum::extract::ConnectInfo;
+    use axum::http::{HeaderMap, StatusCode};
+
+    async fn status_and_body(r: axum::response::Response) -> (StatusCode, usize) {
+        let s = r.status();
+        (s, axum::body::to_bytes(r.into_body(), usize::MAX).await.unwrap().len())
+    }
+
+    fn carriage(sender: [u8; 16]) -> Bytes {
+        let req = vault_proto::peer::PeerRequest {
+            vault_id: [1; 16],
+            sender_device_id: sender,
+            receiver_device_id: [3; 16],
+            operation: vault_proto::peer::PeerOp::Hello,
+            body_sha256: vault_proto::peer::body_hash(&vault_proto::peer::body::empty()),
+            t: 1_790_000_000,
+            n: [4; 16],
+        };
+        let e = vault_proto::crypto::tlv::EntryBuilder::new()
+            .field_bytes(0x01, &req.encode())
+            .and_then(|b| b.field_bytes(0x02, &[0u8; 64]))
+            .and_then(|b| b.field_bytes(0x03, &vault_proto::peer::body::empty()))
+            .unwrap()
+            .build();
+        Bytes::from(e)
+    }
+
+    fn bearer(t: &str) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        h.insert("authorization", format!("Bearer {t}").parse().unwrap());
+        h
+    }
+
+    /// PW-06 / PW-12 on main (review VER-I8): every refusal is decided
+    /// before any helper call, and carries a zero-length body.
+    #[tokio::test]
+    async fn tokens_are_scoped_bound_to_their_device_and_refused_bare() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        let db = crate::core::database::Database { pool };
+        db.run_migrations().await.unwrap();
+        crate::core::mobile::peer_tokens::install(std::sync::Arc::new(db), "00".repeat(32));
+        let tokens = crate::core::mobile::peer_tokens::shared().unwrap();
+        let phone = [7u8; 16];
+        let token = tokens.issue(&vault_proto::crypto::hex::encode(phone)).await.unwrap();
+        let lan = ConnectInfo("192.168.1.20:5000".parse().unwrap());
+
+        // No token, or one from any other scope: 401.
+        let r = super::peer(lan, HeaderMap::new(), carriage(phone)).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::UNAUTHORIZED, 0));
+        let r = super::peer(lan, bearer("a-source-mobile-token"), carriage(phone)).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::UNAUTHORIZED, 0));
+        // A real token presented for another sender: 401.
+        let r = super::peer(lan, bearer(&token), carriage([8; 16])).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::UNAUTHORIZED, 0));
+        // Over the size cap: 413, before the token is even looked at.
+        let big = Bytes::from(vec![0u8; super::MAX_HTTP_BODY + 1]);
+        let r = super::peer(lan, bearer(&token), big).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::PAYLOAD_TOO_LARGE, 0));
+        // From outside the private network: 403.
+        let r = super::peer(ConnectInfo("8.8.8.8:5000".parse().unwrap()), bearer(&token), carriage(phone)).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::FORBIDDEN, 0));
+        // Forgotten: the token stops working.
+        tokens.forget(&vault_proto::crypto::hex::encode(phone)).await.unwrap();
+        let r = super::peer(lan, bearer(&token), carriage(phone)).await;
+        assert_eq!(status_and_body(r).await, (StatusCode::UNAUTHORIZED, 0));
+    }
+
+    #[tokio::test]
+    async fn axums_own_refusals_lose_their_body() {
+        use axum::response::IntoResponse;
+        let r = (StatusCode::PAYLOAD_TOO_LARGE, "length limit exceeded").into_response();
+        assert_eq!(status_and_body(super::bare_refusals(r).await).await, (StatusCode::PAYLOAD_TOO_LARGE, 0));
+    }
 
     #[test]
     fn only_private_networks_reach_the_peer_route() {
-        for ok in ["10.1.2.3", "172.16.0.9", "192.168.1.20", "169.254.3.4", "127.0.0.1", "fd12::1", "fe80::1", "::1"] {
+        for ok in ["10.1.2.3", "172.16.0.9", "192.168.1.20", "169.254.3.4", "fd12::1", "fe80::1"] {
             assert!(private(ok.parse().unwrap()), "{ok}");
         }
-        for bad in ["8.8.8.8", "100.64.1.1", "172.32.0.1", "2001:db8::1", "2606:4700::1"] {
+        for bad in ["8.8.8.8", "100.64.1.1", "172.32.0.1", "2001:db8::1", "2606:4700::1", "127.0.0.1", "::1"] {
             assert!(!private(bad.parse().unwrap()), "{bad}");
+        }
+    }
+
+    #[test]
+    fn host_hints_are_private_ip_literals() {
+        let hints = super::private_addresses();
+        assert!(hints.len() <= 8);
+        for h in hints {
+            assert!(private(h.parse::<std::net::IpAddr>().expect("an IP literal")), "{h}");
         }
     }
 }

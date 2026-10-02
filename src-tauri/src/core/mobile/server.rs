@@ -91,7 +91,10 @@ pub async fn serve_mobile(
         .route("/v1/vault/registry", get(super::routes_vault::registry_status))
         .route(
             "/v1/vault/peer",
-            post(super::routes_vault_peer::peer).layer(DefaultBodyLimit::max(super::routes_vault_peer::MAX_HTTP_BODY + 1)),
+            post(super::routes_vault_peer::peer)
+                .layer(DefaultBodyLimit::max(super::routes_vault_peer::MAX_HTTP_BODY + 1))
+                // Annex A.2.1: every refusal is zero-length, axum's own 413 too.
+                .layer(axum::middleware::map_response(super::routes_vault_peer::bare_refusals)),
         )
         .route("/v1/stream", get(stream_ws))
         .route("/v1/agent", get(super::agent_socket::agent_ws))

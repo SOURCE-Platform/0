@@ -64,3 +64,25 @@ pub fn parse(json: &[u8]) -> Result<RemoteState, ErrorCode> {
         recovery_auth,
     })
 }
+
+/// The verified state re-encoded from its parsed fields only (review
+/// SEC-O2 / VER-O3): what this Mac keeps and forwards to a peer under its
+/// own signature carries nothing the provider added beside them. `parse`
+/// of the result yields the same state.
+pub fn canonical(r: &RemoteState) -> Vec<u8> {
+    let auth: Vec<Value> = r
+        .recovery_auth
+        .iter()
+        .map(|e| serde_json::json!({ "class": e.class.code(), "pub": crate::crypto::hex::encode(e.public), "salt": crate::crypto::hex::encode(e.salt) }))
+        .collect();
+    serde_json::to_vec(&serde_json::json!({
+        "generation": r.generation,
+        "vk_generation": r.vk_generation,
+        "state_commit": crate::crypto::hex::encode(r.state_commit),
+        "manifest": b64::encode(&r.manifest_bytes),
+        "checkpoint": b64::encode(&r.checkpoint_bytes),
+        "recovery_auth": auth,
+    }))
+    .expect("plain JSON")
+}
+

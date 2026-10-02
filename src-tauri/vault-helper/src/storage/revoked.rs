@@ -75,8 +75,11 @@ pub fn record_local(conn: &Connection, device_id: &[u8; 16], me: &str) -> Result
 
 /// Remove refused revisions and their descendants from the admitted graph
 /// and the pending table, count them, and recompute the affected records'
-/// heads. Descendants authored by `me` are returned for re-authoring.
-fn purge(conn: &Connection, me: &str) -> Result<Vec<RevisionRow>, ErrorCode> {
+/// heads. This device's own descendants are returned for re-authoring —
+/// own by provenance, never by the author field a peer could have forged
+/// (review SEC-I2: a revoked phone's edit claiming this Mac as author is
+/// refused with the rest).
+fn purge(conn: &Connection, _me: &str) -> Result<Vec<RevisionRow>, ErrorCode> {
     let rows = all_rows(conn)?;
     let mut refused: HashSet<[u8; 32]> = HashSet::new();
     for r in &rows {
@@ -102,7 +105,7 @@ fn purge(conn: &Connection, me: &str) -> Result<Vec<RevisionRow>, ErrorCode> {
     for r in rows.iter().filter(|r| refused.contains(&r.revision_id)) {
         db(conn.execute("DELETE FROM record_revs WHERE revision_id=?1", params![r.revision_id.as_slice()]))?;
         records.insert(r.record_id.clone());
-        if r.author_device == me {
+        if super::sources::of(conn, &r.revision_id)?.contains(&super::sources::Source::Own) {
             mine.push(r.clone());
         } else {
             rev_state::count_refused(conn, &r.record_id, revisions::REFUSED_REVOKED_AUTHOR)?;

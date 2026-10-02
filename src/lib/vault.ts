@@ -288,6 +288,9 @@ export interface VaultDevice {
   /// Unix seconds from the registry entry that enrolled it.
   enrolled_at: number | null;
   self: boolean;
+  /** Changes only this device delivered, not yet backed up: removing the
+   * device discards them (spec §22.7). */
+  unpublished?: number;
 }
 
 export interface EnrollmentStart {

@@ -23,6 +23,7 @@ extern "C" {
         out_pt: *mut u8, pt_cap: usize, out_pt_len: *mut usize,
     ) -> i32;
     fn ov0_se_key_public(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
+    fn ov0_se_key_needs_user(tag: *const i8) -> i32;
     fn ov0_se_key_delete(tag: *const i8) -> i32;
     fn ov0_se_sign_create(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
     fn ov0_se_sign_public(tag: *const i8, out: *mut u8, out_len: *mut usize) -> i32;
@@ -76,6 +77,14 @@ pub fn create_agreement_key(tag: &str) -> Result<[u8; 65], ErrorCode> {
 /// fingerprints (owner decision 2026-10-01).
 pub fn create_agreement_key_bio(tag: &str) -> Result<[u8; 65], ErrorCode> {
     pubkey_call(tag, ov0_se_key_create_bio)
+}
+
+/// Whether the agreement key needs the user (is biometry-bound), as the
+/// Enclave answers it. Any failure to ask reads as "no", so the caller's
+/// own presence check runs.
+pub fn agreement_needs_user(tag: &str) -> bool {
+    // SAFETY: valid C string; the bridge only reads it.
+    c_tag(tag).is_ok_and(|t| unsafe { ov0_se_key_needs_user(t.as_ptr()) } == 1)
 }
 
 pub fn agreement_public(tag: &str) -> Result<[u8; 65], ErrorCode> {

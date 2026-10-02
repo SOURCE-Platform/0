@@ -75,7 +75,11 @@ impl Transfer {
     }
 
     pub fn expired(&self) -> bool {
-        self.touched.elapsed() > IDLE_SESSION
+        self.idle_longer_than(IDLE_SESSION)
+    }
+
+    pub fn idle_longer_than(&self, d: Duration) -> bool {
+        self.touched.elapsed() > d
     }
 
     fn touch(&mut self) {

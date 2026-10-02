@@ -660,10 +660,15 @@ nonces.
   device-bound blob lives in the login keychain and a thief with the login
   password could otherwise copy and use it from any process. Opening the
   envelope asks for Touch ID itself (the unlock path skips its own LA
-  check, so there is one prompt); without Touch ID available (no sensor,
-  lid closed, none enrolled, locked out) the envelope path answers
-  `DEVICE_NOT_AUTHORIZED` and the app offers the master password; a
-  declined fingerprint is `PRESENCE_DENIED`. The login password never
+  check, so there is one prompt — **only for a key the Secure Enclave
+  reports as needing the user**, asked by one key agreement with
+  interaction forbidden (`ov0_se_key_needs_user`), never decided from
+  `device.json`, which any same-user process can edit; review VER-B2);
+  without Touch ID available (no sensor, lid closed, none enrolled,
+  locked out, or any other refusal by the Enclave that is not the user's
+  own) the envelope path answers `DEVICE_NOT_AUTHORIZED` and the app
+  offers the master password; a declined or failed fingerprint is
+  `PRESENCE_DENIED`. The login password never
   opens the vault. Adopting another device's rotation asks for Touch ID
   too. **Residual (stated):** the signing key cannot be biometry-bound
   (background provider signing), so a thief with the login password can
@@ -885,7 +890,11 @@ ChaCha20-Poly1305 (KEM 0x0010, KDF 0x0001, AEAD 0x0003).
   `ov0_hpke_seal(pubkey65, info, plaintext, aad) → (enc, ct)` and
   `ov0_hpke_open_se(key_tag, info, enc, ct, aad) → plaintext`. `aad` is
   a v0.3.1 addition: RFC 9180 authenticates additional data per message,
-  and the published vectors use it. The bridge is the only Swift linked
+  and the published vectors use it. **v0.5 (Touch ID decision, review
+  VER-B3):** the open is `ov0_hpke_open_se_auth(key_tag, reason, info,
+  enc, ct) → plaintext` (empty aad, a Touch ID reason), plus
+  `ov0_se_key_create_bio` and `ov0_se_key_needs_user`; the plain
+  `ov0_hpke_open_se` moved to the PoC shim. The bridge is the only Swift linked
   into the helper; it holds no policy and no key material beyond SE
   references. The PoC-only software-open and blob-inspection entry points
   live in the PoC crate's own shim, not in the shipping bridge.
@@ -4630,9 +4639,14 @@ channel).
   is neither in the batch nor admitted or pending locally makes the
   **whole batch** malformed (`FORMAT_INVALID`); it is never kept pending
   indefinitely.
-- **Waiting.** A revision at another `vk_generation`, or by an author the
-  committed registry does not know, **waits** in `pending_revs` (neither
-  admitted nor counted), as the provider path does.
+- **Waiting.** A revision at another `vk_generation`, by an author the
+  committed registry does not know, or resting on such a revision or on
+  one still pending here, **waits**: it is neither admitted nor counted
+  as refused, and the receiver does **not** keep it — the sender offers
+  it again at its next exchange (review VER-I2: a kept copy would need the
+  registry and key checks repeated at every retry, and is exactly the
+  storage the per-peer quota bounds, so a peer never leaves anything in
+  `pending_revs`).
 - **Provenance (new, normative).** The store records, per revision, every
   source that delivered it: `own` (authored here — "the own authoring
   journal"), `provider` (in the index of a provider-confirmed state, or in
@@ -4659,8 +4673,9 @@ channel).
   index this device publishes, its old-VK ciphertext deleted with the
   rotation. It returns only if it later arrives in a provider-confirmed
   state (re-sealed by its author under the same `revision_id`, SY-10).
-- **Own descendants of a set-aside revision** are re-authored in the same
-  rotation transaction, as §3.2 "Descendants" does for refused ancestors:
+- **Own descendants of a set-aside revision** (tombstones included) are
+  re-authored in the same transaction as the set-aside, which commits
+  with one manifest flip before the rotation is staged (review SEC-B1), as §3.2 "Descendants" does for refused ancestors:
   new `revision_id`, same content (revisions are full snapshots), parents
   = the nearest re-sealed ancestors. The published index is therefore
   always ancestor-closed (§11.3 step 5). If the set-aside revision later
@@ -4680,10 +4695,12 @@ channel).
   (`PROVENANCE_REFUSED`, counted) — whatever author they claim (§3.2's
   author rule alone does not stop a thief holding the old VK):
   - by the **revoker**, at its local revocation commit, before it builds
-    the index; this amends §3.2's revoker rule, whose `Admit(D)` becomes
-    "every D-authored revision the revoker holds with an `own` or
-    `provider` source". The confirmation screen says how many unpublished
-    changes from that device will be discarded;
+    the index — written into the rotation's staged database, so a
+    rotation that fails refuses nothing (review SEC-B1); this amends
+    §3.2's revoker rule, whose `Admit(D)` becomes "every D-authored
+    revision the revoker holds with an `own` or `provider` source". The
+    device list says, beside each device, how many unpublished changes
+    only it delivered (removing it discards them);
   - by **every other device**, when its committed tier accepts the
     revocation, for every D-only revision not listed in the index of the
     provider state that committed it.

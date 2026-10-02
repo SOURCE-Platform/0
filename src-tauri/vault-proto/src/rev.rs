@@ -21,6 +21,8 @@ pub const REFUSED_ZERO_AUTHOR: u8 = 3;
 pub const REFUSED_MALFORMED: u8 = 4;
 /// Sealed under a `vk_generation` other than the local one (SEC-B1).
 pub const REFUSED_GENERATION: u8 = 5;
+/// Delivered only by a revoked peer (§22.7 cutoff, `PROVENANCE_REFUSED`).
+pub const REFUSED_PROVENANCE: u8 = 6;
 
 /// Record kinds this build understands (§8: login, card). An unknown
 /// non-zero kind is a newer format (`FORMAT_TOO_NEW`).

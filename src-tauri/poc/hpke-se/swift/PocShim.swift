@@ -51,3 +51,25 @@ public func ov0_se_key_blob(_ tag: UnsafePointer<CChar>?, _ out: UnsafeMutablePo
     q.removeAll()
     return emit(blob, out, cap, outLen)
 }
+
+/// The PoC's open with an SE key by tag (the production bridge opens only
+/// through `ov0_hpke_open_se_auth`, with a Touch ID reason).
+@_cdecl("ov0_hpke_open_se")
+public func ov0_hpke_open_se(
+    _ tag: UnsafePointer<CChar>?,
+    _ info: UnsafePointer<UInt8>?, _ infoLen: Int,
+    _ enc: UnsafePointer<UInt8>?, _ encLen: Int,
+    _ ct: UnsafePointer<UInt8>?, _ ctLen: Int,
+    _ aad: UnsafePointer<UInt8>?, _ aadLen: Int,
+    _ outPt: UnsafeMutablePointer<UInt8>?, _ ptCap: Int, _ outPtLen: UnsafeMutablePointer<Int>?
+) -> Int32 {
+    guard let infoData = data(info, infoLen), let aadData = data(aad, aadLen),
+          let encData = data(enc, encLen), let ctData = data(ct, ctLen) else { return -1 }
+    var blob = [UInt8](repeating: 0, count: 4096)
+    var n = 0
+    guard ov0_se_key_blob(tag, &blob, blob.count, &n) == 0,
+          let key = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: Data(blob[..<n])) else { return -3 }
+    guard var r = try? HPKE.Recipient(privateKey: key, ciphersuite: suite, info: infoData, encapsulatedKey: encData),
+          let pt = try? r.open(ctData, authenticating: aadData) else { return -4 }
+    return emit(pt, outPt, ptCap, outPtLen)
+}

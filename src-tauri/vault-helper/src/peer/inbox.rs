@@ -1,5 +1,7 @@
 //! A LOCKED Mac's bounded inbox (wire annex A.3.5): a `peer_revs_put`
-//! that arrives while LOCKED is checked structurally and stored as
+//! that arrives while LOCKED is checked as far as it can be without the
+//! key — decoding, canonical order, parent closure (review VER-I3) — and
+//! stored as
 //! received — ciphertext only, ≤ 2,000 revisions and 16 MiB per peer —
 //! and admitted at the next unlock through the ordinary §22.7 path
 //! (`admit::put`), after who-may-speak is checked again. A peer's inbox
@@ -25,6 +27,11 @@ fn db<T>(r: rusqlite::Result<T>) -> Result<T, ErrorCode> {
 pub fn stash(store: &VaultStore, sender: &[u8; 16], body: &[u8], now: u64) -> Result<u64, ErrorCode> {
     let batch = Revs::decode(body, true)?;
     let n = batch.objects.len() as i64;
+    if n > MAX_OBJECTS {
+        return Err(ErrorCode::PeerLimit);
+    }
+    let rows = super::admit::decode_batch(&batch)?;
+    super::admit::closed(store, &rows)?;
     let (held, bytes): (i64, i64) = db(store.conn.query_row(
         "SELECT coalesce(sum(objects), 0), coalesce(sum(length(body)), 0) FROM peer_inbox WHERE sender = ?1",
         params![&sender[..]],

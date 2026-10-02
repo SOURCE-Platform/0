@@ -158,7 +158,7 @@ fn migrate_v2(conn: &Connection) -> Result<(), ErrorCode> {
         "BEGIN IMMEDIATE;{V3}
          INSERT INTO rev_sources (revision_id, source)
            SELECT revision_id,
-                  CASE WHEN author_device = (SELECT value FROM kv WHERE key = 'author_device')
+                  CASE WHEN CAST(author_device AS BLOB) = (SELECT value FROM kv WHERE key = 'author_device')
                        THEN CAST('own' AS BLOB) ELSE CAST('provider' AS BLOB) END
            FROM record_revs;
          PRAGMA user_version = {USER_VERSION};
@@ -259,8 +259,12 @@ mod tests {
         let path = tmp_db("v2");
         {
             let conn = open_db(&path, true).unwrap();
-            conn.execute_batch("DROP TABLE rev_sources; DROP TABLE peer_replay;").unwrap();
-            conn.execute("INSERT INTO kv (key, value) VALUES ('author_device', 'me')", []).unwrap();
+            conn.execute_batch(
+                "DROP TABLE rev_sources; DROP TABLE peer_replay; DROP TABLE peer_inbox; DROP TABLE refused_peer;",
+            )
+            .unwrap();
+            // As production stores it (`set_author_device`): a BLOB.
+            conn.execute("INSERT INTO kv (key, value) VALUES ('author_device', ?1)", [b"me".to_vec()]).unwrap();
             conn.execute(
                 "INSERT INTO record_revs VALUES (?1, 'r', X'', 'me', 1, 0, 1, 1, 1, ?2, X'00', ?2, X'00', 0, 0)",
                 rusqlite::params![vec![7u8; 32], vec![0u8; 24]],

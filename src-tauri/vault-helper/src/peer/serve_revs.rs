@@ -3,7 +3,7 @@
 //! canonical order, and the caps (8 MiB, 2,000 revisions per response).
 
 use vault_proto::backup::object;
-use vault_proto::peer::body::{bucket, MAX_HEADS, TOO_LARGE, TOO_MANY_HEADS, WITHHELD};
+use vault_proto::peer::body::{bucket, MAX_HEADS, NOT_HELD, TOO_LARGE, TOO_MANY_HEADS, WITHHELD};
 use vault_proto::peer::exchange::{HeadsItem, HeadsResp, Revs};
 
 use super::graph::{closure, heads, Servable};
@@ -52,9 +52,9 @@ pub fn revs_for(s: &Servable, wants: &[([u8; 16], Vec<[u8; 32]>)]) -> Result<Rev
     let (mut size, mut count) = (OVERHEAD, 0usize);
     for (rid, have) in wants {
         let Some(rows) = s.records.get(rid) else {
-            if s.withheld.contains(rid) {
-                out.unavailable.push((*rid, WITHHELD));
-            }
+            // Never silently dropped (annex A.3): withheld by the freshness
+            // rule, or simply not held here.
+            out.unavailable.push((*rid, if s.withheld.contains(rid) { WITHHELD } else { NOT_HELD }));
             continue;
         };
         let objs: Vec<Vec<u8>> = closure(rows, have).iter().map(object::encode).collect::<Result<_, _>>()?;

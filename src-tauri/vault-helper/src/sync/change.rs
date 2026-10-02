@@ -37,6 +37,10 @@ pub struct RemoteChange<'a> {
     pub revoke: Option<([u8; 16], String)>,
     /// A new registry file committed with the change (revocation).
     pub registry: Option<Vec<u8>>,
+    /// §22.7 revoker's cutoff: the revisions only the revoked device
+    /// delivered (found before the set-aside dropped them), refused in the
+    /// staged database so a failed rotation refuses nothing.
+    pub cutoff: Vec<([u8; 32], String)>,
 }
 
 /// The public updates for `mp`/`rk` under `h`'s salts (§11.4 D-11).
@@ -75,6 +79,7 @@ impl ExtraStaging for RemoteChange<'_> {
 
     fn stage_db(&self, conn: &Connection, new_header: &Header) -> Result<(), ErrorCode> {
         if let Some((target, me)) = &self.revoke {
+            crate::storage::set_aside::refuse(conn, target, &self.cutoff)?;
             revoked::record_local(conn, target, me)?;
         }
         let updates = updates_for(new_header, self.mp, self.rk)?;

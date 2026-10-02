@@ -81,13 +81,15 @@ fn strict_decoding_refuses_every_deviation() {
         .field_bytes(4, &[3; 16]).unwrap().field_uint(5, 1).unwrap().field_bytes(6, &[0; 32]).unwrap()
         .field_uint(7, 1).unwrap().build();
     assert!(PeerRequest::decode(&missing).is_err());
-    // Unknown operation code.
-    let mut bad_op = request();
-    bad_op.operation = PeerOp::Hello;
-    let mut bytes = bad_op.encode();
+    // An unknown operation code decodes (it is authenticated, then answered
+    // with the signed status 4, annex A.1); one beyond u16 does not.
+    let mut bytes = request().encode();
     let pos = bytes.windows(6).position(|w| w == [0x05, 0, 0, 0, 1, 0x01]).unwrap();
     bytes[pos + 5] = 0x09;
-    assert!(PeerRequest::decode(&bytes).is_err());
+    assert_eq!(PeerRequest::decode(&bytes).unwrap().operation, PeerOp::Unknown(9));
+    let mut wide = request();
+    wide.operation = PeerOp::Unknown(0xFFFF);
+    assert_eq!(PeerRequest::decode(&wide.encode()).unwrap(), wide);
     // Bodies: an empty value, an unknown tag, a padded integer.
     let empty_value = encode_document(&[EntryBuilder::new().field_bytes(0x01, &[]).unwrap().build()]);
     assert_eq!(decode_heads_req(&empty_value), Err(ErrorCode::FormatInvalid));
@@ -148,3 +150,27 @@ fn heads_digest_is_order_independent_and_per_bucket() {
     let changed: Vec<usize> = (0..256).filter(|i| d1[i * 32..i * 32 + 32] != d3[i * 32..i * 32 + 32]).collect();
     assert_eq!(changed, vec![bucket(&b.0) as usize]);
 }
+
+/// Annex A.5 (review VER-I11): the heads digest formula pinned on a
+/// committed input, so a change to it cannot pass unnoticed.
+#[test]
+fn the_heads_digest_is_pinned() {
+    use sha2::Digest;
+    let records = vec![([1u8; 16], vec![[9u8; 32], [3u8; 32]]), ([2u8; 16], vec![[4u8; 32]])];
+    let d = heads_digest(&records);
+    let b1 = bucket(&[1u8; 16]) as usize;
+    // One bucket = SHA-256 over (record_id ‖ u16 head_count ‖ heads ascending).
+    let mut h = sha2::Sha256::new();
+    h.update([1u8; 16]);
+    h.update(2u16.to_be_bytes());
+    h.update([3u8; 32]);
+    h.update([9u8; 32]);
+    if bucket(&[2u8; 16]) as usize != b1 {
+        assert_eq!(&d[b1 * 32..b1 * 32 + 32], h.finalize().as_slice());
+    }
+    let whole: [u8; 32] = sha2::Sha256::digest(&d).into();
+    assert_eq!(vault_proto::crypto::hex::encode(whole), PINNED);
+}
+
+const PINNED: &str = "23dc6d99a506bfa739ac710032f19f0ce00f18d38285d2c53317679091c0bb60";
+

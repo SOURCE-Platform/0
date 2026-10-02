@@ -192,8 +192,8 @@ pub async fn confirm() -> Result<Value, String> {
 /// pin decides). Delivered only over this QR-pinned channel, after the
 /// SAS was compared. Absent if the mobile server is not running.
 async fn with_peer_endpoint(mut bundle: Value) -> Value {
-    let (id, host) = match with_session(|s| (s.new_device_id.clone(), s.payload.host.clone())) {
-        Some((Some(id), host)) => (id, host),
+    let id = match with_session(|s| s.new_device_id.clone()) {
+        Some(Some(id)) => id,
         _ => return bundle,
     };
     let (Some(tokens), Some(spki)) = (crate::core::mobile::peer_tokens::shared(), crate::core::mobile::peer_tokens::spki_sha256()) else {
@@ -205,7 +205,8 @@ async fn with_peer_endpoint(mut bundle: Value) -> Value {
     }
     match tokens.issue(&id).await {
         Ok(token) => {
-            bundle["peer_endpoint"] = json!({ "spki_sha256": spki, "token": token, "port": port, "host_hints": [host] });
+            let hints = crate::core::mobile::routes_vault_peer::private_addresses();
+            bundle["peer_endpoint"] = json!({ "spki_sha256": spki, "token": token, "port": port, "host_hints": hints });
         }
         Err(e) => eprintln!("vault-enroll: no peer endpoint: {e}"),
     }

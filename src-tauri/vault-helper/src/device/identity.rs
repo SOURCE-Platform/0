@@ -32,8 +32,10 @@ pub struct DeviceFile {
     pub key_tag: String,
     pub sign_pub: String,
     pub agree_pub: String,
-    /// The agreement key is Touch-ID bound (owner decision 2026-10-01).
-    /// Informational only: the Enclave enforces it whatever this says.
+    /// The agreement key was created Touch-ID bound (owner decision
+    /// 2026-10-01). A record only: whether unlock skips its own presence
+    /// check is asked of the Enclave (`SeDevice::biometric`), never read
+    /// from this file (review VER-B2 / SEC-I4).
     #[serde(default)]
     pub agree_biometry: bool,
 }
@@ -173,7 +175,16 @@ impl SeDevice {
 
     /// Opening this device's envelope asks for Touch ID itself, so the
     /// unlock path skips its own presence check (one prompt, not two).
+    /// Answered by the Enclave, not by `device.json`, which any same-user
+    /// process can edit (review VER-B2): a key that is usable without the
+    /// user — every identity from before the Touch ID decision — keeps the
+    /// presence check.
     pub fn biometric(&self) -> bool {
+        se::agreement_needs_user(&self.key_tag)
+    }
+
+    /// What `device.json` records (status display only).
+    pub fn created_biometric(&self) -> bool {
         self.biometry
     }
 

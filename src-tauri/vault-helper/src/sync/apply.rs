@@ -205,10 +205,10 @@ pub fn apply(
         // §22.7: anything only D delivered here, and not in the provider
         // state that carries D's revocation, is refused for good.
         let listed: HashSet<[u8; 32]> = authors.keys().copied().collect();
-        crate::storage::set_aside::cut_off(&store, &d.device_id, &listed)?;
+        crate::storage::set_aside::cut_off(&store.conn, &d.device_id, &listed)?;
     }
     let mut store = store;
-    for row in reauthor.iter().filter(|r| !r.deleted) {
+    for row in &reauthor {
         if store.reauthor(&vk, row).is_ok() {
             report.reauthored += 1;
         }

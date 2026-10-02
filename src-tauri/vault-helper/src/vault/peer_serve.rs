@@ -21,6 +21,7 @@ use serde_json::{json, Value};
 use vault_proto::b64;
 use vault_proto::peer::{PeerOp, PeerStatus};
 
+use super::provider_ops::MAX_PEER_SESSIONS;
 use super::{lock_core, OpOutcome, VaultCore};
 use crate::crypto::hex;
 use crate::device::SeDevice;
@@ -35,6 +36,26 @@ use crate::sync::session::Transfer;
 pub const INLINE: usize = 24 * 1024;
 pub const MAX_BODY: u64 = 1 << 20;
 const FRESH: Duration = Duration::from_secs(15 * 60);
+
+/// When the provider state was last verified, on both clocks: the
+/// monotonic one stops while the Mac sleeps (review VER-I7), the wall
+/// clock can be set back; fresh only while both say so.
+#[derive(Clone, Copy)]
+pub struct Checked {
+    at: std::time::Instant,
+    wall: u64,
+}
+
+impl Checked {
+    pub fn now() -> Checked {
+        Checked { at: std::time::Instant::now(), wall: now_epoch() }
+    }
+
+    fn fresh(&self) -> bool {
+        let wall = now_epoch();
+        self.at.elapsed() < FRESH && wall >= self.wall && wall - self.wall < FRESH.as_secs()
+    }
+}
 
 fn field(frame: &Value, k: &str) -> Result<Vec<u8>, ErrorCode> {
     frame.get(k).and_then(Value::as_str).and_then(b64::decode).ok_or(ErrorCode::InvalidInput)
@@ -52,6 +73,9 @@ fn context(c: &VaultCore, store: &VaultStore) -> Result<Ctx, Refusal> {
     }
     let me = SeDevice::load(&c.vault_dir).map_err(|_| Refusal::Unavailable)?;
     let locked = c.vk.is_none();
+    // COMPROMISED is persisted evidence: a LOCKED Mac reads it too (review
+    // SEC-O3), failing closed when it cannot.
+    let compromised = c.state == VaultState::Compromised || !matches!(crate::storage::compromised::load(&store.conn), Ok(None));
     // The floor check needs no key, so a LOCKED Mac applies it too.
     let behind = if locked { crate::vault::floor::behind(store).unwrap_or(true) } else { c.behind };
     Ok(Ctx {
@@ -59,9 +83,9 @@ fn context(c: &VaultCore, store: &VaultStore) -> Result<Ctx, Refusal> {
         vault_id: store.header.vault_id.0,
         me,
         behind,
-        compromised: c.state == VaultState::Compromised,
+        compromised,
         locked,
-        fresh: !locked && c.provider_checked.is_some_and(|t| t.elapsed() < FRESH),
+        fresh: !locked && c.provider_checked.is_some_and(|t| t.fresh()),
     })
 }
 
@@ -91,8 +115,15 @@ fn with_store(core: &Arc<Mutex<VaultCore>>, f: impl FnOnce(&mut VaultCore, &Ctx,
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
 }
 
-/// The helper's signed answer: inline, or a one-blob stream session.
-fn answer(c: &mut VaultCore, signed: Signed) -> Value {
+/// The helper's signed answer: inline, or a one-blob stream session — or,
+/// with both peer sessions taken, the signed status 2 (annex A.2.2).
+fn answer(c: &mut VaultCore, ctx: &Ctx, acc: &verify::Accepted, signed: Signed) -> Value {
+    if signed.body.len() > INLINE && c.provider.peer_sessions() >= MAX_PEER_SESSIONS {
+        return match status_only(ctx, acc, PeerStatus::Limit, now_epoch()) {
+            Ok(s) => answer(c, ctx, acc, s),
+            Err(r) => refused(r),
+        };
+    }
     let mut out = json!({
         "response_tlv": b64::encode(&signed.response_tlv),
         "signature": b64::encode(&signed.signature),
@@ -106,7 +137,7 @@ fn answer(c: &mut VaultCore, signed: Signed) -> Value {
         out["session"] = json!(hex::encode(t.id));
         out["stream"] = json!(hex::encode(sha));
         out["size"] = json!(size);
-        c.provider.peer = Some(t);
+        c.provider.peer.push(t);
     }
     out
 }
@@ -114,7 +145,7 @@ fn answer(c: &mut VaultCore, signed: Signed) -> Value {
 fn serve_one(c: &mut VaultCore, ctx: &Ctx, store: &mut VaultStore, acc: &verify::Accepted, body: &[u8], now: u64) -> Value {
     let vk = c.vk.as_ref().map(|v| crate::crypto::secret::SecretBytes::new(*v.expose()));
     match ops::serve(ctx, store, vk.as_ref(), acc, body, now) {
-        Ok(signed) => answer(c, signed),
+        Ok(signed) => answer(c, ctx, acc, signed),
         Err(r) => refused(r),
     }
 }
@@ -154,21 +185,21 @@ pub fn peer_serve_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcom
         let gated = (ctx.behind && !matches!(op, PeerOp::Hello | PeerOp::Status)) || (ctx.compromised && op == PeerOp::RevsPut);
         let early = if gated {
             Some(PeerStatus::BadState)
-        } else if size > MAX_BODY || c.provider.peer_in.is_some() {
-            Some(PeerStatus::Limit) // over the cap, or another body already streaming
+        } else if size > MAX_BODY || c.provider.peer_sessions() >= MAX_PEER_SESSIONS {
+            Some(PeerStatus::Limit) // over the cap, or both peer sessions taken
         } else {
             None
         };
         if let Some(st) = early {
             return Ok(match status_only(ctx, &acc, st, now) {
-                Ok(signed) => answer(c, signed),
+                Ok(signed) => answer(c, ctx, &acc, signed),
                 Err(r) => refused(r),
             });
         }
         let mut t = Transfer::new(BTreeMap::new());
         t.expect([(acc.req.body_sha256, MAX_BODY)]);
         let out = json!({ "session": hex::encode(t.id), "need": [hex::encode(acc.req.body_sha256)] });
-        c.provider.peer_in = Some((acc, t));
+        c.provider.peer_in.push((acc, t));
         Ok(out)
     })
 }
@@ -179,9 +210,10 @@ fn complete(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
         return OpOutcome::err(ErrorCode::InvalidInput);
     };
     with_store(core, |c, ctx, store| {
-        let Some((acc, t)) = c.provider.peer_in.take().filter(|(_, t)| t.id == id) else {
+        let Some(i) = c.provider.peer_in.iter().position(|(_, t)| t.id == id) else {
             return Ok(refused(Refusal::Forbidden));
         };
+        let (acc, t) = c.provider.peer_in.swap_remove(i);
         let Some(body) = t.received.get(&acc.req.body_sha256).cloned() else {
             return Ok(refused(Refusal::Forbidden)); // never streamed, or failed
         };

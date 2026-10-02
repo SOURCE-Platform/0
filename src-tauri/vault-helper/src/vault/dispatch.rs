@@ -38,7 +38,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         let verified = r["up_to_date"] == true || r.get("admitted").is_some() || r["committed"] == true;
         tend_floor(core, verified);
         if verified && op != "backup_commit_result" {
-            lock_core(core).provider_checked = Some(std::time::Instant::now());
+            lock_core(core).provider_checked = Some(super::peer_serve::Checked::now());
         }
     }
     out

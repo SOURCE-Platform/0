@@ -1,11 +1,14 @@
 //! `peer_revs_put` on an unlocked Mac (spec v0.5 §22.7, wire annex
 //! A.3.5): a batch must be in the canonical order with its full parent
 //! closure (else the whole batch is `FORMAT_INVALID`); a revision at
-//! another key generation or by an author this registry does not know
-//! waits (not stored, not counted as refused — the phone sends it again);
-//! every other one is AEAD-opened under the current key **before**
-//! admission (a forged tombstone never enters); admitted revisions record
-//! the sending peer as their source.
+//! another key generation, by an author this registry does not know, or
+//! resting on such a revision or on a parent still pending here **waits**:
+//! it is not admitted, not counted, and not kept — the phone offers it
+//! again at its next exchange (so a peer never fills `pending_revs`,
+//! review SEC-I1). Every other one is AEAD-opened under the current key
+//! **before** admission (a forged tombstone never enters; its descendants
+//! in the batch are refused with it); admitted revisions record the
+//! sending peer as their source.
 
 use std::collections::HashSet;
 
@@ -24,44 +27,55 @@ use crate::sync::compare::VkCompare;
 
 pub const MAX_BATCH: usize = 2_000;
 
-/// `Err(FormatInvalid)` → the caller answers status 4, nothing applied.
+/// `Err(FormatInvalid)` → status 4; `Err(PeerLimit)` → status 2 (over the
+/// batch cap). Nothing is applied in either case.
 pub fn put(store: &mut VaultStore, vk: &SecretBytes<32>, sender: [u8; 16], body: &[u8]) -> Result<PutCounts, ErrorCode> {
     let batch = Revs::decode(body, true)?;
     if batch.objects.len() > MAX_BATCH {
-        return Err(ErrorCode::FormatInvalid);
+        return Err(ErrorCode::PeerLimit);
     }
-    let rows: Vec<RevisionRow> = batch.objects.iter().map(|o| object::decode(o)).collect::<Result<_, _>>().map_err(|_| ErrorCode::FormatInvalid)?;
-    canonical(&rows)?;
+    let rows = decode_batch(&batch)?;
     closed(store, &rows)?;
     let reg = crate::registry::log::read_state(&store.dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
     let gen = store.header.vk_generation;
     let mut counts = PutCounts { admitted: 0, waiting: 0, refused: 0 };
+    let (mut waits, mut refuses) = (HashSet::new(), HashSet::new());
     let mut admissible = Vec::new();
     for row in rows {
+        let held_pending = row.parent_ids.iter().any(|p| rev_state::is_pending(&store.conn, p).unwrap_or(true));
         let known_author = uuid_bytes(&row.author_device).is_some_and(|a| reg.devices.iter().any(|d| d.device_id == a));
-        if row.vk_generation != gen || !known_author {
-            counts.waiting += 1;
-            continue;
-        }
-        if store.open_row(vk, &row).is_err() || store.open_row_meta(vk, &row).is_err() {
+        if row.parent_ids.iter().any(|p| refuses.contains(p)) {
+            refuses.insert(row.revision_id); // §3.2: below a refused revision
             rev_state::count_refused(&store.conn, &row.record_id, REFUSED_MALFORMED)?;
             counts.refused += 1;
-            continue;
+        } else if row.parent_ids.iter().any(|p| waits.contains(p)) || held_pending || row.vk_generation != gen || !known_author {
+            waits.insert(row.revision_id);
+            counts.waiting += 1;
+        } else if store.open_row(vk, &row).is_err() || store.open_row_meta(vk, &row).is_err() {
+            refuses.insert(row.revision_id);
+            rev_state::count_refused(&store.conn, &row.record_id, REFUSED_MALFORMED)?;
+            counts.refused += 1;
+        } else {
+            admissible.push(row);
         }
-        admissible.push(row);
     }
     let target = store.flip_target(store.header.clone());
     {
         let tx = store.conn.unchecked_transaction().map_err(|_| ErrorCode::DbCorrupt)?;
         let outcomes = apply_batch(&tx, &admissible, gen, &VkCompare { store, vk })?;
         for (row, o) in admissible.iter().zip(&outcomes) {
+            // Admitted now (directly, or promoted from pending within this
+            // batch): this peer is a source of it (review SEC-I2).
+            if get_row(&tx, &row.revision_id)?.is_some() {
+                sources::add(&tx, &row.revision_id, Source::Peer(sender))?;
+            }
             match o {
                 MergeOutcome::Rejected(_) => counts.refused += 1,
-                MergeOutcome::Pending => counts.waiting += 1,
-                _ => {
-                    counts.admitted += 1;
-                    sources::add(&tx, &row.revision_id, Source::Peer(sender))?;
+                MergeOutcome::Pending if get_row(&tx, &row.revision_id)?.is_none() => {
+                    rev_state::drop_pending(&tx, &row.revision_id)?;
+                    counts.waiting += 1;
                 }
+                _ => counts.admitted += 1,
             }
         }
         crate::storage::flip::stamp(&tx, &target)?;
@@ -69,6 +83,13 @@ pub fn put(store: &mut VaultStore, vk: &SecretBytes<32>, sender: [u8; 16], body:
     }
     store.persist_head()?;
     Ok(counts)
+}
+
+/// Decode, then the order and closure rules (`FORMAT_INVALID`).
+pub fn decode_batch(batch: &Revs) -> Result<Vec<RevisionRow>, ErrorCode> {
+    let rows: Vec<RevisionRow> = batch.objects.iter().map(|o| object::decode(o)).collect::<Result<_, _>>().map_err(|_| ErrorCode::FormatInvalid)?;
+    canonical(&rows)?;
+    Ok(rows)
 }
 
 /// Grouped by record in ascending `record_id`, each record in the
@@ -92,12 +113,12 @@ fn canonical(rows: &[RevisionRow]) -> Result<(), ErrorCode> {
     Ok(())
 }
 
-/// Every parent is in the batch or already held here.
-fn closed(store: &VaultStore, rows: &[RevisionRow]) -> Result<(), ErrorCode> {
+/// Every parent is in the batch, admitted here, or pending here.
+pub fn closed(store: &VaultStore, rows: &[RevisionRow]) -> Result<(), ErrorCode> {
     let ids: HashSet<[u8; 32]> = rows.iter().map(|r| r.revision_id).collect();
     for r in rows {
         for p in &r.parent_ids {
-            if !ids.contains(p) && get_row(&store.conn, p)?.is_none() {
+            if !ids.contains(p) && get_row(&store.conn, p)?.is_none() && !rev_state::is_pending(&store.conn, p)? {
                 return Err(ErrorCode::FormatInvalid);
             }
         }

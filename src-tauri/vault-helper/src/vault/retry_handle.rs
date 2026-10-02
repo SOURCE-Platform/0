@@ -162,7 +162,7 @@ pub fn rotate_failing(
         commit_tag: crate::device::SeDevice::load(&store.dir).ok().map(|d| d.key_tag().to_string()),
     };
     let base = pending::load(&store.conn)?.ok_or(ErrorCode::BadState)?.base;
-    let change = RemoteChange { envelopes: Some(&envelopes), op: pending::PendingOp::VaultCreate, security_driven: false, base, mp: None, rk: Some(rk), revoke: None, registry: None };
+    let change = RemoteChange { envelopes: Some(&envelopes), op: pending::PendingOp::VaultCreate, security_driven: false, base, mp: None, rk: Some(rk), revoke: None, registry: None, cutoff: Vec::new() };
     let retry = Retry { change, handle };
     Ok(rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(rk), Some(&retry), fail)?.new_vk)
 }

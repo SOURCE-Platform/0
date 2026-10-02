@@ -50,7 +50,7 @@ fn peer_serve_answers_inline_and_streams_large_bodies() {
     ids.sort();
     let wants: Vec<([u8; 16], Vec<[u8; 32]>)> = ids.iter().map(|i| (*i, vec![])).collect();
     // Fresh: a verified provider check is simulated by the core flag.
-    w.fx.core.lock().unwrap().provider_checked = Some(std::time::Instant::now());
+    w.fx.core.lock().unwrap().provider_checked = Some(vault_helper::vault::peer_serve::Checked::now());
     let r = w.fx.op(frame(&w, PeerOp::RevsGet, encode_revs_get(&wants)));
     assert_eq!(r["ok"], true, "{r}");
     assert!(r.get("body").is_none(), "streamed, not inline");

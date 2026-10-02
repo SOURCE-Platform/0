@@ -176,6 +176,13 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
                 {/* Two devices can share a name; when it was added is
                     what tells them apart. */}
                 <span className="text-xs text-muted-foreground">{added(device)}</span>
+                {!!device.unpublished && (
+                  <span className="text-xs text-amber-400/90">
+                    {device.unpublished === 1
+                      ? "1 change from this device is not backed up yet; removing it discards that change."
+                      : `${device.unpublished} changes from this device are not backed up yet; removing it discards them.`}
+                  </span>
+                )}
               </span>
             </span>
             {!device.self && (

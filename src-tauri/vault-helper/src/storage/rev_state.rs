@@ -137,6 +137,16 @@ pub fn take_pending(conn: &Connection) -> Result<Vec<Vec<u8>>, ErrorCode> {
     Ok(out)
 }
 
+pub fn is_pending(conn: &Connection, revision_id: &[u8; 32]) -> Result<bool, ErrorCode> {
+    let n: i64 = db(conn.query_row("SELECT count(*) FROM pending_revs WHERE revision_id=?1", params![&revision_id[..]], |r| r.get(0)))?;
+    Ok(n > 0)
+}
+
+pub fn drop_pending(conn: &Connection, revision_id: &[u8; 32]) -> Result<(), ErrorCode> {
+    db(conn.execute("DELETE FROM pending_revs WHERE revision_id=?1", params![&revision_id[..]]))?;
+    Ok(())
+}
+
 pub fn pending_count(conn: &Connection) -> Result<u64, ErrorCode> {
     let n: i64 = db(conn.query_row("SELECT count(*) FROM pending_revs", [], |r| r.get(0)))?;
     Ok(n as u64)

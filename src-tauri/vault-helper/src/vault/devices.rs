@@ -35,19 +35,28 @@ const POLICY: EpochPolicy<'static> = EpochPolicy::CheckpointAnchored;
 /// §1.5 `list_devices`: the verified registry's view, plus which entry is
 /// this device. Public material only.
 pub fn list_devices(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
-    let (dir, vault_id) = {
+    let (dir, state, unpublished) = {
         let c = lock_core(core);
         if !c.state.vk_resident() {
             return OpOutcome::err(ErrorCode::BadState);
         }
-        let Some(h) = c.header.as_ref() else {
+        let (Some(h), Some(store)) = (c.header.as_ref(), c.store.as_ref()) else {
             return OpOutcome::err(ErrorCode::BadState);
         };
-        (c.vault_dir.clone(), h.vault_id.0)
-    };
-    let state = match log::read_state(&dir, &vault_id, &POLICY) {
-        Ok(s) => s,
-        Err(e) => return OpOutcome::err(e),
+        let state = match log::read_state(&c.vault_dir, &h.vault_id.0, &POLICY) {
+            Ok(s) => s,
+            Err(e) => return OpOutcome::err(e),
+        };
+        // §22.7: what removing each device would discard — the changes only
+        // it delivered, not yet confirmed by the provider.
+        let mut unpublished = std::collections::HashMap::new();
+        for d in &state.devices {
+            match crate::storage::set_aside::only_from(&store.conn, &d.device_id, &Default::default()) {
+                Ok(ids) => unpublished.insert(d.device_id, ids.len()),
+                Err(e) => return OpOutcome::err(e),
+            };
+        }
+        (c.vault_dir.clone(), state, unpublished)
     };
     let me = SeDevice::load(&dir).map(|d| d.device_id()).ok();
     let devices: Vec<Value> = state
@@ -70,6 +79,7 @@ pub fn list_devices(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
                 "installed_seq": d.installed_seq,
                 "enrolled_at": enrolled_at,
                 "self": Some(d.device_id) == me,
+                "unpublished": unpublished.get(&d.device_id).copied().unwrap_or(0),
             })
         })
         .collect();

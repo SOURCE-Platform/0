@@ -123,6 +123,7 @@ pub fn rotate_with_rk(
         rk: Some(new_rk),
         revoke: None,
         registry: None,
+        cutoff: Vec::new(),
     };
     rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(new_rk), Some(&change), None)
 }

@@ -1,6 +1,8 @@
 //! Operation handlers (wire annex A.3) and the state gate in front of
 //! them: a behind Mac answers only hello and status (§22.14); COMPROMISED
-//! takes no `peer_revs_put`; everything else is answered per A.3.
+//! takes no `peer_revs_put`; everything else is answered per A.3. Every
+//! answer body counts against the sender's exchange cap (A.2.2: 64 MiB in
+//! any 10 minutes, then signed status 2).
 
 use vault_proto::peer::body::{heads_digest, Hello, Status};
 use vault_proto::peer::exchange::{decode_heads_req, decode_revs_get};
@@ -22,8 +24,13 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
     if gated {
         return status_only(ctx, acc, PeerStatus::BadState, now);
     }
+    let bodiless = matches!(op, PeerOp::Hello | PeerOp::Status);
+    if matches!(op, PeerOp::Unknown(_)) || (bodiless && body != vault_proto::peer::body::empty().as_slice()) {
+        return status_only(ctx, acc, PeerStatus::FormatInvalid, now);
+    }
     let answered = match op {
-        PeerOp::Status => return status(ctx, store, acc, now),
+        PeerOp::Unknown(_) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
+        PeerOp::Status => return capped(ctx, acc, now, status(ctx, store, acc, now)),
         PeerOp::Hello => hello(ctx, store).map(|b| (PeerStatus::Ok, b)),
         PeerOp::Heads => match decode_heads_req(body) {
             Ok(buckets) => servable(ctx, store).map(|s| (PeerStatus::Ok, heads_for(&s, &buckets).encode())),
@@ -37,6 +44,7 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
             Some(vk) => match super::admit::put(store, vk, acc.req.sender_device_id, body) {
                 Ok(counts) => Ok((PeerStatus::Ok, counts.encode())),
                 Err(crate::errors::ErrorCode::FormatInvalid) => return status_only(ctx, acc, PeerStatus::FormatInvalid, now),
+                Err(crate::errors::ErrorCode::PeerLimit) => return status_only(ctx, acc, PeerStatus::Limit, now),
                 Err(e) => Err(e),
             },
             // LOCKED: held in the bounded inbox, admitted at unlock.
@@ -57,8 +65,17 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
         },
     };
     match answered {
-        Ok((st, b)) => sign(ctx, acc, st, b, now),
+        Ok((st, b)) => capped(ctx, acc, now, sign(ctx, acc, st, b, now)),
         Err(_) => Err(Refusal::Unavailable),
+    }
+}
+
+/// The exchange cap: an answer whose body would take the sender past
+/// 64 MiB in 10 minutes becomes the signed status 2 instead.
+fn capped(ctx: &Ctx, acc: &Accepted, now: u64, signed: Result<Signed, Refusal>) -> Result<Signed, Refusal> {
+    match signed {
+        Ok(s) if !super::verify::spend(&acc.req.sender_device_id, s.body.len()) => status_only(ctx, acc, PeerStatus::Limit, now),
+        other => other,
     }
 }
 

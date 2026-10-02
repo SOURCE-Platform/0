@@ -67,6 +67,31 @@ fn presence_denial_leaves_the_vault_locked() {
     assert_eq!(fx.core.lock().unwrap().failed_attempts, 0);
 }
 
+/// DU-02b (review VER-B2): `device.json` is attacker-writable. Claiming
+/// a Touch-ID-bound key there must not skip the presence check — the
+/// Enclave is asked whether the key needs the user, and a plain key does
+/// not.
+#[test]
+fn a_planted_biometry_flag_does_not_skip_presence() {
+    let _g = serial();
+    let mut fx = fx();
+    setup_and_unlock(&fx);
+    lock(&fx);
+    let path = fx.dir.join(vault_helper::device::identity::DEVICE_FILE_NAME);
+    let mut file: serde_json::Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    file["agree_biometry"] = json!(true);
+    std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+    let me = SeDevice::load(&fx.dir).unwrap();
+    assert!(me.created_biometric(), "the planted record");
+    assert!(!me.biometric(), "the Enclave says this key needs nobody");
+    let la = std::sync::Arc::new(La { allow: false, calls: std::sync::atomic::AtomicUsize::new(0) });
+    fx.set_presence(la.clone());
+    let resp = fx.op(json!({"op": "unlock"}));
+    assert_eq!(err_code(&resp), "PRESENCE_DENIED", "{resp}");
+    assert_eq!(fx.state(), VaultState::Locked);
+    assert_eq!(la.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
 /// DU-03: §2.8 — a device whose Secure Enclave key is gone (restored
 /// from a backup, key wiped) cannot unlock, and says so as the
 /// re-enroll/recover condition rather than as corruption.

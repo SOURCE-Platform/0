@@ -233,23 +233,29 @@ impl VaultStore {
     /// refused is re-authored — same content, a new `revision_id`, parents
     /// = the record's current heads (it may join a conflict).
     pub fn reauthor(&mut self, vk: &SecretBytes<32>, old: &RevisionRow) -> Result<(), ErrorCode> {
+        let parents = heads(&self.conn, &old.record_id)?;
+        let rev = self.reauthored(vk, old, parents)?;
+        self.commit_local(rev, false, true)
+    }
+
+    /// `old`'s content (a tombstone stays a tombstone, review SEC-I3) as a
+    /// new revision of this device on `parents`; not yet applied.
+    pub(super) fn reauthored(&self, vk: &SecretBytes<32>, old: &RevisionRow, parents: Vec<[u8; 32]>) -> Result<RevisionRow, ErrorCode> {
         let pt = self.open_row(vk, old)?;
         let meta = Zeroizing::new(self.open_row_meta(vk, old)?.to_vec());
-        let parents = heads(&self.conn, &old.record_id)?;
-        let rev = self.author(
+        self.author(
             vk,
             NewRevision {
                 record_id: &old.record_id,
                 parents,
-                deleted: false,
+                deleted: old.deleted,
                 kind_tag: old.kind_tag,
                 schema_version: old.schema_version,
                 plaintext: &pt,
                 meta: &meta,
                 created_at: old.created_at,
             },
-        )?;
-        self.commit_local(rev, false, true)
+        )
     }
 
     /// `resolve_conflict` (§3.2): a revision whose parents are the chosen

@@ -33,6 +33,9 @@ pub enum PeerOp {
     RevsGet,
     RevsPut,
     Status,
+    /// A code this build does not know: authenticated like any request,
+    /// then answered with the signed status 4 (wire annex A.1).
+    Unknown(u16),
 }
 
 impl PeerOp {
@@ -44,6 +47,7 @@ impl PeerOp {
             PeerOp::RevsGet => 4,
             PeerOp::RevsPut => 5,
             PeerOp::Status => 6,
+            PeerOp::Unknown(c) => c,
         }
     }
 
@@ -55,7 +59,7 @@ impl PeerOp {
             4 => PeerOp::RevsGet,
             5 => PeerOp::RevsPut,
             6 => PeerOp::Status,
-            _ => return None,
+            c => PeerOp::Unknown(u16::try_from(c).ok()?),
         })
     }
 }

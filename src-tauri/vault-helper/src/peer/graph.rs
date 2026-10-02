@@ -37,10 +37,17 @@ pub fn servable(ctx: &Ctx, store: &VaultStore) -> Result<Servable, ErrorCode> {
     Ok(Servable { records, withheld })
 }
 
-/// Heads of one record's servable subgraph, ascending.
+/// Heads of one record's servable subgraph, ascending, by the store's own
+/// rule (`merge::recompute_heads`, review VER-O2): a non-tombstone with no
+/// child, or a tombstone no ≥2-parent revision names directly.
 pub fn heads(rows: &[RevisionRow]) -> Vec<[u8; 32]> {
     let parents: HashSet<[u8; 32]> = rows.iter().flat_map(|r| r.parent_ids.iter().copied()).collect();
-    let mut h: Vec<[u8; 32]> = rows.iter().map(|r| r.revision_id).filter(|id| !parents.contains(id)).collect();
+    let covering: HashSet<[u8; 32]> = rows.iter().filter(|r| r.parent_ids.len() >= 2).flat_map(|r| r.parent_ids.iter().copied()).collect();
+    let mut h: Vec<[u8; 32]> = rows
+        .iter()
+        .filter(|r| if r.deleted { !covering.contains(&r.revision_id) } else { !parents.contains(&r.revision_id) })
+        .map(|r| r.revision_id)
+        .collect();
     h.sort();
     h
 }

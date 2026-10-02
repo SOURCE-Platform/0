@@ -50,9 +50,9 @@ pub fn revoke(
     }
     prove_mp(&store, vk, mp)?;
     // §22.7: the revoker's cutoff — whatever only the revoked device
-    // delivered is refused for good — then nothing peer-only is carried
-    // into the new key.
-    crate::storage::set_aside::cut_off(&store, &target, &std::collections::HashSet::new())?;
+    // delivered is refused for good, inside the rotation's staged DB — and
+    // nothing peer-only is carried into the new key (its own transaction).
+    let cutoff = crate::storage::set_aside::only_from(&store.conn, &target, &std::collections::HashSet::new())?;
     crate::storage::set_aside::set_aside(&mut store, vk)?;
     let base = pending::base_for(&store.conn, &store.header)?;
     let mut entries = state.entries.clone();
@@ -73,6 +73,7 @@ pub fn revoke(
         rk: Some(new_rk),
         revoke: Some((target, uuid_string(&me.device_id()))),
         registry: Some(registry_file::encode(&entries)?),
+        cutoff,
     };
     // The new head rides in the staged header and manifest.
     store.header.registry_head = Hex32(after.head);

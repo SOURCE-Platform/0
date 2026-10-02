@@ -18,6 +18,9 @@ use crate::sync::pending;
 pub const WINDOW_SECS: u64 = 300;
 pub const REPLAY_SECS: u64 = 600;
 pub const RATE_PER_MINUTE: usize = 60;
+/// Wire annex A.2.2: response bodies per sender in any 10 minutes.
+pub const EXCHANGE_BYTES: usize = 64 << 20;
+const EXCHANGE_WINDOW: Duration = Duration::from_secs(600);
 
 /// An authenticated request: its prehash binds the response.
 pub struct Accepted {
@@ -26,6 +29,22 @@ pub struct Accepted {
 }
 
 static RATE: Mutex<Option<HashMap<[u8; 16], VecDeque<Instant>>>> = Mutex::new(None);
+static SPENT: Mutex<Option<HashMap<[u8; 16], VecDeque<(Instant, usize)>>>> = Mutex::new(None);
+
+/// Charge `bytes` of response body to `sender`; false (nothing charged)
+/// when that would pass the exchange cap.
+pub fn spend(sender: &[u8; 16], bytes: usize) -> bool {
+    let mut guard = SPENT.lock().unwrap_or_else(|e| e.into_inner());
+    let q = guard.get_or_insert_with(HashMap::new).entry(*sender).or_default();
+    while q.front().is_some_and(|(t, _)| t.elapsed() > EXCHANGE_WINDOW) {
+        q.pop_front();
+    }
+    if q.iter().map(|(_, b)| b).sum::<usize>() + bytes > EXCHANGE_BYTES {
+        return false;
+    }
+    q.push_back((Instant::now(), bytes));
+    true
+}
 
 /// Counted only after the signature verified, so a forged sender spends
 /// nothing (wire annex A.2.2).
@@ -97,9 +116,10 @@ fn remember(store: &VaultStore, req: &PeerRequest, now: u64) -> Result<(), Refus
     if fresh == 0 { Err(Refusal::Forbidden) } else { Ok(()) }
 }
 
-/// Forget the in-memory rate counts (tests; a helper restart does the
-/// same — the cap limits load, not authority).
+/// Forget the in-memory rate and exchange counts (tests; a helper restart
+/// does the same — the caps limit load, not authority).
 #[doc(hidden)]
 pub fn reset_rate() {
     *RATE.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    *SPENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
 }

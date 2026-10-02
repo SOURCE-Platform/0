@@ -33,8 +33,6 @@ pub struct SyncSession {
     pub t: Transfer,
     pub remote: RemoteState,
     pub index: Option<ObjectIndex>,
-    /// The `state_get` body as served (kept once applied, annex A.3.2).
-    pub raw: Vec<u8>,
 }
 
 pub struct RecoverySession {
@@ -59,12 +57,16 @@ pub struct Sessions {
     /// §1.3 TR-09: an enrollment bundle too large for one frame, read by
     /// main with `stream_read` (ciphertext and public data only).
     pub bundle: Option<Transfer>,
-    /// A peer response too large for one frame (wire annex A.2.2).
-    pub peer: Option<Transfer>,
-    /// A peer request whose large body is still streaming in: the
+    /// Peer responses too large for one frame (wire annex A.2.2).
+    pub peer: Vec<Transfer>,
+    /// Peer requests whose large body is still streaming in: the
     /// authenticated request and the transfer receiving its body.
-    pub peer_in: Option<(crate::peer::verify::Accepted, Transfer)>,
+    pub peer_in: Vec<(crate::peer::verify::Accepted, Transfer)>,
 }
+
+/// Wire annex A.2.2: at most two peer sessions open, idle 60 s.
+pub const MAX_PEER_SESSIONS: usize = 2;
+pub const PEER_IDLE: std::time::Duration = std::time::Duration::from_secs(60);
 
 impl Sessions {
     /// §13.3: lock aborts a sync and a recovery; a fully staged
@@ -73,8 +75,12 @@ impl Sessions {
         self.sync = None;
         self.recovery = None;
         self.bundle = None; // the enrollment it belongs to dies with the lock
-        self.peer = None; // lock aborts a peer session (annex A.2.2)
-        self.peer_in = None;
+        self.peer.clear(); // lock aborts a peer session (annex A.2.2)
+        self.peer_in.clear();
+    }
+
+    pub fn peer_sessions(&self) -> usize {
+        self.peer.len() + self.peer_in.len()
     }
 
     pub fn transfer(&mut self, id: &Id) -> Option<&mut Transfer> {
@@ -87,10 +93,10 @@ impl Sessions {
         if let Some(b) = self.bundle.as_mut().filter(|b| &b.id == id) {
             return Some(b);
         }
-        if let Some(p) = self.peer.as_mut().filter(|p| &p.id == id) {
+        if let Some(p) = self.peer.iter_mut().find(|p| &p.id == id) {
             return Some(p);
         }
-        if let Some((_, t)) = self.peer_in.as_mut().filter(|(_, t)| &t.id == id) {
+        if let Some((_, t)) = self.peer_in.iter_mut().find(|(_, t)| &t.id == id) {
             return Some(t);
         }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
@@ -101,8 +107,8 @@ impl Sessions {
     pub fn expire(&mut self) {
         self.sync = self.sync.take().filter(|s| !s.t.expired());
         self.bundle = self.bundle.take().filter(|b| !b.expired());
-        self.peer = self.peer.take().filter(|p| !p.expired());
-        self.peer_in = self.peer_in.take().filter(|(_, t)| !t.expired());
+        self.peer.retain(|p| !p.idle_longer_than(PEER_IDLE));
+        self.peer_in.retain(|(_, t)| !t.idle_longer_than(PEER_IDLE));
         self.recovery = self.recovery.take().filter(|r| !r.t.expired());
     }
 }
@@ -190,6 +196,9 @@ pub fn session_close(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &super::
         p.publish = None;
     } else if p.sync.as_ref().is_some_and(|s| s.t.id == id) {
         p.sync = None;
+    } else if p.peer.iter().any(|t| t.id == id) || p.peer_in.iter().any(|(_, t)| t.id == id) {
+        p.peer.retain(|t| t.id != id);
+        p.peer_in.retain(|(_, t)| t.id != id);
     } else if p.recovery.as_ref().is_some_and(|s| s.t.id == id) {
         if let Some(ev) = c.leave_recovery() {
             deps.events.emit(ev);
