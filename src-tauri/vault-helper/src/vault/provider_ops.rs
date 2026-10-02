@@ -61,6 +61,9 @@ pub struct Sessions {
     pub bundle: Option<Transfer>,
     /// A peer response too large for one frame (wire annex A.2.2).
     pub peer: Option<Transfer>,
+    /// A peer request whose large body is still streaming in: the
+    /// authenticated request and the transfer receiving its body.
+    pub peer_in: Option<(crate::peer::verify::Accepted, Transfer)>,
 }
 
 impl Sessions {
@@ -71,6 +74,7 @@ impl Sessions {
         self.recovery = None;
         self.bundle = None; // the enrollment it belongs to dies with the lock
         self.peer = None; // lock aborts a peer session (annex A.2.2)
+        self.peer_in = None;
     }
 
     pub fn transfer(&mut self, id: &Id) -> Option<&mut Transfer> {
@@ -86,6 +90,9 @@ impl Sessions {
         if let Some(p) = self.peer.as_mut().filter(|p| &p.id == id) {
             return Some(p);
         }
+        if let Some((_, t)) = self.peer_in.as_mut().filter(|(_, t)| &t.id == id) {
+            return Some(t);
+        }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
     }
 
@@ -95,6 +102,7 @@ impl Sessions {
         self.sync = self.sync.take().filter(|s| !s.t.expired());
         self.bundle = self.bundle.take().filter(|b| !b.expired());
         self.peer = self.peer.take().filter(|p| !p.expired());
+        self.peer_in = self.peer_in.take().filter(|(_, t)| !t.expired());
         self.recovery = self.recovery.take().filter(|r| !r.t.expired());
     }
 }

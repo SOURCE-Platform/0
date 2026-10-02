@@ -22,7 +22,7 @@ use vault_proto::crypto::tlv::{EntryBuilder, EntryReader};
 use vault_proto::peer::PeerRequest;
 
 pub const MAX_HTTP_BODY: usize = (1 << 20) + 4096;
-/// Bodies above this go through `peer_serve_begin` (not built yet).
+/// Bodies above this go through `peer_serve_begin` and a stream session.
 const INLINE: usize = 24 * 1024;
 
 fn empty(code: StatusCode) -> Response {
@@ -65,20 +65,47 @@ pub async fn peer(ConnectInfo(addr): ConnectInfo<SocketAddr>, headers: HeaderMap
         Ok(req) if vault_proto::crypto::hex::encode(req.sender_device_id) == issued_to => {}
         _ => return empty(StatusCode::UNAUTHORIZED),
     }
-    if inner.len() > INLINE {
-        return empty(StatusCode::PAYLOAD_TOO_LARGE);
-    }
-    let frame = json!({ "op": "peer_serve", "request_tlv": b64::encode(tlv), "signature": b64::encode(sig), "body": b64::encode(inner) });
-    match relay(frame).await {
+    let answered = if inner.len() <= INLINE {
+        relay(json!({ "op": "peer_serve", "request_tlv": b64::encode(tlv), "signature": b64::encode(sig), "body": b64::encode(inner) })).await
+    } else {
+        streamed(tlv, sig, inner).await
+    };
+    match answered {
         Ok(bytes) => (StatusCode::OK, [("content-type", "application/octet-stream")], bytes).into_response(),
         Err(code) => empty(code),
     }
 }
 
+/// A large request: the helper checks the envelope at `peer_serve_begin`
+/// (it may answer at once), then the body streams in and `peer_serve
+/// {session}` completes it.
+async fn streamed(tlv: &[u8], sig: &[u8], body: &[u8]) -> Result<Vec<u8>, StatusCode> {
+    let begun = call(json!({ "op": "peer_serve_begin", "request_tlv": b64::encode(tlv), "signature": b64::encode(sig), "size": body.len() }))
+        .await
+        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    let Some(session) = begun["session"].as_str().filter(|_| begun.get("need").is_some()).map(str::to_string) else {
+        return answer(begun).await; // a refusal or an immediate signed status
+    };
+    let sha = vault_proto::crypto::hex::encode(vault_proto::peer::body_hash(body));
+    let s = call(json!({"op": "stream_begin", "session": session, "sha256": sha, "size": body.len()})).await.map_err(|_| StatusCode::FORBIDDEN)?;
+    let stream = s["stream_id"].as_str().ok_or(StatusCode::FORBIDDEN)?.to_string();
+    for (i, chunk) in body.chunks(INLINE).enumerate() {
+        let w = call(json!({"op": "stream_write", "session": session, "stream_id": stream, "seq": i, "offset": i * INLINE, "data": b64::encode(chunk)})).await;
+        if !w.is_ok_and(|w| w["ok"] == true) {
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+    let _ = call(json!({"op": "stream_end", "session": session, "stream_id": stream})).await;
+    relay(json!({ "op": "peer_serve", "session": session })).await
+}
+
 /// The helper's answer as the carriage entry (streamed bodies are read
 /// back and their session closed).
 async fn relay(frame: Value) -> Result<Vec<u8>, StatusCode> {
-    let r = call(frame).await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?;
+    answer(call(frame).await.map_err(|_| StatusCode::SERVICE_UNAVAILABLE)?).await
+}
+
+async fn answer(r: Value) -> Result<Vec<u8>, StatusCode> {
     if let Some(code) = r.get("refused").and_then(Value::as_u64) {
         return Err(StatusCode::from_u16(code as u16).unwrap_or(StatusCode::FORBIDDEN));
     }

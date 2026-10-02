@@ -74,3 +74,71 @@ fn peer_serve_answers_inline_and_streams_large_bodies() {
     assert_eq!(r["ok"], true, "LOCKED serves: {r}");
     w.fx.remove_dir();
 }
+
+fn begin_frame(w: &W, op: PeerOp, body: &[u8], size: u64) -> Value {
+    w.n.set(w.n.get() + 1);
+    let c = ctx(w, true, false, false);
+    let req = PeerRequest { vault_id: c.vault_id, sender_device_id: w.id, receiver_device_id: c.me.device_id(), operation: op, body_sha256: body_hash(body), t: now_epoch(), n: [w.n.get(); 16] };
+    let sig = w.phone_dev.sign_prehash(&req.prehash()).unwrap();
+    json!({ "op": "peer_serve_begin", "request_tlv": b64::encode(&req.encode()), "signature": b64::encode(&sig), "size": size })
+}
+
+fn stream_in(w: &W, session: &str, body: &[u8]) {
+    let sha = vault_helper::crypto::hex::encode(body_hash(body));
+    let s = w.fx.op(json!({"op": "stream_begin", "session": session, "sha256": sha, "size": body.len()}));
+    let stream = s["stream_id"].as_str().unwrap().to_string();
+    for (i, chunk) in body.chunks(24 * 1024).enumerate() {
+        let r = w.fx.op(json!({"op": "stream_write", "session": session, "stream_id": stream, "seq": i, "offset": i * 24 * 1024, "data": b64::encode(chunk)}));
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    assert_eq!(w.fx.op(json!({"op": "stream_end", "session": session, "stream_id": stream}))["ok"], true);
+}
+
+/// PW-03a/b: a large put streams in after the envelope checks; a body
+/// over the cap gets a signed status 2 at begin; a revocation landing
+/// while the body streams is refused at completion; sessions are single
+/// use.
+#[test]
+fn a_large_put_streams_in_after_the_envelope_checks() {
+    use vault_proto::peer::body::PutCounts;
+    let _g = serial();
+    let w = world("ipc-big");
+    let (dir, mut ps, vk) = phone_store(&w);
+    let mut rows = Vec::new();
+    for i in 0..120 {
+        let pt = format!(r#"{{"title":"phone item {i}","username":"p@example.test","password":"synthetic-{i}","urls":[{{"host":"example.test","match":"exact","allow_http":false}}]}}"#);
+        let meta = format!(r#"{{"title":"phone item {i}","username":"p@example.test","hosts":["example.test"]}}"#);
+        let rid = ps.add_record(&vk, 1, pt.as_bytes(), meta.as_bytes()).unwrap();
+        rows.push(row_of(&ps, &rid));
+    }
+    drop(ps);
+    let _ = std::fs::remove_dir_all(dir);
+    rows.sort_by_key(|r| vault_helper::storage::revisions::uuid_bytes(&r.record_id).unwrap());
+    let body = put_body(&rows);
+    assert!(body.len() > 24 * 1024, "needs the streamed path");
+
+    // Over the cap: a signed status 2 at once.
+    let r = w.fx.op(begin_frame(&w, PeerOp::RevsPut, &body, (1 << 20) + 1));
+    let resp = PeerResponse::decode(&b64::decode(r["response_tlv"].as_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(resp.status, PeerStatus::Limit);
+
+    // The real thing: begin, stream, complete.
+    let r = w.fx.op(begin_frame(&w, PeerOp::RevsPut, &body, body.len() as u64));
+    let session = r["session"].as_str().unwrap().to_string();
+    stream_in(&w, &session, &body);
+    let done = w.fx.op(json!({"op": "peer_serve", "session": session}));
+    let resp = PeerResponse::decode(&b64::decode(done["response_tlv"].as_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(resp.status, PeerStatus::Ok, "{done}");
+    let counts = PutCounts::decode(&b64::decode(done["body"].as_str().unwrap()).unwrap()).unwrap();
+    assert_eq!(counts.admitted, 120);
+    assert_eq!(w.fx.op(json!({"op": "peer_serve", "session": session}))["refused"], 403, "single use");
+
+    // A revocation lands while a body streams: refused at completion.
+    let r = w.fx.op(begin_frame(&w, PeerOp::RevsPut, &body, body.len() as u64));
+    let session = r["session"].as_str().unwrap().to_string();
+    stream_in(&w, &session, &body);
+    w.fx.push_panel(submitted(MP));
+    assert_eq!(w.fx.op(json!({"op": "revoke_device", "device_id": vault_helper::crypto::hex::encode(w.id)}))["ok"], true);
+    assert_eq!(w.fx.op(json!({"op": "peer_serve", "session": session}))["refused"], 403);
+    w.fx.remove_dir();
+}

@@ -91,6 +91,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),
         "peer_serve" => peer_serve::peer_serve(core, frame),
+        "peer_serve_begin" => peer_serve::peer_serve_begin(core, frame),
         "list_history" => history::list_history(core, frame),
         "list_deleted" => history::list_deleted(core),
         "restore_revision" => history::restore_revision(core, frame, deps),

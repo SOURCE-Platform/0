@@ -63,18 +63,27 @@ pub fn authenticate(ctx: &Ctx, store: &VaultStore, tlv: &[u8], sig: &[u8], body:
         return Err(Refusal::Rate);
     }
     remember(store, &req, now)?;
-    if req.operation != PeerOp::Status {
-        let pending_target = pending::revocation_targets(&store.conn).map_err(|_| Refusal::Unavailable)?.contains(&req.sender_device_id);
-        if sender.revoked || pending_target {
-            return Err(Refusal::Forbidden);
-        }
-    }
+    may_speak(ctx, store, &req)?;
     if let Some(b) = body {
         if peer::body_hash(b) != req.body_sha256 {
             return Err(Refusal::Forbidden);
         }
     }
     Ok(Accepted { req, prehash })
+}
+
+/// §22.8 who may speak, on its own: re-checked when a streamed body
+/// completes (a revocation may have landed while it streamed). Any key the
+/// registry ever installed may ask `peer_status`; everything else needs a
+/// sender that is active and not the target of a pending revocation.
+pub fn may_speak(ctx: &Ctx, store: &VaultStore, req: &PeerRequest) -> Result<(), Refusal> {
+    if req.operation == PeerOp::Status {
+        return Ok(());
+    }
+    let reg = crate::registry::log::read_state(&ctx.dir, &ctx.vault_id, &EpochPolicy::CheckpointAnchored).map_err(|_| Refusal::Unavailable)?;
+    let active = reg.active_device(&req.sender_device_id).is_some();
+    let pending_target = pending::revocation_targets(&store.conn).map_err(|_| Refusal::Unavailable)?.contains(&req.sender_device_id);
+    if active && !pending_target { Ok(()) } else { Err(Refusal::Forbidden) }
 }
 
 /// The persisted replay cache: written before the body is processed,
