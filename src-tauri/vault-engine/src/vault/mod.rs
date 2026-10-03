@@ -37,6 +37,7 @@ pub mod adopt_prompt;
 pub mod peer_serve;
 pub mod prefs;
 pub mod items;
+pub mod join_ops;
 pub mod recovery_ops;
 pub mod registry_status;
 pub mod resolve;

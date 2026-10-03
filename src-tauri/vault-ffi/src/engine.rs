@@ -24,6 +24,8 @@ pub const IOS_OPS: &[&str] = &[
     "registry_status", "set_auto_lock_minutes", "backup_prepare", "backup_blob_list", "backup_transition_body",
     "backup_commit_result", "backup_state_offer", "backup_apply", "stream_read", "stream_begin", "stream_write", "stream_end",
     "stream_cancel", "sign_provider_request", "session_close", "quarantine_status", "remote_update_status",
+    // F.2b step 5: the phone's side of enrollment (§5, §22.10).
+    "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
 ];
 
 /// The helper's frame cap (spec §1.4, `ipc/framing.rs`), kept here too.

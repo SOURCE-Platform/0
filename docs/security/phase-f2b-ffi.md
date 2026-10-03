@@ -81,15 +81,27 @@ error path skips the zeroing.
 `backup_state_offer`, `backup_apply`, `stream_read`, `stream_begin`,
 `stream_write`, `stream_end`, `stream_cancel`, `sign_provider_request` —
 the engine builds every signed field, §11.4 — `session_close`,
-`quarantine_status`, `remote_update_status`).
+`quarantine_status`, `remote_update_status`), and the phone's side of
+enrollment (§5, §22.10; `vault/join_ops.rs`): `join_begin {qr, name}`
+(fresh Secure Enclave keys; the hello to send over TLS pinned to the QR
+`fp`), `join_hello {reply}` (the SAS, computed here, never received),
+`join_bundle_begin {sha256, size}` (a session the bundle streams into,
+≤ 256 MiB), `join_complete {session}` (the §22.10 checks in order — the
+registry ending in the QR's Mac enrolling exactly this device's keys under
+the id it assigned, the manifest signature, this device's own envelope
+bound to the hello's nonce, the checkpoint under that VK — then the vault
+written, the VK's SE commitment signed, the peer token kept in the
+Keychain only, the vault left LOCKED; answers the ENROLL_ACK signature),
+`join_finish` (the Mac accepted the ACK) and `join_abort` (removes
+everything an unfinished attempt created). A failed `join_complete`
+leaves no vault and no keys.
 
 **Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, enrollment
 authorization, device revocation, total-loss recovery, and
 `rotate_recovery_key` — its phone form (rotation staged before the sheet,
 in a background task, the sheet saying whether the key is live, §22.10,
-IO-04) does not exist yet; it comes with F.2d. The first materialization
-from an enrollment bundle and the peer client come in step 5 with their
-own entries here.
+IO-04) does not exist yet; it comes with F.2d. The peer client (F.2c
+phone side) comes with its own entries here.
 
 ## 5. What never crosses
 

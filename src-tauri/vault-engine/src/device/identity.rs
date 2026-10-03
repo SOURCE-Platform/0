@@ -238,6 +238,13 @@ impl SeDevice {
         self.biometry
     }
 
+    /// Take the registry id the authorizing Mac assigned (§5.2: a new
+    /// device never chooses its own); the keys and their tag stay.
+    pub fn adopt_id(&mut self, dir: &Path, id: [u8; 16]) -> Result<(), ErrorCode> {
+        self.id = id;
+        self.persist(dir)
+    }
+
     pub fn rename(&mut self, name: &str) {
         self.name = name.to_string();
     }

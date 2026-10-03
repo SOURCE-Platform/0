@@ -102,6 +102,13 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "enroll_ack" => enroll_commit::enroll_ack(core, frame),
         "cancel_enrollment" => enroll_ops::cancel_enrollment(core),
         "list_devices" => devices::list_devices(core),
+        // The phone's side of enrollment (§22.10).
+        "join_begin" => join_ops::join_begin(core, frame),
+        "join_hello" => join_ops::join_hello(core, frame),
+        "join_bundle_begin" => join_ops::join_bundle_begin(core, frame),
+        "join_complete" => join_ops::join_complete(core, frame),
+        "join_finish" => join_ops::join_finish(core),
+        "join_abort" => join_ops::join_abort(core),
         "registry_status" => registry_status::registry_status(core),
         "revoke_device" => devices::revoke_device(core, frame, deps),
         "set_auto_lock_minutes" => prefs::set_auto_lock_minutes(core, frame),

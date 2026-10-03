@@ -62,6 +62,8 @@ pub struct Sessions {
     /// Peer requests whose large body is still streaming in: the
     /// authenticated request and the transfer receiving its body.
     pub peer_in: Vec<(crate::peer::verify::Accepted, Transfer)>,
+    /// A phone's enrollment in progress (§22.10, `join_ops`).
+    pub join: Option<crate::enroll::join::JoinSession>,
 }
 
 /// Wire annex A.2.2: at most two peer sessions open, idle 60 s.
@@ -77,6 +79,7 @@ impl Sessions {
         self.bundle = None; // the enrollment it belongs to dies with the lock
         self.peer.clear(); // lock aborts a peer session (annex A.2.2)
         self.peer_in.clear();
+        self.join = None; // and a pairing in progress
     }
 
     pub fn peer_sessions(&self) -> usize {
@@ -97,6 +100,9 @@ impl Sessions {
             return Some(p);
         }
         if let Some((_, t)) = self.peer_in.iter_mut().find(|(_, t)| &t.id == id) {
+            return Some(t);
+        }
+        if let Some(t) = self.join.as_mut().and_then(|j| j.transfer.as_mut()).filter(|t| &t.id == id) {
             return Some(t);
         }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)

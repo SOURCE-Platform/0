@@ -9,6 +9,7 @@ pub mod compare;
 pub mod fetch;
 pub mod join;
 pub mod local;
+pub mod materialize;
 pub mod pending;
 pub mod publish;
 pub mod remote;

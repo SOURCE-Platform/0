@@ -32,6 +32,19 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
     if remote.manifest.vault_id != store.header.vault_id.0 {
         return Err(ErrorCode::ManifestMismatch);
     }
+    // A joined phone that has accepted nothing yet: never older than what
+    // its authorizing Mac had accepted (§22.10 provider floor).
+    if seen::load(&store.conn)?.is_none() {
+        if let Some((generation, hash)) = super::materialize::join_floor(store)? {
+            let same = crate::crypto::hex::encode(remote.manifest_hash) == hash;
+            if remote.generation < generation {
+                return Err(ErrorCode::ManifestRollback);
+            }
+            if remote.generation == generation && generation > 0 && !same {
+                return Err(if signed_by_our_registry(store, remote)? { ErrorCode::RegistryFork } else { ErrorCode::SignatureInvalid });
+            }
+        }
+    }
     if let Some(s) = seen::load(&store.conn)? {
         if remote.generation < s.generation {
             return Err(ErrorCode::ManifestRollback);

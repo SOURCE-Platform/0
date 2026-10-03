@@ -97,7 +97,7 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
             c.enroll = None;
             return OpOutcome::err(ErrorCode::BadState);
         }
-        let presented = decode_secret(&hello.secret);
+        let presented = transcript::decode_secret(&hello.secret).map(|s| s.to_vec());
         let result = session.verify_secret(presented.as_deref().unwrap_or(&[]));
         if result.is_err() {
             // §5.3: five wrong secrets end the session for good.
@@ -167,25 +167,6 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
 
 fn peer_nonce(hello: &wire::Hello) -> Option<[u8; 16]> {
     hex::decode_array::<16>(&hello.nonce_n)
-}
-
-fn decode_secret(encoded: &str) -> Option<Vec<u8>> {
-    // The QR carries the secret in the repo's base32 alphabet; anything
-    // else is simply a wrong secret.
-    let mut acc: u32 = 0;
-    let mut bits = 0u32;
-    let mut out = Vec::with_capacity(16);
-    for ch in encoded.bytes() {
-        let idx = transcript::ALPHABET.iter().position(|&c| c == ch)? as u32;
-        acc = (acc << 5) | idx;
-        bits += 5;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((acc >> bits) & 0xff) as u8);
-        }
-    }
-    out.truncate(16);
-    (out.len() == 16).then_some(out)
 }
 
 fn parse_peer(hello: &wire::Hello) -> Result<Peer, ErrorCode> {

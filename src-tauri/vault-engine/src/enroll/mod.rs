@@ -10,6 +10,7 @@
 //! head — is what finally writes the entry. A session that fails, expires
 //! or is cancelled leaves no registry trace (§5.2 "Cancellation").
 
+pub mod join;
 pub mod session;
 pub mod transcript;
 pub mod vectors;

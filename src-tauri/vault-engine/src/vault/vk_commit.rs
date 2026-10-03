@@ -9,7 +9,8 @@
 //! The public key is read from the Secure Enclave itself, never from the
 //! device file on disk. The helper signs a commitment only for a key it
 //! already trusts: a new vault, a rotation it performed, a verified
-//! adoption, a completed recovery.
+//! adoption, a completed recovery, a phone's verified first
+//! materialization (§22.10).
 
 use std::path::Path;
 

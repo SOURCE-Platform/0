@@ -56,6 +56,25 @@ pub fn sas(transcript: &[u8; 32]) -> Result<String, ErrorCode> {
     Ok(base32_chars(&okm.expose()[..5], SAS_LEN))
 }
 
+/// The QR secret back to its 16 bytes (the repo's base32 alphabet);
+/// anything else is simply a wrong secret.
+pub fn decode_secret(encoded: &str) -> Option<[u8; 16]> {
+    let mut acc: u32 = 0;
+    let mut bits = 0u32;
+    let mut out = Vec::with_capacity(16);
+    for ch in encoded.bytes() {
+        let idx = ALPHABET.iter().position(|&c| c == ch)? as u32;
+        acc = (acc << 5) | idx;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push(((acc >> bits) & 0xff) as u8);
+        }
+    }
+    out.truncate(16);
+    out.try_into().ok()
+}
+
 /// What the new device signs to prove its SE signing key exists (§5.2).
 pub fn ack_digest(registry_head: &[u8; 32], mac_device_id: &[u8; 16]) -> [u8; 32] {
     let mut h = Sha256::new();
