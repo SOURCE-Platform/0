@@ -9,11 +9,14 @@
 /* Begin PBXBuildFile section */
 		05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BCF2CB286287C8B75DD854 /* VaultServices.swift */; };
 		0CB492E7E954821B434D086C /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E0DB7DD1EC28519F1EA2D5C /* Views.swift */; };
+		1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7C53B7D113D72746B717F0 /* PairingClient.swift */; };
 		2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEA2D1E7608412D7A5842AF /* Bridge.swift */; };
+		38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D99DB8E35238A1EE22C1601 /* PairingViews.swift */; };
 		A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB648201BE774BB26FB803 /* EngineTests.swift */; };
 		B1438F27C53576568BB3A842 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFDE1D765033C8C76490273 /* AppModel.swift */; };
 		B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */; };
 		C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */; };
+		CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -28,17 +31,20 @@
 
 /* Begin PBXFileReference section */
 		03CB648201BE774BB26FB803 /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
+		0D99DB8E35238A1EE22C1601 /* PairingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViews.swift; sourceTree = "<group>"; };
 		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
 		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3E0DB7DD1EC28519F1EA2D5C /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		48BCF2CB286287C8B75DD854 /* VaultServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultServices.swift; sourceTree = "<group>"; };
 		81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SourceVault.entitlements; sourceTree = "<group>"; };
+		8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingFlow.swift; sourceTree = "<group>"; };
 		9FEA2D1E7608412D7A5842AF /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
 		A77550D0100F86D38E262227 /* SourceVaultTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B82655E2306C55BA4CCF478C /* SourceVault.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SourceVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngine.swift; sourceTree = "<group>"; };
 		E93147EB9D273DD62FF6FC76 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		ED676F66CF9B707A26A99303 /* VaultFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VaultFFI.h; sourceTree = "<group>"; };
+		FF7C53B7D113D72746B717F0 /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -97,6 +103,9 @@
 			children = (
 				2DFDE1D765033C8C76490273 /* AppModel.swift */,
 				E93147EB9D273DD62FF6FC76 /* Info.plist */,
+				FF7C53B7D113D72746B717F0 /* PairingClient.swift */,
+				8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */,
+				0D99DB8E35238A1EE22C1601 /* PairingViews.swift */,
 				81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */,
 				2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */,
 				CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */,
@@ -232,6 +241,9 @@
 			files = (
 				B1438F27C53576568BB3A842 /* AppModel.swift in Sources */,
 				2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */,
+				1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */,
+				CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */,
+				38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */,
 				C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */,
 				B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */,
 				05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */,

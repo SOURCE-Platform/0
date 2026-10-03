@@ -119,4 +119,16 @@ plan; the code it produces goes through the usual milestone review.
   has no such prompt). Builds for the simulator; `EngineTests` passes
   there against the real engine. Next: pairing and first materialization
   (step 5), then the device run on the owner's iPhone.
+- **Step 5 done in code (2026-10-03).** Engine: `enroll/join.rs`,
+  `sync/materialize.rs` (§22.10 order), `vault/join_ops.rs`, tested end to
+  end against the Mac's real enrollment ops (`tests/phone_join.rs`). App:
+  `PairingClient` (HTTPS pinned to SHA-256 of the leaf certificate DER =
+  the QR `fp`, hostname ignored), `PairingFlow` (scan → hello → SAS
+  compare → wait for the Mac's confirm → stream the bundle into the
+  engine → Face ID → ACK; any failure runs `join_abort`), the camera
+  scanner and the pairing screens; camera and local-network usage
+  strings; `NSAllowsLocalNetworking`. Builds for the simulator. **Still to
+  do with the owner:** the device run on the physical iPhone (signing
+  with the free account; pairing with the Mac app's Add Device), with
+  synthetic data only.
 

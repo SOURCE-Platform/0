@@ -36,6 +36,10 @@ final class VaultEngine: @unchecked Sendable {
         }
     }
 
+    func callAsync(_ request: [String: Any]) async -> [String: Any] {
+        await withCheckedContinuation { done in call(request) { done.resume(returning: $0) } }
+    }
+
     private func callNow(_ request: [String: Any]) -> [String: Any] {
         guard var bytes = try? JSONSerialization.data(withJSONObject: request) else { return ["ok": false, "error": "INVALID_INPUT"] }
         defer { bytes.resetBytes(in: 0..<bytes.count) } // a request may carry a record's fields

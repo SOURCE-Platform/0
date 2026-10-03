@@ -22,6 +22,15 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>SOURCE Vault uses the camera only to scan the pairing code your Mac shows.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>SOURCE Vault connects to your Mac on your local network to pair and sync.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSFaceIDUsageDescription</key>
 	<string>SOURCE Vault uses Face ID to open your vault on this iPhone.</string>
 	<key>UIApplicationSceneManifest</key>

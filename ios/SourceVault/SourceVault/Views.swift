@@ -12,7 +12,11 @@ struct ContentView: View {
             Group {
                 switch model.state {
                 case "uninitialized":
-                    ContentUnavailableView("Not paired yet", systemImage: "qrcode", description: Text("Pair this iPhone with your Mac to bring your vault here."))
+                    if let flow = model.pairing() {
+                        PairingView(flow: flow)
+                    } else {
+                        ContentUnavailableView("Not paired yet", systemImage: "qrcode", description: Text("Unlock this iPhone to pair it with your Mac."))
+                    }
                 case "locked", "error":
                     LockedView()
                 default:
