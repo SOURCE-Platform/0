@@ -303,8 +303,9 @@ export interface EnrollmentStart {
 
 export interface EnrollmentStatus {
   active: boolean;
-  /** The 8-character code to compare with the phone's screen (§5.2). */
-  sas: string | null;
+  /** The phone's hello arrived; the code to compare is shown by the
+   * Source Vault window at confirm, never here (owner decision 2026-10-03). */
+  phone_connected: boolean;
   acked: boolean;
   expires_in?: number;
 }

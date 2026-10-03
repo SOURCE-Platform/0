@@ -83,18 +83,24 @@ error path skips the zeroing.
 the engine builds every signed field, §11.4 — `session_close`,
 `quarantine_status`, `remote_update_status`), and the phone's side of
 enrollment (§5, §22.10; `vault/join_ops.rs`): `join_begin {qr, name}`
-(fresh Secure Enclave keys; the hello to send over TLS pinned to the QR
-`fp`), `join_hello {reply}` (the SAS, computed here, never received),
-`join_bundle_begin {sha256, size}` (a session the bundle streams into,
-≤ 256 MiB), `join_complete {session}` (the §22.10 checks in order — the
-registry ending in the QR's Mac enrolling exactly this device's keys under
-the id it assigned, the manifest signature, this device's own envelope
-bound to the hello's nonce, the checkpoint under that VK — then the vault
-written, the VK's SE commitment signed, the peer token kept in the
-Keychain only, the vault left LOCKED; answers the ENROLL_ACK signature),
-`join_finish` (the Mac accepted the ACK) and `join_abort` (removes
-everything an unfinished attempt created). A failed `join_complete`
-leaves no vault and no keys.
+(the QR checked first, including `mac_key`; then fresh Secure Enclave
+keys — refused if this phone has no Face ID, whose envelope could never
+open; the hello to send over TLS pinned to the QR `fp`), `join_hello
+{reply}` (the SAS, computed here from transcript v2 and never received;
+the route proof for the bundle and ACK requests), `join_bundle_begin
+{sha256, size}` (a session the bundle streams into, ≤ 256 MiB),
+`join_complete {session}` (the §22.10 checks in order — the registry
+ending in the QR's Mac, whose key hashes to `mac_key`, enrolling exactly
+this device's keys under the id it assigned; the manifest signature; this
+device's envelope **as the signed index names it**, bound to the hello's
+nonce; the checkpoint under that VK — then the vault written, the VK's SE
+commitment signed, `peer_endpoint` validated and kept **in the Keychain
+only**, the vault left LOCKED; answers the ENROLL_ACK signature),
+`join_finish` (the Mac accepted the ACK) and `join_abort`. From
+`join_begin` until `join_finish` an attempt marker sits in the vault
+directory; an attempt that fails, is aborted, or is interrupted (found at
+the next start) is removed whole — files, Secure Enclave keys and the
+Keychain item.
 
 **Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, enrollment
 authorization, device revocation, total-loss recovery, and

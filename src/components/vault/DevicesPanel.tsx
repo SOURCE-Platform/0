@@ -234,7 +234,7 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
 
       {enrollment && (
         <div className="mt-5 rounded-xl border border-border/50 p-4">
-          {!status?.sas ? (
+          {!status?.phone_connected ? (
             <div className="flex gap-4">
               <div
                 className="h-[160px] w-[160px] shrink-0 overflow-hidden rounded-lg bg-white p-1 [&>svg]:h-full [&>svg]:w-full"
@@ -244,7 +244,8 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
                 <p className="text-foreground">Scan this with Source on your iPhone.</p>
                 <p className="mt-2 max-w-[48ch] leading-6">
                   The code expires in {status?.expires_in ?? enrollment.expires_in} seconds and
-                  works once. Both devices will then show an eight-character code to compare.
+                  works once. When you continue, the Source Vault window will show an
+                  eight-character code to compare with your iPhone.
                 </p>
                 <button
                   onClick={cancel}
@@ -256,16 +257,12 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
             </div>
           ) : (
             <div>
-              <p className="text-sm text-foreground">
-                Compare this code with the one on your iPhone.
-              </p>
-              <p className="mt-3 font-mono text-2xl tracking-[0.3em] text-foreground">
-                {status.sas}
-              </p>
+              <p className="text-sm text-foreground">Your iPhone is connected.</p>
               <p className="mt-3 flex max-w-[52ch] items-start gap-2 text-sm leading-6 text-muted-foreground">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-                If the codes are different, do not continue — something is intercepting the
-                connection.
+                Click Continue. The Source Vault window shows the code your iPhone must
+                show, and asks for your master password. If the codes are different, cancel
+                there — something is intercepting the connection.
               </p>
               <div className="mt-4 flex gap-2">
                 <button
@@ -273,13 +270,13 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
                   disabled={busy}
                   className="cursor-pointer rounded-xl bg-white px-3 py-1.5 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {busy ? "Waiting for Touch ID…" : "The codes match"}
+                  {busy ? "Waiting for the Source Vault window…" : "Continue"}
                 </button>
                 <button
                   onClick={cancel}
                   className="cursor-pointer rounded-xl border border-border/70 px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-white/5"
                 >
-                  They don't match
+                  Cancel
                 </button>
               </div>
             </div>

@@ -25,3 +25,14 @@ final class EngineTests: XCTestCase {
         engine.lock()
     }
 }
+
+/// VER-B1: the app's chunk encoding is the engine's (`vault_proto::b64`):
+/// base64url, unpadded.
+final class EncodingTests: XCTestCase {
+    func testChunksUseUnpaddedBase64URL() {
+        XCTAssertEqual(Data([0xfb, 0xff]).base64URL, "-_8")
+        XCTAssertEqual(Data([0x01]).base64URL, "AQ")
+        XCTAssertEqual(Data([0x01, 0x02]).base64URL, "AQI")
+        XCTAssertEqual(Data([0x01, 0x02, 0x03]).base64URL, "AQID")
+    }
+}

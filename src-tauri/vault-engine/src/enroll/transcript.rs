@@ -12,7 +12,10 @@ use sha2::{Digest, Sha256};
 use crate::crypto::hkdf;
 use crate::errors::ErrorCode;
 
-pub const TRANSCRIPT_PREFIX: &[u8] = b"ov0/enroll/transcript/v1";
+/// v2 (owner decision 2026-10-03, review SEC-B3): binds the authorizing
+/// helper's own signing key, so a main process that terminates the
+/// channel cannot present a matching SAS with its own keys.
+pub const TRANSCRIPT_PREFIX: &[u8] = b"ov0/enroll/transcript/v2";
 pub const ACK_PREFIX: &[u8] = b"ov0/enroll/ack/v1";
 
 /// The repo's unambiguous 32-character alphabet (no 0/1/I/O), used both
@@ -26,6 +29,9 @@ pub const SAS_LEN: usize = 8;
 pub struct Binding<'a> {
     /// SHA-256 of the enrollment server's certificate DER (QR `fp`).
     pub fp: &'a [u8; 32],
+    /// SHA-256 of the authorizing Mac's SE signing public key (QR
+    /// `mac_key`) — the helper's own identity, not main's.
+    pub mac_key: &'a [u8; 32],
     pub secret: &'a [u8; 16],
     pub nonce_e: &'a [u8; 16],
     pub nonce_n: &'a [u8; 16],
@@ -39,6 +45,7 @@ pub fn transcript(b: &Binding<'_>) -> [u8; 32] {
     let mut h = Sha256::new();
     h.update(TRANSCRIPT_PREFIX);
     h.update(b.fp);
+    h.update(b.mac_key);
     h.update(b.secret);
     h.update(b.nonce_e);
     h.update(b.nonce_n);
@@ -73,6 +80,25 @@ pub fn decode_secret(encoded: &str) -> Option<[u8; 16]> {
     }
     out.truncate(16);
     out.try_into().ok()
+}
+
+pub const PROOF_PREFIX: &[u8] = b"ov0/enroll/proof/v1";
+
+/// The enrollment server's bundle and ACK routes answer only the device
+/// that sent the hello: HMAC-SHA256 keyed by the QR secret over the
+/// hello's nonce (review SEC-I3). A host that merely found the port has
+/// neither.
+pub fn route_proof(secret: &[u8; 16], nonce_n: &[u8; 16]) -> [u8; 32] {
+    use hmac::{Hmac, KeyInit, Mac};
+    let mut mac = <Hmac<Sha256> as KeyInit>::new_from_slice(secret).expect("any key length");
+    mac.update(PROOF_PREFIX);
+    mac.update(nonce_n);
+    mac.finalize().into_bytes().into()
+}
+
+/// `mac_key`: SHA-256 of a device's 65-byte signing public key.
+pub fn key_fingerprint(sign_pub: &[u8; 65]) -> [u8; 32] {
+    Sha256::digest(sign_pub).into()
 }
 
 /// What the new device signs to prove its SE signing key exists (§5.2).
@@ -117,6 +143,7 @@ mod tests {
 
     fn binding<'a>(sign: &'a [u8; 65], agree: &'a [u8; 65]) -> Binding<'a> {
         static FP: [u8; 32] = [1u8; 32];
+        static KEY: [u8; 32] = [12u8; 32];
         static SECRET: [u8; 16] = [2u8; 16];
         static NE: [u8; 16] = [3u8; 16];
         static NN: [u8; 16] = [4u8; 16];
@@ -124,6 +151,7 @@ mod tests {
         static NEW: [u8; 16] = [6u8; 16];
         Binding {
             fp: &FP,
+            mac_key: &KEY,
             secret: &SECRET,
             nonce_e: &NE,
             nonce_n: &NN,
@@ -154,6 +182,18 @@ mod tests {
         let flipped = [99u8; 16];
         b.nonce_n = &flipped;
         assert_ne!(base, sas(&transcript(&b)).unwrap());
+        // v2: another helper key, another code (review SEC-B3).
+        let mut b = binding(&sign, &agree);
+        let other_key = [13u8; 32];
+        b.mac_key = &other_key;
+        assert_ne!(base, sas(&transcript(&b)).unwrap());
+    }
+
+    #[test]
+    fn the_route_proof_needs_the_secret_and_the_nonce() {
+        let p = route_proof(&[1; 16], &[2; 16]);
+        assert_ne!(p, route_proof(&[3; 16], &[2; 16]));
+        assert_ne!(p, route_proof(&[1; 16], &[4; 16]));
     }
 
     #[test]

@@ -164,9 +164,15 @@ pub fn disable_user_interaction() {
     }
 }
 
-/// Remove one item (test/gate cleanup; never called in production paths).
+/// Remove one item (test/gate cleanup).
 #[cfg(debug_assertions)]
 pub fn delete_item(service_base: &str) {
+    remove_item(service_base);
+}
+
+/// Remove one item; a missing item is not an error (an unfinished phone
+/// pairing's `peer_endpoint`, `join_ops::discard`).
+pub fn remove_item(service_base: &str) {
     let service_name = service(service_base);
     let [p0, p1, p2] = base_pairs(&service_name);
     let query: Query = CFDictionary::from_CFType_pairs(&[p0, p1, p2]);

@@ -92,6 +92,8 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         provider: c.store.as_ref().ok_or(ErrorCode::BadState)?.header.provider.clone(),
         provider_generation: seen_floor.as_ref().map_or(0, |s| s.generation),
         provider_manifest_hash: seen_floor.as_ref().map_or(String::new(), |s| hex::encode(s.manifest_hash.0)),
+        // Signed, so the phone can verify the floor it takes (SEC-B2).
+        provider_state: crate::sync::seen::body(&c.store.as_ref().ok_or(ErrorCode::BadState)?.conn)?.map(hex::encode),
     };
     let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
     session.entry = Some(entry);

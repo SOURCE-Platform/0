@@ -61,11 +61,21 @@ pub fn begin_enrollment(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcom
     let response = json!({
         "secret": transcript::encode_secret(session.secret()),
         "mac_device_id": hex::encode(me.device_id()),
+        // For the QR: the helper's own key, which the transcript binds.
+        "mac_key": hex::encode(transcript::key_fingerprint(&me.sign_pub())),
         "vault_id": hex::encode(vault_id),
         "expires_in": session.expires_in_secs(),
     });
     lock_core(core).enroll = Some(session);
     OpOutcome::ok(response)
+}
+
+/// `enroll_proof {proof}`: main asks before serving the bundle or taking
+/// an ACK — only the device that sent the hello can answer (review SEC-I3).
+pub fn enroll_proof(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
+    let proof = frame.get("proof").and_then(Value::as_str).and_then(hex::decode_array::<32>).unwrap_or([0; 32]);
+    let ok = lock_core(core).enroll.as_ref().is_some_and(|s| !s.expired() && s.verify_route_proof(&proof));
+    if ok { OpOutcome::ok(json!({})) } else { OpOutcome::err(ErrorCode::WrongCredential) }
 }
 
 pub fn cancel_enrollment(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
@@ -127,6 +137,7 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     };
     let t = transcript::transcript(&transcript::Binding {
         fp: &fp,
+        mac_key: &transcript::key_fingerprint(&me.sign_pub()),
         secret: &secret,
         nonce_e: &nonce_e,
         nonce_n: &peer_nonce(&hello).unwrap_or([0u8; 16]),
@@ -156,13 +167,13 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
         return OpOutcome::err(ErrorCode::BadState);
     };
     session.peer = Some(peer);
+    session.nonce_n = peer_nonce(&hello);
     session.transcript = Some(t);
     session.sas = Some(sas.clone());
     session.stage = Stage::AwaitingConfirm;
-    OpOutcome::ok(json!({
-        "reply": serde_json::to_value(&reply).unwrap_or(Value::Null),
-        "sas": sas,
-    }))
+    // The SAS goes to the helper's own panel at confirm, never to the main
+    // process (owner decision 2026-10-03, review SEC-B3).
+    OpOutcome::ok(json!({ "reply": serde_json::to_value(&reply).unwrap_or(Value::Null) }))
 }
 
 fn peer_nonce(hello: &wire::Hello) -> Option<[u8; 16]> {
@@ -240,13 +251,15 @@ pub fn enroll_confirm(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
     }
 }
 
-/// The helper panel collects the MP; it must open the committed wrap.
+/// The helper panel shows the code the phone must show and collects the
+/// MP; the MP must open the committed wrap.
 fn prove_current_mp(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Result<(), ErrorCode> {
     use super::setup::{emit_panel, PANEL_TIMEOUT_PUB};
     use super::{PanelOutcome, PanelRequest};
-    emit_panel(deps, true, PanelRequest::MpEntry);
-    let outcome = deps.panel.run(PanelRequest::MpEntry, PANEL_TIMEOUT_PUB);
-    emit_panel(deps, false, PanelRequest::MpEntry);
+    let code = lock_core(core).enroll.as_ref().and_then(|s| s.sas.clone()).ok_or(ErrorCode::BadState)?;
+    emit_panel(deps, true, PanelRequest::EnrollConfirm);
+    let outcome = deps.panel.run_with_code(PanelRequest::EnrollConfirm, &code, PANEL_TIMEOUT_PUB);
+    emit_panel(deps, false, PanelRequest::EnrollConfirm);
     let PanelOutcome::Submitted(mp) = outcome else {
         return Err(ErrorCode::PanelCancelled);
     };

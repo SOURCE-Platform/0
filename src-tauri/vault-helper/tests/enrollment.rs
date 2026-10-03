@@ -40,16 +40,18 @@ fn enrollment_end_to_end() {
     let hello = fx.op(phone.hello(&secret, nonce_n));
     assert_eq!(hello["ok"], true, "enroll_hello: {hello}");
     let reply = &hello["reply"];
-    let mac_sas = hello["sas"].as_str().unwrap().to_string();
-    assert_eq!(mac_sas.len(), 8);
-    // Both sides derive the same 8 characters from the same transcript.
-    assert_eq!(mac_sas, phone_sas(&phone, &secret, nonce_n, reply));
+    assert!(hello.get("sas").is_none(), "the code never reaches the main process");
     let new_id = hex::decode_array::<16>(reply["new_device_id"].as_str().unwrap()).unwrap();
 
-    // The user compares, confirms, and passes the Mac's presence check.
+    // The user confirms; the Source Vault window shows the code and takes
+    // the master password (owner decision 2026-10-03).
     fx.push_panel(submitted(MP));
     let confirmed = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(confirmed["ok"], true, "enroll_confirm: {confirmed}");
+    let mac_sas = fx.panel.codes.lock().unwrap().last().cloned().unwrap();
+    assert_eq!(mac_sas.len(), 8);
+    // Both sides derive the same 8 characters from the same transcript.
+    assert_eq!(mac_sas, phone_sas(&phone, &secret, begun["mac_key"].as_str().unwrap(), nonce_n, reply));
     let bundle = &confirmed["bundle"];
     let head = hex::decode_array::<32>(bundle["registry_head"].as_str().unwrap()).unwrap();
 

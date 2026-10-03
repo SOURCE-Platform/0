@@ -101,6 +101,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "enroll_confirm" => enroll_ops::enroll_confirm(core, deps),
         "enroll_ack" => enroll_commit::enroll_ack(core, frame),
         "cancel_enrollment" => enroll_ops::cancel_enrollment(core),
+        "enroll_proof" => enroll_ops::enroll_proof(core, frame),
         "list_devices" => devices::list_devices(core),
         // The phone's side of enrollment (§22.10).
         "join_begin" => join_ops::join_begin(core, frame),

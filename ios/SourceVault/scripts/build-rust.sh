@@ -13,9 +13,11 @@ PROFILE=debug
 FLAGS=()
 if [ "${CONFIGURATION:-Debug}" = "Release" ]; then PROFILE=release; FLAGS=(--release); fi
 export PATH="$HOME/.cargo/bin:$PATH"
-# Xcode's environment targets iOS; cargo picks its own SDK per target.
-unset SDKROOT IPHONEOS_DEPLOYMENT_TARGET
-(cd "$ROOT/src-tauri" && cargo build -p vault-ffi --target "$TARGET" ${FLAGS[@]+"${FLAGS[@]}"})
+# Xcode's environment targets iOS; cargo picks its own SDK per target. The
+# bundled SQLite must target the app's floor, not the SDK's (review VER-I6).
+unset SDKROOT
+export IPHONEOS_DEPLOYMENT_TARGET=17.0
+(cd "$ROOT/src-tauri" && cargo build --locked -p vault-ffi --target "$TARGET" ${FLAGS[@]+"${FLAGS[@]}"})
 OUT="${PROJECT_DIR:-$ROOT/ios/SourceVault}/build/rust/${PLATFORM_NAME:-iphonesimulator}"
 mkdir -p "$OUT"
 cp "$ROOT/src-tauri/target/$TARGET/$PROFILE/libvault_ffi.a" "$OUT/libvault_ffi.a"

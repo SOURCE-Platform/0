@@ -27,6 +27,9 @@ final class PairingFlow: ObservableObject {
     func scanned(_ text: String) {
         guard step == .scan, let qr = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any], qr["v"] as? Int == 2 else { return }
         step = .contacting
+        // The screen stays on while the user confirms on the Mac: a lock
+        // would end the attempt (review VER-I7).
+        UIApplication.shared.isIdleTimerDisabled = true
         Task { await begin(qr) }
     }
 
@@ -41,7 +44,8 @@ final class PairingFlow: ObservableObject {
         do {
             let answer = try await client.post("v1/vault/enroll/hello", hello)
             let sas = await engine.callAsync(["op": "join_hello", "reply": answer["reply"] ?? [:]])
-            guard let code = sas["sas"] as? String else { return await fail("The Mac's answer did not check out.") }
+            guard let code = sas["sas"] as? String, let proof = sas["proof"] as? String else { return await fail("The Mac's answer did not check out.") }
+            client.proof = proof
             step = .compare(code)
         } catch {
             await fail("Secure channel could not be established.")
@@ -71,8 +75,10 @@ final class PairingFlow: ObservableObject {
                 return await fail(AppModel.describe(done["error"] as? String ?? "REFUSED"))
             }
             _ = try await client.post("v1/vault/enroll/ack", ack)
-            _ = await engine.callAsync(["op": "join_finish"])
+            let finished = await engine.callAsync(["op": "join_finish"])
             client.close()
+            guard finished["ok"] as? Bool == true else { return await fail("iPhone didn't finish pairing — try again.") }
+            UIApplication.shared.isIdleTimerDisabled = false
             step = .done
             onDone()
         } catch {
@@ -93,7 +99,7 @@ final class PairingFlow: ObservableObject {
         var seq = 0
         while offset < bytes.count {
             let part = bytes[offset..<min(offset + chunk, bytes.count)]
-            let w = await engine.callAsync(["op": "stream_write", "session": session, "stream_id": stream, "seq": seq, "offset": offset, "data": part.base64EncodedString()])
+            let w = await engine.callAsync(["op": "stream_write", "session": session, "stream_id": stream, "seq": seq, "offset": offset, "data": part.base64URL])
             guard w["ok"] as? Bool == true else { return w }
             offset += chunk
             seq += 1
@@ -103,6 +109,7 @@ final class PairingFlow: ObservableObject {
     }
 
     private func fail(_ message: String) async {
+        UIApplication.shared.isIdleTimerDisabled = false
         client?.close()
         client = nil
         _ = await engine.callAsync(["op": "join_abort"])
@@ -117,5 +124,11 @@ final class PairingFlow: ObservableObject {
 extension Data {
     var sha256Hex: String {
         SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The engine's encoding (`vault_proto::b64`): base64url without
+    /// padding — standard base64 is refused (review VER-B1).
+    var base64URL: String {
+        base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
     }
 }

@@ -45,6 +45,9 @@ pub struct EnrollSession {
     pub stage: Stage,
     pub peer: Option<Peer>,
     pub transcript: Option<[u8; 32]>,
+    /// The phone's hello nonce: keys, with the secret, the route proof the
+    /// bundle and ACK routes require (review SEC-I3).
+    pub nonce_n: Option<[u8; 16]>,
     pub sas: Option<String>,
     /// Built at `confirm`, appended to the registry only at `ack`.
     pub entry: Option<RegistryEntry>,
@@ -65,6 +68,7 @@ impl EnrollSession {
             stage: Stage::AwaitingHello,
             peer: None,
             transcript: None,
+            nonce_n: None,
             sas: None,
             entry: None,
         }
@@ -99,6 +103,12 @@ impl EnrollSession {
             self.failures += 1;
             Err(ErrorCode::WrongCredential)
         }
+    }
+
+    /// The phone's proof for the bundle and ACK routes (constant time).
+    pub fn verify_route_proof(&self, proof: &[u8]) -> bool {
+        use subtle::ConstantTimeEq;
+        self.nonce_n.is_some_and(|n| super::transcript::route_proof(&self.secret, &n).ct_eq(proof).into())
     }
 
     pub fn out_of_attempts(&self) -> bool {

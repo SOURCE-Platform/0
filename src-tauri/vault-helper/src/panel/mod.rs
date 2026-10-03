@@ -43,6 +43,8 @@ fn main_queue() -> *mut std::ffi::c_void {
 
 struct PanelJob {
     req: PanelRequest,
+    /// A non-secret code shown above the fields (the enrollment SAS).
+    code: Option<String>,
     reply: Sender<PanelOutcome>,
     /// Per-job dismissal flag, polled by the modal-session watchdog.
     abort: Arc<AtomicBool>,
@@ -60,7 +62,7 @@ extern "C" fn present_trampoline(ctx: *mut std::ffi::c_void) {
     // SAFETY: `ctx` is a Box<PanelJob> produced exactly once by
     // HelperPanel::run; reconstructing it here returns ownership to us.
     let job = unsafe { Box::from_raw(ctx.cast::<PanelJob>()) };
-    let outcome = appkit::present(&job.req, job.abort.clone());
+    let outcome = appkit::present(&job.req, job.code.as_deref(), job.abort.clone());
     let _ = job.reply.send(outcome);
 }
 
@@ -118,7 +120,21 @@ impl PanelRunner for HelperPanel {
         }
         let (tx, rx) = channel();
         let abort = Arc::new(AtomicBool::new(false));
-        let job = Box::into_raw(Box::new(PanelJob { req, reply: tx, abort: abort.clone() }));
+        let job = Box::into_raw(Box::new(PanelJob { req, code: None, reply: tx, abort: abort.clone() }));
+        dispatch_main(present_trampoline, job.cast());
+        wait_job(&rx, &abort, &self.cancel, timeout).unwrap_or(PanelOutcome::Cancelled)
+    }
+
+    /// The Add Device panel: the code the phone must show, in this
+    /// helper-owned window (owner decision 2026-10-03, review SEC-B3).
+    fn run_with_code(&self, req: PanelRequest, code: &str, timeout: Duration) -> PanelOutcome {
+        #[cfg(debug_assertions)]
+        if let Some(outcome) = scripted(&req) {
+            return outcome;
+        }
+        let (tx, rx) = channel();
+        let abort = Arc::new(AtomicBool::new(false));
+        let job = Box::into_raw(Box::new(PanelJob { req, code: Some(code.to_string()), reply: tx, abort: abort.clone() }));
         dispatch_main(present_trampoline, job.cast());
         wait_job(&rx, &abort, &self.cancel, timeout).unwrap_or(PanelOutcome::Cancelled)
     }
@@ -194,7 +210,7 @@ fn scripted(req: &PanelRequest) -> Option<PanelOutcome> {
     let first = parts.next().unwrap_or("");
     let second = parts.next().unwrap_or("");
     match req {
-        PanelRequest::MpCreate | PanelRequest::MpEntry => {
+        PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::EnrollConfirm => {
             Some(PanelOutcome::Submitted(secret(first)))
         }
         PanelRequest::MpChange => Some(PanelOutcome::SubmittedChange(secret(first), secret(second))),

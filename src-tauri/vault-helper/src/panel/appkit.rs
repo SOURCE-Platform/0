@@ -194,7 +194,7 @@ pub(super) fn probe_current() {
 }
 
 /// Build, present, and run one modal panel. Main-thread only.
-pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
+pub fn present(req: &PanelRequest, code: Option<&str>, abort: Arc<AtomicBool>) -> PanelOutcome {
     let Some(mtm) = MainThreadMarker::new() else {
         return PanelOutcome::Cancelled;
     };
@@ -208,7 +208,9 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
     let delegate = VaultPanelDelegate::new(mtm);
     delegate.ivars().mode.set(mode);
 
-    let height = 120.0 + 44.0 * labels.len() as f64;
+    // The Add Device code takes two more lines above the fields.
+    let extra = if code.is_some() { 48.0 } else { 0.0 };
+    let height = 120.0 + extra + 44.0 * labels.len() as f64;
     let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(380.0, height));
     let panel = unsafe {
         NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -225,7 +227,13 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
     // created and parented within this block; no reentrancy.
     unsafe {
         let content = NSView::initWithFrame(mtm.alloc::<NSView>(), rect);
-        let mut y = height - 56.0;
+        if let Some(code) = code {
+            let line = format!("Your iPhone must show {code}.\nContinue only if the codes match.");
+            let note = NSTextField::wrappingLabelWithString(&NSString::from_str(&line), mtm);
+            note.setFrame(NSRect::new(NSPoint::new(20.0, height - 52.0), NSSize::new(340.0, 40.0)));
+            content.addSubview(&note);
+        }
+        let mut y = height - 56.0 - extra;
         let mut fields = Vec::new();
         for label in labels {
             let text = NSTextField::labelWithString(&NSString::from_str(label), mtm);
@@ -310,7 +318,7 @@ pub fn present(req: &PanelRequest, abort: Arc<AtomicBool>) -> PanelOutcome {
             let old = v.pop().unwrap_or_default();
             PanelOutcome::SubmittedChange(to_secret(old), to_secret(new))
         }
-        (PanelRequest::MpCreate, Some(v)) | (PanelRequest::MpEntry, Some(v)) | (PanelRequest::RkEntry, Some(v)) => {
+        (PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::RkEntry | PanelRequest::EnrollConfirm, Some(v)) => {
             PanelOutcome::Submitted(to_secret(v.into_iter().next().unwrap_or_default()))
         }
     }

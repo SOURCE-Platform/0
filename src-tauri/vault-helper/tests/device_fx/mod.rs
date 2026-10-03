@@ -65,10 +65,11 @@ pub fn begin(fx: &Fx) -> Value {
 
 /// The SAS the phone computes for itself from the reply (§5.2: the code
 /// is never transmitted — both sides derive it).
-pub fn phone_sas(phone: &Phone, secret: &str, nonce_n: [u8; 16], reply: &Value) -> String {
+pub fn phone_sas(phone: &Phone, secret: &str, mac_key: &str, nonce_n: [u8; 16], reply: &Value) -> String {
     let decoded = decode_secret(secret);
     let t = transcript::transcript(&transcript::Binding {
         fp: &FP,
+        mac_key: &hex::decode_array::<32>(mac_key).unwrap(),
         secret: &decoded,
         nonce_e: &hex::decode_array::<16>(reply["nonce_e"].as_str().unwrap()).unwrap(),
         nonce_n: &nonce_n,
@@ -106,17 +107,18 @@ pub fn enroll_phone(fx: &Fx, phone: &Phone) -> [u8; 16] {
     let nonce_n = [0x42u8; 16];
     let hello = fx.op(phone.hello(&secret, nonce_n));
     assert_eq!(hello["ok"], true, "enroll_hello: {hello}");
+    assert!(hello.get("sas").is_none(), "the code never reaches the main process");
     let reply = &hello["reply"];
-    assert_eq!(
-        hello["sas"].as_str().unwrap(),
-        phone_sas(phone, &secret, nonce_n, reply),
-        "both sides derive the same SAS"
-    );
     let new_id = hex::decode_array::<16>(reply["new_device_id"].as_str().unwrap()).unwrap();
     let mac_id = hex::decode_array::<16>(reply["mac_device_id"].as_str().unwrap()).unwrap();
     fx.push_panel(crate::vault_fx::submitted(crate::vault_fx::MP));
     let confirmed = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(confirmed["ok"], true, "enroll_confirm: {confirmed}");
+    assert_eq!(
+        fx.panel.codes.lock().unwrap().last().cloned().unwrap(),
+        phone_sas(phone, &secret, begun["mac_key"].as_str().unwrap(), nonce_n, reply),
+        "the Source Vault window shows the code the phone derives"
+    );
     let head =
         hex::decode_array::<32>(confirmed["bundle"]["registry_head"].as_str().unwrap()).unwrap();
     let sig = phone

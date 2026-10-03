@@ -414,3 +414,41 @@ SEC-I3 (close).
 Targeted runs: `vault-ffi` (catalogue 3, handle 6), after a fresh iOS
 build. **Steps 1–3 of F.2b are closed.**
 
+## 7. F.2b steps 4–5 — the SOURCE Vault app and the phone joining a vault (candidate `3ed45f3`)
+
+Reviewers: `security-reviewer` and `verification-reviewer` on
+`git diff 12206c0 3ed45f3`.
+
+**Owner decision (2026-10-03), SEC-B3 "Close the gap":** pairing no longer
+rests on the Mac main process. The QR carries `mac_key` (SHA-256 of the
+helper's signing key); the transcript (v2) binds it; the Mac's code is
+shown only by the helper's own "Add Device" panel at confirm, above the
+master-password field — the main app neither shows nor receives it; the
+phone requires the chain's authorizer to have that key. A main process
+that swaps either side's keys now produces two different codes. This also
+closes the Mac-side half (main enrolling itself), which predated F.2.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 the phone commits to an envelope beside the manifest | **Fixed:** the envelope is the signed index's; the bundle field must equal it and is never opened | `sync/materialize.rs` | `an_envelope_other_than_the_indexed_one_is_refused` |
+| SEC-B2 / VER-I2 unsigned floor → COMPROMISED or wedge | **Fixed:** the floor comes only from `provider_state` (the Mac's kept, signed state) verified under a device the registry installed; the join-floor branch also checks the N+1 chain. Kept in `vault.db` until the first accepted state (deviation from "Keychain", recorded: it is transitional and verified) | `materialize.rs`, `fetch.rs`, `enroll_commit.rs`, `wire.rs` | — (no provider fixture in these tests; open) |
+| SEC-B3 pairing anchored on the main process | **Owner decision, implemented** (above) | `transcript.rs`, `enroll_ops.rs`, `secure_ui.rs`, helper panel, main `vault_enroll`, `DevicesPanel.tsx`, `join.rs`, `materialize.rs` | `a_qr_with_another_mac_key_shows_a_different_code_and_is_refused`; enrollment suite reads the code from the panel |
+| SEC-B4 app-switcher snapshot | **Fixed:** the window is covered whenever the scene is not active; a revealed password is cleared on leaving `active` | `SourceVaultApp.swift`, `Views.swift` | — (device test IO-05) |
+| VER-B1 Swift sent standard base64 | **Fixed:** unpadded base64url | `PairingFlow.swift` | `EncodingTests` (simulator) |
+| VER-B2 / SEC-I4 negative cases | **Fixed in part:** registry without this phone, another head, broken manifest signature, checkpoint not under the VK, swapped envelope, object changed under its hash, bad `peer_endpoint`, reply from another Mac, another Mac key in the QR, interrupted join removed at start. **Open:** an authorizer ≠ QR Mac with valid signatures, an envelope with a valid index copy but another nonce or generation, and the floor branches need fixtures that can sign as the Mac — recorded | `tests/phone_join.rs` | 11 tests |
+| SEC-I1 / VER-I3 backups and protection class | **Fixed:** `isExcludedFromBackup` and `CompleteUnlessOpen` on the vault directory | `AppModel.swift` | — (device test) |
+| SEC-I2 / VER-I1 join lifecycle | **Fixed:** attempt marker from `join_begin` to `join_finish`; any failure after the bundle arrived discards whole; an interrupted attempt is removed at boot; `join_finish`'s result is checked in Swift. **Open:** "Remove this vault" (§22.9) and a softer ACK-timeout path (VER-O1) — F.2d | `join_ops.rs`, `vault/mod.rs`, `PairingFlow.swift` | `an_interrupted_join_is_removed_at_the_next_start` |
+| SEC-I3 bundle route open to any LAN host | **Fixed:** `X-Ov0-Proof` checked by the helper on the bundle and ACK routes | `transcript.rs`, `session.rs`, `enroll_ops.rs`, main `server.rs`, `PairingClient.swift` | proof check in the happy-path test |
+| VER-I4 pin in `vault.db`, endpoint unchecked, token kept after abort | **Fixed:** A.4 formats validated; pin, token, port, hints all in one Keychain item; removed by every discard | `join_ops.rs`, `keychain.rs` | `a_bad_peer_endpoint_is_refused`; happy path reads it back |
+| VER-I5 helper accepted `join_*` | **Fixed:** refused in the helper's connection layer | `ipc/conn.rs` | — |
+| VER-I6 SQLite built for iOS 26.5 | **Fixed:** `IPHONEOS_DEPLOYMENT_TARGET=17.0`, `--locked` | `build-rust.sh` | the linker warning is gone |
+| VER-I7 phone locks while the user confirms on the Mac | **Fixed:** the idle timer is off while pairing | `PairingFlow.swift` | — |
+| VER-O2 / VER-O3 / SEC-O3 session checks, keys before the QR | **Fixed:** `join_complete` takes only its own, unexpired session; the QR is checked before any key; no Face ID → refused at `join_begin` | `join_ops.rs`, `join.rs` | — |
+| SEC-O2 redirects | **Fixed:** never followed | `PairingClient.swift` | — |
+| SEC-O1 join floor N+1 | **Fixed** (above) | `fetch.rs` | — |
+| VER-O1 ACK lost after the Mac committed | **Deferred to F.2d** with "Remove this vault": today the phone discards and the Mac keeps an entry to revoke | — | — |
+| VER-O4 shared test Keychain; VER-O5/O6/O7 | noted | — | — |
+
+Consequence recorded: SOURCE Mobile (Phase F, transcript v1) can no longer
+pair a vault; its phones re-enroll as SOURCE Vault (§22.3) anyway.
+

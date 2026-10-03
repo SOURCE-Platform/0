@@ -40,7 +40,11 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
             if remote.generation < generation {
                 return Err(ErrorCode::ManifestRollback);
             }
-            if remote.generation == generation && generation > 0 && !same {
+            // The floor came from a manifest verified at join (review
+            // SEC-B2), so a second one at its generation, or a successor not
+            // chained to it, is two-signature evidence.
+            let unchained = remote.generation == generation + 1 && crate::crypto::hex::encode(remote.manifest.prev_manifest_hash) != hash;
+            if (remote.generation == generation && !same) || unchained {
                 return Err(if signed_by_our_registry(store, remote)? { ErrorCode::RegistryFork } else { ErrorCode::SignatureInvalid });
             }
         }

@@ -13,5 +13,5 @@ pub mod server;
 pub mod session;
 
 pub use session::{
-    begin, cancel, confirm, sas, status, EnrollmentPayloadV2, Session, SESSION_TTL,
+    begin, cancel, confirm, status, EnrollmentPayloadV2, Session, SESSION_TTL,
 };

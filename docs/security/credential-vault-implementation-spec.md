@@ -1748,16 +1748,16 @@ sequenceDiagram
 
 | Field / message | Spec |
 |---|---|
-| QR payload | JSON `{v:2, host, port, fp, secret (base32), mac_device_id, name}` — same shape family as existing `EnrollmentPayload`, `v:2` distinguishes vault enrollment; rendered with existing `render_enrollment_qr` |
+| QR payload | JSON `{v:2, host, port, fp, secret (base32), mac_device_id, mac_key, name}` — same shape family as existing `EnrollmentPayload`, `v:2` distinguishes vault enrollment; rendered with existing `render_enrollment_qr`. **v0.5 (owner decision 2026-10-03, F.2b review SEC-B3):** `mac_key` = hex SHA-256 of the authorizing helper's SE signing public key, from `begin_enrollment` |
 | TLS | rustls server (main), iOS URLSession/Network.framework pinned to the QR `fp` = `SHA-256(cert DER)` of the ephemeral certificate (erratum v0.5: previously worded "SPKI-pin"; §5.1 and both implementations hash the certificate); hostname ignored (consistent with decision D6) |
 | `enroll_secret` | 16 bytes, base32-no-pad in QR; verified with `subtle::ConstantTimeEq`; single-use; TTL 300 s from `begin_enrollment`; failure count ≥ 5 on a session → session torn down |
 | Nonces | both sides 16 B random; both enter the transcript |
-| Transcript | `SHA-256("ov0/enroll/transcript/v1" ‖ fp_bytes ‖ secret ‖ nonce_e ‖ nonce_n ‖ mac_device_id ‖ new_device_id ‖ sign_pub ‖ agree_pub)` — binds everything the user is about to approve |
+| Transcript | `SHA-256("ov0/enroll/transcript/v2" ‖ fp_bytes ‖ mac_key ‖ secret ‖ nonce_e ‖ nonce_n ‖ mac_device_id ‖ new_device_id ‖ sign_pub ‖ agree_pub)` — binds everything the user is about to approve, including the helper's own key (v2; v1 lacked `mac_key`). The helper computes `mac_key` from its own key, the phone takes it from the QR: a main process that swaps either side's keys produces two different codes |
 | SAS | 8 chars, alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (repo's existing unambiguous alphabet), from `HKDF-SHA256(transcript, salt=nil, info="ov0/enroll/sas/v1")` → 5 bytes → 40 bits → 8×5-bit indices. Longer than the legacy 4-char pair tag on purpose. |
-| SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned |
+| SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned. **v0.5 (owner decision 2026-10-03):** the Mac's code is shown **only by the helper's own panel** at `enroll_confirm` (§1.7, request "Add Device", above the master-password field) — never by the main app, which no longer receives it (`enroll_hello` answers only the reply) |
 | Key exchange | iPhone sends only public keys (65-byte uncompressed, §2.7); private keys never leave SE |
 | `device_id` assignment (v0.3.1 Phase E) | the **Mac** assigns the new device's id and returns it in the hello reply, together with `nonce_e` and `mac_device_id`; a new device cannot choose its own registry identity or collide with an enrolled one. The phone derives the SAS from that reply — the SAS itself is never transmitted. |
-| Transport shape (v0.3.1 Phase E) | three routes on the ephemeral server: `POST /v1/vault/enroll/hello`, `GET /v1/vault/enroll/bundle` (the phone waits here while the user compares the SAS and confirms on the Mac), `POST /v1/vault/enroll/ack`. Per-message timeout 30 s; the bundle wait is bounded by the 300 s session. |
+| Transport shape (v0.3.1 Phase E) | three routes on the ephemeral server: `POST /v1/vault/enroll/hello`, `GET /v1/vault/enroll/bundle` (the phone waits here while the user compares the SAS and confirms on the Mac), `POST /v1/vault/enroll/ack`. Per-message timeout 30 s; the bundle wait is bounded by the 300 s session. **v0.5 (F.2b review SEC-I3):** the bundle and ACK routes require header `X-Ov0-Proof` = hex `HMAC-SHA256(secret, "ov0/enroll/proof/v1" ‖ nonce_n)`, checked by the helper (`enroll_proof`) before main answers; the bundle also carries `provider_state` (the Mac's kept, signed provider state, when it has one) |
 | Bundle contents (v0.4) | exactly a §11.2 v2 state — blobs, signed manifest v2 and §4.8 checkpoint — plus this device's envelope and the provider origin (v0.5: and `peer_endpoint`, §22.8). The JSON `objects` entries are `[role, logical_id, sha256, data]`. The helper hands the bundle to main as a §1.3 stream session; main assembles the phone's response |
 | Envelope | HPKE base (§2.7/§2.9), plaintext = `DeviceEnvelopePayload` v2 (VK only), `info = "ov0/envelope/v2" ‖ …` (§2.5) |
 | Provider activation (v0.4; replaces "backup credential registration") | after ENROLL ACK the authorizer publishes a `publish` state transition whose registry contains the new `enroll` entry; the provider activates the new device's `sign_pub` when that transition commits (§11.4). No credential is registered. Tracked as `REMOTE_UPDATE_PENDING` until then (§11.3) |
@@ -4949,7 +4949,17 @@ materialization** use one order, which replaces §4.8's bundle order and
 the entry that installs exactly this device's keys; (2) the manifest
 signature under a device active in it; (3) the device's own envelope;
 (4) the checkpoint under that VK, bound to the manifest and the registry
-head; then the index's revisions (source `provider`, §22.7). The
+head; then the index's revisions (source `provider`, §22.7). **v0.5 F.2b
+review:** in (1) the authorizer must be active with a signing key whose
+SHA-256 equals the QR's `mac_key`; in (3) the envelope is the one the
+signed index names (a bundle field beside it must be identical, and is
+never what is opened, SEC-B1); the provider floor is taken only from the
+bundle's `provider_state` whose manifest verifies under a device the
+registry installed, never from an unsigned number (SEC-B2), and holds
+until the phone accepts a provider state of its own. An unfinished join
+(attempt marker from the first key to the ACK's acceptance) is removed
+whole — files, Secure Enclave keys, Keychain items — on failure, abort or
+the next start. The
 test-only `join.rs` path is never used. A new `recovery_epoch` is accepted
 as on the Mac (§4.8) or through §22.9.
 

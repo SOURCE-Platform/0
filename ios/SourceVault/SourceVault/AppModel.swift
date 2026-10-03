@@ -39,8 +39,14 @@ final class AppModel: ObservableObject {
     /// Open the engine once protected data is available (catalogue §1).
     func start() {
         guard engine == nil, UIApplication.shared.isProtectedDataAvailable else { return }
-        let dir = Self.vaultDir
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.complete])
+        var dir = Self.vaultDir
+        // §22.10: CompleteUnlessOpen (an open database finishes its write
+        // after the phone locks), and never in iCloud or Finder backups.
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.protectionKey: FileProtectionType.completeUnlessOpen])
+        try? FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUnlessOpen], ofItemAtPath: dir.path)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try? dir.setResourceValues(values)
         engine = VaultEngine(dir: dir, services: services)
         refresh()
     }

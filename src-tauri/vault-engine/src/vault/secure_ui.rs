@@ -22,6 +22,10 @@ pub enum PanelRequest {
     MpChange,
     /// Recovery Key entry: one secure field, 24 words (§1.7, §2.4).
     RkEntry,
+    /// Adding a device (§5.1, §22.4): the code the new device must show,
+    /// in this panel — never in the main app (owner decision 2026-10-03,
+    /// review SEC-B3) — and the current MP.
+    EnrollConfirm,
 }
 
 impl PanelRequest {
@@ -34,6 +38,7 @@ impl PanelRequest {
             PanelRequest::MpEntry => "Source Vault — Unlock",
             PanelRequest::MpChange => "Source Vault — Change Master Password",
             PanelRequest::RkEntry => "Source Vault — Enter Recovery Key",
+            PanelRequest::EnrollConfirm => "Source Vault — Add Device",
         }
     }
 }
@@ -104,6 +109,12 @@ pub enum PanelOutcome {
 /// thread; production impl marshals to the AppKit main thread).
 pub trait PanelRunner: Send + Sync {
     fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome;
+    /// `run` with a non-secret code the panel shows above its fields (the
+    /// enrollment SAS). A runner that cannot show one must refuse.
+    fn run_with_code(&self, req: PanelRequest, code: &str, timeout: Duration) -> PanelOutcome {
+        let _ = (req, code, timeout);
+        PanelOutcome::Cancelled
+    }
     /// Show (and offer to print) a Recovery Key. `Acknowledged` only when
     /// the user confirmed they saved it; anything else is `Cancelled`.
     fn show_recovery_key(&self, _sheet: &RecoverySheet, _timeout: Duration) -> PanelOutcome {

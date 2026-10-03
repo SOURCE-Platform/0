@@ -70,6 +70,11 @@ pub struct Bundle {
     /// local snapshot and never a provider generation.
     pub provider_generation: u64,
     pub provider_manifest_hash: String,
+    /// The provider state this Mac last accepted, as it keeps it
+    /// (`seen::body`, hex): signed, so the phone can verify the floor it
+    /// takes from it (review SEC-B2). Absent before the Mac has one.
+    #[serde(default)]
+    pub provider_state: Option<String>,
 }
 
 /// The phone's signature over `SHA-256("ov0/enroll/ack/v1" ‖ head ‖ mac)`.

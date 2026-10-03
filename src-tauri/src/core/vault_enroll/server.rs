@@ -10,7 +10,7 @@
 use std::net::SocketAddr;
 
 use axum::extract::Json;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::Router;
 use axum_server::tls_rustls::RustlsConfig;
@@ -116,12 +116,10 @@ async fn hello(Json(body): Json<Value>) -> Reply {
             if let Some(id) = resp["reply"]["new_device_id"].as_str() {
                 session::record_device(id.to_string());
             }
-            if let Some(s) = resp.get("sas").and_then(Value::as_str) {
-                eprintln!("vault-enroll: hello accepted, SAS shown on both screens");
-                session::record_sas(s.to_string());
-            }
-            // The SAS stays on the Mac: the phone derives its own from
-            // the reply, which is what makes comparing them meaningful.
+            eprintln!("vault-enroll: hello accepted; the Source Vault window shows the code at confirm");
+            session::record_connected();
+            // The code is shown by the helper's own window, never here: the
+            // phone derives its own from the reply.
             (StatusCode::OK, Json(json!({"ok": true, "reply": resp["reply"]})))
         }
         Ok(resp) => {
@@ -137,7 +135,18 @@ async fn hello(Json(body): Json<Value>) -> Reply {
 
 /// The phone waits here while the user compares the SAS on both screens
 /// and confirms on the Mac (§5.1). Nothing is sent until that happens.
-async fn bundle() -> Reply {
+/// Only the device that sent the hello may take the bundle or ACK: the
+/// helper checks its proof (review SEC-I3). A host that merely found the
+/// port gets nothing.
+async fn proven(headers: &HeaderMap) -> bool {
+    let Some(proof) = headers.get("x-ov0-proof").and_then(|v| v.to_str().ok()) else { return false };
+    matches!(session::call(json!({"op": "enroll_proof", "proof": proof})).await, Ok(r) if r["ok"] == Value::Bool(true))
+}
+
+async fn bundle(headers: HeaderMap) -> Reply {
+    if !proven(&headers).await {
+        return refused("PROOF");
+    }
     eprintln!("vault-enroll: device is waiting for the bundle");
     let Some(mut rx) = session::bundle_receiver() else {
         return refused("NO_SESSION");
@@ -158,7 +167,10 @@ async fn bundle() -> Reply {
 
 /// §5.2 ENROLL_ACK: the phone's signature over the registry head. The
 /// helper verifies it and only then writes the entry.
-async fn ack(Json(body): Json<Value>) -> Reply {
+async fn ack(headers: HeaderMap, Json(body): Json<Value>) -> Reply {
+    if !proven(&headers).await {
+        return refused("PROOF");
+    }
     let mut frame = body;
     frame["op"] = json!("enroll_ack");
     let Ok(resp) = tokio::time::timeout(MESSAGE_TIMEOUT, session::call(frame)).await else {

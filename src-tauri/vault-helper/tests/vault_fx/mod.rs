@@ -38,6 +38,9 @@ pub const PASSWORD2: &str = "synthetic-login-password-v2 (test fixture, not real
 pub struct Panel {
     pub queue: Mutex<VecDeque<PanelOutcome>>,
     pub seen: Mutex<Vec<PanelRequest>>,
+    /// Codes the panel showed (the enrollment SAS, owner decision
+    /// 2026-10-03: shown by the helper's own window).
+    pub codes: Mutex<Vec<String>>,
     /// Checkpoint lines of every Recovery Key window shown.
     pub sheets: Mutex<Vec<String>>,
     pub shown_rk: Mutex<Option<String>>,
@@ -45,6 +48,11 @@ pub struct Panel {
 }
 
 impl PanelRunner for Panel {
+    fn run_with_code(&self, req: PanelRequest, code: &str, timeout: Duration) -> PanelOutcome {
+        self.codes.lock().unwrap().push(code.to_string());
+        self.run(req, timeout)
+    }
+
     fn run(&self, req: PanelRequest, _timeout: Duration) -> PanelOutcome {
         self.seen.lock().unwrap().push(req);
         if req == PanelRequest::RkEntry {
@@ -147,6 +155,7 @@ pub fn fx_with_presence(allow: bool) -> Fx {
     let panel = Arc::new(Panel {
         queue: Mutex::new(VecDeque::new()),
         seen: Mutex::new(Vec::new()),
+        codes: Mutex::new(Vec::new()),
         sheets: Mutex::new(Vec::new()),
         shown_rk: Mutex::new(None),
         refuse_sheet: Mutex::new(false),

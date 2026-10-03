@@ -17,6 +17,7 @@ use crate::device::envelope;
 
 // Fixed synthetic inputs; documented, not secrets.
 const FP: [u8; 32] = [0xC0; 32];
+const MAC_KEY: [u8; 32] = [0xCA; 32];
 const SECRET: [u8; 16] = [0xC1; 16];
 const NONCE_E: [u8; 16] = [0xC2; 16];
 const NONCE_N: [u8; 16] = [0xC3; 16];
@@ -61,6 +62,7 @@ pub fn xv_enroll() -> Value {
     let agree = agree_pub();
     let binding = Binding {
         fp: &FP,
+        mac_key: &MAC_KEY,
         secret: &SECRET,
         nonce_e: &NONCE_E,
         nonce_n: &NONCE_N,
@@ -75,6 +77,7 @@ pub fn xv_enroll() -> Value {
         "transcript": {
             "prefix": String::from_utf8_lossy(transcript::TRANSCRIPT_PREFIX),
             "fp": hex::encode(FP),
+            "mac_key": hex::encode(MAC_KEY),
             "secret": hex::encode(SECRET),
             "secret_base32": transcript::encode_secret(&SECRET),
             "nonce_e": hex::encode(NONCE_E),

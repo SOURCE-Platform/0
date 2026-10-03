@@ -128,6 +128,8 @@ impl Shared {
 impl PanelRunner for Shared {
     fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome {
         let kind = match req {
+            // The phone never authorizes an enrollment (F2-D4 is reserved).
+            PanelRequest::EnrollConfirm => return PanelOutcome::Cancelled,
             PanelRequest::MpCreate => KIND_MP_CREATE,
             PanelRequest::MpEntry => KIND_MP_ENTRY,
             PanelRequest::MpChange => KIND_MP_CHANGE,

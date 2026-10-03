@@ -24,14 +24,20 @@ pub struct EnrollmentPayloadV2 {
     pub fp: String,
     pub secret: String,
     pub mac_device_id: String,
+    /// SHA-256 of the helper's SE signing key (transcript v2): the phone
+    /// pins the helper itself, not this process (owner decision
+    /// 2026-10-03, review SEC-B3).
+    pub mac_key: String,
     pub name: String,
 }
 
 pub struct Session {
     pub payload: EnrollmentPayloadV2,
     pub started: Instant,
-    /// Set when the helper has authenticated the phone's hello.
-    pub sas: Option<String>,
+    /// Set when the helper has authenticated the phone's hello. The code to
+    /// compare is shown by the helper's own Source Vault window at confirm,
+    /// never by this process (owner decision 2026-10-03).
+    pub phone_connected: bool,
     /// The transfer bundle, published when the user confirms on the Mac.
     /// The phone's request waits on this.
     pub bundle: watch::Sender<Option<Value>>,
@@ -88,6 +94,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    let mac_key = begun.get("mac_key").and_then(Value::as_str).ok_or("helper did not return its key")?.to_string();
 
     let (port, handle) = super::server::start(cert_pem, key_pem).await?;
     let payload = EnrollmentPayloadV2 {
@@ -97,6 +104,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
         fp,
         secret,
         mac_device_id,
+        mac_key,
         name: app_name.to_string(),
     };
     let qr = super::server::render_qr(&payload)?;
@@ -116,7 +124,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
     *current().lock().unwrap_or_else(|e| e.into_inner()) = Some(Session {
         payload,
         started: Instant::now(),
-        sas: None,
+        phone_connected: false,
         bundle,
         handle,
         acked: false,
@@ -131,22 +139,18 @@ pub fn status() -> Value {
         json!({
             "ok": true,
             "active": true,
-            "sas": s.sas.clone(),
+            "phone_connected": s.phone_connected,
             "acked": s.acked,
             "expires_in": s.expires_in(),
         })
     }) {
         Some(v) => v,
-        None => json!({"ok": true, "active": false, "sas": Value::Null, "acked": false}),
+        None => json!({"ok": true, "active": false, "phone_connected": false, "acked": false}),
     }
 }
 
-pub fn sas() -> Option<String> {
-    with_session(|s| s.sas.clone()).flatten()
-}
-
-pub(super) fn record_sas(value: String) {
-    with_session(|s| s.sas = Some(value));
+pub(super) fn record_connected() {
+    with_session(|s| s.phone_connected = true);
 }
 
 pub(super) fn record_device(id: String) {

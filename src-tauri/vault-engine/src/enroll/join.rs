@@ -27,7 +27,30 @@ pub struct Qr {
     pub fp: String,
     pub secret: String,
     pub mac_device_id: String,
+    /// SHA-256 of the authorizing helper's SE signing key (transcript v2,
+    /// owner decision 2026-10-03).
+    pub mac_key: String,
     pub name: String,
+}
+
+/// A QR's checked values, before any key is created (review VER-O3).
+pub struct Parsed {
+    fp: [u8; 32],
+    mac_device_id: [u8; 16],
+    mac_key: [u8; 32],
+    secret: zeroize::Zeroizing<[u8; 16]>,
+}
+
+pub fn parse(qr: &Qr) -> Result<Parsed, ErrorCode> {
+    if qr.v != wire::PROTO_V2 {
+        return Err(ErrorCode::ProtocolViolation);
+    }
+    Ok(Parsed {
+        fp: hex::decode_array::<32>(&qr.fp).ok_or(ErrorCode::InvalidInput)?,
+        mac_device_id: hex::decode_array::<16>(&qr.mac_device_id).ok_or(ErrorCode::InvalidInput)?,
+        mac_key: hex::decode_array::<32>(&qr.mac_key).ok_or(ErrorCode::InvalidInput)?,
+        secret: zeroize::Zeroizing::new(transcript::decode_secret(&qr.secret).ok_or(ErrorCode::InvalidInput)?),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +66,7 @@ pub enum JoinStage {
 /// the new device before envelope decapsulation succeeds").
 pub struct JoinSession {
     pub fp: [u8; 32],
+    pub mac_key: [u8; 32],
     pub secret: zeroize::Zeroizing<[u8; 16]>,
     pub mac_device_id: [u8; 16],
     pub nonce_n: [u8; 16],
@@ -65,15 +89,9 @@ impl JoinSession {
     }
 }
 
-/// Parse the QR and mint the hello (§5.2 ENROLL_HELLO) with this device's
-/// fresh Secure Enclave keys (a Face-ID-bound agreement key, §22.4).
-pub fn begin(qr: &Qr, me: &SeDevice) -> Result<(JoinSession, Value), ErrorCode> {
-    if qr.v != wire::PROTO_V2 {
-        return Err(ErrorCode::ProtocolViolation);
-    }
-    let fp = hex::decode_array::<32>(&qr.fp).ok_or(ErrorCode::InvalidInput)?;
-    let mac_device_id = hex::decode_array::<16>(&qr.mac_device_id).ok_or(ErrorCode::InvalidInput)?;
-    let secret = transcript::decode_secret(&qr.secret).ok_or(ErrorCode::InvalidInput)?;
+/// Mint the hello (§5.2 ENROLL_HELLO) with this device's fresh Secure
+/// Enclave keys (a Face-ID-bound agreement key, §22.4).
+pub fn begin(qr: &Qr, p: Parsed, me: &SeDevice) -> Result<(JoinSession, Value), ErrorCode> {
     let mut nonce_n = [0u8; 16];
     nonce_n.copy_from_slice(&random_secret().expose()[..16]);
     let hello = json!({
@@ -86,9 +104,10 @@ pub fn begin(qr: &Qr, me: &SeDevice) -> Result<(JoinSession, Value), ErrorCode> 
         "platform": PLATFORM_IOS,
     });
     let session = JoinSession {
-        fp,
-        secret: zeroize::Zeroizing::new(secret),
-        mac_device_id,
+        fp: p.fp,
+        mac_key: p.mac_key,
+        secret: p.secret,
+        mac_device_id: p.mac_device_id,
         nonce_n,
         stage: JoinStage::AwaitingReply,
         reply: None,
@@ -96,6 +115,12 @@ pub fn begin(qr: &Qr, me: &SeDevice) -> Result<(JoinSession, Value), ErrorCode> 
         started: Instant::now(),
     };
     Ok((session, hello))
+}
+
+/// What the bundle and ACK routes require (review SEC-I3): proof that the
+/// caller is the device that sent the hello, keyed by the QR secret.
+pub fn route_proof(s: &JoinSession) -> [u8; 32] {
+    transcript::route_proof(&s.secret, &s.nonce_n)
 }
 
 /// The Mac's hello reply: it must name the Mac the QR named; the SAS is
@@ -111,6 +136,7 @@ pub fn hello_reply(s: &mut JoinSession, me: &SeDevice, reply: HelloReply) -> Res
     let (new_id, nonce_e, _) = s.reply_ids()?;
     let t = transcript::transcript(&Binding {
         fp: &s.fp,
+        mac_key: &s.mac_key,
         secret: &s.secret,
         nonce_e: &nonce_e,
         nonce_n: &s.nonce_n,

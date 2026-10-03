@@ -7,8 +7,12 @@
 import CryptoKit
 import Foundation
 
-final class PairingClient: NSObject, URLSessionDelegate {
+final class PairingClient: NSObject, URLSessionTaskDelegate {
     private let base: URL
+    /// The hello's route proof (review SEC-I3): sent with the bundle and
+    /// ACK requests, which the Mac answers only for the device that said
+    /// hello.
+    var proof: String?
     private let fp: String
     private lazy var session = URLSession(configuration: .ephemeral, delegate: self, delegateQueue: nil)
 
@@ -34,6 +38,8 @@ final class PairingClient: NSObject, URLSessionDelegate {
     }
 
     private func send(_ req: URLRequest) async throws -> [String: Any] {
+        var req = req
+        if let proof { req.setValue(proof, forHTTPHeaderField: "X-Ov0-Proof") }
         let (data, _) = try await session.data(for: req)
         guard let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw PairingError.refused("MALFORMED")
@@ -58,6 +64,12 @@ final class PairingClient: NSObject, URLSessionDelegate {
         } else {
             completionHandler(.cancelAuthenticationChallenge, nil)
         }
+    }
+
+    /// Never follow a redirect: it could carry the hello somewhere else
+    /// (review SEC-O2).
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
     }
 
     func close() {

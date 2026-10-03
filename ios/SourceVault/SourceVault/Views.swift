@@ -66,6 +66,7 @@ struct ItemListView: View {
 
 struct ItemView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.scenePhase) private var phase
     let item: ItemSummary
     @State private var password: String?
 
@@ -85,6 +86,8 @@ struct ItemView: View {
         }
         .navigationTitle(item.title)
         .onDisappear { password = nil }
+        // Gone before the app-switcher snapshot is taken (review SEC-B4).
+        .onChange(of: phase) { _, now in if now != .active { password = nil } }
     }
 }
 

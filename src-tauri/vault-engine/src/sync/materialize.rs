@@ -45,6 +45,8 @@ use vault_proto::crypto::registry::EntryKind;
 pub struct Anchor<'a> {
     pub me: &'a dyn DeviceIdentity,
     pub mac_device_id: [u8; 16],
+    /// SHA-256 of the authorizing helper's signing key, from the QR.
+    pub mac_key: [u8; 32],
     pub vault_id: [u8; 16],
     pub nonce_e: [u8; 16],
 }
@@ -75,7 +77,9 @@ pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEn
         && last.sign_pub == Some(a.me.sign_pub())
         && last.agree_pub == Some(a.me.agree_pub())
         && last.authorizer == Some(a.mac_device_id);
-    if reg.head != head || !mine || reg.active_device(&a.mac_device_id).is_none() {
+    // The authorizer is the Mac whose own key the QR named (review SEC-B3).
+    let mac_ok = reg.active_device(&a.mac_device_id).is_some_and(|d| crate::enroll::transcript::key_fingerprint(&d.sign_pub) == a.mac_key);
+    if reg.head != head || !mine || !mac_ok {
         return Err(ErrorCode::DeviceNotAuthorized);
     }
     // 2. The manifest, signed by a device active in it.
@@ -85,20 +89,6 @@ pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEn
     if manifest.vault_id != vid || manifest.registry_head != head {
         return Err(bad());
     }
-    // 3. This device's own envelope, for this enrollment.
-    let env: DeviceEnvelopeFile = serde_json::from_value(bundle.envelope.clone()).map_err(|_| ErrorCode::WrapCorrupt)?;
-    if env.device_id != hex::encode(a.me.device_id()) || env.enrollment_nonce != hex::encode(a.nonce_e) {
-        return Err(ErrorCode::WrapCorrupt);
-    }
-    let payload = open_env(&env)?;
-    if payload.vk_generation != manifest.vk_generation {
-        return Err(bad());
-    }
-    // 4. The checkpoint under that VK.
-    let checkpoint = RegistryCheckpoint::decode(&hex::decode(&bundle.checkpoint).ok_or_else(bad)?)?;
-    let epoch = entries.last().map_or(0, |e| e.epoch);
-    checkpoint.verify_binding(&payload.vk, &manifest, &head, epoch)?;
-
     // The objects, each under its own hash, and the index the manifest names.
     let mut blobs: HashMap<[u8; 32], Vec<u8>> = HashMap::new();
     for (k, v) in &bundle.objects {
@@ -117,6 +107,24 @@ pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEn
         let e = index.find(role).ok_or_else(bad)?;
         blobs.get(&e.blob).ok_or(ErrorCode::BackupObjectMissing)
     };
+    // 3. This device's own envelope — the copy the signed index names, and
+    // no other (review SEC-B1: a field beside the manifest vouches for
+    // nothing).
+    let env: DeviceEnvelopeFile = serde_json::from_slice(get(&Role::Env { device_id: a.me.device_id() })?).map_err(|_| ErrorCode::WrapCorrupt)?;
+    if serde_json::to_value(&env).ok() != Some(bundle.envelope.clone()) {
+        return Err(ErrorCode::WrapCorrupt);
+    }
+    if env.device_id != hex::encode(a.me.device_id()) || env.enrollment_nonce != hex::encode(a.nonce_e) {
+        return Err(ErrorCode::WrapCorrupt);
+    }
+    let payload = open_env(&env)?;
+    if payload.vk_generation != manifest.vk_generation {
+        return Err(bad());
+    }
+    // 4. The checkpoint under that VK.
+    let checkpoint = RegistryCheckpoint::decode(&hex::decode(&bundle.checkpoint).ok_or_else(bad)?)?;
+    let epoch = entries.last().map_or(0, |e| e.epoch);
+    checkpoint.verify_binding(&payload.vk, &manifest, &head, epoch)?;
     let mut header = parse_header(get(&Role::Header)?)?;
     if header.vault_id.0 != vid || header.vk_generation != manifest.vk_generation {
         return Err(bad());
@@ -159,9 +167,24 @@ pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEn
     envelope::write_envelope(dir, &a.me.device_id(), &env)?;
     log::write_all(dir, &entries)?;
     store.set_author_device(&a.me.device_id())?;
-    let floor = (bundle.provider_generation, bundle.provider_manifest_hash.clone());
-    kv::put(&store.conn, JOIN_FLOOR_KEY, &floor)?;
+    if let Some(floor) = provider_floor(bundle, &vid, &reg)? {
+        kv::put(&store.conn, JOIN_FLOOR_KEY, &floor)?;
+    }
     Ok((store, payload.vk, head))
+}
+
+/// The floor from the Mac's last accepted provider state, only when that
+/// state's manifest verifies under a device this registry installed — an
+/// unsigned number never becomes a floor (review SEC-B2).
+fn provider_floor(bundle: &Bundle, vid: &[u8; 16], reg: &crate::registry::chain::RegistryState) -> Result<Option<(u64, String)>, ErrorCode> {
+    let Some(state) = bundle.provider_state.as_deref() else { return Ok(None) };
+    let remote = super::remote::parse(&hex::decode(state).ok_or_else(bad)?)?;
+    let signer = reg.devices.iter().find(|d| d.device_id == remote.manifest.signer_device_id).ok_or(ErrorCode::DeviceNotAuthorized)?;
+    remote.manifest.verify(&signer.sign_pub)?;
+    if remote.manifest.vault_id != *vid {
+        return Err(bad());
+    }
+    Ok(Some((remote.generation, hex::encode(remote.manifest_hash))))
 }
 
 /// The join floor, while this device has accepted no provider state yet.

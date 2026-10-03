@@ -14,6 +14,9 @@ struct SourceVaultApp: App {
             ContentView()
                 .environmentObject(model)
                 .onAppear { model.start() }
+                // §22.10: the app-switcher snapshot shows nothing (review
+                // SEC-B4) — covered as soon as the app stops being active.
+                .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
         }
         .onChange(of: phase) { _, now in
             switch now {
