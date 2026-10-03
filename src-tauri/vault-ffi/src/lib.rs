@@ -5,53 +5,49 @@
 //! - `ov0_engine_open(vault_dir, callbacks)` → engine handle (or null);
 //! - `ov0_engine_call(engine, request, len, &out, &out_len)` → one §1.5
 //!   op as JSON, limited to `IOS_OPS`; the answer is a JSON buffer;
-//! - `ov0_engine_lock(engine)` — preempts whatever op is waiting;
-//! - `ov0_engine_free(buf, len)` — zeroes, then frees, an answer buffer;
-//! - `ov0_engine_close(engine)` — locks, then drops the handle.
+//! - `ov0_engine_lock(engine)` — locks at once, whatever op is waiting;
+//! - `ov0_engine_free(buf)` — zeroes, then frees, an answer buffer;
+//! - `ov0_engine_close(engine)` — locks, waits for the op in flight, ends
+//!   the auto-lock tick and releases the handle.
 //!
 //! Never across: PK, `RK_bytes`, `sk_c`, `ikm_c`, a signature over a
 //! caller-supplied digest, raw key bytes. The audited crossings are (a) the
-//! VK as the return of the Secure Enclave envelope open (the `ov0_hpke_*`
-//! bridge, linked from `Bridge.swift`), (b) MP / RK words in and (c) RK
-//! words out through the callbacks of `callbacks.rs`, (d) one record's
-//! plaintext per reveal/edit answer or add/update request, (e) list
-//! metadata. No unwinding crosses: a panic aborts the process.
+//! VK as the plaintext of the Secure Enclave envelope open (the linked
+//! §2.12 bridge), (b) MP / RK words in and (c) RK words out through the
+//! callbacks of `callbacks.rs`, (d) one record's plaintext per reveal/edit
+//! answer or add/update request, (e) list metadata. No unwinding crosses:
+//! a panic aborts the process.
 
 mod callbacks;
+mod engine;
 
 use std::ffi::{c_char, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
-use serde_json::{json, Value};
+use serde_json::Value;
 use vault_engine::errors::ErrorCode;
-use vault_engine::vault::{dispatch, lock_core, LockReason, OpOutcome, VaultCore};
-use zeroize::Zeroize;
+use vault_engine::vault::{LockReason, OpOutcome};
+use zeroize::{Zeroize, Zeroizing};
 
-pub use callbacks::Ov0Callbacks;
+pub use callbacks::{Ov0Callbacks, Shared, ENTRY_CAP, KIND_MP_CHANGE, KIND_MP_CREATE, KIND_MP_ENTRY, KIND_RK_ENTRY, MIN_MP_CHARS, SUBMITTED};
+pub use engine::{Inner as Ov0Engine, IOS_OPS, MAX_REQUEST};
 
-/// Every exported symbol, in order. Adding one is a spec change (§22.2).
+/// Every exported symbol. Adding one is a spec change (§22.2).
 pub const CATALOGUE: &[&str] = &["ov0_engine_open", "ov0_engine_call", "ov0_engine_lock", "ov0_engine_free", "ov0_engine_close"];
 
-/// The §1.5 ops SOURCE Vault may run (F.2b). Everything else answers
-/// `UNKNOWN_OP` — in particular the Mac-only serving, enrollment
-/// authorization, vault creation and total-loss recovery ops.
-pub const IOS_OPS: &[&str] = &[
-    "get_state", "unlock", "begin_recovery_unlock", "list_items", "reveal", "add_item", "update_item", "delete_item",
-    "list_history", "list_deleted", "restore_revision", "resolve_conflict", "change_master_password", "rotate_recovery_key",
-    "list_devices", "registry_status", "set_auto_lock_minutes", "backup_prepare", "backup_blob_list", "backup_transition_body",
-    "backup_commit_result", "backup_state_offer", "backup_apply", "stream_read", "stream_begin", "stream_write", "stream_end",
-    "stream_cancel", "sign_provider_request", "session_close", "quarantine_status", "remote_update_status",
+/// The §2.12 bridge functions the engine calls (supplied by `Bridge.swift`
+/// linked into the app) — the complete list (review VER-I6).
+pub const BRIDGE_IMPORTS: &[&str] = &[
+    "ov0_se_key_create", "ov0_se_key_create_bio", "ov0_se_key_needs_user", "ov0_se_key_public", "ov0_se_key_delete",
+    "ov0_se_sign_create", "ov0_se_sign_public", "ov0_se_sign_digest", "ov0_hpke_seal", "ov0_hpke_open_se_auth",
 ];
 
-pub struct Ov0Engine {
-    core: Arc<Mutex<VaultCore>>,
-    deps: vault_engine::vault::Deps,
-    /// One op at a time, as the helper's executor runs them; `lock` does
-    /// not take it, so it preempts an op waiting on the user.
-    lane: Mutex<()>,
-}
+/// Bytes in front of every answer: its length, so `ov0_engine_free` never
+/// trusts a caller's (review SEC-O1).
+const PREFIX: usize = 8;
 
 fn guarded<T>(f: impl FnOnce() -> T) -> T {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| std::process::abort())
@@ -59,99 +55,95 @@ fn guarded<T>(f: impl FnOnce() -> T) -> T {
 
 /// # Safety
 /// `vault_dir` is a NUL-terminated UTF-8 path; `callbacks` points to a
-/// table that outlives the engine.
+/// complete table whose `ctx` outlives the engine. One handle per
+/// directory; open it only while protected data is available.
 #[no_mangle]
-pub unsafe extern "C" fn ov0_engine_open(vault_dir: *const c_char, callbacks: *const Ov0Callbacks) -> *mut Ov0Engine {
+pub unsafe extern "C" fn ov0_engine_open(vault_dir: *const c_char, callbacks: *const Ov0Callbacks) -> *const Ov0Engine {
     guarded(|| {
-        if vault_dir.is_null() || callbacks.is_null() {
-            return std::ptr::null_mut();
-        }
-        let Ok(dir) = CStr::from_ptr(vault_dir).to_str() else { return std::ptr::null_mut() };
-        let cb = callbacks::Shared::new(*callbacks);
-        let engine = Ov0Engine { core: Arc::new(Mutex::new(VaultCore::boot(PathBuf::from(dir)))), deps: cb.deps(), lane: Mutex::new(()) };
-        Box::into_raw(Box::new(engine))
+        let (Some(dir), Some(cb)) = (vault_dir.as_ref().map(|p| CStr::from_ptr(p)), callbacks.as_ref()) else { return std::ptr::null() };
+        let (Ok(dir), Some(shared)) = (dir.to_str(), Shared::new(cb)) else { return std::ptr::null() };
+        Arc::into_raw(Ov0Engine::boot(PathBuf::from(dir), shared))
     })
 }
 
-/// One op. Returns 0 with a JSON answer in `*out` (free it with
-/// `ov0_engine_free`), or -1 for unusable arguments.
+/// One op. Returns 0 with a JSON answer in `*out` / `*out_len` (free it
+/// with `ov0_engine_free`), or -1 for unusable arguments. Blocks while the
+/// op waits on the user: never call it on the main thread, and never from
+/// inside a callback.
 ///
 /// # Safety
-/// `engine` came from `ov0_engine_open`; `request` holds `len` bytes; `out`
-/// and `out_len` are writable.
+/// `engine` is a live handle; `request` holds `len` bytes; `out` and
+/// `out_len` are writable.
 #[no_mangle]
 pub unsafe extern "C" fn ov0_engine_call(engine: *const Ov0Engine, request: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32 {
     guarded(|| {
-        if engine.is_null() || request.is_null() || out.is_null() || out_len.is_null() {
+        let Some(e) = engine.as_ref() else { return -1 };
+        if request.is_null() || out.is_null() || out_len.is_null() {
             return -1;
         }
-        let e = &*engine;
-        // A request may carry one record's fields (crossing d): our copy is
-        // zeroed as soon as it is parsed.
-        let mut bytes = std::slice::from_raw_parts(request, len).to_vec();
-        let frame: Option<Value> = serde_json::from_slice(&bytes).ok();
-        bytes.zeroize();
-        let answer = match frame {
-            Some(frame) => run(e, &frame).response,
-            None => OpOutcome::err(ErrorCode::InvalidInput).response,
+        let answer = if len > MAX_REQUEST {
+            OpOutcome::err(ErrorCode::InvalidInput).response
+        } else {
+            // A request may carry one record's fields (crossing d): our
+            // copy is zeroed as soon as it is parsed.
+            let bytes = Zeroizing::new(std::slice::from_raw_parts(request, len).to_vec());
+            match serde_json::from_slice::<Value>(&bytes) {
+                Ok(frame) => e.run(&frame).response,
+                Err(_) => OpOutcome::err(ErrorCode::InvalidInput).response,
+            }
         };
-        let mut buf = serde_json::to_vec(&answer).unwrap_or_default().into_boxed_slice();
-        *out_len = buf.len();
-        *out = buf.as_mut_ptr();
-        std::mem::forget(buf);
+        e.shared.flush();
+        let json = Zeroizing::new(serde_json::to_vec(&answer).unwrap_or_default());
+        let mut buf = vec![0u8; PREFIX + json.len()].into_boxed_slice();
+        buf[..PREFIX].copy_from_slice(&(json.len() as u64).to_le_bytes());
+        buf[PREFIX..].copy_from_slice(&json);
+        *out_len = json.len();
+        *out = Box::into_raw(buf).cast::<u8>().add(PREFIX);
         0
     })
 }
 
-fn run(e: &Ov0Engine, frame: &Value) -> OpOutcome {
-    let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
-    if !IOS_OPS.contains(&op) {
-        return OpOutcome::err(ErrorCode::UnknownOp);
-    }
-    if op == "get_state" {
-        // Answered at once, like the helper's server layer: never queued
-        // behind an op that waits on the user.
-        let c = lock_core(&e.core);
-        return OpOutcome::ok(json!({ "state": c.reported_state().as_str() }));
-    }
-    let _lane = e.lane.lock().unwrap_or_else(|p| p.into_inner());
-    dispatch::dispatch(&e.core, frame, &e.deps)
-}
-
 /// # Safety
-/// `engine` came from `ov0_engine_open`.
+/// `engine` is a live handle.
 #[no_mangle]
 pub unsafe extern "C" fn ov0_engine_lock(engine: *const Ov0Engine) {
     guarded(|| {
         if let Some(e) = engine.as_ref() {
-            let events = lock_core(&e.core).lock(LockReason::Explicit);
-            for ev in events {
-                e.deps.events.emit(ev);
-            }
+            e.lock(LockReason::Explicit);
         }
     })
 }
 
 /// # Safety
-/// `buf`/`len` are exactly an answer from `ov0_engine_call`, freed once.
+/// `buf` is an answer from `ov0_engine_call`, freed once.
 #[no_mangle]
-pub unsafe extern "C" fn ov0_engine_free(buf: *mut u8, len: usize) {
+pub unsafe extern "C" fn ov0_engine_free(buf: *mut u8) {
     guarded(|| {
         if !buf.is_null() {
-            let mut b = Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len));
+            let start = buf.sub(PREFIX);
+            let mut len = [0u8; PREFIX];
+            len.copy_from_slice(std::slice::from_raw_parts(start, PREFIX));
+            let total = PREFIX + u64::from_le_bytes(len) as usize;
+            let mut b = Box::from_raw(std::ptr::slice_from_raw_parts_mut(start, total));
             b.zeroize();
         }
     })
 }
 
 /// # Safety
-/// `engine` came from `ov0_engine_open` and is not used afterwards.
+/// `engine` is a live handle, not used again by anyone afterwards.
 #[no_mangle]
-pub unsafe extern "C" fn ov0_engine_close(engine: *mut Ov0Engine) {
+pub unsafe extern "C" fn ov0_engine_close(engine: *const Ov0Engine) {
     guarded(|| {
-        if !engine.is_null() {
-            let e = Box::from_raw(engine);
-            let _ = lock_core(&e.core).lock(LockReason::Explicit);
+        if engine.is_null() {
+            return;
         }
+        let e = Arc::from_raw(engine);
+        e.stop.store(true, Ordering::SeqCst);
+        e.lock(LockReason::Explicit);
+        // Wait for an op still running (it fails closed at its re-lock
+        // checkpoint once Swift dismisses its screen on `locked`).
+        drop(e.lane.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(e); // the tick holds the other reference and ends within 1 s
     })
 }

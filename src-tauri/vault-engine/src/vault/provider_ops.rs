@@ -124,6 +124,17 @@ impl VaultCore {
             s => s,
         }
     }
+
+    /// The `get_state` answer (§1.5), one shape for every shell: the
+    /// reported state, whether the vault itself is open (BACKING_UP can
+    /// overlay a LOCKED vault, §13.2), and §22.14's `behind`.
+    pub fn state_answer(&self) -> Value {
+        let mut v = serde_json::json!({ "ok": true, "error": null, "state": self.reported_state().as_str(), "vault_open": self.vk.is_some() });
+        if self.behind {
+            v["behind"] = serde_json::json!(true);
+        }
+        v
+    }
 }
 
 pub fn session_id(frame: &Value) -> Result<Id, ErrorCode> {

@@ -352,3 +352,37 @@ One `security-reviewer` pass over `git diff 37e945c 99760e0` (the
 Targeted runs: `peer_followups` (7), `device_unlock` (7),
 `device_identity` (7) green. **The F.2c Mac-side checkpoint is closed.**
 
+## 6. F.2b steps 1–3 — engine extraction, iOS build, FFI (candidate `6e8927f`)
+
+Reviewers: `security-reviewer` and `verification-reviewer` on
+`git diff 4646cb3 6e8927f`. Both confirmed step 1 is a pure move (105
+renames, all R100), the iOS builds, the re-exports, and that no op answer
+leaks beyond crossings (d)/(e) and `sign_provider_request` cannot sign a
+caller's digest.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 / VER-I4 no auto-lock on the phone | **Accepted, fixed:** the engine's own tick (once a second) and a check before every op lock when the §1.6 window runs out; the catalogue makes Swift lock on background and on protected data becoming unavailable, and dismiss its screens on `locked` | `vault-ffi/src/engine.rs`, catalogue §1 | `the_vault_locks_itself_when_the_window_runs_out` |
+| SEC-B2 `rotate_recovery_key` on the phone in the Mac order | **Accepted, fixed:** removed from the allowlist until the §22.10 staged-first form (F.2d) | `engine.rs` `IOS_OPS` | allowlist + handle tests |
+| VER-B1 / SEC-I1 VK into Swift via `ov0_hpke_seal`, unzeroed | **Accepted:** unreachable on the phone now (the only rotating op is gone); the bridge zeroes the sealed plaintext as well (Bridge.swift still 200 lines); §22.2 erratum and catalogue §3 name the seal import and when it carries a VK | `Bridge.swift`, spec §22.2 | FFI-01 imports check |
+| VER-B2 / SEC-I6 FFI-01 vacuous | **Accepted, fixed:** reads the iOS library and fails if it or the toolchain's `llvm-nm` is missing (Xcode's `nm` cannot read rustc's objects); defined set == catalogue, imported set == the 10 bridge functions; the source scan is recursive and covers `export_name`; the handle tests run in the test Keychain namespace | `tests/catalogue.rs`, `tests/handle.rs` | — |
+| SEC-I2 empty or weak new MP accepted | **Fixed:** a new MP must be UTF-8 and at least 8 characters (the Mac panel's rule), else a cancel; entry cap 4,096 bytes | `callbacks.rs` | `the_secure_entry_callback_maps_kinds_and_refuses_weak_new_mps` |
+| SEC-I3 close during an op | **Fixed:** close locks, waits for the lane, ends the tick; handles are reference-counted with the tick | `lib.rs`, `engine.rs` | — |
+| SEC-I4 / VER-O9 events under the core mutex, threading rules | **Fixed:** events are queued and delivered with no engine lock held; calling rules written into catalogue §1–§2 | `callbacks.rs`, catalogue | `events_wait_for_flush` |
+| SEC-I5 / VER-I1 engine and FFI tests in no gate | **Fixed:** the Phase F gate builds the iOS library and runs `-p vault-engine -p vault-ffi` | `scripts/phase-f-gate.sh` | — |
+| VER-I2 immediacy untested | **Fixed** | — | `state_and_lock_never_wait_behind_an_op` |
+| VER-I3 callbacks untested | **Fixed** (kinds, pair, cancels, MP rule, events) | — | as above |
+| VER-I5 `get_state` without `behind` | **Fixed:** one `state_answer` in the engine (`vault_open`, `behind`) for the helper and the phone | `provider_ops.rs`, helper `conn.rs` | — |
+| VER-I6 spec says "callback table" | **Accepted, erratum:** §22.2 and §2.12 now describe the linked bridge and its checked import list; `ov0_hpke_open_se_auth` named | spec | — |
+| SEC-O1 / VER-O5 zeroing and `free` | **Fixed in part:** `free` takes only the pointer and reads the length from the answer's own prefix; the request copy and serialization buffer are zeroizing. Residual stated in catalogue §5: the parsed JSON values are not zeroed (as in the helper's IPC) | `lib.rs` | — |
+| SEC-O2 iOS Keychain access group | **Deferred to step 4** (the app's entitlements fix the group; both queries pin it there) | — | — |
+| SEC-O3 header read failure under file protection | **Contract:** open the engine only while protected data is available (catalogue §1) | — | — |
+| SEC-O4 / VER-O4 / VER-O6 frame cap, null callbacks | **Fixed:** 64 KiB request cap; callbacks are `Option`s and an incomplete table is refused | `engine.rs`, `callbacks.rs` | `a_handle_answers_only_the_allowlist` |
+| SEC-O5 sheet copy "this Mac" | **Deferred to F.2d** (no phone op shows those sheets in F.2b) | — | — |
+| VER-O1 `panic = "abort"` wording | **Catalogue:** met per entry point (`catch_unwind` → abort) | — | — |
+| VER-O2 allowlist iteration | **Fixed:** the handle test tries every Mac-only op | — | — |
+| VER-O3 open on a missing directory | **Accepted as is:** it reports `uninitialized`; first materialization (step 5) creates it | — | — |
+| VER-O7 bridge at 200 lines | noted; the seal fix fit by joining two parameter lines | — | — |
+| VER-O8 debug switches in iOS builds | **Deferred to the F.2 gate:** the release iOS library's `OV0_VAULT_` scan joins the helper's | — | — |
+| VER-O10 fuzz lockfile | **Pre-existing; noted** for the next fuzz run | — | — |
+

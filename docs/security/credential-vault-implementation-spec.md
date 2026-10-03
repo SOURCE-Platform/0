@@ -891,8 +891,8 @@ RFC 9180 suite is expressible as
 aead: .chaChaPoly)` = DHKEM(P-256, HKDF-SHA256) / HKDF-SHA256 /
 ChaCha20-Poly1305 (KEM 0x0010, KDF 0x0001, AEAD 0x0003).
 
-- **iOS app:** `HPKE.Sender` / `HPKE.Recipient` used directly with
-  `SecureEnclave.P256.KeyAgreement.PrivateKey`.
+- **iOS app:** superseded in v0.5 (§22.2): SOURCE Vault links the same
+  bridge as the Mac helper and calls it only through the engine.
 - **macOS helper (Rust):** same API through a tiny in-house Swift bridge,
   `vault-apple-crypto` (static library, C ABI, target ≤ 200 lines of
   Swift). Production surface (v0.3.1 Phase E, 8 symbols): key lifecycle
@@ -4464,7 +4464,7 @@ autofill (Phase H).
   PK, `RK_bytes`, `sk_c`, `ikm_c`, and any function that signs a
   caller-supplied digest or returns raw key bytes. **Audited crossings
   (the complete list):** (a) the VK, once per unlock, as the return value
-  of the Secure Enclave envelope-open callback (§2.12 `ov0_hpke_open_se`)
+  of the Secure Enclave envelope open (§2.12 `ov0_hpke_open_se_auth`)
   — written into an engine-owned buffer, the Swift copy zeroed, never
   returned by any entry point; (b) the MP and RK words **in**, through the
   secure-entry points (§22.4); (c) RK words **out**, through the sheet
@@ -4475,10 +4475,16 @@ autofill (Phase H).
   the process (`panic = "abort"`); no unwinding crosses the ABI. Swift
   copies of secrets are minimized and zeroed where the type allows. A lint
   (like UI-05) fails the build on any entry point outside the catalogue.
-- The engine's Secure Enclave calls go through a Swift callback table
-  (sign a digest the engine built; HPKE-open an engine-held envelope —
-  crossing (a) above). The callbacks receive no plaintext and no key other
-  than that return value.
+- The engine's Secure Enclave calls go to the §2.12 bridge, which
+  SOURCE Vault links (the same `Bridge.swift` as the Mac helper), through
+  a fixed import list (FFI catalogue §3; FFI-01 checks the built library
+  imports exactly it): sign a digest the engine built; HPKE-open an
+  engine-held envelope — crossing (a) above; HPKE-seal a VK to a device's
+  public key during a key rotation (none of which the phone performs in
+  F.2b). The bridge zeroes its copies of the opened and sealed
+  plaintext; nothing else secret reaches it. **Erratum (F.2b review
+  VER-I6):** this replaces "a Swift callback table" — the mechanism is an
+  in-process call either way; the import list is what is checked.
 
 ### 22.3 The SOURCE Vault iOS app (F2-D2)
 

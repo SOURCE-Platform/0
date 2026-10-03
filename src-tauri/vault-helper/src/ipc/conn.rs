@@ -117,17 +117,7 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             _ if class == ClientClass::NmHost && !NM_HOST_OPS.contains(&op) => {
                 crate::errors::ErrorCode::UnknownOp.frame()
             }
-            "get_state" => {
-                // BACKING_UP can overlay a LOCKED vault (a fully staged
-                // publication, §13.2): say whether the vault itself is open.
-                let c = lock_core(&ctx.core);
-                let mut v = ops::ok_with_state(c.reported_state());
-                v["vault_open"] = serde_json::json!(c.vk.is_some());
-                if c.behind {
-                    v["behind"] = serde_json::json!(true);
-                }
-                v
-            }
+            "get_state" => lock_core(&ctx.core).state_answer(),
             // Already applied by the read side on arrival; answer in order.
             "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
             _ => match forward(ctx, frame) {

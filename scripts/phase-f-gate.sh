@@ -62,6 +62,10 @@ suite "helper Phase F tests (signing, merge, teardown, states)" "$T/f-helper.log
 
 # --- 2. full helper suite ------------------------------------------------------------------------
 suite "full helper suite (Phases A–F)" "$T/helper.log" cargo test --no-fail-fast -p source-vault-helper
+# F.2b: the engine's own unit tests (moved out of the helper) and FFI-01,
+# which reads the iOS static library (review SEC-I5 / VER-I1).
+suite "vault engine and SOURCE Vault FFI (F.2b)" "$T/engine.log" \
+    bash -c "cargo build -p vault-ffi --target aarch64-apple-ios && cargo test --no-fail-fast -p vault-engine -p vault-ffi"
 
 # --- 3. deployable provider ----------------------------------------------------------------------
 suite "vault-provider service tests (own workspace)" "$T/provider.log" \

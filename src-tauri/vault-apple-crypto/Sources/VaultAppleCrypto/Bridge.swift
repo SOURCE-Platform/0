@@ -155,14 +155,14 @@ public func ov0_se_sign_digest(
 public func ov0_hpke_seal(
     _ pub65: UnsafePointer<UInt8>?, _ pubLen: Int,
     _ info: UnsafePointer<UInt8>?, _ infoLen: Int,
-    _ pt: UnsafePointer<UInt8>?, _ ptLen: Int,
-    _ aad: UnsafePointer<UInt8>?, _ aadLen: Int,
+    _ pt: UnsafePointer<UInt8>?, _ ptLen: Int, _ aad: UnsafePointer<UInt8>?, _ aadLen: Int,
     _ outEnc: UnsafeMutablePointer<UInt8>?, _ outEncLen: UnsafeMutablePointer<Int>?,
     _ outCt: UnsafeMutablePointer<UInt8>?, _ ctCap: Int, _ outCtLen: UnsafeMutablePointer<Int>?
 ) -> Int32 {
     guard let pubData = data(pub65, pubLen), pubData.count == 65, let infoData = data(info, infoLen),
-          let ptData = data(pt, ptLen), let aadData = data(aad, aadLen),
+          var ptData = data(pt, ptLen), let aadData = data(aad, aadLen),
           let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: pubData) else { return ERR_ARG }
+    defer { ptData.resetBytes(in: 0..<ptData.count) } // the sealed plaintext (a VK) is zeroed here too
     guard var sender = try? HPKE.Sender(recipientKey: recipient, ciphersuite: suite, info: infoData),
           let ct = try? sender.seal(ptData, authenticating: aadData) else { return ERR_CRYPTO }
     let rc = emit(sender.encapsulatedKey, outEnc, 65, outEncLen)
