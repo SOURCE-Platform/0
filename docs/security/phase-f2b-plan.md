@@ -101,4 +101,22 @@ plan; the code it produces goes through the usual milestone review.
   copy is zeroed once parsed; the bridge zeroes its copy of an opened
   envelope (crossing a). FFI-01 checks the sources, the built iOS library
   (exactly five `ov0_` exports) and the allowlist.
+- **Step 4 in progress (2026-10-03).** `ios/SourceVault` (xcodegen
+  `project.yml`): bundle `com.racker.source-vault`, its own Keychain
+  access group (the only one, no App Group — so every Keychain item lands
+  and is searched only there, review SEC-O2), Face ID usage string, no
+  background modes. A build phase compiles `vault-ffi` for the SDK being
+  built (release engine for release builds) and links it with the same
+  `Bridge.swift`; `VaultFFI.h` declares exactly the catalogue. Swift:
+  `VaultEngine` (the five calls; ops on one background queue),
+  `VaultServices` (secure entry and presence wait on the user off the
+  main thread; the capture flag is kept current so the engine never waits
+  on the main queue; events hop to the main queue), `AppModel` (locks on
+  background and on protected data becoming unavailable), and the
+  screens (not paired, locked: Face ID or master password, items, an
+  item, secure entry with the Mac panel's new-MP rule, a capture shield).
+  The engine's debug-only Keychain prompt switch is now macOS-only (iOS
+  has no such prompt). Builds for the simulator; `EngineTests` passes
+  there against the real engine. Next: pairing and first materialization
+  (step 5), then the device run on the owner's iPhone.
 

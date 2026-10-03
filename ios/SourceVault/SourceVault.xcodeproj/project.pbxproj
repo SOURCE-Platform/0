@@ -1,0 +1,505 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BCF2CB286287C8B75DD854 /* VaultServices.swift */; };
+		0CB492E7E954821B434D086C /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E0DB7DD1EC28519F1EA2D5C /* Views.swift */; };
+		2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEA2D1E7608412D7A5842AF /* Bridge.swift */; };
+		A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB648201BE774BB26FB803 /* EngineTests.swift */; };
+		B1438F27C53576568BB3A842 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFDE1D765033C8C76490273 /* AppModel.swift */; };
+		B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */; };
+		C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		4F302BD6CF518C278052F96E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B2CB50AFEAF714344781AF6C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1C567B00A235FD44DD121199;
+			remoteInfo = SourceVault;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		03CB648201BE774BB26FB803 /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
+		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
+		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		3E0DB7DD1EC28519F1EA2D5C /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		48BCF2CB286287C8B75DD854 /* VaultServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultServices.swift; sourceTree = "<group>"; };
+		81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SourceVault.entitlements; sourceTree = "<group>"; };
+		9FEA2D1E7608412D7A5842AF /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
+		A77550D0100F86D38E262227 /* SourceVaultTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B82655E2306C55BA4CCF478C /* SourceVault.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SourceVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngine.swift; sourceTree = "<group>"; };
+		E93147EB9D273DD62FF6FC76 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		ED676F66CF9B707A26A99303 /* VaultFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VaultFFI.h; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		07AA382B4211E4D227C272BD /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				B82655E2306C55BA4CCF478C /* SourceVault.app */,
+				A77550D0100F86D38E262227 /* SourceVaultTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		289A52252DE7EE834D0B946C /* VaultAppleCrypto */ = {
+			isa = PBXGroup;
+			children = (
+				9FEA2D1E7608412D7A5842AF /* Bridge.swift */,
+			);
+			path = VaultAppleCrypto;
+			sourceTree = "<group>";
+		};
+		33A8D8A06653BD61DEF97E0B /* 0 */ = {
+			isa = PBXGroup;
+			children = (
+				8A0E04FF3A32F608ACAC21F2 /* src-tauri */,
+			);
+			name = 0;
+			path = ../..;
+			sourceTree = "<group>";
+		};
+		5DB7DD4607C65CD2DD463D86 /* SourceVaultTests */ = {
+			isa = PBXGroup;
+			children = (
+				03CB648201BE774BB26FB803 /* EngineTests.swift */,
+			);
+			path = SourceVaultTests;
+			sourceTree = "<group>";
+		};
+		6A9758F77D712201FDD6D7EA /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				289A52252DE7EE834D0B946C /* VaultAppleCrypto */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		8A0E04FF3A32F608ACAC21F2 /* src-tauri */ = {
+			isa = PBXGroup;
+			children = (
+				ECF7EEB12D855C28C92CFBA1 /* vault-apple-crypto */,
+			);
+			path = "src-tauri";
+			sourceTree = "<group>";
+		};
+		B70A90B0FC912CC0CF0F078E /* SourceVault */ = {
+			isa = PBXGroup;
+			children = (
+				2DFDE1D765033C8C76490273 /* AppModel.swift */,
+				E93147EB9D273DD62FF6FC76 /* Info.plist */,
+				81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */,
+				2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */,
+				CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */,
+				ED676F66CF9B707A26A99303 /* VaultFFI.h */,
+				48BCF2CB286287C8B75DD854 /* VaultServices.swift */,
+				3E0DB7DD1EC28519F1EA2D5C /* Views.swift */,
+			);
+			path = SourceVault;
+			sourceTree = "<group>";
+		};
+		D0593499D7B74B3886020460 = {
+			isa = PBXGroup;
+			children = (
+				33A8D8A06653BD61DEF97E0B /* 0 */,
+				B70A90B0FC912CC0CF0F078E /* SourceVault */,
+				5DB7DD4607C65CD2DD463D86 /* SourceVaultTests */,
+				07AA382B4211E4D227C272BD /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		ECF7EEB12D855C28C92CFBA1 /* vault-apple-crypto */ = {
+			isa = PBXGroup;
+			children = (
+				6A9758F77D712201FDD6D7EA /* Sources */,
+			);
+			path = "vault-apple-crypto";
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		1C567B00A235FD44DD121199 /* SourceVault */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7451836BC2CF2AE6289E787C /* Build configuration list for PBXNativeTarget "SourceVault" */;
+			buildPhases = (
+				07F9EF3B92ACF58F5F8F828A /* Build the vault engine (vault-ffi) */,
+				1A255A159F65D1CCDA6023D9 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SourceVault;
+			packageProductDependencies = (
+			);
+			productName = SourceVault;
+			productReference = B82655E2306C55BA4CCF478C /* SourceVault.app */;
+			productType = "com.apple.product-type.application";
+		};
+		DC8BA1F6A9B62661037A935A /* SourceVaultTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB86A34D9E52357E9372CFA1 /* Build configuration list for PBXNativeTarget "SourceVaultTests" */;
+			buildPhases = (
+				F70A352D27962AD551768F12 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0ABCE377C8DEC525B77E122F /* PBXTargetDependency */,
+			);
+			name = SourceVaultTests;
+			packageProductDependencies = (
+			);
+			productName = SourceVaultTests;
+			productReference = A77550D0100F86D38E262227 /* SourceVaultTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B2CB50AFEAF714344781AF6C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					1C567B00A235FD44DD121199 = {
+						DevelopmentTeam = 9RGW34CMA2;
+						ProvisioningStyle = Automatic;
+					};
+					DC8BA1F6A9B62661037A935A = {
+						DevelopmentTeam = 9RGW34CMA2;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 5268883468D0F8C1025A96FA /* Build configuration list for PBXProject "SourceVault" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = D0593499D7B74B3886020460;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 07AA382B4211E4D227C272BD /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				1C567B00A235FD44DD121199 /* SourceVault */,
+				DC8BA1F6A9B62661037A935A /* SourceVaultTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		07F9EF3B92ACF58F5F8F828A /* Build the vault engine (vault-ffi) */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build the vault engine (vault-ffi)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PROJECT_DIR}/scripts/build-rust.sh\"";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1A255A159F65D1CCDA6023D9 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1438F27C53576568BB3A842 /* AppModel.swift in Sources */,
+				2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */,
+				C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */,
+				B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */,
+				05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */,
+				0CB492E7E954821B434D086C /* Views.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F70A352D27962AD551768F12 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0ABCE377C8DEC525B77E122F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1C567B00A235FD44DD121199 /* SourceVault */;
+			targetProxy = 4F302BD6CF518C278052F96E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		50D58BB389935F1A7B68B885 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 9RGW34CMA2;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		5C0675F7103A0FF861D31E3D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault.tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SourceVault.app/SourceVault";
+			};
+			name = Debug;
+		};
+		94AE6FFF7D0FF00FF5F488C0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SourceVault/SourceVault.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SourceVault/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build/rust/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "-lvault_ffi";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault";
+				PRODUCT_NAME = SourceVault;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = SourceVault/VaultFFI.h;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9ACD183230903AAF8B2D9323 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = SourceVault/SourceVault.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				ENABLE_BITCODE = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SourceVault/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				LIBRARY_SEARCH_PATHS = "$(PROJECT_DIR)/build/rust/$(PLATFORM_NAME)";
+				OTHER_LDFLAGS = "-lvault_ffi";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault";
+				PRODUCT_NAME = SourceVault;
+				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = SourceVault/VaultFFI.h;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A32B7235BBE33A9507A976D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault.tests";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SourceVault.app/SourceVault";
+			};
+			name = Release;
+		};
+		C74DA8279DAEE9A4635B9639 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 9RGW34CMA2;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		5268883468D0F8C1025A96FA /* Build configuration list for PBXProject "SourceVault" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				50D58BB389935F1A7B68B885 /* Debug */,
+				C74DA8279DAEE9A4635B9639 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		7451836BC2CF2AE6289E787C /* Build configuration list for PBXNativeTarget "SourceVault" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9ACD183230903AAF8B2D9323 /* Debug */,
+				94AE6FFF7D0FF00FF5F488C0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CB86A34D9E52357E9372CFA1 /* Build configuration list for PBXNativeTarget "SourceVaultTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5C0675F7103A0FF861D31E3D /* Debug */,
+				A32B7235BBE33A9507A976D2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = B2CB50AFEAF714344781AF6C /* Project object */;
+}

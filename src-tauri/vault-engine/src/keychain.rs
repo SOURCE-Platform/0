@@ -29,7 +29,7 @@ extern "C" {
     fn SecItemAdd(attributes: *const c_void, result: *mut CFTypeRef) -> OSStatus;
     fn SecItemUpdate(query: *const c_void, attributes_to_update: *const c_void) -> OSStatus;
     fn SecItemDelete(query: *const c_void) -> OSStatus;
-    #[cfg(debug_assertions)]
+    #[cfg(all(debug_assertions, target_os = "macos"))]
     fn SecKeychainSetUserInteractionAllowed(state: u8) -> OSStatus;
     static kSecClass: CFStringRef;
     static kSecClassGenericPassword: CFStringRef;
@@ -156,6 +156,8 @@ pub fn upsert_item(service_base: &str, bytes: &[u8]) -> Result<(), ErrorCode> {
 /// behaviour are untouched.
 #[cfg(debug_assertions)]
 pub fn disable_user_interaction() {
+    // macOS only: iOS has no Keychain prompt for an app's own items.
+    #[cfg(target_os = "macos")]
     // SAFETY: plain FFI call with a boolean argument; no pointers involved.
     unsafe {
         SecKeychainSetUserInteractionAllowed(0);
