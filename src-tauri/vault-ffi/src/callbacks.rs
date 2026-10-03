@@ -84,6 +84,10 @@ impl Table {
 pub struct Shared {
     cb: Table,
     queue: Mutex<Vec<Value>>,
+    /// Held across take-and-deliver, so events reach Swift in the order
+    /// they happened even when two threads flush (review VER-O16). Never
+    /// an engine lock.
+    delivery: Mutex<()>,
 }
 
 // SAFETY: the callback contract (phase-f2b-ffi.md §2) requires a
@@ -103,7 +107,7 @@ fn acceptable_new_mp(mp: &[u8]) -> bool {
 impl Shared {
     /// `None` when any callback is missing.
     pub fn new(cb: &Ov0Callbacks) -> Option<Arc<Shared>> {
-        Some(Arc::new(Shared { cb: Table::from(cb)?, queue: Mutex::new(Vec::new()) }))
+        Some(Arc::new(Shared { cb: Table::from(cb)?, queue: Mutex::new(Vec::new()), delivery: Mutex::new(()) }))
     }
 
     pub fn deps(self: &Arc<Self>) -> Deps {
@@ -112,6 +116,7 @@ impl Shared {
 
     /// Deliver the queued events, in order. Call with no engine lock held.
     pub fn flush(&self) {
+        let _order = self.delivery.lock().unwrap_or_else(|p| p.into_inner());
         let events = std::mem::take(&mut *self.queue.lock().unwrap_or_else(|p| p.into_inner()));
         for event in events {
             let bytes = serde_json::to_vec(&event).unwrap_or_default();

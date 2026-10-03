@@ -160,8 +160,8 @@ public func ov0_hpke_seal(
     _ outCt: UnsafeMutablePointer<UInt8>?, _ ctCap: Int, _ outCtLen: UnsafeMutablePointer<Int>?
 ) -> Int32 {
     guard let pubData = data(pub65, pubLen), pubData.count == 65, let infoData = data(info, infoLen),
-          var ptData = data(pt, ptLen), let aadData = data(aad, aadLen),
-          let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: pubData) else { return ERR_ARG }
+          let aadData = data(aad, aadLen), let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: pubData),
+          var ptData = data(pt, ptLen) else { return ERR_ARG } // the plaintext is copied last
     defer { ptData.resetBytes(in: 0..<ptData.count) } // the sealed plaintext (a VK) is zeroed here too
     guard var sender = try? HPKE.Sender(recipientKey: recipient, ciphersuite: suite, info: infoData),
           let ct = try? sender.seal(ptData, authenticating: aadData) else { return ERR_CRYPTO }

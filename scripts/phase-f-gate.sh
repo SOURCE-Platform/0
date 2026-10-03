@@ -135,7 +135,7 @@ if [ "$STATE" = "open" ]; then record "Dependabot #108 (glib) still open, not di
 else fail "Dependabot #108 (glib) still open, not dismissed" "state=${STATE:-unreadable}"; fi
 
 # --- 12. no silently ignored test ---------------------------------------------------------------
-IGNORED=$(cat "$T"/f-crates.log "$T"/helper.log "$T"/provider.log 2>/dev/null | grep -E '^test .* \.\.\. ignored' \
+IGNORED=$(cat "$T"/f-crates.log "$T"/helper.log "$T"/engine.log "$T"/provider.log 2>/dev/null | grep -E '^test .* \.\.\. ignored' \
     | grep -vE '^test u1_se_signing_latency ' | head -3 | tr '\n' ' ')
 if [ -z "$IGNORED" ]; then record "no ignored test outside the allowlist" PASS "allowlist: u1_se_signing_latency"
 else fail "no ignored test outside the allowlist" "$IGNORED"; fi

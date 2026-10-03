@@ -24,7 +24,6 @@ mod engine;
 use std::ffi::{c_char, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use serde_json::Value;
@@ -49,7 +48,17 @@ pub const BRIDGE_IMPORTS: &[&str] = &[
 /// trusts a caller's (review SEC-O1).
 const PREFIX: usize = 8;
 
-fn guarded<T>(f: impl FnOnce() -> T) -> T {
+/// A strong reference for the length of one call, so a handle can never be
+/// freed under a call still running.
+///
+/// # Safety
+/// `engine` is a live handle from `ov0_engine_open`.
+unsafe fn held(engine: *const Ov0Engine) -> Arc<Ov0Engine> {
+    Arc::increment_strong_count(engine);
+    Arc::from_raw(engine)
+}
+
+pub(crate) fn guarded<T>(f: impl FnOnce() -> T) -> T {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|_| std::process::abort())
 }
 
@@ -77,10 +86,10 @@ pub unsafe extern "C" fn ov0_engine_open(vault_dir: *const c_char, callbacks: *c
 #[no_mangle]
 pub unsafe extern "C" fn ov0_engine_call(engine: *const Ov0Engine, request: *const u8, len: usize, out: *mut *mut u8, out_len: *mut usize) -> i32 {
     guarded(|| {
-        let Some(e) = engine.as_ref() else { return -1 };
-        if request.is_null() || out.is_null() || out_len.is_null() {
+        if engine.is_null() || request.is_null() || out.is_null() || out_len.is_null() {
             return -1;
         }
+        let e = held(engine);
         let answer = if len > MAX_REQUEST {
             OpOutcome::err(ErrorCode::InvalidInput).response
         } else {
@@ -108,8 +117,8 @@ pub unsafe extern "C" fn ov0_engine_call(engine: *const Ov0Engine, request: *con
 #[no_mangle]
 pub unsafe extern "C" fn ov0_engine_lock(engine: *const Ov0Engine) {
     guarded(|| {
-        if let Some(e) = engine.as_ref() {
-            e.lock(LockReason::Explicit);
+        if !engine.is_null() {
+            held(engine).lock(LockReason::Explicit);
         }
     })
 }
@@ -139,11 +148,12 @@ pub unsafe extern "C" fn ov0_engine_close(engine: *const Ov0Engine) {
             return;
         }
         let e = Arc::from_raw(engine);
-        e.stop.store(true, Ordering::SeqCst);
+        e.end_tick();
         e.lock(LockReason::Explicit);
         // Wait for an op still running (it fails closed at its re-lock
-        // checkpoint once Swift dismisses its screen on `locked`).
+        // checkpoint once Swift dismisses its screen on `locked`), then
+        // lock once more in case it got that far.
         drop(e.lane.lock().unwrap_or_else(|p| p.into_inner()));
-        drop(e); // the tick holds the other reference and ends within 1 s
+        e.lock(LockReason::Explicit);
     })
 }

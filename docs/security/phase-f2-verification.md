@@ -386,3 +386,31 @@ caller's digest.
 | VER-O8 debug switches in iOS builds | **Deferred to the F.2 gate:** the release iOS library's `OV0_VAULT_` scan joins the helper's | — | — |
 | VER-O10 fuzz lockfile | **Pre-existing; noted** for the next fuzz run | — | — |
 
+### 6.1 Bounded re-review of the fixes (`5ee29a4`) and closure
+
+Both reviewers: **no blockers**; every original finding closed except
+SEC-I3 (close).
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-I1 / VER-I10 close returns while the tick can still call Swift; close during an op | **Fixed:** the tick holds only a weak reference, parks, and is joined by close; every call holds a strong reference for its run; close locks, waits for the lane and locks again | `engine.rs`, `lib.rs` | close path exercised by every handle test |
+| VER-I11 tick outside the abort-on-panic rule | **Fixed:** the tick runs under `guarded` | `engine.rs` | — |
+| SEC-I2 / VER-I8 auto-lock test could not fail; pre-op check untested | **Fixed:** events cleared, the `locked`/`timeout` event awaited before any call; a second test stops the tick so only the pre-op check can lock | `tests/handle.rs` | `the_vault_locks_itself_when_the_window_runs_out`, `an_op_never_runs_on_an_expired_window` |
+| VER-I9 the no-lock-held property and per-call flush untested | **Fixed:** the event callback records whether the core is free; an op's events must have arrived when its call returns | `tests/handle.rs` | as above |
+| SEC-I3 / VER-I7 gate step 12 ignores `engine.log` | **Fixed** | `phase-f-gate.sh` | — |
+| VER-O17 an op queued behind the lane after its window ran out | **Fixed:** the check runs again after the lane | `engine.rs` | — |
+| VER-O16 event order across threads | **Fixed:** one delivery mutex (not an engine lock) across take-and-deliver | `callbacks.rs` | — |
+| SEC-O4 stale answers after `locked` | **Catalogue rule:** Swift discards them; `get_state` is authoritative | catalogue §1 | — |
+| VER-O11 immediacy regression hangs | **Fixed:** channel with a 2 s timeout | `tests/handle.rs` | — |
+| VER-O15 byte-vs-character MP count | **Fixed:** "éééé" case | `tests/handle.rs` | — |
+| SEC-O1 / VER-O12 / VER-O13 export scan gaps | **Fixed:** the scan covers the engine's sources and the one-line form; the library check is worded "among `ov0_` symbols" (sqlite's C symbols are legitimate) | `tests/catalogue.rs`, catalogue §6 | — |
+| SEC-O2 / VER-O18 seal error path | **Fixed:** the plaintext is copied last (Bridge.swift 200 lines) | `Bridge.swift` | — |
+| SEC-O3 VK-crossing wording | **Fixed:** spec §22.2 and catalogue §3 name creation, enrollment, rotation and adoption | spec, catalogue | — |
+| VER-O19 serialization residual | **Stated** in catalogue §5 | — | — |
+| VER-O21 Keychain items left by the auto-lock test | **Fixed:** the tests wipe the run's namespace | `tests/handle.rs` | — |
+| VER-O22 wording | **Fixed** (null on a non-UTF-8 path; `ctx` may be null) | catalogue | — |
+| VER-O14 stale library at the default path; VER-O20 close not directly tested | **Accepted:** the gate builds the library in the same step; close is covered as above | — | — |
+
+Targeted runs: `vault-ffi` (catalogue 3, handle 6), after a fresh iOS
+build. **Steps 1–3 of F.2b are closed.**
+

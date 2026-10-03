@@ -4479,9 +4479,10 @@ autofill (Phase H).
   SOURCE Vault links (the same `Bridge.swift` as the Mac helper), through
   a fixed import list (FFI catalogue §3; FFI-01 checks the built library
   imports exactly it): sign a digest the engine built; HPKE-open an
-  engine-held envelope — crossing (a) above; HPKE-seal a VK to a device's
-  public key during a key rotation (none of which the phone performs in
-  F.2b). The bridge zeroes its copies of the opened and sealed
+  engine-held envelope — crossing (a) above, at unlock and when an
+  adoption opens the served envelope; HPKE-seal a VK to a device's public
+  key at vault creation, enrollment and key rotation (none of which the
+  phone performs in F.2b; each phone form comes with its own review). The bridge zeroes its copies of the opened and sealed
   plaintext; nothing else secret reaches it. **Erratum (F.2b review
   VER-I6):** this replaces "a Swift callback table" — the mechanism is an
   in-process call either way; the import list is what is checked.

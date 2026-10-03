@@ -4,6 +4,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use serde_json::Value;
@@ -36,14 +37,27 @@ pub struct Inner {
     /// `lock` and the tick never take it.
     pub lane: Mutex<()>,
     pub stop: AtomicBool,
+    /// The auto-lock tick; joined by `close`, so no engine thread calls
+    /// Swift after `ov0_engine_close` returns (review VER-I10 / SEC-I1).
+    pub tick: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Inner {
     pub fn boot(dir: PathBuf, shared: Arc<Shared>) -> Arc<Inner> {
         let deps = shared.deps();
-        let inner = Arc::new(Inner { core: Arc::new(Mutex::new(VaultCore::boot(dir))), shared, deps, lane: Mutex::new(()), stop: AtomicBool::new(false) });
-        let tick = Arc::clone(&inner);
-        std::thread::spawn(move || tick.tick());
+        let inner = Arc::new(Inner {
+            core: Arc::new(Mutex::new(VaultCore::boot(dir))),
+            shared,
+            deps,
+            lane: Mutex::new(()),
+            stop: AtomicBool::new(false),
+            tick: Mutex::new(None),
+        });
+        // The tick holds a weak reference: it never keeps the engine alive,
+        // and a panic in it aborts like any entry point (review VER-I11).
+        let weak = Arc::downgrade(&inner);
+        let handle = std::thread::spawn(move || crate::guarded(|| tick(weak)));
+        *inner.tick.lock().unwrap_or_else(|p| p.into_inner()) = Some(handle);
         inner
     }
 
@@ -57,14 +71,18 @@ impl Inner {
         self.shared.flush();
     }
 
-    /// The window since the last authorization, once a second, as the
-    /// helper's tick does; ends with the handle.
-    fn tick(&self) {
-        while !self.stop.load(Ordering::SeqCst) {
-            std::thread::sleep(Duration::from_secs(1));
-            if !self.stop.load(Ordering::SeqCst) && lock_core(&self.core).auto_lock_due() {
-                self.lock(LockReason::Timeout);
-            }
+    /// Stop the tick and wait for it (it is parked, so it wakes at once).
+    pub fn end_tick(&self) {
+        self.stop.store(true, Ordering::SeqCst);
+        if let Some(h) = self.tick.lock().unwrap_or_else(|p| p.into_inner()).take() {
+            h.thread().unpark();
+            let _ = h.join();
+        }
+    }
+
+    fn lock_if_due(&self) {
+        if lock_core(&self.core).auto_lock_due() {
+            self.lock(LockReason::Timeout);
         }
     }
 
@@ -74,14 +92,26 @@ impl Inner {
             return OpOutcome::err(ErrorCode::UnknownOp);
         }
         // Never act on a window that has already run out.
-        if lock_core(&self.core).auto_lock_due() {
-            self.lock(LockReason::Timeout);
-        }
+        self.lock_if_due();
         if op == "get_state" {
             // Answered at once, like the helper's server layer.
             return OpOutcome { response: lock_core(&self.core).state_answer() };
         }
         let _lane = self.lane.lock().unwrap_or_else(|p| p.into_inner());
+        self.lock_if_due(); // again: the wait for the lane may have been long
         dispatch::dispatch(&self.core, frame, &self.deps)
+    }
+}
+
+/// The §1.6 window since the last authorization, once a second, as the
+/// helper's tick does; ends when the handle stops it or is gone.
+fn tick(engine: std::sync::Weak<Inner>) {
+    loop {
+        std::thread::park_timeout(Duration::from_secs(1));
+        let Some(e) = engine.upgrade() else { return };
+        if e.stop.load(Ordering::SeqCst) {
+            return;
+        }
+        e.lock_if_due();
     }
 }

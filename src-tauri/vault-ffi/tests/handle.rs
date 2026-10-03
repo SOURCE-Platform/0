@@ -21,6 +21,10 @@ static NEXT: Mutex<(Vec<u8>, Vec<u8>, i32)> = Mutex::new((Vec::new(), Vec::new()
 static KINDS: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static EVENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static SHEETS: AtomicUsize = AtomicUsize::new(0);
+/// The handle under test, so the event callback can check the engine's
+/// core is free whenever Swift is called (review VER-I9).
+static ENGINE: AtomicUsize = AtomicUsize::new(0);
+static BUSY: AtomicUsize = AtomicUsize::new(0);
 
 extern "C" fn entry(_: *mut c_void, kind: u8, _: u64, a: *mut u8, a_len: *mut usize, b: *mut u8, b_len: *mut usize, cap: usize) -> i32 {
     KINDS.lock().unwrap().push(kind);
@@ -44,6 +48,11 @@ extern "C" fn yes(_: *mut c_void, _: *const c_char) -> bool {
     true
 }
 extern "C" fn event(_: *mut c_void, json: *const u8, len: usize) {
+    let e = ENGINE.load(Ordering::SeqCst) as *const Ov0Engine;
+    // SAFETY: set only while that handle is open.
+    if !e.is_null() && unsafe { (*e).core.try_lock() }.is_err() {
+        BUSY.fetch_add(1, Ordering::SeqCst);
+    }
     // SAFETY: `len` bytes of JSON, valid for the call.
     EVENTS.lock().unwrap().push(String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(json, len) }).into_owned());
 }
@@ -100,15 +109,18 @@ fn state_and_lock_never_wait_behind_an_op() {
     // SAFETY: the handle outlives this scope.
     let lane = unsafe { &(*e).lane }.lock().unwrap();
     let addr = e as usize;
-    let t = std::thread::spawn(move || {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
         let e = addr as *const Ov0Engine;
         let started = Instant::now();
         let s = call(e, r#"{"op":"get_state"}"#);
         unsafe { ov0_engine_lock(e) };
-        (s, started.elapsed())
+        let _ = tx.send((s, started.elapsed()));
     });
-    let (s, took) = t.join().unwrap();
+    // A regression fails here instead of hanging the run (review VER-O11).
+    let got = rx.recv_timeout(Duration::from_secs(2));
     drop(lane);
+    let (s, took) = got.expect("get_state and lock waited behind the op");
     assert_eq!(s["ok"], true);
     assert!(took < Duration::from_secs(1), "{took:?}");
     unsafe { ov0_engine_close(e) };
@@ -132,6 +144,8 @@ fn the_secure_entry_callback_maps_kinds_and_refuses_weak_new_mps() {
     assert_eq!(*KINDS.lock().unwrap(), vec![KIND_MP_CHANGE, KIND_MP_ENTRY, KIND_RK_ENTRY, KIND_MP_CREATE]);
     *NEXT.lock().unwrap() = (b"old-password-1".to_vec(), b"short".to_vec(), SUBMITTED);
     assert!(matches!(deps.panel.run(PanelRequest::MpChange, t), PanelOutcome::Cancelled), "a new MP under 8 characters");
+    *NEXT.lock().unwrap() = ("éééé".as_bytes().to_vec(), Vec::new(), SUBMITTED);
+    assert!(matches!(deps.panel.run(PanelRequest::MpCreate, t), PanelOutcome::Cancelled), "8 bytes but 4 characters");
     *NEXT.lock().unwrap() = (vec![0xFF; 12], Vec::new(), SUBMITTED);
     assert!(matches!(deps.panel.run(PanelRequest::MpCreate, t), PanelOutcome::Cancelled), "not UTF-8");
     *NEXT.lock().unwrap() = (b"whatever-it-is".to_vec(), Vec::new(), 1);
@@ -152,28 +166,68 @@ fn events_wait_for_flush() {
     assert_eq!(*EVENTS.lock().unwrap(), vec![r#"{"event":"one"}"#, r#"{"event":"two"}"#]);
 }
 
-/// SEC-B1 / VER-I4: an unlocked vault locks itself when its window runs
-/// out, with no call from Swift. (The vault is made through the engine's
-/// own dispatch, as the Mac would; `setup_vault` is not a phone op.)
-#[test]
-fn the_vault_locks_itself_when_the_window_runs_out() {
-    let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
-    let (e, dir) = open("autolock");
+/// An unlocked vault on a fresh handle, made through the engine's own
+/// dispatch as the Mac would (`setup_vault` is not a phone op).
+fn unlocked(tag: &str) -> (*const Ov0Engine, std::path::PathBuf) {
+    let (e, dir) = open(tag);
     *NEXT.lock().unwrap() = (MP.to_vec(), Vec::new(), SUBMITTED);
     // SAFETY: the handle is live.
     let inner = unsafe { &*e };
     let setup = vault_engine::vault::dispatch::dispatch(&inner.core, &serde_json::json!({"op": "setup_vault", "handle": "synthetic-ffi@example.test"}), &inner.deps);
     assert_eq!(setup.response["ok"], true, "{}", setup.response);
+    ENGINE.store(e as usize, Ordering::SeqCst);
+    EVENTS.lock().unwrap().clear();
     assert_eq!(call(e, r#"{"op":"begin_recovery_unlock","kind":"mp"}"#)["ok"], true);
+    // The op's own events reached Swift by the time the call returned.
+    assert!(EVENTS.lock().unwrap().iter().any(|e| e.contains(r#""state":"unlocked""#)), "{:?}", EVENTS.lock().unwrap());
     // A first publication is staged, so the reported state may be
     // BACKING_UP over the vault; `vault_open` says whether the key is here.
     assert_eq!(call(e, r#"{"op":"get_state"}"#)["vault_open"], true);
-    std::env::set_var("OV0_VAULT_AUTO_LOCK_SECS", "1");
-    std::thread::sleep(Duration::from_millis(2600));
-    std::env::remove_var("OV0_VAULT_AUTO_LOCK_SECS");
-    assert_eq!(call(e, r#"{"op":"get_state"}"#)["vault_open"], false, "the key is gone");
-    assert!(EVENTS.lock().unwrap().iter().any(|e| e.contains("locked")), "Swift was told");
+    (e, dir)
+}
+
+fn finish(e: *const Ov0Engine, dir: &std::path::Path) {
+    ENGINE.store(0, Ordering::SeqCst);
     unsafe { ov0_engine_close(e) };
-    vault_engine::device::identity::wipe(&dir);
-    let _ = std::fs::remove_dir_all(&dir);
+    vault_engine::device::identity::wipe(dir);
+    vault_engine::test_support::wipe_test_keychain();
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// SEC-B1 / VER-I4: the tick locks an unlocked vault when its window runs
+/// out, with no call from Swift, and tells Swift at once — with no engine
+/// lock held while it does (VER-I9).
+#[test]
+fn the_vault_locks_itself_when_the_window_runs_out() {
+    let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (e, dir) = unlocked("autolock");
+    EVENTS.lock().unwrap().clear();
+    BUSY.store(0, Ordering::SeqCst);
+    std::env::set_var("OV0_VAULT_AUTO_LOCK_SECS", "1");
+    let told = (0..40).any(|_| {
+        std::thread::sleep(Duration::from_millis(100));
+        EVENTS.lock().unwrap().iter().any(|e| e.contains(r#""event":"locked""#) && e.contains("timeout"))
+    });
+    std::env::remove_var("OV0_VAULT_AUTO_LOCK_SECS");
+    assert!(told, "the tick locked and told Swift, before any call: {:?}", EVENTS.lock().unwrap());
+    assert_eq!(BUSY.load(Ordering::SeqCst), 0, "Swift was called with the engine busy");
+    assert_eq!(call(e, r#"{"op":"get_state"}"#)["vault_open"], false, "the key is gone");
+    finish(e, &dir);
+}
+
+/// VER-I8: with the tick stopped, the check before an op still locks a
+/// vault whose window has run out.
+#[test]
+fn an_op_never_runs_on_an_expired_window() {
+    let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
+    let (e, dir) = unlocked("preop");
+    // SAFETY: the handle is live.
+    unsafe { &*e }.end_tick();
+    std::env::set_var("OV0_VAULT_AUTO_LOCK_SECS", "1");
+    std::thread::sleep(Duration::from_millis(1300));
+    let answer = call(e, r#"{"op":"list_items"}"#);
+    std::env::remove_var("OV0_VAULT_AUTO_LOCK_SECS");
+    assert_eq!(answer["ok"], false, "{answer}");
+    assert_eq!(call(e, r#"{"op":"get_state"}"#)["vault_open"], false);
+    finish(e, &dir);
 }

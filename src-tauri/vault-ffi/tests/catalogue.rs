@@ -17,20 +17,22 @@ fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
-/// Every unmangled export in the crate's sources, however it is spelled.
+/// Every unmangled export in the FFI's and the engine's sources, in the
+/// attribute's own line or the next (review VER-O13 / SEC-O1).
 fn exported_in_source() -> Vec<String> {
     let mut files = Vec::new();
-    sources(&Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut files);
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    sources(&root.join("src"), &mut files);
+    sources(&root.join("../vault-engine/src"), &mut files);
     let mut out = Vec::new();
     for f in files {
         let text = std::fs::read_to_string(&f).unwrap();
-        let mut lines = text.lines();
-        while let Some(l) = lines.next() {
-            let l = l.trim();
-            if let Some(name) = l.strip_prefix("#[export_name = \"").or(l.strip_prefix("#[unsafe(export_name = \"")) {
-                out.push(name.split('"').next().unwrap().to_string());
-            } else if l == "#[no_mangle]" || l == "#[unsafe(no_mangle)]" {
-                let sig = lines.next().unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, l) in lines.iter().enumerate() {
+            if let Some(rest) = l.split("export_name = \"").nth(1) {
+                out.push(rest.split('"').next().unwrap().to_string());
+            } else if l.contains("no_mangle") && !l.trim_start().starts_with("//") {
+                let sig = if l.contains("fn ") { l } else { lines[i + 1] };
                 out.push(sig.split("fn ").nth(1).unwrap().split('(').next().unwrap().to_string());
             }
         }
@@ -50,7 +52,7 @@ fn the_sources_export_exactly_the_catalogue() {
     assert_eq!(exported_in_source(), sorted(CATALOGUE));
 }
 
-/// `nm` of the iOS static library: defined `ov0_` symbols are exactly the
+/// `nm` of the iOS static library: among `ov0_` symbols, the defined ones are exactly the
 /// catalogue, imported ones exactly the bridge. The library must exist —
 /// build it first (`cargo build -p vault-ffi --target aarch64-apple-ios`;
 /// the F.2 gate does).
