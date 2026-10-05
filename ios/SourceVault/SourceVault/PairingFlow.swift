@@ -16,6 +16,9 @@ final class PairingFlow: ObservableObject {
 
     @Published var step: Step = .scan
     private var client: PairingClient?
+    /// The bundle, fetched while the code stays on screen; used only once
+    /// the user has tapped "They match" (review SEC-I2, 0f5f21b).
+    private var bundle: Task<Any?, Never>?
     private let engine: VaultEngine
     private let onDone: () -> Void
 
@@ -47,12 +50,15 @@ final class PairingFlow: ObservableObject {
             guard let code = sas["sas"] as? String, let proof = sas["proof"] as? String else { return await fail("The Mac's answer did not check out.") }
             client.proof = proof
             step = .compare(code)
+            // The Mac sends the bundle only after the user confirms in its
+            // Source Vault window; fetch it now, use it only after the tap.
+            bundle = Task { try? await client.get("v1/vault/enroll/bundle", timeout: 310)["bundle"] }
         } catch {
             await fail("Secure channel could not be established.")
         }
     }
 
-    /// The user compared the two screens.
+    /// The user compared this code with the Source Vault window's.
     func codesMatch(_ match: Bool) {
         guard case .compare = step else { return }
         if match {
@@ -64,10 +70,9 @@ final class PairingFlow: ObservableObject {
     }
 
     private func receive() async {
-        guard let client else { return await fail("Connection lost — start over.") }
+        guard let client, let fetch = bundle else { return await fail("Connection lost — start over.") }
+        guard let bundle = await fetch.value else { return await fail("The Mac sent nothing — start over.") }
         do {
-            let answer = try await client.get("v1/vault/enroll/bundle", timeout: 310)
-            guard let bundle = answer["bundle"] else { return await fail("The Mac sent nothing.") }
             step = .finishing
             let bytes = try JSONSerialization.data(withJSONObject: bundle)
             let done = await stream(bytes)
@@ -110,6 +115,8 @@ final class PairingFlow: ObservableObject {
 
     private func fail(_ message: String) async {
         UIApplication.shared.isIdleTimerDisabled = false
+        bundle?.cancel()
+        bundle = nil
         client?.close()
         client = nil
         _ = await engine.callAsync(["op": "join_abort"])
@@ -118,6 +125,11 @@ final class PairingFlow: ObservableObject {
 
     func restart() {
         step = .scan
+    }
+
+    /// Leaving the pairing screen: the screen may sleep again (SEC-O2).
+    func leave() {
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 }
 

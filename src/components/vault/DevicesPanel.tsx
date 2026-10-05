@@ -104,7 +104,13 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
     try {
       await vaultConfirmEnrollment();
     } catch (e) {
-      onError(vaultErrorMessage(String(e)));
+      // Cancel in the Source Vault window ends this pairing on the Mac;
+      // start again with a new code.
+      if (String(e).includes("PANEL_CANCELLED")) {
+        await cancel();
+      } else {
+        onError(vaultErrorMessage(String(e)));
+      }
     } finally {
       setBusy(false);
     }
@@ -241,7 +247,7 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
                 dangerouslySetInnerHTML={{ __html: enrollment.qr }}
               />
               <div className="text-sm text-muted-foreground">
-                <p className="text-foreground">Scan this with Source on your iPhone.</p>
+                <p className="text-foreground">Scan this with SOURCE Vault on your iPhone.</p>
                 <p className="mt-2 max-w-[48ch] leading-6">
                   The code expires in {status?.expires_in ?? enrollment.expires_in} seconds and
                   works once. When you continue, the Source Vault window will show an

@@ -275,10 +275,11 @@ human-safe context.
 | `rotate_recovery_key` | new RK + VK rotation | UNLOCKED + fresh presence | helper panel collects the **current MP** (the MP wrap is re-sealed under the new VK, §12 scenario 6), then displays/prints the new RK and only commits once the user acknowledges it; main sees status only |
 | `list_devices` / `revoke_device` | registry view / revocation | UNLOCKED + fresh presence | the panel collects the MP (verified against the committed wrap and bound to the vault key, §22.4; a wrong MP is refused with the §15 backoff — v0.5 erratum: there is no set-a-new-MP branch inside `revoke_device`; a forgotten MP is first reset with the RK, `mode:"reset"`) and shows a new Recovery Key for acknowledgement; then registry `revoke` + VK rotation + both recovery classes re-keyed are committed locally, followed by one `publish` state transition that cuts the device off at the provider (§11.4); tracked as `REMOTE_UPDATE_PENDING` until committed (§11.3). The confirmation lists every device the target itself authorized (enroll entries with `authorizer` = target) and recommends revoking them too |
 | `registry_status` | signed registry for a paired device's status refresh (§4.7) — **retired for SOURCE Vault devices by `peer_status` (v0.5, §22.9)** | LOCKED or UNLOCKED | read-only; returns the registry and `vault_id` and nothing else. Deliberately answers while locked: the registry involves no VK, and a revoked device must be able to find that out without the vault being unlocked. |
-| `begin_enrollment` | start §5 flow | UNLOCKED | `{fp}` (the ephemeral server's certificate fingerprint) → `{secret, mac_device_id, vault_id, expires_in}`; main renders the QR (§5.2) |
-| `enroll_hello` | the phone's ENROLL_HELLO, relayed | UNLOCKED | helper verifies the single-use secret, assigns the new `device_id`, fixes the transcript → `{reply, sas}`; the SAS is shown on the Mac and **never** sent to the phone |
+| `begin_enrollment` | start §5 flow | UNLOCKED; at most six per minute (v0.5) | `{fp}` (the ephemeral server's certificate fingerprint) → `{secret, mac_device_id, mac_key, commit, vault_id, expires_in}`; main renders the QR (§5.2). v0.5: `nonce_e` and the new device's id are fixed here and committed (`commit`) |
+| `enroll_hello` | the phone's ENROLL_HELLO, relayed | UNLOCKED | helper verifies the single-use secret, gives the committed `device_id`, fixes the transcript → `{reply}`. v0.5: the SAS is shown only by the helper's Add Device panel at `enroll_confirm`; it is sent neither to main nor to the phone |
 | `enroll_confirm` | the user compared the SAS | UNLOCKED + fresh presence + **current MP** (v0.5, §22.4) | signs the enroll entry and seals the envelope → `{session, manifest, checkpoint, blob list}`; main pulls the blobs with `stream_read` (§1.3). All ciphertext/public; nothing is written to the registry yet |
 | `enroll_ack` | the phone's ENROLL_ACK, relayed | UNLOCKED | `{signature}` over §5.2's ACK digest; verifying it is what appends the entry |
+| `enroll_proof` (v0.5) | main asks before serving the bundle or taking an ACK | an enrollment in progress | `{proof}` → ok only for the device that sent the hello (§5.2 `X-Ov0-Proof`, constant time) |
 | `cancel_enrollment` | tear the session down | any | secret zeroized; a cancelled attempt leaves no registry trace |
 | `relay_to_device` / `relay_from_device` | opaque vault-protocol frames for iPhone approvals | any | main is a dumb pipe (§6). **v0.3.1 Phase E:** enrollment uses the typed ops above instead — the helper has to route those frames into its session state machine anyway, and a typed schema is something it can validate; approvals keep the opaque relay. |
 | `backup_prepare` | stage a `publish` state transition | UNLOCKED → BACKING_UP | → `{session, expected_state, new_state, blob_count, body_sha256}` (§11.3) |
@@ -1718,8 +1719,8 @@ sequenceDiagram
 
     U->>MA: Settings → Security → Add Device
     MA->>H: begin_enrollment
-    H->>H: enroll_secret = OsRng(16), nonce_e = OsRng(16), TTL 300 s, single-use
-    H-->>MA: QR payload {v, host, port, fp, secret_b32, mac_device_id}
+    H->>H: enroll_secret, nonce_e, new device_id = OsRng; commit = H(nonce_e‖id); TTL 300 s, single-use
+    H-->>MA: QR payload {v, host, port, fp, secret_b32, mac_device_id, mac_key, commit}
     MA->>MA: spawn ephemeral TLS server (rcgen cert, port 0)
     MA-->>U: show QR
     U->>IP: scan QR with Source iOS app
@@ -1728,12 +1729,12 @@ sequenceDiagram
     MA->>H: relay ENROLL_HELLO
     IP-->>H: {secret, nonce_n, sign_pub, agree_pub, name, platform, proto}
     H->>H: verify secret (constant-time, single-use, TTL)
-    H->>H: transcript = SHA-256(fp‖secret‖nonce_e‖nonce_n‖device_ids‖pubkeys)
-    H-->>U (via MA): SAS = sas8(transcript) shown on Mac
-    IP-->>U: same SAS shown on iPhone
-    U->>U: compare; confirm on both devices
-    U->>MA: confirm → Mac LA presence (Touch ID) + current MP in the helper panel (v0.5, §22.4)
+    H->>H: transcript v2 = SHA-256(fp‖mac_key‖secret‖nonce_e‖nonce_n‖device_ids‖pubkeys)
+    IP->>IP: reply must open commit; SAS = sas8(transcript) shown on iPhone
+    U->>MA: Continue
     MA->>H: enroll_confirm
+    H-->>U: helper's own Add Device panel: the SAS + current MP (LA presence first, v0.5 §22.4)
+    U->>U: compare iPhone and panel; OK in the panel, "They match" on the iPhone (either Cancel ends it)
     H->>H: LA presence → sign enroll entry (Mac sign key)
     H->>H: envelope = HPKE-Seal(iPhone agree_pub, DeviceEnvelopePayload v2{VK})
     H-->>IP: relay {registry to head, envelope, manifest, checkpoint, blobs} (streamed via §1.3)
@@ -1748,13 +1749,13 @@ sequenceDiagram
 
 | Field / message | Spec |
 |---|---|
-| QR payload | JSON `{v:2, host, port, fp, secret (base32), mac_device_id, mac_key, name}` — same shape family as existing `EnrollmentPayload`, `v:2` distinguishes vault enrollment; rendered with existing `render_enrollment_qr`. **v0.5 (owner decision 2026-10-03, F.2b review SEC-B3):** `mac_key` = hex SHA-256 of the authorizing helper's SE signing public key, from `begin_enrollment` |
+| QR payload | JSON `{v:2, host, port, fp, secret (base32), mac_device_id, mac_key, name}` — same shape family as existing `EnrollmentPayload`, `v:2` distinguishes vault enrollment; rendered with existing `render_enrollment_qr`. **v0.5 (owner decision 2026-10-03, F.2b review SEC-B3):** `mac_key` = hex SHA-256 of the authorizing helper's SE signing public key, from `begin_enrollment`; `commit` = hex `SHA-256("ov0/enroll/commit/v1" ‖ nonce_e ‖ new_device_id)`, the helper's half of the transcript fixed before the phone reveals its own — the phone refuses a reply that does not open it, so a relay cannot search for matching codes (F.2b re-review SEC-B1) |
 | TLS | rustls server (main), iOS URLSession/Network.framework pinned to the QR `fp` = `SHA-256(cert DER)` of the ephemeral certificate (erratum v0.5: previously worded "SPKI-pin"; §5.1 and both implementations hash the certificate); hostname ignored (consistent with decision D6) |
 | `enroll_secret` | 16 bytes, base32-no-pad in QR; verified with `subtle::ConstantTimeEq`; single-use; TTL 300 s from `begin_enrollment`; failure count ≥ 5 on a session → session torn down |
 | Nonces | both sides 16 B random; both enter the transcript |
 | Transcript | `SHA-256("ov0/enroll/transcript/v2" ‖ fp_bytes ‖ mac_key ‖ secret ‖ nonce_e ‖ nonce_n ‖ mac_device_id ‖ new_device_id ‖ sign_pub ‖ agree_pub)` — binds everything the user is about to approve, including the helper's own key (v2; v1 lacked `mac_key`). The helper computes `mac_key` from its own key, the phone takes it from the QR: a main process that swaps either side's keys produces two different codes |
 | SAS | 8 chars, alphabet `23456789ABCDEFGHJKLMNPQRSTUVWXYZ` (repo's existing unambiguous alphabet), from `HKDF-SHA256(transcript, salt=nil, info="ov0/enroll/sas/v1")` → 5 bytes → 40 bits → 8×5-bit indices. Longer than the legacy 4-char pair tag on purpose. |
-| SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned. **v0.5 (owner decision 2026-10-03):** the Mac's code is shown **only by the helper's own panel** at `enroll_confirm` (§1.7, request "Add Device", above the master-password field) — never by the main app, which no longer receives it (`enroll_hello` answers only the reply) |
+| SAS confirmation | explicit tap on **both** devices; either-side abort → session torn down, secret burned. **v0.5 (owner decision 2026-10-03):** the Mac's code is shown **only by the helper's own panel** at `enroll_confirm` (§1.7, request "Add Device", above the master-password field) — never by the main app, which no longer receives it (`enroll_hello` answers only the reply). Cancel in that panel ends the session. The phone keeps its code on screen and uses the bundle only after the user taps "They match" against the panel. **Stated limit:** the comparison is only as trustworthy as the helper's window on a screen the same-user main process could draw over (a click-through window above the panel's code); a same-user process can equally imitate the master-password panel itself (§1.7). This is a platform limit, not closed by the protocol |
 | Key exchange | iPhone sends only public keys (65-byte uncompressed, §2.7); private keys never leave SE |
 | `device_id` assignment (v0.3.1 Phase E) | the **Mac** assigns the new device's id and returns it in the hello reply, together with `nonce_e` and `mac_device_id`; a new device cannot choose its own registry identity or collide with an enrolled one. The phone derives the SAS from that reply — the SAS itself is never transmitted. |
 | Transport shape (v0.3.1 Phase E) | three routes on the ephemeral server: `POST /v1/vault/enroll/hello`, `GET /v1/vault/enroll/bundle` (the phone waits here while the user compares the SAS and confirms on the Mac), `POST /v1/vault/enroll/ack`. Per-message timeout 30 s; the bundle wait is bounded by the 300 s session. **v0.5 (F.2b review SEC-I3):** the bundle and ACK routes require header `X-Ov0-Proof` = hex `HMAC-SHA256(secret, "ov0/enroll/proof/v1" ‖ nonce_n)`, checked by the helper (`enroll_proof`) before main answers; the bundle also carries `provider_state` (the Mac's kept, signed provider state, when it has one) |

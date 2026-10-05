@@ -48,7 +48,7 @@ impl Inner {
     pub fn boot(dir: PathBuf, shared: Arc<Shared>) -> Arc<Inner> {
         let deps = shared.deps();
         let inner = Arc::new(Inner {
-            core: Arc::new(Mutex::new(VaultCore::boot(dir))),
+            core: Arc::new(Mutex::new(VaultCore::boot_phone(dir))),
             shared,
             deps,
             lane: Mutex::new(()),

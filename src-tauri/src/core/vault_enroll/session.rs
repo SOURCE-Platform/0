@@ -28,6 +28,9 @@ pub struct EnrollmentPayloadV2 {
     /// pins the helper itself, not this process (owner decision
     /// 2026-10-03, review SEC-B3).
     pub mac_key: String,
+    /// Commitment to the helper's `nonce_e` and the id it will assign
+    /// (review SEC-B1, 0f5f21b): fixed before the phone says anything.
+    pub commit: String,
     pub name: String,
 }
 
@@ -95,6 +98,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
         .unwrap_or_default()
         .to_string();
     let mac_key = begun.get("mac_key").and_then(Value::as_str).ok_or("helper did not return its key")?.to_string();
+    let commit = begun.get("commit").and_then(Value::as_str).ok_or("helper did not return its commitment")?.to_string();
 
     let (port, handle) = super::server::start(cert_pem, key_pem).await?;
     let payload = EnrollmentPayloadV2 {
@@ -105,6 +109,7 @@ pub async fn begin(app_name: &str) -> Result<Value, String> {
         secret,
         mac_device_id,
         mac_key,
+        commit,
         name: app_name.to_string(),
     };
     let qr = super::server::render_qr(&payload)?;

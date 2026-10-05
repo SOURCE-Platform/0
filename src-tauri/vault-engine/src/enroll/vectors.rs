@@ -87,6 +87,8 @@ pub fn xv_enroll() -> Value {
             "sign_pub": hex::encode(sign),
             "agree_pub": hex::encode(agree),
             "transcript_sha256": hex::encode(t),
+            // The QR's commitment to the Mac's half (nonce_e, new id).
+            "commit_sha256": hex::encode(transcript::commitment(&NONCE_E, &NEW_ID)),
             "sas": transcript::sas(&t).unwrap(),
         },
         "ack": {

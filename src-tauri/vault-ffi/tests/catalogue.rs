@@ -84,7 +84,7 @@ fn the_ios_library_exports_the_catalogue_and_imports_the_bridge() {
 pub const NOT_ON_THE_PHONE: &[&str] = &[
     "setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
     "cancel_enrollment", "revoke_device", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle",
-    "rotate_recovery_key",
+    "rotate_recovery_key", "enroll_proof",
 ];
 
 #[test]

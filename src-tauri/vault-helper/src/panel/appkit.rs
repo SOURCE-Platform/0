@@ -228,7 +228,7 @@ pub fn present(req: &PanelRequest, code: Option<&str>, abort: Arc<AtomicBool>) -
     unsafe {
         let content = NSView::initWithFrame(mtm.alloc::<NSView>(), rect);
         if let Some(code) = code {
-            let line = format!("Your iPhone must show {code}.\nContinue only if the codes match.");
+            let line = format!("Your iPhone must show {code}.\nPress OK only if the codes match; otherwise Cancel.");
             let note = NSTextField::wrappingLabelWithString(&NSString::from_str(&line), mtm);
             note.setFrame(NSRect::new(NSPoint::new(20.0, height - 52.0), NSSize::new(340.0, 40.0)));
             content.addSubview(&note);

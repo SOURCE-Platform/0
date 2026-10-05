@@ -114,6 +114,9 @@ pub struct HelperPanel {
 
 impl PanelRunner for HelperPanel {
     fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome {
+        if req == PanelRequest::EnrollConfirm {
+            return PanelOutcome::Cancelled; // never without its code (VER-O9)
+        }
         #[cfg(debug_assertions)]
         if let Some(outcome) = scripted(&req) {
             return outcome;

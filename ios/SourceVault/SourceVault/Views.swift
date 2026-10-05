@@ -96,6 +96,7 @@ struct ItemView: View {
 struct SecureEntryView: View {
     let request: EntryRequest
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
     @State private var first = ""
     @State private var second = ""
     @State private var third = ""
@@ -125,6 +126,9 @@ struct SecureEntryView: View {
         }
         .interactiveDismissDisabled()
         .onDisappear { first = ""; second = ""; third = "" }
+        // The sheet sits above the app's own cover: it covers itself for
+        // the app-switcher snapshot too (review VER-O3, 0f5f21b).
+        .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
     }
 
     /// The Mac panel's rules: a new master password is at least 8

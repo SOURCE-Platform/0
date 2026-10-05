@@ -169,7 +169,10 @@ pub fn join_finish(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
     run(|| {
         let c = lock_core(core);
         let marker = c.vault_dir.join(ATTEMPT_MARKER);
-        if c.state != VaultState::Locked || !marker.exists() || !c.vault_dir.join(crate::VAULT_HEADER_NAME).exists() {
+        // LOCKED, or UNLOCKED if the user already opened it with Face ID
+        // while the ACK was in flight (review VER-O1, 0f5f21b).
+        let settled = matches!(c.state, VaultState::Locked | VaultState::Unlocked);
+        if !settled || !marker.exists() || !c.vault_dir.join(crate::VAULT_HEADER_NAME).exists() {
             return Err(ErrorCode::BadState);
         }
         std::fs::remove_file(marker).map_err(|_| ErrorCode::Internal)?;
@@ -200,6 +203,7 @@ pub fn join_abort(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
 fn discard(dir: &Path) {
     identity::wipe(dir);
     crate::keychain::remove_item(PEER_ENDPOINT_ITEM);
+    crate::keychain::remove_floor();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for e in entries.flatten() {
             let _ = if e.path().is_dir() { std::fs::remove_dir_all(e.path()) } else { std::fs::remove_file(e.path()) };

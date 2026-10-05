@@ -280,11 +280,16 @@ fn enrollment_needs_the_master_password() {
     let begun = begin(&fx);
     let secret = begun["secret"].as_str().unwrap().to_string();
     assert_eq!(fx.op(phone.hello(&secret, [8u8; 16]))["ok"], true);
-    let resp = fx.op(json!({"op": "enroll_confirm"}));
-    assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
     fx.push_panel(submitted(b"not the master password"));
     let resp = fx.op(json!({"op": "enroll_confirm"}));
     assert_eq!(err_code(&resp), "WRONG_CREDENTIAL", "{resp}");
+    // A wrong master password keeps the session (with the backoff);
+    // Cancel in the Add Device panel — the Mac's "codes don't match" —
+    // ends it and burns the secret (§5.2, review VER-B1).
+    let resp = fx.op(json!({"op": "enroll_confirm"}));
+    assert_eq!(err_code(&resp), "PANEL_CANCELLED", "{resp}");
+    let resp = fx.op(json!({"op": "enroll_confirm"}));
+    assert_eq!(err_code(&resp), "BAD_STATE", "no retry after Cancel: {resp}");
     assert_eq!(log::read_entries(&fx.dir).unwrap().len(), 1, "no registry entry");
     assert_eq!(fx.state(), vault_helper::state::VaultState::Unlocked);
 }
@@ -298,3 +303,22 @@ fn after_entries_epoch(dir: &std::path::Path, head: &[u8; 32]) -> u64 {
     let _ = head;
     log::read_entries(dir).unwrap().last().map_or(0, |e| e.epoch)
 }
+
+/// A relay cannot churn pairing sessions: at most six begin per minute
+/// (review SEC-B1, 0f5f21b); the QR carries the commitment to the Mac's
+/// half of the code.
+#[test]
+fn pairing_attempts_are_limited_and_committed() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let first = fx.op(json!({"op": "begin_enrollment", "fp": hex::encode(FP)}));
+    assert_eq!(first["commit"].as_str().map(str::len), Some(64), "{first}");
+    // A limit already reached refuses every further session this minute
+    // (the other tests here began some too; the counter is per process).
+    std::env::set_var("OV0_VAULT_ENROLL_BEGINS_PER_MINUTE", "1");
+    let refused = fx.op(json!({"op": "begin_enrollment", "fp": hex::encode(FP)}));
+    std::env::set_var("OV0_VAULT_ENROLL_BEGINS_PER_MINUTE", "1000");
+    assert_eq!(err_code(&refused), "BAD_STATE", "{refused}");
+}
+

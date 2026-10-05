@@ -41,11 +41,14 @@ pub fn offer(store: &VaultStore, remote: &RemoteState) -> Result<Offer, ErrorCod
                 return Err(ErrorCode::ManifestRollback);
             }
             // The floor came from a manifest verified at join (review
-            // SEC-B2), so a second one at its generation, or a successor not
-            // chained to it, is two-signature evidence.
+            // SEC-B2); a second one at its generation, or a successor not
+            // chained to it, is refused.
             let unchained = remote.generation == generation + 1 && crate::crypto::hex::encode(remote.manifest.prev_manifest_hash) != hash;
+            // Refused, never fork evidence: the floor reached this phone
+            // beside the provider path, which §22.12 requires for
+            // COMPROMISED (review SEC-I4, 0f5f21b).
             if (remote.generation == generation && !same) || unchained {
-                return Err(if signed_by_our_registry(store, remote)? { ErrorCode::RegistryFork } else { ErrorCode::SignatureInvalid });
+                return Err(ErrorCode::SignatureInvalid);
             }
         }
     }

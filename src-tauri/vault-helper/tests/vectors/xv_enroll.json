@@ -29,6 +29,7 @@
   },
   "transcript": {
     "agree_pub": "0451a7580833898ea1b183cbd7350a4099078c6ef1c1e18e970cd7683035f25e7d0110522712b0b5a7cff081685486984a94e6831edac46e7360fa9d834a7a81a1",
+    "commit_sha256": "6d0f8bcf77984d16b8f5e88f8c63f09c207310fecd16ccb034d2aa941d561f05",
     "fp": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
     "mac_device_id": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
     "mac_key": "cacacacacacacacacacacacacacacacacacacacacacacacacacacacacacacaca",

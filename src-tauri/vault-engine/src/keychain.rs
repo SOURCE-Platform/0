@@ -222,6 +222,11 @@ pub fn write_floor(floor: &Floor) -> Result<(), ErrorCode> {
     upsert_item(STATE_SERVICE, &body)
 }
 
+/// Remove the floor item (an unfinished phone pairing, `join_ops::discard`).
+pub fn remove_floor() {
+    remove_item(STATE_SERVICE);
+}
+
 const DEFAULT_AUTO_LOCK_MINUTES: u32 = 15;
 pub const AUTO_LOCK_MIN: u32 = 5;
 pub const AUTO_LOCK_MAX: u32 = 60;

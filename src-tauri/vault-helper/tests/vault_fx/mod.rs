@@ -143,6 +143,8 @@ pub fn fx_with_presence(allow: bool) -> Fx {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     // Random per-run namespace + fail-fast prompts (§18 pre-gate).
     vault_helper::test_support::init_test_namespace();
+    // Many synthetic pairings per minute (the production limit is six).
+    std::env::set_var("OV0_VAULT_ENROLL_BEGINS_PER_MINUTE", "1000");
     // Rollback/prefs items are process-global state; start clean.
     vault_helper::test_support::wipe_test_keychain();
     let dir = PathBuf::from(format!(

@@ -40,6 +40,9 @@ pub struct EnrollSession {
     pub fp: [u8; 32],
     secret: [u8; 16],
     pub nonce_e: [u8; 16],
+    /// The registry id the new device will get, fixed at `begin` and
+    /// committed to in the QR with `nonce_e` (review SEC-B1, 0f5f21b).
+    pub new_device_id: [u8; 16],
     pub started: Instant,
     pub failures: u32,
     pub stage: Stage,
@@ -63,6 +66,7 @@ impl EnrollSession {
             fp,
             secret,
             nonce_e,
+            new_device_id: crate::registry::device::random_uuid(),
             started: Instant::now(),
             failures: 0,
             stage: Stage::AwaitingHello,
@@ -103,6 +107,12 @@ impl EnrollSession {
             self.failures += 1;
             Err(ErrorCode::WrongCredential)
         }
+    }
+
+    /// What the QR commits to: the Mac's own transcript inputs, fixed
+    /// before the phone reveals anything (§5.2 v0.5).
+    pub fn commitment(&self) -> [u8; 32] {
+        super::transcript::commitment(&self.nonce_e, &self.new_device_id)
     }
 
     /// The phone's proof for the bundle and ACK routes (constant time).

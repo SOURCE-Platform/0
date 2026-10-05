@@ -122,6 +122,28 @@ fn vault_header_makes_boot_state_locked() {
     assert_eq!(handle.join().unwrap(), 0);
 }
 
+/// F.2b re-review (VER-I4, SEC-I3): the phone's join ops do not exist on
+/// the Mac helper, and a planted pairing marker never makes it wipe
+/// anything at start.
+#[test]
+fn the_helper_has_no_phone_join_ops_and_ignores_a_join_marker() {
+    let dir = test_dir("join");
+    std::fs::write(dir.join("header.json"), b"{}").unwrap();
+    std::fs::write(dir.join("join.attempt"), b"").unwrap();
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let handle = start(config(&dir, 3600), Arc::clone(&shutdown));
+    wait_for_socket(&dir.join("helper.sock"));
+    let (mut stream, hello) = raw_hello(&dir.join("helper.sock"), "app");
+    assert_eq!(hello["state"], "locked", "nothing was wiped at start");
+    for name in ["join_abort", "join_begin", "join_finish"] {
+        assert_eq!(op(&mut stream, name)["error"], "UNKNOWN_OP", "{name}");
+    }
+    assert!(dir.join("header.json").exists());
+    shutdown.store(true, Ordering::SeqCst);
+    drop(stream);
+    assert_eq!(handle.join().unwrap(), 0);
+}
+
 #[test]
 fn same_class_second_hello_replaces_first() {
     let dir = test_dir("replace");

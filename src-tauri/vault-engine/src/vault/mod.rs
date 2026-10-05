@@ -180,8 +180,15 @@ impl VaultCore {
     /// Boot: detect state, parse+ cache the header when a vault exists
     /// (parse failure is cached and surfaced on the unlock path), load
     /// the auto-lock pref (§1.6, Keychain helper-prefs).
+    /// SOURCE Vault's start (vault-ffi): an unfinished pairing is removed
+    /// first. Phone-only — the Mac helper never runs it, so a planted
+    /// marker cannot make it wipe its own keys (review SEC-I3, 0f5f21b).
+    pub fn boot_phone(vault_dir: PathBuf) -> VaultCore {
+        join_ops::recover_at_boot(&vault_dir);
+        Self::boot(vault_dir)
+    }
+
     pub fn boot(vault_dir: PathBuf) -> VaultCore {
-        join_ops::recover_at_boot(&vault_dir); // an unfinished pairing is removed
         let state = crate::state::detect_boot_state(&vault_dir);
         if state == VaultState::Uninitialized && vault_dir.join(recovery_flow::STAGING).exists() {
             // TR-08 / §13.3: an interrupted recovery restarts from scratch —

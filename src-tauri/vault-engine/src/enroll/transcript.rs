@@ -83,6 +83,19 @@ pub fn decode_secret(encoded: &str) -> Option<[u8; 16]> {
 }
 
 pub const PROOF_PREFIX: &[u8] = b"ov0/enroll/proof/v1";
+pub const COMMIT_PREFIX: &[u8] = b"ov0/enroll/commit/v1";
+
+/// The QR's `commit` (review SEC-B1, 0f5f21b): the helper fixes `nonce_e`
+/// and the new device's id before any hello, so neither side's code can be
+/// searched for — a main process relaying the pairing gets one 2^-40 guess
+/// per session, not a choice of replies.
+pub fn commitment(nonce_e: &[u8; 16], new_device_id: &[u8; 16]) -> [u8; 32] {
+    let mut h = Sha256::new();
+    h.update(COMMIT_PREFIX);
+    h.update(nonce_e);
+    h.update(new_device_id);
+    h.finalize().into()
+}
 
 /// The enrollment server's bundle and ACK routes answer only the device
 /// that sent the hello: HMAC-SHA256 keyed by the QR secret over the

@@ -18,7 +18,7 @@ use crate::enroll::session::{EnrollSession, Peer, Stage};
 use crate::enroll::{transcript, wire};
 use crate::errors::ErrorCode;
 use crate::registry::chain::EpochPolicy;
-use crate::registry::device::{random_uuid, DeviceIdentity, PLATFORM_IOS, PLATFORM_MACOS};
+use crate::registry::device::{DeviceIdentity, PLATFORM_IOS, PLATFORM_MACOS};
 use crate::state::VaultState;
 
 /// Registries here carry no recovery epochs to authorize: enrollment
@@ -57,8 +57,12 @@ pub fn begin_enrollment(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcom
         Ok(d) => d,
         Err(e) => return OpOutcome::err(e),
     };
+    if !begin_allowed() {
+        return OpOutcome::err(ErrorCode::BadState); // at most a few per minute
+    }
     let session = EnrollSession::new(fp);
     let response = json!({
+        "commit": hex::encode(session.commitment()),
         "secret": transcript::encode_secret(session.secret()),
         "mac_device_id": hex::encode(me.device_id()),
         // For the QR: the helper's own key, which the transcript binds.
@@ -76,6 +80,31 @@ pub fn enroll_proof(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     let proof = frame.get("proof").and_then(Value::as_str).and_then(hex::decode_array::<32>).unwrap_or([0; 32]);
     let ok = lock_core(core).enroll.as_ref().is_some_and(|s| !s.expired() && s.verify_route_proof(&proof));
     if ok { OpOutcome::ok(json!({})) } else { OpOutcome::err(ErrorCode::WrongCredential) }
+}
+
+/// Pairing attempts per minute: each is one guess at a 40-bit code, so a
+/// relay cannot churn sessions (review SEC-B1, 0f5f21b).
+const BEGINS_PER_MINUTE: usize = 6;
+
+fn begin_allowed() -> bool {
+    use std::collections::VecDeque;
+    use std::time::{Duration, Instant};
+    static BEGUN: Mutex<VecDeque<Instant>> = Mutex::new(VecDeque::new());
+    let mut q = BEGUN.lock().unwrap_or_else(|p| p.into_inner());
+    while q.front().is_some_and(|t| t.elapsed() > Duration::from_secs(60)) {
+        q.pop_front();
+    }
+    let mut limit = BEGINS_PER_MINUTE;
+    // Debug builds: the test suites pair many synthetic phones per minute.
+    #[cfg(debug_assertions)]
+    if let Some(n) = std::env::var("OV0_VAULT_ENROLL_BEGINS_PER_MINUTE").ok().and_then(|v| v.parse().ok()) {
+        limit = n;
+    }
+    if q.len() >= limit {
+        return false;
+    }
+    q.push_back(Instant::now());
+    true
 }
 
 pub fn cancel_enrollment(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
@@ -98,7 +127,7 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     if hello.proto != wire::PROTO_V2 {
         return OpOutcome::err(ErrorCode::ProtocolViolation);
     }
-    let (mut secret, fp, nonce_e) = {
+    let (mut secret, fp, nonce_e, new_id) = {
         let mut c = lock_core(core);
         let Some(session) = c.enroll.as_mut() else {
             return OpOutcome::err(ErrorCode::BadState);
@@ -117,11 +146,11 @@ pub fn enroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
             }
             return OpOutcome::err(ErrorCode::WrongCredential);
         }
-        (*session.secret(), session.fp, session.nonce_e)
+        (*session.secret(), session.fp, session.nonce_e, session.new_device_id)
     };
 
     let peer = match parse_peer(&hello) {
-        Ok(p) => p,
+        Ok(p) => Peer { device_id: new_id, ..p },
         Err(e) => return OpOutcome::err(e),
     };
     let (dir, vault_id) = {
@@ -200,9 +229,9 @@ fn parse_peer(hello: &wire::Hello) -> Result<Peer, ErrorCode> {
         return Err(ErrorCode::InvalidInput);
     }
     Ok(Peer {
-        // The Mac assigns the registry identity: a new device cannot
-        // choose its own device_id (or collide with an enrolled one).
-        device_id: random_uuid(),
+        // The Mac assigns the registry identity (fixed at `begin` and
+        // committed in the QR): a new device cannot choose its own.
+        device_id: [0; 16],
         device_name: hello.name.clone(),
         platform: hello.platform,
         sign_pub,
@@ -261,6 +290,9 @@ fn prove_current_mp(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Result<(), Err
     let outcome = deps.panel.run_with_code(PanelRequest::EnrollConfirm, &code, PANEL_TIMEOUT_PUB);
     emit_panel(deps, false, PanelRequest::EnrollConfirm);
     let PanelOutcome::Submitted(mp) = outcome else {
+        // Cancel in the Add Device panel is the Mac's "codes don't match":
+        // the session ends and its secret is burned (§5.2, review VER-B1).
+        lock_core(core).enroll = None;
         return Err(ErrorCode::PanelCancelled);
     };
     let mut c = lock_core(core);

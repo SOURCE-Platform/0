@@ -425,8 +425,10 @@ helper's signing key); the transcript (v2) binds it; the Mac's code is
 shown only by the helper's own "Add Device" panel at confirm, above the
 master-password field — the main app neither shows nor receives it; the
 phone requires the chain's authorizer to have that key. A main process
-that swaps either side's keys now produces two different codes. This also
-closes the Mac-side half (main enrolling itself), which predated F.2.
+that swaps either side's keys now produces two different codes — given the
+commitment added at §7.1, and subject to the stated screen-overlay limit
+(spec §5.2). This also closes the Mac-side half (main enrolling itself),
+which predated F.2.
 
 | Finding | Disposition | Fix / where | Test |
 |---|---|---|---|
@@ -451,4 +453,35 @@ closes the Mac-side half (main enrolling itself), which predated F.2.
 
 Consequence recorded: SOURCE Mobile (Phase F, transcript v1) can no longer
 pair a vault; its phones re-enroll as SOURCE Vault (§22.3) anyway.
+
+### 7.1 Bounded re-review of the fixes (`0f5f21b`) and closure
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 (re-review) the code could be searched for: main chooses the reply after seeing the phone's hello and churns helper sessions | **Fixed (completes the owner's decision):** the helper fixes `nonce_e` and the new id at `begin` and the QR carries their commitment; the phone refuses a reply that does not open it; at most six `begin_enrollment` per minute. A relay now gets one 2^-40 guess per session | `transcript.rs`, `session.rs`, `enroll_ops.rs`, `join.rs`, main `session.rs`, spec §1.5/§5.1/§5.2 | `a_reply_that_does_not_open_the_commitment_is_refused`, `pairing_attempts_are_limited_and_committed`; XV-ENROLL `commit_sha256` |
+| VER-B1 Cancel in the Add Device panel kept the session | **Fixed:** Cancel ends the session (a wrong MP keeps it, with the backoff); the Devices screen starts over | `enroll_ops.rs`, `DevicesPanel.tsx` | `enrollment_needs_the_master_password` (now expects `BAD_STATE` after Cancel) |
+| SEC-I1 overlay over the helper window | **Stated limit** in spec §5.2 (same class as imitating the MP panel, §1.7) | spec | — |
+| SEC-I2 the phone asked for "match" before the window existed | **Fixed:** the code stays on screen; the bundle is fetched in the background and used only after "They match" | `PairingFlow.swift`, `PairingViews.swift` | simulator build |
+| SEC-I3 / VER-O2 boot clean-up in the Mac helper | **Fixed:** `VaultCore::boot_phone` (vault-ffi only); the helper never runs it | `vault/mod.rs`, `vault-ffi/src/engine.rs` | `the_helper_has_no_phone_join_ops_and_ignores_a_join_marker` |
+| SEC-I4 floor conflict → COMPROMISED | **Fixed:** refused (`SIGNATURE_INVALID`), never fork evidence. Residual: a floor signed by a device and never committed can wedge a new phone until it is re-paired (recorded) | `fetch.rs` | — |
+| VER-I1 envelope test could not fail on the old code | **Fixed:** a real envelope of the relay's own key with a checkpoint under it | — | `a_valid_envelope_beside_the_index_is_never_opened` |
+| VER-I2 object-hash test hit a random role | **Fixed:** the password wrap, found through the signed index | — | `the_password_wrap_changed_under_its_hash_is_refused` |
+| VER-I3 floor untested | **Open (recorded):** needs a provider fixture on the Mac side of a join | — | — |
+| VER-I4 helper refusal and main proof gate untested | **Helper fixed** (IPC test); main's gate test **open** (needs a TLS client in the main crate's tests) | — | as above |
+| VER-I5 / SEC-O3 op table and diagram | **Fixed** | spec | — |
+| VER-O1 `join_finish` after an early unlock | **Fixed:** LOCKED or UNLOCKED | `join_ops.rs` | — |
+| VER-O3 sheet above the cover | **Fixed:** the entry sheet covers itself when not active | `Views.swift` | — |
+| VER-O4 `enroll_proof` not in the phone denylist test | **Fixed** | `catalogue.rs` | — |
+| VER-O5 / SEC-O4 floor Keychain item after discard | **Fixed:** removed by `discard` | `join_ops.rs`, `keychain.rs` | — |
+| VER-O7 copy | **Fixed** (panel "Press OK only if the codes match; otherwise Cancel"; "Scan this with SOURCE Vault") | — | — |
+| VER-O8 untested small fixes | **Fixed** | — | `a_bad_qr_creates_nothing_and_a_foreign_session_is_refused` |
+| VER-O9 Add Device panel without a code | **Fixed:** refused | helper `panel/mod.rs` | — |
+| SEC-O2 idle timer left off | **Fixed:** reset when the pairing screen goes away | `PairingViews.swift` | — |
+| VER-O6 revoked signer of the floor | accepted (an honest Mac's kept state may be signed by a since-revoked device); bounded by SEC-I4's refusal | — | — |
+
+Targeted runs: `phone_join` (11), `phone_join_forgery` (4), `enrollment`
+(10), `ipc` (8), `xv_vectors` (6), `vault-engine` lib (44), `vault-ffi`
+(3 + 6), main type-check, SOURCE Vault simulator tests (2). **F.2b steps
+4–5 are closed in code; what remains is the device run on the owner's
+iPhone (IO tests), with synthetic data.**
 

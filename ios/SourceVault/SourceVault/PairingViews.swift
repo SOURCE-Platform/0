@@ -19,15 +19,17 @@ struct PairingView: View {
             case .contacting:
                 ProgressView("Contacting your Mac…")
             case .compare(let code):
-                Text("Does the Source Vault window on your Mac show this code?")
+                Text("On your Mac, click Continue. The Source Vault window will show a code and ask for your master password.")
                     .multilineTextAlignment(.center)
                 Text(code).font(.system(.largeTitle, design: .monospaced)).bold()
+                Text("Tap “They match” only when the Source Vault window shows this exact code.")
+                    .font(.footnote).multilineTextAlignment(.center)
                 HStack {
                     Button("Codes don't match", role: .destructive) { flow.codesMatch(false) }
                     Button("They match") { flow.codesMatch(true) }.buttonStyle(.borderedProminent)
                 }
             case .waiting:
-                ProgressView("On your Mac, click Continue. The Source Vault window shows the code and asks for your master password.")
+                ProgressView("Waiting for your Mac…")
             case .finishing:
                 ProgressView("Bringing your vault to this iPhone…")
             case .done:
@@ -38,6 +40,7 @@ struct PairingView: View {
             }
         }
         .padding()
+        .onDisappear { flow.leave() }
     }
 }
 

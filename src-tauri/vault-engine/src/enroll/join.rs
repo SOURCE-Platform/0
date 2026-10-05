@@ -30,6 +30,9 @@ pub struct Qr {
     /// SHA-256 of the authorizing helper's SE signing key (transcript v2,
     /// owner decision 2026-10-03).
     pub mac_key: String,
+    /// SHA-256 commitment to the Mac's `nonce_e` and the id it will assign
+    /// (review SEC-B1, 0f5f21b): checked against the hello reply.
+    pub commit: String,
     pub name: String,
 }
 
@@ -38,6 +41,7 @@ pub struct Parsed {
     fp: [u8; 32],
     mac_device_id: [u8; 16],
     mac_key: [u8; 32],
+    commit: [u8; 32],
     secret: zeroize::Zeroizing<[u8; 16]>,
 }
 
@@ -49,6 +53,7 @@ pub fn parse(qr: &Qr) -> Result<Parsed, ErrorCode> {
         fp: hex::decode_array::<32>(&qr.fp).ok_or(ErrorCode::InvalidInput)?,
         mac_device_id: hex::decode_array::<16>(&qr.mac_device_id).ok_or(ErrorCode::InvalidInput)?,
         mac_key: hex::decode_array::<32>(&qr.mac_key).ok_or(ErrorCode::InvalidInput)?,
+        commit: hex::decode_array::<32>(&qr.commit).ok_or(ErrorCode::InvalidInput)?,
         secret: zeroize::Zeroizing::new(transcript::decode_secret(&qr.secret).ok_or(ErrorCode::InvalidInput)?),
     })
 }
@@ -67,6 +72,7 @@ pub enum JoinStage {
 pub struct JoinSession {
     pub fp: [u8; 32],
     pub mac_key: [u8; 32],
+    pub commit: [u8; 32],
     pub secret: zeroize::Zeroizing<[u8; 16]>,
     pub mac_device_id: [u8; 16],
     pub nonce_n: [u8; 16],
@@ -106,6 +112,7 @@ pub fn begin(qr: &Qr, p: Parsed, me: &SeDevice) -> Result<(JoinSession, Value), 
     let session = JoinSession {
         fp: p.fp,
         mac_key: p.mac_key,
+        commit: p.commit,
         secret: p.secret,
         mac_device_id: p.mac_device_id,
         nonce_n,
@@ -134,6 +141,12 @@ pub fn hello_reply(s: &mut JoinSession, me: &SeDevice, reply: HelloReply) -> Res
     }
     s.reply = Some(reply);
     let (new_id, nonce_e, _) = s.reply_ids()?;
+    // The reply must open the QR's commitment: the Mac's half of the code
+    // was fixed before this phone revealed its own.
+    if transcript::commitment(&nonce_e, &new_id) != s.commit {
+        s.reply = None;
+        return Err(ErrorCode::ProtocolViolation);
+    }
     let t = transcript::transcript(&Binding {
         fp: &s.fp,
         mac_key: &s.mac_key,
