@@ -54,7 +54,11 @@ final class AppModel: ObservableObject {
     /// A pairing flow on this engine; ends by refreshing the state.
     @MainActor func pairing() -> PairingFlow? {
         guard let engine else { return nil }
-        return PairingFlow(engine: engine) { [weak self] in self?.refresh() }
+        return PairingFlow(engine: engine, onDone: { [weak self] in self?.refresh() }, onFailed: { [weak self] message in
+            self?.items = []
+            self?.message = message
+            self?.refresh()
+        })
     }
 
     func lock() {

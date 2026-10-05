@@ -187,8 +187,14 @@ pub fn join_abort(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
         let mut c = lock_core(core);
         let dir = c.vault_dir.clone();
         let attempt = dir.join(ATTEMPT_MARKER).exists() || c.provider.join.is_some();
-        if !attempt || c.vk.is_some() || !matches!(c.state, VaultState::Uninitialized | VaultState::Locked) {
+        if !attempt || !matches!(c.state, VaultState::Uninitialized | VaultState::Locked | VaultState::Unlocked) {
             return Err(ErrorCode::BadState);
+        }
+        // The user may already have opened it while the ACK was in flight:
+        // lock first, so nothing resident survives the discard (review
+        // SEC-I1, 1e83714).
+        if c.vk.is_some() {
+            let _ = c.lock(super::LockReason::Explicit);
         }
         c.provider.join = None;
         c.store = None;

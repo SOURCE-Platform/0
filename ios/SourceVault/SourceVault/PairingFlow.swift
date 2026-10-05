@@ -21,10 +21,12 @@ final class PairingFlow: ObservableObject {
     private var bundle: Task<Any?, Never>?
     private let engine: VaultEngine
     private let onDone: () -> Void
+    private let onFailed: (String) -> Void
 
-    init(engine: VaultEngine, onDone: @escaping () -> Void) {
+    init(engine: VaultEngine, onDone: @escaping () -> Void, onFailed: @escaping (String) -> Void) {
         self.engine = engine
         self.onDone = onDone
+        self.onFailed = onFailed
     }
 
     func scanned(_ text: String) {
@@ -53,6 +55,13 @@ final class PairingFlow: ObservableObject {
             // The Mac sends the bundle only after the user confirms in its
             // Source Vault window; fetch it now, use it only after the tap.
             bundle = Task { try? await client.get("v1/vault/enroll/bundle", timeout: 310)["bundle"] }
+            // The code lives as long as the Mac's 300 s session, no longer
+            // (review SEC-O1, 1e83714).
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 290 * 1_000_000_000)
+                guard let self, case .compare = self.step else { return }
+                await self.fail("Code expired — generate a new one on your Mac.")
+            }
         } catch {
             await fail("Secure channel could not be established.")
         }
@@ -121,6 +130,9 @@ final class PairingFlow: ObservableObject {
         client = nil
         _ = await engine.callAsync(["op": "join_abort"])
         step = .failed(message)
+        // Shown wherever the app is now, even if the pairing screen has
+        // already been replaced (review SEC-I1, 1e83714).
+        onFailed(message)
     }
 
     func restart() {

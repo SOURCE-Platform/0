@@ -30,6 +30,11 @@ struct ContentView: View {
                 }
             }
         }
+        .safeAreaInset(edge: .top) {
+            if model.state == "uninitialized", let message = model.message {
+                Text(message).font(.callout).padding(8).frame(maxWidth: .infinity).background(.yellow.opacity(0.2))
+            }
+        }
         .sheet(item: $model.entry) { SecureEntryView(request: $0) }
         .overlay { CaptureShield() }
     }

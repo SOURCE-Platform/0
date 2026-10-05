@@ -159,3 +159,22 @@ fn an_interrupted_join_is_removed_at_the_next_start() {
     mac.remove_dir();
     phone.remove_dir();
 }
+
+/// Re-review SEC-I1 (1e83714): the user opened the vault before the Mac
+/// accepted the ACK, and the ACK then failed — the abort locks and removes
+/// everything, rather than leaving a vault to vanish at the next start.
+#[test]
+fn an_abort_after_an_early_unlock_locks_and_removes_everything() {
+    let _g = serial();
+    let mac = fx();
+    setup_and_unlock(&mac);
+    let phone = fx();
+    let (bundle, _) = pair_up_to_bundle(&mac, &phone, |_| {});
+    assert_eq!(complete(&phone, &serde_json::to_vec(&bundle).unwrap())["ok"], true);
+    assert_eq!(phone.op(json!({"op": "unlock"}))["ok"], true);
+    assert_eq!(phone.op(json!({"op": "join_abort"}))["ok"], true);
+    nothing_left(&phone);
+    assert!(phone.core.lock().unwrap().vk.is_none(), "no key left resident");
+    mac.remove_dir();
+    phone.remove_dir();
+}

@@ -485,3 +485,19 @@ Targeted runs: `phone_join` (11), `phone_join_forgery` (4), `enrollment`
 4–5 are closed in code; what remains is the device run on the owner's
 iPhone (IO tests), with synthetic data.**
 
+### 7.2 Focused security check of `1e83714` and closure
+
+No blockers. The commitment confirmed to close the code search in both
+directions (one 2^-40 guess per helper session; the rate limit sound and
+debug-only to override).
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-I1 an early unlock + a failed ACK left a vault that vanished at the next start, silently | **Fixed:** `join_abort` locks first and removes an unfinished attempt even when unlocked; a pairing failure is shown app-wide, not only on the pairing screen | `join_ops.rs`, `PairingFlow.swift`, `AppModel.swift`, `Views.swift` | `an_abort_after_an_early_unlock_locks_and_removes_everything` |
+| SEC-O1 the phone's code never expired | **Fixed:** the compare step ends with the Mac's 300 s session (about 36 helper sessions per scan at most) | `PairingFlow.swift` | — |
+| SEC-O2 the release limit itself untested | noted (the override is debug-only; the window logic is tested) | — | — |
+
+**F.2b steps 4–5 are closed.** Remaining for F.2b: the device run on the
+owner's iPhone (IO-01…07, AU-04) with synthetic data, and the
+CryptoKit-only Swift test target (XV-TLV, XV-PEER, XV-HPKE-SE).
+
