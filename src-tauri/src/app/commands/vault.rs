@@ -191,14 +191,12 @@ pub async fn vault_add_login(
     host: String,
     password: String,
 ) -> Result<Value, String> {
-    // A blank host is no host: the helper refuses an empty one.
-    let hosts: Vec<String> = Some(host.trim().to_string()).filter(|h| !h.is_empty()).into_iter().collect();
     call(json!({
         "op": "add_item",
         "kind": "login",
         "title": title,
         "username": username,
-        "hosts": hosts,
+        "hosts": [host],
         "password": password,
     }))
     .await

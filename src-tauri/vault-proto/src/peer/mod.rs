@@ -236,3 +236,8 @@ pub fn verify(prehash: &[u8; 32], sig: &[u8], signer_pub: &[u8; 65]) -> Result<(
 pub fn body_hash(body: &[u8]) -> [u8; 32] {
     Sha256::digest(body).into()
 }
+
+/// Annex A.1: a response with status 1–4 carries the empty body.
+pub fn status_body_ok(status: PeerStatus, body: &[u8]) -> bool {
+    status == PeerStatus::Ok || body == body::empty().as_slice()
+}

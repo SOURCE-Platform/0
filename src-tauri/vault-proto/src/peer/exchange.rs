@@ -89,6 +89,35 @@ impl Objects {
 }
 
 /// `{0x01 state}`: the stored verified `state_get` body, byte for byte.
+impl Objects {
+    /// Strict: a flag header, then chunks `{sha256, offset, total_len,
+    /// bytes}` that lie inside their object, or unavailable `{sha256,
+    /// reason 1–4}` entries.
+    pub fn decode(bytes: &[u8]) -> Result<Objects, ErrorCode> {
+        let d = Doc::parse(bytes)?;
+        let complete = d.entry(0, &[1])?.flag(0x01)?;
+        let mut items = Vec::new();
+        for i in 1..d.len() {
+            let e = d.entry(i, &[1, 2, 3, 4, 5])?;
+            let sha256 = e.fixed(0x01)?;
+            items.push(match (e.has(0x02), e.has(0x03), e.opt(0x04), e.opt(0x05)) {
+                (true, true, Some(b), None) => {
+                    let (offset, total_len) = (e.uint(0x02)?, e.uint(0x03)?);
+                    if offset.checked_add(b.len() as u64).is_none_or(|end| end > total_len) {
+                        return Err(bad());
+                    }
+                    ObjectItem::Chunk { sha256, offset, total_len, bytes: b.to_vec() }
+                }
+                (false, false, None, Some([r])) if (1..=4).contains(r) => ObjectItem::Unavailable { sha256, reason: *r },
+                _ => return Err(bad()),
+            });
+        }
+        let o = Objects { complete, items };
+        check_roundtrip(o.encode(), bytes)?;
+        Ok(o)
+    }
+}
+
 pub fn encode_state(state: &[u8]) -> Vec<u8> {
     encode_document(&[entry(&[(0x01, state.to_vec())])])
 }
@@ -234,6 +263,10 @@ impl Revs {
                 (None, Some(id), Some([r])) if !put => unavailable.push((id.try_into().map_err(|_| bad())?, *r)),
                 _ => return Err(bad()),
             }
+        }
+        // Unavailable entries follow all objects, ascending (annex A.3.4).
+        if unavailable.windows(2).any(|w| w[0].0 >= w[1].0) {
+            return Err(bad());
         }
         let r = Revs { complete, objects, unavailable };
         check_roundtrip(r.encode(), bytes)?;

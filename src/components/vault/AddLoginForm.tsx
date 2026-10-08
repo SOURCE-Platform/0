@@ -18,7 +18,8 @@ export function AddLoginForm({
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const complete = title.trim() !== "" && password !== "";
+  // The vault requires a host (spec §8.1: 1–20 urls).
+  const complete = title.trim() !== "" && host.trim() !== "" && password !== "";
 
   async function submit() {
     if (!complete || busy) return;

@@ -585,3 +585,61 @@ exists; it must be removed (or the app deleted) before any real use.
   `xv_peer.json` is new.
 - `xcodebuild test -scheme SourceVault` on the simulator: 12 passed, of
   which 10 are XV and 2 are EngineTests.
+
+### 8.1 Review of `9d7fc3d` (spec + verification) — reconciliation in progress
+
+No blockers. Done so far:
+
+- `Objects::decode` (strict) and `peer::status_body_ok` in vault-proto.
+- Unavailable revs entries must ascend.
+- VER-I1: the blank-host change did not work, because the vault requires
+  1–20 urls (§8.1). The Mac form now requires Host, and the Rust change
+  is reverted. §7.3's row is superseded.
+
+**Still to do** (all verified against the repo and accepted; no design
+change):
+
+- **Annex errata:**
+  - A.3.1: the hello *request* carries the empty body (matches VER-I3 and
+    `ops.rs`; SPEC-I1).
+  - A.3.2: base64url without padding; item encodings; `vk_generation`
+    checked against the manifest (SPEC-I3, O7).
+  - A.3.4: only requested records appear; unavailable entries come after
+    the objects, ascending (SPEC-I5, I6).
+  - A.1: envelope violations are an unsigned 403; status 4 is for bodies
+    only (SPEC-I7c).
+  - A.3.3: the response `buckets` ascend and are a subset of the request.
+- **Spec:**
+  - add an XV-PEER row to §16.8;
+  - §22.2: "Apple system frameworks only"; XV-HPKE-SE on the simulator is
+    the RFC 9180 known-answer test, and the Secure Enclave legs are
+    §2.12 / E0 evidence (SPEC-I8, VER-I6).
+- **Vectors — regenerate `xv_peer.json`:**
+  - an empty hello request;
+  - a state with mp and rk `recovery_auth`, encoded through a function
+    shared with `remote::canonical`;
+  - an objects page truly truncated (three asked, two answered);
+  - three revs wants, with the unavailable record sorting before the
+    objects;
+  - the Kahn graph A10→B20, A→D40, B→E50, D→C30, plus a FIFO-order
+    invalid batch;
+  - the digest includes the reason-4 record;
+  - a response carriage;
+  - invalid cases for a flag = 2, a Document-wrapped envelope, an empty
+    integer, a non-empty status-4 body and a missing header;
+  - an `expected` outcome per case.
+- **Tests:**
+  - Rust checks the specific error per case, at least N cases, and
+    decodes both state responses.
+  - Swift: flag checks; heads `record_id` width and reasons; a strict
+    base64url; computes the `recovery_auth` digest; hard-codes the
+    envelope prefix; `TLV.document` requires a header; "document length"
+    goes through the parser.
+- **Gate:** check XV tests by name and count, with no skips; pick the
+  simulator from what is available; update the header list.
+- **Small fixes:**
+  - DEVICE_NOT_AUTHORIZED copy shown only on unlock (VER-O2);
+  - phone reveal of card fields (VER-O3);
+  - pairing wording for pin failures;
+  - §8's test-count wording.
+- **Then:** one bounded re-review.
