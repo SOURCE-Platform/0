@@ -74,6 +74,7 @@ struct ItemView: View {
     @Environment(\.scenePhase) private var phase
     let item: ItemSummary
     @State private var password: String?
+    @State private var problem: String?
 
     var body: some View {
         Form {
@@ -82,11 +83,15 @@ struct ItemView: View {
                 LabeledContent("Password", value: password).privacySensitive()
             } else {
                 Button("Show password") {
+                    problem = nil
                     model.reveal(item.id) { answer in
-                        let record = answer["record"] as? [String: Any]
-                        password = record?["password"] as? String ?? answer["password"] as? String
+                        // The engine's reveal answer: `{ref, kind, secret: {password}}`.
+                        let secret = answer["secret"] as? [String: Any]
+                        password = secret?["password"] as? String
+                        if password == nil { problem = AppModel.describe(answer["error"] as? String ?? "REFUSED") }
                     }
                 }
+                if let problem { Text(problem).foregroundStyle(.secondary) }
             }
         }
         .navigationTitle(item.title)

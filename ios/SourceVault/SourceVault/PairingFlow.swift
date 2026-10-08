@@ -62,8 +62,12 @@ final class PairingFlow: ObservableObject {
                 guard let self, case .compare = self.step else { return }
                 await self.fail("Code expired — generate a new one on your Mac.")
             }
+        } catch PairingError.refused {
+            await fail("Your Mac didn't accept this code — generate a new one on your Mac.")
         } catch {
-            await fail("Secure channel could not be established.")
+            // Usually the network: another Wi-Fi, or Local Network access
+            // not (yet) allowed — the first attempt fails while iOS asks.
+            await fail("Couldn't reach your Mac. Check this iPhone is on the same Wi-Fi and allowed under Settings → Privacy & Security → Local Network, then try again.")
         }
     }
 

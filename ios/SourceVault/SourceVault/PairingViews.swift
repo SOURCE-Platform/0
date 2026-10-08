@@ -11,7 +11,7 @@ struct PairingView: View {
         VStack(spacing: 20) {
             switch flow.step {
             case .scan:
-                Text("On your Mac: Settings → Security → Add Device. Then scan the code it shows.")
+                Text("On your Mac: open SOURCE, go to the Vault tab and click Add device. Then scan the code it shows.")
                     .multilineTextAlignment(.center)
                 QRScanner { flow.scanned($0) }
                     .frame(height: 320)

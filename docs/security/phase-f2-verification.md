@@ -501,3 +501,40 @@ debug-only to override).
 owner's iPhone (IO-01…07, AU-04) with synthetic data, and the
 CryptoKit-only Swift test target (XV-TLV, XV-PEER, XV-HPKE-SE).
 
+
+### 7.3 First device run on the owner's iPhone (2026-10-08)
+
+Synthetic data only: a separate debug vault directory on the Mac
+(`OV0_VAULT_DIR`, dev build launched with a clean environment), a
+throwaway master password and recovery name, one fake login
+(`Example Bank`, `example.test`). SOURCE Vault Debug, signed with the free
+account, on the owner's iPhone.
+
+**Passed end to end:** vault created on the Mac → one login added → Add
+device → QR scanned by the phone → hello over the pinned channel → the
+same code on the phone and in the Source Vault window → master password
+in the helper panel → bundle streamed and checked (§22.10) → Face ID →
+ACK verified by the Mac (helper log: "ACK verified, device enrolled") →
+Face ID unlock on the phone → the item listed → its password revealed
+after Face ID.
+
+Problems found and fixed during the run:
+
+| Problem | Fix | Where |
+|---|---|---|
+| The phone revealed nothing: it read `record.password`, the engine answers `secret.password` | reads `secret.password`; a refusal is shown under the button | `Views.swift` |
+| A blank Host on the Mac's add-login form sent `hosts: [""]`, refused as INVALID_INPUT | a blank host is sent as no host | `app/commands/vault.rs` |
+| Unlock on a Mac with the lid closed (Touch ID off) showed the raw code DEVICE_NOT_AUTHORIZED | plain message pointing to the master password | `src/lib/vault.ts` |
+| The phone's scan screen pointed to "Settings → Security" on the Mac | "the Vault tab → Add device" | `PairingViews.swift` |
+| The first attempt failed while iOS was still asking for Local Network access; the message ("Secure channel could not be established") did not say why | network failures name Wi-Fi and Local Network access; a refusal by the Mac says to generate a new code | `PairingFlow.swift` |
+
+Observed, no change: with the lid closed, macOS asks for the login
+password for presence checks (adding an item), as designed for a Mac
+without biometry available.
+
+**Still open for F.2b:** the individual device checks IO-01…07 and AU-04
+were not run as separate cases (this run covered the paired, unlocked
+happy path; IO-04 and IO-06 need F.2d's rotation and publication), and
+the CryptoKit-only Swift test target (XV-TLV, XV-PEER, XV-HPKE-SE). The
+phone keeps this synthetic test vault until F.2d's "Remove this vault"
+exists; it must be removed (or the app deleted) before any real use.

@@ -253,6 +253,8 @@ export function vaultErrorMessage(code: string): string {
       return "The security update didn't finish. The vault is locked; unlock to retry.";
     case "INVALID_INPUT":
       return "That input isn't valid.";
+    case "DEVICE_NOT_AUTHORIZED":
+      return "Touch ID can't be used right now (for example, the lid is closed). Use your master password instead.";
     // v0.4 backup and recovery (§15 copy).
     case "HANDLE_TAKEN":
       return "That recovery name is taken — choose another.";

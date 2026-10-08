@@ -131,4 +131,7 @@ plan; the code it produces goes through the usual milestone review.
   do with the owner:** the device run on the physical iPhone (signing
   with the free account; pairing with the Mac app's Add Device), with
   synthetic data only.
-
+- **First device run passed (2026-10-08).** Pairing, Face ID unlock and a
+  reveal on the owner's iPhone with synthetic data; five small problems
+  found and fixed (phase-f2-verification §7.3). Still to do: IO-01…07 and
+  AU-04 as separate device checks, and the CryptoKit-only Swift tests.
