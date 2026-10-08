@@ -538,3 +538,50 @@ happy path; IO-04 and IO-06 need F.2d's rotation and publication), and
 the CryptoKit-only Swift test target (XV-TLV, XV-PEER, XV-HPKE-SE). The
 phone keeps this synthetic test vault until F.2d's "Remove this vault"
 exists; it must be removed (or the app deleted) before any real use.
+
+## 8. F.2b step 6 — XV-PEER vectors and the CryptoKit-only Swift target
+
+**What was built.**
+
+- `vault-engine/src/crypto/vectors_peer.rs` and `vectors_peer_data.rs` generate
+  `tests/vectors/xv_peer.json` (wire annex A.5). The file holds:
+  - one signed request and response per operation: hello, both `peer_state`
+    modes (a byte-range chunk and a `complete = 0` page with an unavailable
+    entry), heads (two records in one bucket, one with two heads, an empty
+    bucket, a reason-4 record), `peer_revs_get` (a two-record batch in
+    canonical order plus an unavailable record), `peer_revs_put` and its
+    LOCKED reply, `peer_status`, and an unknown operation answered with
+    status 4;
+  - the HTTP carriage entry, the empty body and its hash, and the zero
+    integer;
+  - the heads digest;
+  - a revision graph whose canonical (Kahn) order differs from depth-first
+    order;
+  - fifteen invalid cases, one per A.1 rule.
+- `vault-helper/tests/xv_peer.rs` is the Rust side. Every envelope decodes
+  strictly and verifies under the fixed keys, every body decodes as its
+  operation, and the batch passes `admit::decode_batch`. The digest
+  recomputes, and each invalid case is refused by the decoder it names.
+- `ios/SourceVault/SourceVaultXV` is a hostless unit-test bundle that links
+  neither the engine nor the app (Foundation, CryptoKit, Security only). Its
+  own strict TLV reader, envelope and body checks, `OV0OBJ02` identity
+  parser, Kahn order and heads digest check:
+  - **XV-TLV:** the registry entry hashes; the signing inputs rebuilt by
+    dropping the terminal signature field; the signatures under device A;
+  - **XV-ECDSA:** the low-S rule;
+  - **XV-PEER:** everything above, plus the state body's key order and
+    `state_commit` recomputed from its fields;
+  - **XV-HPKE-SE, the simulator legs:** the RFC 9180 vector opens at the
+    exact suite, and the v2 envelope `info` is rebuilt from its parts. The
+    Secure Enclave legs stay with the §2.12 PoC and the device run.
+- `scripts/phase-f-gate.sh` adds vector freshness and SOURCE Vault's
+  simulator tests.
+
+**Targeted results:**
+
+- `cargo test -p source-vault-helper --test xv_peer --test xv_vectors`:
+  10 passed.
+- `gen_vectors --check`: fresh. The existing families are unchanged; only
+  `xv_peer.json` is new.
+- `xcodebuild test -scheme SourceVault` on the simulator: 12 passed, of
+  which 10 are XV and 2 are EngineTests.

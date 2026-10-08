@@ -50,6 +50,17 @@
                ReferencedContainer = "container:SourceVault.xcodeproj">
             </BuildableReference>
          </TestableReference>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "D32E3E742334AD01B6773BEA"
+               BuildableName = "SourceVaultXV.xctest"
+               BlueprintName = "SourceVaultXV"
+               ReferencedContainer = "container:SourceVault.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
       <CommandLineArguments>
       </CommandLineArguments>

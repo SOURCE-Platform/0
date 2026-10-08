@@ -66,6 +66,20 @@ suite "full helper suite (Phases A–F)" "$T/helper.log" cargo test --no-fail-fa
 # which reads the iOS static library (review SEC-I5 / VER-I1).
 suite "vault engine and SOURCE Vault FFI (F.2b)" "$T/engine.log" \
     bash -c "cargo build -p vault-ffi --target aarch64-apple-ios && cargo test --no-fail-fast -p vault-engine -p vault-ffi"
+# F.2b step 6: vector freshness (XV-PEER included), then SOURCE Vault's
+# simulator tests — the engine wrapper and the CryptoKit-only XV target.
+if cargo run -q -p source-vault-helper --bin gen_vectors -- --check >"$T/vectors.log" 2>&1; then
+    record "vector freshness (gen_vectors --check)" PASS "all committed vectors reproducible"
+else
+    fail "vector freshness (gen_vectors --check)" "$(tail -1 "$T/vectors.log")"
+fi
+if (cd "$ROOT/ios/SourceVault" && xcodebuild test -project SourceVault.xcodeproj -scheme SourceVault \
+        -destination "platform=iOS Simulator,name=${OV0_SIMULATOR:-SourceVault Test iPhone}" \
+        -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO) >"$T/ios.log" 2>&1 && grep -q '\*\* TEST SUCCEEDED \*\*' "$T/ios.log"; then
+    record "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" PASS "$(grep -cE "^Test Case .* passed" "$T/ios.log") passed"
+else
+    fail "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" "$(grep -A2 'Failing tests' "$T/ios.log" | tail -2 | tr '\n' ' ')"
+fi
 
 # --- 3. deployable provider ----------------------------------------------------------------------
 suite "vault-provider service tests (own workspace)" "$T/provider.log" \

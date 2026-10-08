@@ -47,6 +47,7 @@ targets:
     scheme:
       testTargets:
         - SourceVaultTests
+        - SourceVaultXV
   # Unit tests (simulator): xcodebuild test -scheme SourceVault
   #   -destination 'platform=iOS Simulator,name=iPhone 17'
   SourceVaultTests:
@@ -59,4 +60,25 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.racker.source-vault.tests
+        GENERATE_INFOPLIST_FILE: YES
+  # The CryptoKit-only cross-check (spec v0.5 §22.2): links neither the
+  # engine nor the app; reads the committed XV vectors as resources.
+  SourceVaultXV:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: SourceVaultXV
+      - path: ../../src-tauri/vault-helper/tests/vectors/xv_tlv.json
+        buildPhase: resources
+      - path: ../../src-tauri/vault-helper/tests/vectors/xv_ecdsa.json
+        buildPhase: resources
+      - path: ../../src-tauri/vault-helper/tests/vectors/xv_enroll.json
+        buildPhase: resources
+      - path: ../../src-tauri/vault-helper/tests/vectors/xv_peer.json
+        buildPhase: resources
+      - path: ../../src-tauri/poc/hpke-se/vectors/rfc9180-p256-sha256-chacha20poly1305.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.racker.source-vault.xv
         GENERATE_INFOPLIST_FILE: YES

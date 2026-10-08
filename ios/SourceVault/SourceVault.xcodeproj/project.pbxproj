@@ -8,15 +8,25 @@
 
 /* Begin PBXBuildFile section */
 		05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48BCF2CB286287C8B75DD854 /* VaultServices.swift */; };
+		070322959B0AA3B94F1A5531 /* XVPeerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB9B13187B76B2D1E939FD5 /* XVPeerTests.swift */; };
+		0A27E7A42DB888567E6FE83B /* XVHPKETests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5978FB9BAE962487F1227C05 /* XVHPKETests.swift */; };
 		0CB492E7E954821B434D086C /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E0DB7DD1EC28519F1EA2D5C /* Views.swift */; };
+		1580B80EA1E51B7859A66578 /* rfc9180-p256-sha256-chacha20poly1305.json in Resources */ = {isa = PBXBuildFile; fileRef = 687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */; };
 		1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7C53B7D113D72746B717F0 /* PairingClient.swift */; };
 		2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEA2D1E7608412D7A5842AF /* Bridge.swift */; };
 		38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D99DB8E35238A1EE22C1601 /* PairingViews.swift */; };
+		5020952636713E7A5A613A08 /* xv_enroll.json in Resources */ = {isa = PBXBuildFile; fileRef = ED53DEC71C02811674524B49 /* xv_enroll.json */; };
+		554A742858D06C03F062FDF6 /* XVSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD69339BE5069168A88F2FC0 /* XVSupport.swift */; };
+		922B9C4BA779807CF8D87A67 /* XVPeerWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */; };
+		9354FF50CF37C9859B013DA9 /* xv_tlv.json in Resources */ = {isa = PBXBuildFile; fileRef = FBC9E93020CA4A057C1C93AC /* xv_tlv.json */; };
 		A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB648201BE774BB26FB803 /* EngineTests.swift */; };
 		B1438F27C53576568BB3A842 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFDE1D765033C8C76490273 /* AppModel.swift */; };
 		B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */; };
+		BB66C879C957830CAF21A5E5 /* xv_peer.json in Resources */ = {isa = PBXBuildFile; fileRef = F9E321C901440F3947D902C2 /* xv_peer.json */; };
+		C55B457FE1BC51BE8ABDC652 /* xv_ecdsa.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */; };
 		C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */; };
 		CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */; };
+		D2AAB2D64CC7F2498B7A06E3 /* XVRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -31,19 +41,30 @@
 
 /* Begin PBXFileReference section */
 		03CB648201BE774BB26FB803 /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
+		076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVRegistryTests.swift; sourceTree = "<group>"; };
 		0D99DB8E35238A1EE22C1601 /* PairingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViews.swift; sourceTree = "<group>"; };
+		1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_ecdsa.json; sourceTree = "<group>"; };
 		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
 		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3E0DB7DD1EC28519F1EA2D5C /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		48BCF2CB286287C8B75DD854 /* VaultServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultServices.swift; sourceTree = "<group>"; };
+		5978FB9BAE962487F1227C05 /* XVHPKETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVHPKETests.swift; sourceTree = "<group>"; };
+		5AAD6AAC531EFD6C0C4B18C1 /* SourceVaultXV.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultXV.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "rfc9180-p256-sha256-chacha20poly1305.json"; sourceTree = "<group>"; };
 		81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SourceVault.entitlements; sourceTree = "<group>"; };
 		8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingFlow.swift; sourceTree = "<group>"; };
 		9FEA2D1E7608412D7A5842AF /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
 		A77550D0100F86D38E262227 /* SourceVaultTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AD69339BE5069168A88F2FC0 /* XVSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVSupport.swift; sourceTree = "<group>"; };
 		B82655E2306C55BA4CCF478C /* SourceVault.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SourceVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngine.swift; sourceTree = "<group>"; };
+		DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVPeerWire.swift; sourceTree = "<group>"; };
 		E93147EB9D273DD62FF6FC76 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		ED53DEC71C02811674524B49 /* xv_enroll.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_enroll.json; sourceTree = "<group>"; };
 		ED676F66CF9B707A26A99303 /* VaultFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VaultFFI.h; sourceTree = "<group>"; };
+		EDB9B13187B76B2D1E939FD5 /* XVPeerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVPeerTests.swift; sourceTree = "<group>"; };
+		F9E321C901440F3947D902C2 /* xv_peer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_peer.json; sourceTree = "<group>"; };
+		FBC9E93020CA4A057C1C93AC /* xv_tlv.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_tlv.json; sourceTree = "<group>"; };
 		FF7C53B7D113D72746B717F0 /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -53,8 +74,17 @@
 			children = (
 				B82655E2306C55BA4CCF478C /* SourceVault.app */,
 				A77550D0100F86D38E262227 /* SourceVaultTests.xctest */,
+				5AAD6AAC531EFD6C0C4B18C1 /* SourceVaultXV.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		2617464799CF6ABB68D0C585 /* hpke-se */ = {
+			isa = PBXGroup;
+			children = (
+				F6C3A56F2B8F398B708AA056 /* vectors */,
+			);
+			path = "hpke-se";
 			sourceTree = "<group>";
 		};
 		289A52252DE7EE834D0B946C /* VaultAppleCrypto */ = {
@@ -74,6 +104,14 @@
 			path = ../..;
 			sourceTree = "<group>";
 		};
+		3DAA52DB9A3211FA55D888D9 /* tests */ = {
+			isa = PBXGroup;
+			children = (
+				D1F9D882DB5758FDC1BE790C /* vectors */,
+			);
+			path = tests;
+			sourceTree = "<group>";
+		};
 		5DB7DD4607C65CD2DD463D86 /* SourceVaultTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -90,12 +128,34 @@
 			path = Sources;
 			sourceTree = "<group>";
 		};
+		7CDA6D3575557070EF5233FC /* SourceVaultXV */ = {
+			isa = PBXGroup;
+			children = (
+				5978FB9BAE962487F1227C05 /* XVHPKETests.swift */,
+				EDB9B13187B76B2D1E939FD5 /* XVPeerTests.swift */,
+				DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */,
+				076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */,
+				AD69339BE5069168A88F2FC0 /* XVSupport.swift */,
+			);
+			path = SourceVaultXV;
+			sourceTree = "<group>";
+		};
 		8A0E04FF3A32F608ACAC21F2 /* src-tauri */ = {
 			isa = PBXGroup;
 			children = (
+				B1EEB13C63F82C286BE3FA0F /* poc */,
 				ECF7EEB12D855C28C92CFBA1 /* vault-apple-crypto */,
+				FD8E61266702854BB279A117 /* vault-helper */,
 			);
 			path = "src-tauri";
+			sourceTree = "<group>";
+		};
+		B1EEB13C63F82C286BE3FA0F /* poc */ = {
+			isa = PBXGroup;
+			children = (
+				2617464799CF6ABB68D0C585 /* hpke-se */,
+			);
+			path = poc;
 			sourceTree = "<group>";
 		};
 		B70A90B0FC912CC0CF0F078E /* SourceVault */ = {
@@ -122,8 +182,20 @@
 				33A8D8A06653BD61DEF97E0B /* 0 */,
 				B70A90B0FC912CC0CF0F078E /* SourceVault */,
 				5DB7DD4607C65CD2DD463D86 /* SourceVaultTests */,
+				7CDA6D3575557070EF5233FC /* SourceVaultXV */,
 				07AA382B4211E4D227C272BD /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		D1F9D882DB5758FDC1BE790C /* vectors */ = {
+			isa = PBXGroup;
+			children = (
+				1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */,
+				ED53DEC71C02811674524B49 /* xv_enroll.json */,
+				F9E321C901440F3947D902C2 /* xv_peer.json */,
+				FBC9E93020CA4A057C1C93AC /* xv_tlv.json */,
+			);
+			path = vectors;
 			sourceTree = "<group>";
 		};
 		ECF7EEB12D855C28C92CFBA1 /* vault-apple-crypto */ = {
@@ -132,6 +204,22 @@
 				6A9758F77D712201FDD6D7EA /* Sources */,
 			);
 			path = "vault-apple-crypto";
+			sourceTree = "<group>";
+		};
+		F6C3A56F2B8F398B708AA056 /* vectors */ = {
+			isa = PBXGroup;
+			children = (
+				687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */,
+			);
+			path = vectors;
+			sourceTree = "<group>";
+		};
+		FD8E61266702854BB279A117 /* vault-helper */ = {
+			isa = PBXGroup;
+			children = (
+				3DAA52DB9A3211FA55D888D9 /* tests */,
+			);
+			path = "vault-helper";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -154,6 +242,24 @@
 			productName = SourceVault;
 			productReference = B82655E2306C55BA4CCF478C /* SourceVault.app */;
 			productType = "com.apple.product-type.application";
+		};
+		D32E3E742334AD01B6773BEA /* SourceVaultXV */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6D1BE9AE4A84358193CF97EC /* Build configuration list for PBXNativeTarget "SourceVaultXV" */;
+			buildPhases = (
+				62579399390F6FD88C488314 /* Sources */,
+				921044DBC4901A07F7E51F0A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SourceVaultXV;
+			packageProductDependencies = (
+			);
+			productName = SourceVaultXV;
+			productReference = 5AAD6AAC531EFD6C0C4B18C1 /* SourceVaultXV.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		DC8BA1F6A9B62661037A935A /* SourceVaultTests */ = {
 			isa = PBXNativeTarget;
@@ -186,6 +292,10 @@
 						DevelopmentTeam = 9RGW34CMA2;
 						ProvisioningStyle = Automatic;
 					};
+					D32E3E742334AD01B6773BEA = {
+						DevelopmentTeam = 9RGW34CMA2;
+						ProvisioningStyle = Automatic;
+					};
 					DC8BA1F6A9B62661037A935A = {
 						DevelopmentTeam = 9RGW34CMA2;
 						ProvisioningStyle = Automatic;
@@ -208,9 +318,25 @@
 			targets = (
 				1C567B00A235FD44DD121199 /* SourceVault */,
 				DC8BA1F6A9B62661037A935A /* SourceVaultTests */,
+				D32E3E742334AD01B6773BEA /* SourceVaultXV */,
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		921044DBC4901A07F7E51F0A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1580B80EA1E51B7859A66578 /* rfc9180-p256-sha256-chacha20poly1305.json in Resources */,
+				C55B457FE1BC51BE8ABDC652 /* xv_ecdsa.json in Resources */,
+				5020952636713E7A5A613A08 /* xv_enroll.json in Resources */,
+				BB66C879C957830CAF21A5E5 /* xv_peer.json in Resources */,
+				9354FF50CF37C9859B013DA9 /* xv_tlv.json in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
 		07F9EF3B92ACF58F5F8F828A /* Build the vault engine (vault-ffi) */ = {
@@ -251,6 +377,18 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		62579399390F6FD88C488314 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0A27E7A42DB888567E6FE83B /* XVHPKETests.swift in Sources */,
+				070322959B0AA3B94F1A5531 /* XVPeerTests.swift in Sources */,
+				922B9C4BA779807CF8D87A67 /* XVPeerWire.swift in Sources */,
+				D2AAB2D64CC7F2498B7A06E3 /* XVRegistryTests.swift in Sources */,
+				554A742858D06C03F062FDF6 /* XVSupport.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		F70A352D27962AD551768F12 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -270,6 +408,22 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1728BE575E46ACEF377BE7BD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault.xv";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		50D58BB389935F1A7B68B885 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -353,6 +507,22 @@
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SourceVault.app/SourceVault";
+			};
+			name = Debug;
+		};
+		7C6E79DE7B242E66F42066BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.racker.source-vault.xv";
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
@@ -489,6 +659,15 @@
 			buildConfigurations = (
 				50D58BB389935F1A7B68B885 /* Debug */,
 				C74DA8279DAEE9A4635B9639 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		6D1BE9AE4A84358193CF97EC /* Build configuration list for PBXNativeTarget "SourceVaultXV" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7C6E79DE7B242E66F42066BC /* Debug */,
+				1728BE575E46ACEF377BE7BD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

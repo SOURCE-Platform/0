@@ -29,6 +29,7 @@ pub fn all_vectors() -> Vec<(&'static str, serde_json::Value)> {
     let mut all = crypto::vectors::all();
     all.push(("xv_enroll", enroll::vectors::xv_enroll()));
     all.extend(crypto::vectors_v04::all());
+    all.push(("xv_peer", crypto::vectors_peer::xv_peer()));
     all
 }
 

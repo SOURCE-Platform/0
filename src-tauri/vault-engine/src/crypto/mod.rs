@@ -7,6 +7,8 @@ pub mod kdf;
 pub mod record;
 pub mod rotate;
 pub mod vectors;
+pub mod vectors_peer;
+mod vectors_peer_data;
 pub mod vectors_v04;
 pub mod wrap;
 
