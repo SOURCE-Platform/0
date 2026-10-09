@@ -64,6 +64,8 @@ pub struct Sessions {
     pub peer_in: Vec<(crate::peer::verify::Accepted, Transfer)>,
     /// A phone's enrollment in progress (§22.10, `join_ops`).
     pub join: Option<crate::enroll::join::JoinSession>,
+    /// The phone's peer exchange in progress (§22.8, `peer_sync_ops`).
+    pub peer_client: Option<crate::peer::client::Exchange>,
 }
 
 /// Wire annex A.2.2: at most two peer sessions open, idle 60 s.
@@ -80,6 +82,7 @@ impl Sessions {
         self.peer.clear(); // lock aborts a peer session (annex A.2.2)
         self.peer_in.clear();
         self.join = None; // and a pairing in progress
+        self.peer_client = None; // and a phone's peer exchange
     }
 
     pub fn peer_sessions(&self) -> usize {
@@ -138,6 +141,10 @@ impl VaultCore {
         let mut v = serde_json::json!({ "ok": true, "error": null, "state": self.reported_state().as_str(), "vault_open": self.vk.is_some() });
         if self.behind {
             v["behind"] = serde_json::json!(true);
+        }
+        // §22.9: this phone was removed by its Mac (locked; reads only).
+        if let Some(r) = crate::peer::client::removal::load(&self.vault_dir) {
+            v["removed"] = serde_json::json!({ "published": r.published });
         }
         v
     }

@@ -19,6 +19,10 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     if AUTHORING.contains(&op) && lock_core(core).behind {
         return OpOutcome::err(ErrorCode::VaultBehind);
     }
+    // §22.9: a phone its Mac removed authors nothing.
+    if AUTHORING.contains(&op) && crate::peer::client::removal::load(&lock_core(core).vault_dir).is_some() {
+        return OpOutcome::err(ErrorCode::PeerNotPermitted);
+    }
     // §22.4: a key no SE commitment vouches for serves reads only, for the
     // whole unlocked session (an allowlist: anything else is refused).
     if lock_core(core).unverified_key && !vk_commit::UNVERIFIED_OPS.contains(&op) {
@@ -110,6 +114,9 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "join_complete" => join_ops::join_complete(core, frame),
         "join_finish" => join_ops::join_finish(core),
         "join_abort" => join_ops::join_abort(core),
+        // The phone's peer exchange (§22.8).
+        "peer_sync_begin" => peer_sync_ops::peer_sync_begin(core),
+        "peer_sync_step" => peer_sync_ops::peer_sync_step(core, frame, deps),
         "registry_status" => registry_status::registry_status(core),
         "revoke_device" => devices::revoke_device(core, frame, deps),
         "set_auto_lock_minutes" => prefs::set_auto_lock_minutes(core, frame),

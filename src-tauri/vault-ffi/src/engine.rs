@@ -26,6 +26,8 @@ pub const IOS_OPS: &[&str] = &[
     "stream_cancel", "sign_provider_request", "session_close", "quarantine_status", "remote_update_status",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
+    // F.2c: the phone's peer exchange (§22.8).
+    "peer_sync_begin", "peer_sync_step",
 ];
 
 /// The helper's frame cap (spec §1.4, `ipc/framing.rs`), kept here too.

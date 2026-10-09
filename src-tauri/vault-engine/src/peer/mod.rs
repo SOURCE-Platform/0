@@ -5,6 +5,7 @@
 //! operation. Nothing here signs a caller-supplied digest.
 
 pub mod admit;
+pub mod client;
 pub mod graph;
 pub mod inbox;
 pub mod ops;

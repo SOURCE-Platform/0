@@ -135,7 +135,7 @@ fn the_helper_has_no_phone_join_ops_and_ignores_a_join_marker() {
     wait_for_socket(&dir.join("helper.sock"));
     let (mut stream, hello) = raw_hello(&dir.join("helper.sock"), "app");
     assert_eq!(hello["state"], "locked", "nothing was wiped at start");
-    for name in ["join_abort", "join_begin", "join_finish"] {
+    for name in ["join_abort", "join_begin", "join_finish", "peer_sync_begin", "peer_sync_step"] {
         assert_eq!(op(&mut stream, name)["error"], "UNKNOWN_OP", "{name}");
     }
     assert!(dir.join("header.json").exists());

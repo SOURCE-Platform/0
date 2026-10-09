@@ -35,6 +35,13 @@ pub fn put(store: &mut VaultStore, vk: &SecretBytes<32>, sender: [u8; 16], body:
         return Err(ErrorCode::PeerLimit);
     }
     let rows = decode_batch(&batch)?;
+    admit_rows(store, vk, sender, rows)
+}
+
+/// §22.7 admission of a decoded, canonical batch from `sender` — shared by
+/// the Mac (`peer_revs_put`) and the phone (`peer_revs_get` answers): the
+/// closure rule, waiting, open before admit, and the sender as source.
+pub fn admit_rows(store: &mut VaultStore, vk: &SecretBytes<32>, sender: [u8; 16], rows: Vec<RevisionRow>) -> Result<PutCounts, ErrorCode> {
     closed(store, &rows)?;
     let reg = crate::registry::log::read_state(&store.dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
     let gen = store.header.vk_generation;

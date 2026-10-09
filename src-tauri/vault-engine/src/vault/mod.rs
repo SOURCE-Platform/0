@@ -35,6 +35,7 @@ pub mod gate;
 pub mod history;
 pub mod adopt_prompt;
 pub mod peer_serve;
+pub mod peer_sync_ops;
 pub mod prefs;
 pub mod items;
 pub mod join_ops;

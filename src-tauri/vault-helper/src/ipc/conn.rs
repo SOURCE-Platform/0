@@ -120,7 +120,9 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             // The phone's side of enrollment is SOURCE Vault's alone (FFI
             // catalogue §4): a Mac joining a vault is F2-D4, not built, and
             // `join_abort` would wipe a vault directory (review VER-I5).
-            _ if op.starts_with("join_") => crate::errors::ErrorCode::UnknownOp.frame(),
+            // Likewise the requester side of peer sync (§22.8 Direction: the
+            // iPhone requests, the Mac serves).
+            _ if op.starts_with("join_") || op.starts_with("peer_sync_") => crate::errors::ErrorCode::UnknownOp.frame(),
             "get_state" => lock_core(&ctx.core).state_answer(),
             // Already applied by the read side on arrival; answer in order.
             "lock" => ops::ok_with_state(lock_core(&ctx.core).state),
