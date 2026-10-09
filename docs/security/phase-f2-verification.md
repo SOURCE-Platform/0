@@ -523,7 +523,7 @@ Problems found and fixed during the run:
 | Problem | Fix | Where |
 |---|---|---|
 | The phone revealed nothing: it read `record.password`, the engine answers `secret.password` | reads `secret.password`; a refusal is shown under the button | `Views.swift` |
-| A blank Host on the Mac's add-login form sent `hosts: [""]`, refused as INVALID_INPUT | a blank host is sent as no host | `app/commands/vault.rs` |
+| A blank Host on the Mac's add-login form sent `hosts: [""]`, refused as INVALID_INPUT | *superseded (§8.1 VER-I1):* the form now requires Host (§8.1 of the spec requires 1–20 urls) | `AddLoginForm.tsx` |
 | Unlock on a Mac with the lid closed (Touch ID off) showed the raw code DEVICE_NOT_AUTHORIZED | plain message pointing to the master password | `src/lib/vault.ts` |
 | The phone's scan screen pointed to "Settings → Security" on the Mac | "the Vault tab → Add device" | `PairingViews.swift` |
 | The first attempt failed while iOS was still asking for Local Network access; the message ("Secure channel could not be established") did not say why | network failures name Wi-Fi and Local Network access; a refusal by the Mac says to generate a new code | `PairingFlow.swift` |
@@ -557,7 +557,7 @@ exists; it must be removed (or the app deleted) before any real use.
   - the heads digest;
   - a revision graph whose canonical (Kahn) order differs from depth-first
     order;
-  - fifteen invalid cases, one per A.1 rule.
+  - invalid cases, one per A.1 rule (22 after the §8.1 fixes, each with its expected outcome).
 - `vault-helper/tests/xv_peer.rs` is the Rust side. Every envelope decodes
   strictly and verifies under the fixed keys, every body decodes as its
   operation, and the batch passes `admit::decode_batch`. The digest
@@ -583,63 +583,46 @@ exists; it must be removed (or the app deleted) before any real use.
   10 passed.
 - `gen_vectors --check`: fresh. The existing families are unchanged; only
   `xv_peer.json` is new.
-- `xcodebuild test -scheme SourceVault` on the simulator: 12 passed, of
-  which 10 are XV and 2 are EngineTests.
+- `xcodebuild test -scheme SourceVault` on the simulator: 12 passed: 10
+  XV, 1 EngineTests and 1 EncodingTests.
 
-### 8.1 Review of `9d7fc3d` (spec + verification) — reconciliation in progress
+### 8.1 Review of `9d7fc3d` (spec + verification) and fixes
 
-No blockers. Done so far:
+No blockers. Every finding was checked against the repository before it
+was accepted.
 
-- `Objects::decode` (strict) and `peer::status_body_ok` in vault-proto.
-- Unavailable revs entries must ascend.
-- VER-I1: the blank-host change did not work, because the vault requires
-  1–20 urls (§8.1). The Mac form now requires Host, and the Rust change
-  is reverted. §7.3's row is superseded.
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SPEC-I1 hello request body: the annex and the vector carry floors; the shipped Mac requires the empty body (VER-I3) | **Accepted; annex erratum.** A.3.1: the request is the empty body, the floors are the response. Vector regenerated | annex A.3.1, `vectors_peer.rs` | both XV sides check the empty request |
+| SPEC-I2 / VER-I5 `peer_state` answers unchecked in Rust; state body hand-copied | **Fixed.** `Objects::decode` (strict, chunk inside its object, reason 1–4). The state body comes from the shipped encoder `remote::encode_fields`, now shared with `canonical`. Rust recomputes the commitment and re-encodes byte-exact | `vault-proto/peer/exchange.rs`, `sync/remote.rs` | `every_exchange_verifies_and_decodes` |
+| SPEC-I3 `recovery_auth` empty; base64 variant unstated | **Fixed; annex clarified.** mp (2) and rk (3) entries. Swift computes the §11.2 digest itself and decodes base64url strictly. A.3.2 now states base64url without padding, the item encodings and the manifest checks (SPEC-O7) | annex A.3.2, `vectors_peer.rs`, `XVSupport.swift`, `XVPeerTests.swift` | both sides |
+| SPEC-I4 / VER-O4 the `complete = 0` page truncated nothing | **Fixed.** Three objects asked, two answered | `vectors_peer.rs` | both sides check "fewer answered than asked" |
+| SPEC-I5 unrequested unavailable record | **Fixed.** Three wants; the annex says only requested records appear | annex A.3.4 | — |
+| SPEC-I6 position of unavailable entries unstated | **Annex clarified** (after all objects, ascending). `Revs::decode` checks the ascent. The vector's unavailable record sorts before the object records. Invalid case "unavailable before an object" | annex A.3.4, `exchange.rs`, `XVPeerWire.swift` | invalid cases |
+| SPEC-I7 / VER-I3 / VER-I4 invalid cases incomplete, no outcome, incidental refusals | **Fixed.** 22 cases with an `expected` outcome. New cases: flag = 2, a Document-wrapped envelope, an empty integer, a body without its header entry, a non-empty status-4 body, a FIFO-ordered batch. Rust asserts the specific error for each outcome. "Document length" goes through the parser. Swift `TLV.document` requires a header entry. A.1 erratum: status 4 is for bodies; envelope violations are an unsigned 403 | annex A.1, `vectors_peer_data.rs`, `xv_peer.rs`, Swift target | `every_invalid_case_is_refused_by_its_decoder`, `testEveryInvalidCaseIsRefused` |
+| VER-I2 Kahn vs first-in-first-out not separated | **Fixed.** Graph A10→B20, A→D40, B→E50, D→C30: canonical A,B,D,C,E; FIFO A,B,D,E,C; depth-first A,B,E,D,C; not id order (SPEC-O2) | `vectors_peer_data.rs` | `the_three_orders_differ`, `testCanonicalOrderDiffersFromDepthFirst` |
+| SPEC-I8 / VER-I6 XV-HPKE-SE claims; prefix read from the file | **Fixed.** §22.2 clarified: Apple system frameworks; the RFC 9180 known-answer vector; SE legs are §2.12 / E0 evidence. Swift hard-codes `ov0/envelope/v2`; the seal/open is labelled a framing self-check | spec §22.2, `XVHPKETests.swift` | — |
+| SPEC-I9 / VER-I7 gate passes vacuously | **Fixed.** The gate checks ten XV tests by name and no skipped test case. The simulator is `OV0_SIMULATOR` or the first available iPhone. The header list is updated. A dry run on this Mac passed and the by-name check caught a missing-name case | `scripts/phase-f-gate.sh` | dry run |
+| VER-I1 blank Host "fixed" but still refused (§8.1 requires 1–20 urls) | **Fixed properly.** The Mac form requires Host; the Rust change is reverted. §7.3's row is superseded | `AddLoginForm.tsx` | — |
+| SPEC-O1 no XV-PEER row in §16.8 | **Fixed** | spec §16.8 | — |
+| SPEC-O3 digest without the reason-4 record | **Fixed.** The reason-4 record (65 heads) is in the digest | `vectors_peer_data.rs` | both sides |
+| SPEC-O4 Swift checks loose | **Fixed.** Flags, heads `record_id` width, reasons 1–4, ascending buckets | `XVPeerWire.swift` | — |
+| SPEC-O5 response carriage | **Fixed.** Every request and response has its carriage entry | `vectors_peer.rs` | both sides |
+| SPEC-O6 "CryptoKit-only" uses Security | **Accepted**, spec wording | spec §22.2 | — |
+| SPEC-O8 recovery-epoch proof not checked in Swift | **Deferred** (not claimed; XV-RECOVERY-EPOCH is checked in Rust) | — | — |
+| VER-O1 simulator name | **Fixed** with the gate | — | — |
+| VER-O2 DEVICE_NOT_AUTHORIZED copy everywhere | **Fixed.** The Touch ID advice is shown only on Unlock; elsewhere a neutral message | `src/lib/vault.ts`, `VaultPage.tsx` | — |
+| VER-O3 card reveal on the phone | **Fixed.** Shows number · expiry · cardholder | `Views.swift` | — |
+| VER-O5 Swift traps on an empty document | **Fixed** (throws) | `XVSupport.swift` | invalid case |
+| VER-O6 wording | **Fixed.** Test count: 12 = 10 XV, 1 EngineTests, 1 EncodingTests. Pairing failure copy names "couldn't confirm it is your Mac" | §8, `PairingFlow.swift` | — |
 
-**Still to do** (all verified against the repo and accepted; no design
-change):
+**Targeted results after the fixes:**
 
-- **Annex errata:**
-  - A.3.1: the hello *request* carries the empty body (matches VER-I3 and
-    `ops.rs`; SPEC-I1).
-  - A.3.2: base64url without padding; item encodings; `vk_generation`
-    checked against the manifest (SPEC-I3, O7).
-  - A.3.4: only requested records appear; unavailable entries come after
-    the objects, ascending (SPEC-I5, I6).
-  - A.1: envelope violations are an unsigned 403; status 4 is for bodies
-    only (SPEC-I7c).
-  - A.3.3: the response `buckets` ascend and are a subset of the request.
-- **Spec:**
-  - add an XV-PEER row to §16.8;
-  - §22.2: "Apple system frameworks only"; XV-HPKE-SE on the simulator is
-    the RFC 9180 known-answer test, and the Secure Enclave legs are
-    §2.12 / E0 evidence (SPEC-I8, VER-I6).
-- **Vectors — regenerate `xv_peer.json`:**
-  - an empty hello request;
-  - a state with mp and rk `recovery_auth`, encoded through a function
-    shared with `remote::canonical`;
-  - an objects page truly truncated (three asked, two answered);
-  - three revs wants, with the unavailable record sorting before the
-    objects;
-  - the Kahn graph A10→B20, A→D40, B→E50, D→C30, plus a FIFO-order
-    invalid batch;
-  - the digest includes the reason-4 record;
-  - a response carriage;
-  - invalid cases for a flag = 2, a Document-wrapped envelope, an empty
-    integer, a non-empty status-4 body and a missing header;
-  - an `expected` outcome per case.
-- **Tests:**
-  - Rust checks the specific error per case, at least N cases, and
-    decodes both state responses.
-  - Swift: flag checks; heads `record_id` width and reasons; a strict
-    base64url; computes the `recovery_auth` digest; hard-codes the
-    envelope prefix; `TLV.document` requires a header; "document length"
-    goes through the parser.
-- **Gate:** check XV tests by name and count, with no skips; pick the
-  simulator from what is available; update the header list.
-- **Small fixes:**
-  - DEVICE_NOT_AUTHORIZED copy shown only on unlock (VER-O2);
-  - phone reveal of card fields (VER-O3);
-  - pairing wording for pin failures;
-  - §8's test-count wording.
-- **Then:** one bounded re-review.
+- `xv_peer` (5) and `xv_vectors` (6) pass, and `gen_vectors --check` is
+  fresh.
+- vault-proto passes.
+- The peer and pairing suites pass:
+  - `peer_cutoff`, `peer_exchange`, `peer_followups`, `peer_hardening`,
+    `peer_ipc`, `peer_serve`, `phone_join`;
+  - vault-tests `peer_state`.
+- On the simulator, SOURCE Vault passes 12 of 12.

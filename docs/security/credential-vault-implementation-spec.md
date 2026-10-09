@@ -3921,6 +3921,7 @@ CryptoKit-only Swift target of §22.2 stays the independent consumer):
 | XV-ECDH/HPKE | envelope seal/open both directions (Rust-seal→Swift-open and vice versa) |
 | XV-HPKE-SE | Rust-seal→Apple-SE-open, Apple-seal→Rust-open, Apple-seal→Apple-SE-open; exact suite bytes (KEM 0x0010 / KDF 0x0001 / AEAD 0x0003) cross-checked against RFC 9180 vectors; Path B adapter vectors added only if the PoC triggers Path B (PoC artifact, Phase E pre-gate) |
 | XV-HKDF | all §2.9 info strings |
+| XV-PEER (v0.5) | wire annex A.5: one signed exchange per peer operation, carriage, empty body, heads digest, canonical batch, one invalid case per A.1 rule; Rust and the §22.2 Swift target |
 | XV-TLV | registry entries (all kinds, incl. v2 recovery_epoch with the §4.5 binding fields), approval payloads, manifests: canonical bytes + expected hashes + signatures/proofs |
 | XV-SAS | enrollment transcripts → 8-char SAS |
 | XV-BIP39 | RK entropy ↔ 24 words (official reference vectors + ours) |
@@ -4459,7 +4460,12 @@ autofill (Phase H).
   both platforms would make them Rust-against-Rust, a small **CryptoKit-only
   Swift test target** is kept as the independent implementation: it
   verifies the XV-TLV, XV-PEER and XV-HPKE-SE vectors (signatures, prehash
-  bytes, envelope open) without linking the engine.
+  bytes, envelope open) without linking the engine. *(Clarified
+  2026-10-09, review SPEC-I8/O6: "CryptoKit-only" means Apple system
+  frameworks only — CryptoKit and Security; for XV-HPKE-SE the target runs
+  the RFC 9180 known-answer vector at the exact suite and rebuilds the
+  envelope `info`; the Secure Enclave legs remain the §2.12 PoC evidence,
+  §19 item 22.)*
 - **FFI contract (normative).** A catalogue lists every exported entry
   point with its argument and result types. **Never across the FFI:**
   PK, `RK_bytes`, `sk_c`, `ikm_c`, and any function that signs a

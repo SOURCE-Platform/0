@@ -1,12 +1,13 @@
 //! XV-PEER inputs (wire annex A.5): the synthetic records, the revision
-//! graph whose canonical order differs from depth-first order, and one
-//! invalid case per A.1 rule. `vectors_peer` assembles the file.
+//! graph whose canonical order differs from depth-first and from
+//! first-in-first-out order, and one invalid case per A.1 rule with its
+//! expected outcome. `vectors_peer` assembles the file.
 
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use vault_proto::backup::object;
 use vault_proto::crypto::tlv::{encode_document, EntryBuilder};
-use vault_proto::peer::body::{self, bucket, entry, uint};
+use vault_proto::peer::body::{bucket, entry, uint};
 use vault_proto::peer::exchange::encode_revs_get;
 use vault_proto::rev::{uuid_string, RevisionRow};
 
@@ -59,16 +60,27 @@ fn row(record: [u8; 16], id: [u8; 32], parents: &[[u8; 32]], counter: u64) -> Re
     }
 }
 
-/// Record 1's graph: A(0x10) → B(0x20), C(0x30); B → E(0x40). Kahn with
-/// the smallest ready id gives A, B, C, E; depth-first (children
-/// ascending) gives A, B, E, C. Record 2: Q(0x50) on P(0x4F), which the
-/// requester already holds.
-pub fn graph_rows(r: &[[u8; 16]; 3]) -> (Vec<RevisionRow>, Vec<RevisionRow>, Vec<RevisionRow>) {
-    let (a, b, c, e) = (rev(0x10), rev(0x20), rev(0x30), rev(0x40));
-    let canonical = vec![row(r[0], a, &[], 1), row(r[0], b, &[a], 2), row(r[0], c, &[a], 3), row(r[0], e, &[b], 4)];
-    let depth_first = vec![canonical[0].clone(), canonical[1].clone(), canonical[3].clone(), canonical[2].clone()];
-    let second = vec![row(r[1], rev(0x50), &[rev(0x4F)], 6)];
-    (canonical, depth_first, second)
+/// Record 1's graph (review VER-I2): A(10) → B(20), D(40); B → E(50);
+/// D → C(30), a child with a smaller id than its parent. Kahn with the
+/// smallest ready id: A, B, D, C, E. First-in-first-out: A, B, D, E, C.
+/// Depth-first (children ascending): A, B, E, D, C. Record 2: Q(0x60)
+/// on P(0x5F), which the requester already holds.
+pub struct Graph {
+    pub canonical: Vec<RevisionRow>,
+    pub fifo: Vec<RevisionRow>,
+    pub depth_first: Vec<RevisionRow>,
+    pub second: Vec<RevisionRow>,
+}
+
+pub fn graph(r: &[[u8; 16]; 3]) -> Graph {
+    let (a, b, c, d, e) = (rev(0x10), rev(0x20), rev(0x30), rev(0x40), rev(0x50));
+    let [ra, rb, rc, rd, re] = [row(r[1], a, &[], 1), row(r[1], b, &[a], 2), row(r[1], c, &[d], 5), row(r[1], d, &[a], 3), row(r[1], e, &[b], 4)];
+    Graph {
+        canonical: vec![ra.clone(), rb.clone(), rd.clone(), rc.clone(), re.clone()],
+        fifo: vec![ra.clone(), rb.clone(), rd.clone(), re.clone(), rc.clone()],
+        depth_first: vec![ra, rb, re, rd, rc],
+        second: vec![row(r[2], rev(0x60), &[rev(0x5F)], 6)],
+    }
 }
 
 pub fn objects(rows: &[RevisionRow]) -> Vec<Vec<u8>> {
@@ -79,19 +91,15 @@ pub fn objects(rows: &[RevisionRow]) -> Vec<Vec<u8>> {
 pub fn graph_json(rows: &[RevisionRow]) -> Value {
     Value::Array(
         rows.iter()
-            .map(|r| {
-                json!({
-                    "revision_id": hex::encode(r.revision_id),
-                    "parents": r.parent_ids.iter().map(hex::encode).collect::<Vec<_>>(),
-                })
-            })
+            .map(|r| json!({ "revision_id": hex::encode(r.revision_id), "parents": r.parent_ids.iter().map(hex::encode).collect::<Vec<_>>() }))
             .collect(),
     )
 }
 
-/// The peer heads per record (record 1 with two heads, record 2 with one).
+/// The Mac's servable heads: record 0 with 65 (more than 64: reason 4 in
+/// `peer_heads`, still in the digest), record 1 with two, record 2 one.
 pub fn heads(r: &[[u8; 16]; 3]) -> Vec<([u8; 16], Vec<[u8; 32]>)> {
-    vec![(r[0], vec![rev(0x30), rev(0x40)]), (r[1], vec![rev(0x50)])]
+    vec![(r[0], (0..65u8).map(|i| rev(0x90 + i)).collect()), (r[1], vec![rev(0x30), rev(0x50)]), (r[2], vec![rev(0x60)])]
 }
 
 fn raw_entry(fields: &[(u8, &[u8])]) -> Vec<u8> {
@@ -105,50 +113,57 @@ fn raw_entry(fields: &[(u8, &[u8])]) -> Vec<u8> {
     out
 }
 
-fn case(rule: &str, decoder: &str, bytes: Vec<u8>) -> Value {
-    json!({ "rule": rule, "decoder": decoder, "hex": hex::encode(bytes) })
+const UNSIGNED: &str = "unsigned 403 (PEER_AUTH_INVALID)";
+const STATUS4: &str = "signed status 4 (FORMAT_INVALID)";
+const UNVERIFIED: &str = "requester: unable to verify";
+
+fn case(rule: &str, decoder: &str, expected: &str, bytes: Vec<u8>) -> Value {
+    json!({ "rule": rule, "decoder": decoder, "expected": expected, "hex": hex::encode(bytes) })
 }
 
-/// One invalid case per A.1 rule, each naming the decoder that must
-/// refuse it. `good` is a valid `request_tlv`.
-pub fn invalid_cases(good: &[u8], r: &[[u8; 16]; 3], depth_first: &[Vec<u8>]) -> Value {
+fn req(fields: &[(u8, &[u8])]) -> Vec<u8> {
+    raw_entry(fields)
+}
+
+fn batch(rows: &[Vec<u8>]) -> Vec<u8> {
+    encode_document(&std::iter::once(entry(&[(0x01, uint(1))])).chain(rows.iter().map(|o| entry(&[(0x01, o.clone())]))).collect::<Vec<_>>())
+}
+
+/// One invalid case per A.1 rule, naming the decoder that must refuse it
+/// and the outcome (erratum to A.1, review SPEC-I7). `good` is a valid
+/// `request_tlv`.
+pub fn invalid_cases(good: &[u8], r: &[[u8; 16]; 3], g: &Graph) -> Value {
+    let (v, s, rc, one, z, n) = ([0xA0u8; 16], [0xB1u8; 16], [0xC2u8; 16], [1u8], [0u8; 32], [1u8; 16]);
     let mut trailing = good.to_vec();
     trailing.push(0x00);
     let mut unknown = good[..good.len() - 1].to_vec();
     unknown.extend_from_slice(&[0x09, 0, 0, 0, 1, 7, 0xFF]);
     let missing = good[..good.len() - (1 + 4 + 16 + 1)].iter().copied().chain([0xFF]).collect();
-    let short_vault = raw_entry(&[(1, &[1]), (2, &[0xA0; 15]), (3, &[0xB1; 16]), (4, &[0xC2; 16]), (5, &[1]), (6, &[0; 32]), (7, &[1]), (8, &[1; 16])]);
-    let swapped = raw_entry(&[(1, &[1]), (3, &[0xB1; 16]), (2, &[0xA0; 16]), (4, &[0xC2; 16]), (5, &[1]), (6, &[0; 32]), (7, &[1]), (8, &[1; 16])]);
-    let duplicate = raw_entry(&[(1, &[1]), (1, &[1]), (2, &[0xA0; 16]), (3, &[0xB1; 16]), (4, &[0xC2; 16]), (5, &[1]), (6, &[0; 32]), (7, &[1]), (8, &[1; 16])]);
-    let padded_t = raw_entry(&[(1, &[1]), (2, &[0xA0; 16]), (3, &[0xB1; 16]), (4, &[0xC2; 16]), (5, &[1]), (6, &[0; 32]), (7, &[0, 1]), (8, &[1; 16])]);
-    let empty_value = encode_document(&[raw_entry(&[(1, &[])])]);
-    let buckets_down = encode_document(&[entry(&[(0x01, vec![9, 3])])]);
-    let padded_count = encode_document(&[raw_entry(&[(1, &[0, 1]), (2, &[0]), (3, &[0])])]);
-    let unsorted = encode_revs_get(&[(r[1], vec![]), (r[0], vec![])]);
-    let empty_list = encode_document(&[EntryBuilder::new().build(), raw_entry(&[(1, &r[0]), (2, &[])])]);
-    let absent_offset = encode_document(&[entry(&[(0x02, vec![0x77; 32])]), entry(&[(0x01, vec![0x01; 32])])]);
-    let doc_len = {
-        let mut d = body::empty();
-        d[4] = 2;
-        d
-    };
-    let dfs = encode_document(&std::iter::once(entry(&[(0x01, uint(1))])).chain(depth_first.iter().map(|o| entry(&[(0x01, o.clone())]))).collect::<Vec<_>>());
+    let after_objects = encode_document(&[entry(&[(0x01, uint(1))]), entry(&[(0x02, r[0].to_vec()), (0x05, vec![1])]), entry(&[(0x01, objects(&g.second)[0].clone())])]);
+    let status4_body = encode_document(&[entry(&[(0x01, uint(1))])]);
     json!([
-        case("trailing bytes", "request_tlv", trailing),
-        case("unknown tag", "request_tlv", unknown),
-        case("missing required tag", "request_tlv", missing),
-        case("wrong fixed length", "request_tlv", short_vault),
-        case("tags not ascending", "request_tlv", swapped),
-        case("tag repeated", "request_tlv", duplicate),
-        case("padded integer", "request_tlv", padded_t),
-        case("empty value", "heads_req", empty_value),
-        case("list out of order (buckets)", "heads_req", buckets_down),
-        case("padded integer in a body", "put_counts", padded_count),
-        case("list out of order (record ids)", "revs_get_req", unsorted),
-        case("empty list present instead of absent", "revs_get_req", empty_list),
-        case("absent offset (objects mode)", "state_req", absent_offset),
-        case("document length wrong", "empty_body", doc_len),
-        case("revisions in depth-first, not canonical, order", "revs_batch", dfs),
+        case("trailing bytes", "request_tlv", UNSIGNED, trailing),
+        case("unknown tag", "request_tlv", UNSIGNED, unknown),
+        case("missing required tag", "request_tlv", UNSIGNED, missing),
+        case("wrong fixed length", "request_tlv", UNSIGNED, req(&[(1, &one), (2, &v[..15]), (3, &s), (4, &rc), (5, &one), (6, &z), (7, &one), (8, &n)])),
+        case("tags not ascending", "request_tlv", UNSIGNED, req(&[(1, &one), (3, &s), (2, &v), (4, &rc), (5, &one), (6, &z), (7, &one), (8, &n)])),
+        case("tag repeated", "request_tlv", UNSIGNED, req(&[(1, &one), (1, &one), (2, &v), (3, &s), (4, &rc), (5, &one), (6, &z), (7, &one), (8, &n)])),
+        case("padded integer", "request_tlv", UNSIGNED, req(&[(1, &one), (2, &v), (3, &s), (4, &rc), (5, &one), (6, &z), (7, &[0, 1]), (8, &n)])),
+        case("empty integer (zero is 0x00, never empty)", "request_tlv", UNSIGNED, req(&[(1, &one), (2, &v), (3, &s), (4, &rc), (5, &one), (6, &z), (7, &[]), (8, &n)])),
+        case("envelope wrapped in a Document", "request_tlv", UNSIGNED, encode_document(&[good.to_vec()])),
+        case("empty value", "heads_req", STATUS4, encode_document(&[raw_entry(&[(1, &[])])])),
+        case("body without its header entry", "heads_req", STATUS4, vec![0x00, 0, 0, 0, 0]),
+        case("document length wrong", "document", STATUS4, vec![0x00, 0, 0, 0, 2, 0xFF]),
+        case("list out of order (buckets)", "heads_req", STATUS4, encode_document(&[entry(&[(0x01, vec![9, 3])])])),
+        case("padded integer in a body", "put_counts", STATUS4, encode_document(&[raw_entry(&[(1, &[0, 1]), (2, &[0]), (3, &[0])])])),
+        case("list out of order (record ids)", "revs_get_req", STATUS4, encode_revs_get(&[(r[1], vec![]), (r[0], vec![])])),
+        case("empty list present instead of absent", "revs_get_req", STATUS4, encode_document(&[EntryBuilder::new().build(), raw_entry(&[(1, &r[0]), (2, &[])])])),
+        case("absent offset (objects mode)", "state_req", STATUS4, encode_document(&[entry(&[(0x02, vec![0x77; 32])]), entry(&[(0x01, vec![0x01; 32])])])),
+        case("flag not 0/1 (complete = 2)", "heads_resp", UNVERIFIED, encode_document(&[entry(&[(0x01, uint(2))])])),
+        case("revisions in depth-first order", "revs_batch", UNVERIFIED, batch(&objects(&g.depth_first))),
+        case("revisions in first-in-first-out order", "revs_batch", UNVERIFIED, batch(&objects(&g.fifo))),
+        case("unavailable entry before an object", "revs_batch", UNVERIFIED, after_objects),
+        case("status 1–4 with a non-empty body", "status4_body", UNVERIFIED, status4_body),
     ])
 }
 

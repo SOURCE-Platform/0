@@ -5,7 +5,9 @@
 #   1. Phase F Rust suites: vault-proto, vault-provider-core,
 #      vault-coordinator, the end-to-end simulator (vault-tests) and the
 #      helper's Phase F tests
-#   2. full helper suite (Phases A–F, no fail-fast)
+#   2. full helper suite (Phases A–F, no fail-fast); the vault engine and
+#      SOURCE Vault FFI; vector freshness (XV-PEER included); SOURCE Vault's
+#      simulator tests, the CryptoKit-only XV target checked by name
 #   3. the deployable provider (its own workspace): tests + cargo audit
 #   4. file-length audit (covers every Phase F crate)
 #   5. PR-01: no canary (MP, PK, VK, RK, ikm_c) in any IPC frame, helper
@@ -73,12 +75,22 @@ if cargo run -q -p source-vault-helper --bin gen_vectors -- --check >"$T/vectors
 else
     fail "vector freshness (gen_vectors --check)" "$(tail -1 "$T/vectors.log")"
 fi
-if (cd "$ROOT/ios/SourceVault" && xcodebuild test -project SourceVault.xcodeproj -scheme SourceVault \
-        -destination "platform=iOS Simulator,name=${OV0_SIMULATOR:-SourceVault Test iPhone}" \
-        -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO) >"$T/ios.log" 2>&1 && grep -q '\*\* TEST SUCCEEDED \*\*' "$T/ios.log"; then
-    record "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" PASS "$(grep -cE "^Test Case .* passed" "$T/ios.log") passed"
+# The simulator: OV0_SIMULATOR, else the first available iPhone.
+SIM="${OV0_SIMULATOR:-$(xcrun simctl list devices available | grep -m1 'iPhone' | sed -E 's/^ +//; s/ \([0-9A-F-]{36}\).*$//')}"
+XV_TESTS="XVPeerTests.testEveryExchangeVerifies XVPeerTests.testEveryInvalidCaseIsRefused XVPeerTests.testHeadsDigestRecomputes"
+XV_TESTS+=" XVPeerTests.testCanonicalOrderDiffersFromDepthFirst XVPeerTests.testEmptyBodyAndZero XVPeerTests.testKeysDeriveFromTheirScalars"
+XV_TESTS+=" XVRegistryTests.testRegistryEntriesHashAndVerify XVRegistryTests.testEcdsaLowSRule"
+XV_TESTS+=" XVHPKETests.testRfc9180VectorOpensAtTheExactSuite XVHPKETests.testEnvelopeInfoAndSealOpen"
+(cd "$ROOT/ios/SourceVault" && xcodebuild test -project SourceVault.xcodeproj -scheme SourceVault \
+    -destination "platform=iOS Simulator,name=$SIM" -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO) >"$T/ios.log" 2>&1
+MISSING=""
+for t in $XV_TESTS; do
+    grep -qE "^Test Case '-\[SourceVaultXV\.${t%%.*} ${t#*.}\]' passed" "$T/ios.log" || MISSING+=" $t"
+done
+if grep -q '\*\* TEST SUCCEEDED \*\*' "$T/ios.log" && [ -z "$MISSING" ] && ! grep -qE "^Test Case .* skipped" "$T/ios.log"; then
+    record "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" PASS "$(grep -cE "^Test Case .* passed" "$T/ios.log") passed on $SIM; XV by name"
 else
-    fail "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" "$(grep -A2 'Failing tests' "$T/ios.log" | tail -2 | tr '\n' ' ')"
+    fail "SOURCE Vault simulator tests (EngineTests, CryptoKit-only XV)" "missing:${MISSING:- none}; $(grep -A2 'Failing tests' "$T/ios.log" | tail -2 | tr '\n' ' ')$(tail -3 "$T/ios.log" | tr '\n' ' ')"
 fi
 
 # --- 3. deployable provider ----------------------------------------------------------------------

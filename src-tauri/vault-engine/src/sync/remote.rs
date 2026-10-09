@@ -70,22 +70,27 @@ pub fn parse(json: &[u8]) -> Result<RemoteState, ErrorCode> {
 /// own signature carries nothing the provider added beside them. `parse`
 /// of the result yields the same state.
 pub fn canonical(r: &RemoteState) -> Vec<u8> {
+    encode_fields(r.generation, r.vk_generation, &r.state_commit, &r.manifest_bytes, &r.checkpoint_bytes, &r.recovery_auth)
+}
+
+/// The annex A.3.2 encoding of a state's fields (shared with the XV-PEER
+/// vectors, so the committed bytes are the shipped encoder's).
+pub fn encode_fields(generation: u64, vk_generation: u32, state_commit: &[u8; 32], manifest: &[u8], checkpoint: &[u8], recovery_auth: &[RecoveryAuthEntry]) -> Vec<u8> {
     // Written out by hand: the annex A.3.2 key order must not depend on
     // whether `serde_json` was built with `preserve_order` (it is only in
     // this crate's dev-dependencies). Hex and base64 need no escaping.
     use crate::crypto::hex::encode as hex;
-    let auth: Vec<String> = r
-        .recovery_auth
+    let auth: Vec<String> = recovery_auth
         .iter()
         .map(|e| format!(r#"{{"class":{},"pub":"{}","salt":"{}"}}"#, e.class.code(), hex(e.public), hex(e.salt)))
         .collect();
     format!(
         r#"{{"generation":{},"vk_generation":{},"state_commit":"{}","manifest":"{}","checkpoint":"{}","recovery_auth":[{}]}}"#,
-        r.generation,
-        r.vk_generation,
-        hex(r.state_commit),
-        b64::encode(&r.manifest_bytes),
-        b64::encode(&r.checkpoint_bytes),
+        generation,
+        vk_generation,
+        hex(state_commit),
+        b64::encode(manifest),
+        b64::encode(checkpoint),
         auth.join(",")
     )
     .into_bytes()

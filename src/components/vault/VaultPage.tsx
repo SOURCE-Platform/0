@@ -16,6 +16,7 @@ import {
   onVaultEvent,
   vaultChangeMasterPassword,
   vaultErrorMessage,
+  vaultUnlockErrorMessage,
   vaultLock,
   vaultResetMasterPassword,
   vaultRotateRecoveryKey,
@@ -84,7 +85,7 @@ export function VaultPage() {
     return () => unlisten?.();
   }, []);
 
-  async function run(action: () => Promise<void>) {
+  async function run(action: () => Promise<void>, describe = vaultErrorMessage) {
     setBusy(true);
     setError(null);
     try {
@@ -92,7 +93,7 @@ export function VaultPage() {
       await refreshState();
       setRefreshKey((k) => k + 1);
     } catch (e) {
-      setError(vaultErrorMessage(String(e)));
+      setError(describe(String(e)));
       await refreshState();
     } finally {
       setBusy(false);
@@ -196,7 +197,7 @@ export function VaultPage() {
               this window.
             </p>
             <button
-              onClick={() => run(vaultUnlock)}
+              onClick={() => run(vaultUnlock, vaultUnlockErrorMessage)}
               disabled={busy || state === "unlocking"}
               className="mt-4 cursor-pointer rounded-xl bg-white px-4 py-2 text-sm font-medium text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >

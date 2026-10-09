@@ -32,7 +32,11 @@ public data only.
   missing required tag, a wrong fixed length, an empty value, trailing
   bytes or a list out of its stated order is `FORMAT_INVALID` (status 4)
   and nothing is applied. An unknown `operation` code after successful
-  authentication is answered with signed status 4.
+  authentication is answered with signed status 4. *(Erratum, 2026-10-09,
+  review SPEC-I7 of `9d7fc3d`: status 4 is for **bodies**. The same rule
+  broken in `request_tlv` fails the §22.8 canonical parse and is an
+  unsigned `403` (`PEER_AUTH_INVALID`); broken in a response's
+  `response_tlv` or body, the requester reads it as "unable to verify".)*
 - **Heads digest** (§22.8): an empty bucket's digest is `SHA-256("")`.
   The heads it covers are the responder's **servable** heads (§A.3.3).
 - A response with status 1–4 carries the empty body.
@@ -125,7 +129,11 @@ than 64 heads.
 
 ### A.3.1 `peer_hello` (1)
 
-Request and response, header entry only: `{0x01 registry_seq (u64),
+*(Erratum, 2026-10-09, review SPEC-I1: the **request** carries the empty
+body — the Mac never uses a requester's floors (§22.8 "Direction"), and
+the shipped responder answers any other request body with status 4. The
+§22.8 table's "floors … and the heads digest →" names the response.)*
+Response, header entry only: `{0x01 registry_seq (u64),
 0x02 registry_head (32 B), 0x03 committed_generation (u64; 0x00 before
 the first commit), 0x04 committed_manifest_hash (32 B; zeros before the
 first commit), 0x05 heads_digest (8192 B)}`.
@@ -142,7 +150,11 @@ next `state_get`, and declines meanwhile.
   only** (review SEC-O2 / VER-I16: UTF-8 JSON, keys in the order
   `generation`, `vk_generation`, `state_commit` (hex), `manifest`,
   `checkpoint` (base64), `recovery_auth` [`class`, `pub`, `salt`], no
-  whitespace; the requester recomputes `state_commit` from the fields, so
+  whitespace; *(clarified 2026-10-09, SPEC-I3: `manifest` and `checkpoint`
+  are base64url without padding; each `recovery_auth` item is
+  `{"class": 2 (mp) | 3 (rk) (§11.2 class codes), "pub": hex 65 B, "salt": hex 16 B}`, ordered
+  by class; `generation` and `vk_generation` are also checked against the
+  verified manifest, SPEC-O7)* the requester recomputes `state_commit` from the fields, so
   the encoding carries no trust) — or status 3 when its
   committed generation ≤ `have_generation` or it holds no body. The phone
   never reads status 3 as "up to date" (it only means "not from me").
@@ -169,7 +181,8 @@ next `state_get`, and declines meanwhile.
 - Response header `{0x01 complete}`, then, **bucket by bucket in the
   requested order, each bucket whole**, one entry per record in ascending
   `record_id`: `{0x01 record_id, 0x02 heads}` (`heads`: 1–64 **concatenated** 32-byte
-  `revision_id`s, ascending). An empty requested bucket simply has no
+  `revision_id`s, ascending). *(Clarified 2026-10-09: the header's
+  `0x02 buckets` ascend and are a subset of the request.)* An empty requested bucket simply has no
   entries; the response header carries `0x02 buckets` — the bucket
   numbers fully covered — so empty and omitted buckets are told apart.
   The responder stops at the first bucket that does not fit. A bucket that does not fit is left out entirely and
@@ -186,6 +199,9 @@ next `state_get`, and declines meanwhile.
 - Request: empty header entry, then ≤ 512 entries `{0x01 record_id, 0x02
   have_heads (absent when none; ≤ 64 concatenated 32-byte ids,
   ascending)}`, ascending `record_id`.
+- *(Clarified 2026-10-09, SPEC-I5/I6: only requested records appear; the
+  unavailable entries `{0x02 record_id, 0x05 reason}` come **after all
+  objects**, ascending by `record_id`.)*
 - Response: header `{0x01 complete}`, then the revisions **grouped by
   record in ascending `record_id`; within a record in the order of Kahn's
   algorithm that always emits the smallest ready `revision_id`** (the

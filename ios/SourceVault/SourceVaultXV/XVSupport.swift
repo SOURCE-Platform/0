@@ -90,6 +90,8 @@ enum TLV {
             out.append(e)
             rest = r
         }
+        // Every peer body opens with its header entry (annex A.1).
+        guard !out.isEmpty else { throw Bad() }
         return out
     }
 
@@ -116,6 +118,15 @@ enum TLV {
         while d.first == 0 { d = d.dropFirst() }
         return Data(d)
     }
+}
+
+/// `vault_proto::b64`: base64url without padding; the standard alphabet
+/// and padding are refused.
+func base64URL(_ s: String) -> Data? {
+    guard !s.contains(where: { "+/=".contains($0) }) else { return nil }
+    var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    while t.count % 4 != 0 { t += "=" }
+    return Data(base64Encoded: t)
 }
 
 extension Array where Element == (tag: UInt8, value: Data) {

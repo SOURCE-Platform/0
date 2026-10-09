@@ -67,7 +67,7 @@ final class PairingFlow: ObservableObject {
         } catch {
             // Usually the network: another Wi-Fi, or Local Network access
             // not (yet) allowed — the first attempt fails while iOS asks.
-            await fail("Couldn't reach your Mac. Check this iPhone is on the same Wi-Fi and allowed under Settings → Privacy & Security → Local Network, then try again.")
+            await fail("Couldn't reach your Mac, or couldn't confirm it is your Mac. Check this iPhone is on the same Wi-Fi and allowed under Settings → Privacy & Security → Local Network, then try again.")
         }
     }
 

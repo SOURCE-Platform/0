@@ -33,6 +33,18 @@ enum PeerWire {
         return e
     }
 
+    /// A.1 flags (`complete`): 0 or 1.
+    static func flag(_ v: Data?) throws -> Bool {
+        guard let v else { throw Bad() }
+        let x = try TLV.uint(v)
+        try need(x <= 1)
+        return x == 1
+    }
+
+    static func reason(_ v: Data?) throws {
+        try need(v?.count == 1 && (1...4).contains(v![0]))
+    }
+
     static let emptyBody = Data([0x00, 0, 0, 0, 1, 0xFF])
 
     static func empty(_ b: Data) throws { try need(b == emptyBody) }
@@ -49,6 +61,41 @@ enum PeerWire {
         try check(d[0], [1: d[0].value(1)?.count ?? -1])
         let buckets = [UInt8](d[0].value(1)!)
         try need(!buckets.isEmpty && zip(buckets, buckets.dropFirst()).allSatisfy { $0 < $1 })
+    }
+
+    /// A.3.3: `{complete, buckets?}`, then whole records ascending, each
+    /// `{record_id, heads}` or `{record_id, reason}`.
+    static func headsResponse(_ b: Data) throws {
+        let d = try TLV.document(b)
+        try need(d[0].tags == [1] || d[0].tags == [1, 2])
+        _ = try flag(d[0].value(1))
+        if let bs = d[0].value(2) { try need(!bs.isEmpty && zip(bs, bs.dropFirst()).allSatisfy { $0 < $1 }) }
+        var last: Data?
+        for e in d.dropFirst() {
+            guard let rid = e.value(1), rid.count == 16 else { throw Bad() }
+            if e.tags == [1, 2] { _ = try ids(e.value(2)!, max: 64) } else { try need(e.tags == [1, 5]); try reason(e.value(5)) }
+            if let l = last { try need(l.lexicographicallyPrecedes(rid)) }
+            last = rid
+        }
+    }
+
+    /// A.3.2 objects mode: `{complete}`, then chunks inside their object or
+    /// unavailable entries.
+    static func objectsResponse(_ b: Data) throws -> (complete: Bool, items: Int) {
+        let d = try TLV.document(b)
+        try need(d[0].tags == [1])
+        let complete = try flag(d[0].value(1))
+        for e in d.dropFirst() {
+            try need(e.value(1)?.count == 32)
+            if e.tags == [1, 5] {
+                try reason(e.value(5))
+            } else {
+                try need(e.tags == [1, 2, 3, 4] && !e.value(4)!.isEmpty)
+                let (offset, total) = (try TLV.uint(e.value(2)!), try TLV.uint(e.value(3)!))
+                try need(offset + UInt64(e.value(4)!.count) <= total)
+            }
+        }
+        return (complete, d.count - 1)
     }
 
     static func ids(_ v: Data, max: Int) throws -> [Data] {
@@ -151,15 +198,18 @@ enum PeerWire {
     /// record in canonical order, then unavailable entries.
     static func revsBatch(_ b: Data, put: Bool = false) throws -> [Revision] {
         let d = try TLV.document(b)
-        if put { try need(d[0].isEmpty) } else { try check(d[0], [1: 0]); try need(TLV.uint(d[0].value(1)!) <= 1) }
+        if put { try need(d[0].isEmpty) } else { try need(d[0].tags == [1]); _ = try flag(d[0].value(1)) }
         var revs: [Revision] = []
-        var unavailable = false
+        var unavailable: [Data] = []
         for e in d.dropFirst() {
-            if e.tags == [1], !unavailable {
+            if e.tags == [1], unavailable.isEmpty {
                 revs.append(try object(e.value(1)!))
             } else {
-                try need(!put && e.tags == [2, 5] && e.value(2)!.count == 16 && e.value(5)!.count == 1)
-                unavailable = true
+                // After all objects, ascending (annex A.3.4 as clarified).
+                try need(!put && e.tags == [2, 5] && e.value(2)!.count == 16)
+                try reason(e.value(5))
+                if let l = unavailable.last { try need(l.lexicographicallyPrecedes(e.value(2)!)) }
+                unavailable.append(e.value(2)!)
             }
         }
         var i = 0

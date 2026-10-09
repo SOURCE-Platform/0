@@ -47,34 +47,39 @@ final class XVPeerTests: XCTestCase {
             XCTAssertEqual(resp.value(7), hexOf(a["body"]).sha256)
             XCTAssertTrue(ECDSA.isLowS(hexOf(a["signature"])))
             XCTAssertTrue(ECDSA.verify(prehash: respPrehash, signature: hexOf(a["signature"]), publicKey: hexOf(keys["mac_pub"])), name)
+            try carriage(q)
+            try carriage(a)
             try bodies(op: x["operation"] as! Int, status: x["status"] as! Int, request: hexOf(q["body"]), response: hexOf(a["body"]))
         }
     }
 
-    /// Each body as its operation (A.3).
+    /// `{0x01 tlv, 0x02 signature, 0x03 body}` (annex A.2.1).
+    private func carriage(_ part: [String: Any]) throws {
+        let c = try TLV.entry(hexOf(part["carriage"]))
+        XCTAssertEqual(c.tags, [1, 2, 3])
+        XCTAssertEqual(c.value(1), hexOf(part["tlv"]))
+        XCTAssertEqual(c.value(2), hexOf(part["signature"]))
+        XCTAssertEqual(c.value(3), hexOf(part["body"]))
+    }
+
+    /// Each body as its operation (A.3, with the 2026-10-09 errata).
     private func bodies(op: Int, status: Int, request: Data, response: Data) throws {
         if status != 0 { return try PeerWire.empty(response) }
         switch op {
-        case 1: try PeerWire.hello(request); try PeerWire.hello(response)
+        case 1: try PeerWire.empty(request); try PeerWire.hello(response)
         case 2:
             try PeerWire.stateRequest(request)
-            let d = try TLV.document(response)
             if (try TLV.document(request))[0].tags == [1] {
+                let d = try TLV.document(response)
                 XCTAssertEqual(d.count, 1)
+                XCTAssertEqual(d[0].tags, [1])
                 try state(XCTUnwrap(d[0].value(1)))
             } else {
-                try PeerWire.check(d[0], [1: 0])
-                for e in d.dropFirst() {
-                    if e.tags == [1, 5] { try PeerWire.check(e, [1: 32, 5: 1]) } else { try PeerWire.check(e, [1: 32, 2: 0, 3: 0, 4: e.value(4)?.count ?? -1]) }
-                }
+                let page = try PeerWire.objectsResponse(response)
+                XCTAssertFalse(page.complete, "a truncated page")
+                XCTAssertLessThan(page.items, (try TLV.document(request)).count - 1, "fewer answered than asked")
             }
-        case 3:
-            try PeerWire.headsRequest(request)
-            let d = try TLV.document(response)
-            XCTAssertTrue(d[0].tags == [1] || d[0].tags == [1, 2])
-            for e in d.dropFirst() {
-                if e.tags == [1, 5] { try PeerWire.check(e, [1: 16, 5: 1]) } else { XCTAssertEqual(e.tags, [1, 2]); _ = try PeerWire.ids(e.value(2)!, max: 64) }
-            }
+        case 3: try PeerWire.headsRequest(request); try PeerWire.headsResponse(response)
         case 4:
             try PeerWire.revsGetRequest(request)
             let revs = try PeerWire.revsBatch(response)
@@ -94,42 +99,39 @@ final class XVPeerTests: XCTestCase {
         XCTAssertEqual(positions, positions.sorted(), "A.3.2 key order")
         XCTAssertFalse(text.contains(" ") || text.contains("\n"), "no whitespace")
         let obj = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
-        let b64url = { (s: String) -> Data in
-            var t = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-            while t.count % 4 != 0 { t += "=" }
-            return Data(base64Encoded: t)!
-        }
-        XCTAssertEqual((obj["recovery_auth"] as? [Any])?.count, 0)
+        let b64url = { (s: String) throws -> Data in try XCTUnwrap(base64URL(s), "base64url without padding") }
+        // §11.2: SHA-256("ov0/recovery-auth-set/v2" ‖ (class ‖ pub ‖ salt)
+        // per entry, ordered by class); mp = 2, rk = 3.
+        let items = try XCTUnwrap(obj["recovery_auth"] as? [[String: Any]])
+        XCTAssertEqual(items.map { $0["class"] as? Int }, [2, 3])
+        let auth = items.reduce(Data() + "ov0/recovery-auth-set/v2") { acc, e in
+            acc + Data([UInt8(e["class"] as! Int)]) + hexOf(e["pub"]) + hexOf(e["salt"])
+        }.sha256
+        XCTAssertEqual(auth, hexOf((file["state"] as! [String: Any])["recovery_auth_digest"]))
         let tlv = TLV.encode([
             (1, hexOf((file["state"] as! [String: Any])["vault_id"])),
             (2, TLV.uintBytes(UInt64(obj["generation"] as! Int))),
-            (3, b64url(obj["manifest"] as! String).sha256),
-            (4, b64url(obj["checkpoint"] as! String).sha256),
-            (5, sha(Data() + "ov0/recovery-auth-set/v2")),
+            (3, try b64url(obj["manifest"] as! String).sha256),
+            (4, try b64url(obj["checkpoint"] as! String).sha256),
+            (5, auth),
         ])
         let commit = sha(Data() + "ov0/vault-state/v2", tlv)
         XCTAssertEqual(commit, hexOf(obj["state_commit"]))
         XCTAssertEqual(commit, hexOf((file["state"] as! [String: Any])["state_commit"]))
     }
 
-    func testEmptyBodyZeroAndCarriage() throws {
+    func testEmptyBodyAndZero() throws {
         let empty = file["empty_body"] as! [String: Any]
         XCTAssertEqual(hexOf(empty["hex"]), PeerWire.emptyBody)
         XCTAssertEqual(PeerWire.emptyBody.sha256, hexOf(empty["sha256"]))
         XCTAssertEqual(hexOf(file["zero_integer"]), Data([0]))
         XCTAssertEqual(TLV.uintBytes(0), Data([0]))
-        let c = try TLV.entry(hexOf((file["carriage"] as! [String: Any])["hex"]))
-        XCTAssertEqual(c.tags, [1, 2, 3])
-        let hello = ((file["exchanges"] as! [[String: Any]])[0])["request"] as! [String: Any]
-        XCTAssertEqual(c.value(1), hexOf(hello["tlv"]))
-        XCTAssertEqual(c.value(2), hexOf(hello["signature"]))
-        XCTAssertEqual(c.value(3), hexOf(hello["body"]))
     }
 
     func testHeadsDigestRecomputes() throws {
         let d = file["heads_digest"] as! [String: Any]
         let records = (d["records"] as! [[String: Any]]).map { (hexOf($0["record_id"]), ($0["heads"] as! [String]).map { Data(hex: $0) }) }
-        XCTAssertTrue(records.contains { $0.1.count == 2 })
+        XCTAssertTrue(records.contains { $0.1.count == 2 } && records.contains { $0.1.count > 64 })
         XCTAssertEqual(Set(records.map { Int($0.0.sha256[0]) }), [d["bucket"] as! Int], "one bucket")
         let digest = PeerWire.headsDigest(records)
         XCTAssertEqual(digest, hexOf(d["digest"]))
@@ -141,15 +143,17 @@ final class XVPeerTests: XCTestCase {
     func testCanonicalOrderDiffersFromDepthFirst() throws {
         let b = file["revs_batch"] as! [String: Any]
         let parse = { (v: Any?) in (v as! [[String: Any]]).map { (id: hexOf($0["revision_id"]), parents: ($0["parents"] as! [String]).map { Data(hex: $0) }) } }
-        let canonical = parse(b["canonical_record_1"]), depthFirst = parse(b["depth_first_record_1"])
+        let canonical = parse(b["canonical_record_1"]), fifo = parse(b["fifo_record_1"]), depthFirst = parse(b["depth_first_record_1"])
         XCTAssertEqual(PeerWire.canonical(canonical), canonical.map(\.id))
         XCTAssertEqual(PeerWire.canonical(depthFirst), canonical.map(\.id), "the order is a function of the graph")
-        XCTAssertNotEqual(depthFirst.map(\.id), canonical.map(\.id))
+        XCTAssertEqual(PeerWire.canonical(fifo), canonical.map(\.id))
+        XCTAssertEqual(Set([canonical.map(\.id), fifo.map(\.id), depthFirst.map(\.id)]).count, 3, "three different orders")
+        XCTAssertNotEqual(canonical.map(\.id), canonical.map(\.id).sorted { $0.lexicographicallyPrecedes($1) }, "not plain id order")
     }
 
     func testEveryInvalidCaseIsRefused() throws {
         let cases = try XCTUnwrap(file["invalid"] as? [[String: Any]])
-        XCTAssertGreaterThanOrEqual(cases.count, 15)
+        XCTAssertGreaterThanOrEqual(cases.count, 22)
         for c in cases {
             let b = hexOf(c["hex"])
             let decode: (Data) throws -> Void
@@ -159,7 +163,9 @@ final class XVPeerTests: XCTestCase {
             case "put_counts": decode = PeerWire.putCounts
             case "revs_get_req": decode = PeerWire.revsGetRequest
             case "state_req": decode = PeerWire.stateRequest
-            case "empty_body": decode = PeerWire.empty
+            case "document": decode = { _ = try TLV.document($0) }
+            case "heads_resp": decode = PeerWire.headsResponse
+            case "status4_body": decode = PeerWire.empty
             case "revs_batch": decode = { _ = try PeerWire.revsBatch($0) }
             default: return XCTFail("unknown decoder \(c["decoder"]!)")
             }

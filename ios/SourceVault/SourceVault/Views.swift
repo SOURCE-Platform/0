@@ -85,9 +85,12 @@ struct ItemView: View {
                 Button("Show password") {
                     problem = nil
                     model.reveal(item.id) { answer in
-                        // The engine's reveal answer: `{ref, kind, secret: {password}}`.
+                        // The engine's reveal answer: `{ref, kind, secret}` — a
+                        // login's `{password}`, a card's `{number, expiry,
+                        // cardholder}` (review VER-O3).
                         let secret = answer["secret"] as? [String: Any]
                         password = secret?["password"] as? String
+                            ?? [secret?["number"], secret?["expiry"], secret?["cardholder"]].compactMap { $0 as? String }.joined(separator: " · ").nilIfEmpty
                         if password == nil { problem = AppModel.describe(answer["error"] as? String ?? "REFUSED") }
                     }
                 }
@@ -169,4 +172,8 @@ struct CaptureShield: View {
             captured = UIScreen.main.isCaptured
         }
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

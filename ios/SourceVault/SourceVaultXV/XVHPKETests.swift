@@ -30,12 +30,15 @@ final class XVHPKETests: XCTestCase {
     }
 
     /// info = "ov0/envelope/v2" ‖ vault_id ‖ device_id ‖ enrollment_nonce
-    /// (§22.10 binds the envelope to the enrollment); an envelope sealed
-    /// under it opens only under the same info.
+    /// (§22.10 binds the envelope to the enrollment). The seal/open below
+    /// is CryptoKit against itself — a framing check, not one of the
+    /// three XV-HPKE-SE legs (those are §2.12 / Phase E0 evidence).
     func testEnvelopeInfoAndSealOpen() throws {
         let file = try XV.load("xv_enroll")
         let info = try XCTUnwrap(file["envelope_info"] as? [String: Any])
-        let rebuilt = Data((info["prefix"] as! String).utf8) + hexOf(info["vault_id"]) + hexOf(info["device_id"]) + hexOf(info["enrollment_nonce"])
+        // The prefix is fixed here, not read from the file (review VER-I6).
+        XCTAssertEqual(info["prefix"] as? String, "ov0/envelope/v2")
+        let rebuilt = Data("ov0/envelope/v2".utf8) + hexOf(info["vault_id"]) + hexOf(info["device_id"]) + hexOf(info["enrollment_nonce"])
         XCTAssertEqual(rebuilt, hexOf(info["info"]))
         let payload = try XCTUnwrap(file["envelope_payload"] as? [String: Any])
         let recipient = P256.KeyAgreement.PrivateKey()
