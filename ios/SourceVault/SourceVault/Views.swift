@@ -18,7 +18,7 @@ struct ContentView: View {
                         ContentUnavailableView("Not paired yet", systemImage: "qrcode", description: Text("Unlock this iPhone to pair it with your Mac."))
                     }
                 case "locked", "error":
-                    LockedView()
+                    if model.removed != nil { RemovedView() } else { LockedView() }
                 default:
                     ItemListView()
                 }
@@ -66,6 +66,47 @@ struct ItemListView: View {
             }
         }
         .overlay { if model.behind { Text("Read-only until this iPhone catches up.").font(.caption) } }
+        .safeAreaInset(edge: .bottom) { SyncBar() }
+    }
+}
+
+/// "Sync now" and the last outcome (§22.8 triggers: unlock and this button).
+struct SyncBar: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        HStack {
+            if model.removed != nil {
+                Text("This iPhone was removed from your vault.").font(.caption)
+            } else if model.syncing {
+                ProgressView().controlSize(.small)
+                Text("Syncing with your Mac…").font(.caption)
+            } else {
+                Text(model.syncNote ?? model.lastSynced.map { "Synced with your Mac \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not synced yet")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Button("Sync now") { Task { await model.syncWithMac() } }.font(.caption)
+            }
+        }
+        .padding(.horizontal).padding(.vertical, 8)
+        .background(.bar)
+    }
+}
+
+/// §22.9: the Mac removed this iPhone. The vault stays readable and
+/// nothing is deleted; "Remove this vault" comes later (F.2d).
+struct RemovedView: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "iphone.slash").font(.largeTitle)
+            Text("Your Mac removed this iPhone from your vault").font(.headline).multilineTextAlignment(.center)
+            Text("Removal pending. You can still open the vault to read it — nothing has been deleted. To use this iPhone again, pair it with your Mac again.")
+                .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button("Open to read") { model.unlockWithFaceID() }
+        }
+        .padding()
     }
 }
 

@@ -18,9 +18,15 @@ final class AppModel: ObservableObject {
     @Published var items: [ItemSummary] = []
     @Published var entry: EntryRequest?
     @Published var message: String?
+    /// §22.9: the Mac removed this iPhone (`published`: among its
+    /// provider-committed entries); nil while still a vault device.
+    @Published var removed: Bool?
+    @Published var syncing = false
+    @Published var lastSynced: Date?
+    @Published var syncNote: String?
 
     private let services = VaultServices()
-    private var engine: VaultEngine?
+    private(set) var engine: VaultEngine?
 
     init() {
         services.onEntry = { [weak self] request in self?.entry = request }
@@ -72,6 +78,7 @@ final class AppModel: ObservableObject {
         engine?.call(["op": "get_state"]) { [weak self] answer in
             self?.state = answer["state"] as? String ?? "error"
             self?.behind = answer["behind"] as? Bool ?? false
+            self?.removed = (answer["removed"] as? [String: Any]).map { $0["published"] as? Bool ?? false }
             if answer["vault_open"] as? Bool == true { self?.loadItems() }
         }
     }
@@ -81,11 +88,20 @@ final class AppModel: ObservableObject {
     func unlockWithFaceID() {
         run(["op": "unlock"]) { [weak self] answer in
             if answer["error"] as? String == "DEVICE_NOT_AUTHORIZED" { self?.unlockWithMasterPassword() }
+            if answer["ok"] as? Bool == true { self?.syncAfterUnlock() }
         }
     }
 
     func unlockWithMasterPassword() {
-        run(["op": "begin_recovery_unlock", "kind": "mp"])
+        run(["op": "begin_recovery_unlock", "kind": "mp"]) { [weak self] answer in
+            if answer["ok"] as? Bool == true { self?.syncAfterUnlock() }
+        }
+    }
+
+    /// §22.8 triggers: unlock and "Sync now" — never in the background
+    /// (the app locks when it leaves the foreground).
+    private func syncAfterUnlock() {
+        Task { @MainActor in await syncWithMac() }
     }
 
     func loadItems() {
@@ -128,6 +144,9 @@ final class AppModel: ObservableObject {
 
     static func describe(_ error: String) -> String {
         switch error {
+        case "PEER_AUTH_INVALID": return "Couldn't verify the answer from your Mac. Nothing was changed."
+        case "PEER_NOT_PERMITTED": return "Your Mac no longer lets this iPhone sync."
+        case "PEER_LIMIT": return "Your Mac is busy — try again in a minute."
         case "WRONG_CREDENTIAL": return "That password is not right."
         case "PRESENCE_DENIED": return "Face ID was cancelled."
         case "PANEL_CANCELLED": return "Cancelled."

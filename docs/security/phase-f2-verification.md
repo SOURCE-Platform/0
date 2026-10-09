@@ -658,3 +658,49 @@ Targeted results:
 
 **F.2b step 6 is closed.** Still open for F.2b: the device checks IO-01…07
 and AU-04, several of which need F.2c and F.2d features.
+
+## 9. F.2c phone side — the requester (candidate)
+
+Plan: `phase-f2c-phone-plan.md`, which lists the milestone's four
+choices. Engine work is in `b1df19b`; the app work follows in the next
+commit.
+
+**Engine**
+
+- `peer::client::envelope` builds and signs requests, and checks
+  responses in the requester order.
+- `peer::client::status` handles `peer_status`. The Mac's chain must
+  extend the phone's committed chain. The extension is verified entry by
+  entry, with epochs accepted only under the phone's VK for its last
+  accepted manifest. A revocation of the phone, published or pending,
+  produces the removal outcome.
+- `peer::client` runs the exchange: hello, heads for differing buckets,
+  then revs_get admitted through the shared `admit_rows`, with the Mac as
+  source. It re-asks after caps and bounds the number of round trips.
+- `peer::client::removal` holds the persisted removal lock.
+- Ops `peer_sync_begin` and `peer_sync_step` are added to the FFI
+  allowlist and refused by the Mac helper.
+- Authoring is refused while the phone is marked removed.
+
+**App**
+
+- `PeerClient`: the SPKI pin built from the raw P-256 point; header-only
+  bearer token; no redirects; host hints tried in order.
+- `PeerSync`: the byte-carrying loop.
+- Triggers: unlock and "Sync now".
+- The sync bar and the removal screen.
+
+**Tests:**
+
+- `phone_sync.rs` (4):
+  - a pull, then a no-op resync;
+  - the freshness wait;
+  - PA-05 (swapped body, flipped signature, replayed answer: "unable to
+    verify", and the exchange ends);
+  - removal locks the phone, reads stay, authoring and syncing are
+    refused.
+- `ipc` refuses the phone-only ops on the Mac.
+- vault-ffi and the engine pass.
+- `PinTests` (2) check the pin against CryptoKit's own SPKI DER, and that
+  P-384 is refused.
+- `peer_followups`, `peer_hardening` and `phone_join` still pass.

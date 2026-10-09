@@ -20,11 +20,14 @@
 		922B9C4BA779807CF8D87A67 /* XVPeerWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */; };
 		9354FF50CF37C9859B013DA9 /* xv_tlv.json in Resources */ = {isa = PBXBuildFile; fileRef = FBC9E93020CA4A057C1C93AC /* xv_tlv.json */; };
 		A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB648201BE774BB26FB803 /* EngineTests.swift */; };
+		A7F1C9101A08609477C0BCB1 /* PeerClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956B40F606AD3F7766C05E0B /* PeerClient.swift */; };
 		B1438F27C53576568BB3A842 /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DFDE1D765033C8C76490273 /* AppModel.swift */; };
 		B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */; };
 		BB66C879C957830CAF21A5E5 /* xv_peer.json in Resources */ = {isa = PBXBuildFile; fileRef = F9E321C901440F3947D902C2 /* xv_peer.json */; };
 		C55B457FE1BC51BE8ABDC652 /* xv_ecdsa.json in Resources */ = {isa = PBXBuildFile; fileRef = 1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */; };
+		C6ACDEC5A74807A02BF0E26B /* PeerSync.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111B54DD33A7E739DF471B6D /* PeerSync.swift */; };
 		C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */; };
+		CAA0810BB3B548A9596A1E4A /* PinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D426D84805FA26C7D0742E /* PinTests.swift */; };
 		CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */; };
 		D2AAB2D64CC7F2498B7A06E3 /* XVRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */; };
 /* End PBXBuildFile section */
@@ -43,6 +46,7 @@
 		03CB648201BE774BB26FB803 /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
 		076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVRegistryTests.swift; sourceTree = "<group>"; };
 		0D99DB8E35238A1EE22C1601 /* PairingViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingViews.swift; sourceTree = "<group>"; };
+		111B54DD33A7E739DF471B6D /* PeerSync.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerSync.swift; sourceTree = "<group>"; };
 		1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_ecdsa.json; sourceTree = "<group>"; };
 		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
 		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
@@ -53,12 +57,14 @@
 		687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "rfc9180-p256-sha256-chacha20poly1305.json"; sourceTree = "<group>"; };
 		81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SourceVault.entitlements; sourceTree = "<group>"; };
 		8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingFlow.swift; sourceTree = "<group>"; };
+		956B40F606AD3F7766C05E0B /* PeerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerClient.swift; sourceTree = "<group>"; };
 		9FEA2D1E7608412D7A5842AF /* Bridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge.swift; sourceTree = "<group>"; };
 		A77550D0100F86D38E262227 /* SourceVaultTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		AD69339BE5069168A88F2FC0 /* XVSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVSupport.swift; sourceTree = "<group>"; };
 		B82655E2306C55BA4CCF478C /* SourceVault.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SourceVault.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultEngine.swift; sourceTree = "<group>"; };
 		DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVPeerWire.swift; sourceTree = "<group>"; };
+		E8D426D84805FA26C7D0742E /* PinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PinTests.swift; sourceTree = "<group>"; };
 		E93147EB9D273DD62FF6FC76 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		ED53DEC71C02811674524B49 /* xv_enroll.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_enroll.json; sourceTree = "<group>"; };
 		ED676F66CF9B707A26A99303 /* VaultFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VaultFFI.h; sourceTree = "<group>"; };
@@ -116,6 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				03CB648201BE774BB26FB803 /* EngineTests.swift */,
+				E8D426D84805FA26C7D0742E /* PinTests.swift */,
 			);
 			path = SourceVaultTests;
 			sourceTree = "<group>";
@@ -166,6 +173,8 @@
 				FF7C53B7D113D72746B717F0 /* PairingClient.swift */,
 				8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */,
 				0D99DB8E35238A1EE22C1601 /* PairingViews.swift */,
+				956B40F606AD3F7766C05E0B /* PeerClient.swift */,
+				111B54DD33A7E739DF471B6D /* PeerSync.swift */,
 				81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */,
 				2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */,
 				CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */,
@@ -370,6 +379,8 @@
 				1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */,
 				CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */,
 				38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */,
+				A7F1C9101A08609477C0BCB1 /* PeerClient.swift in Sources */,
+				C6ACDEC5A74807A02BF0E26B /* PeerSync.swift in Sources */,
 				C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */,
 				B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */,
 				05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */,
@@ -394,6 +405,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */,
+				CAA0810BB3B548A9596A1E4A /* PinTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -142,3 +142,29 @@ Consequences, stated:
 - The provisional `peer_state` verification must use the full provider
   order. It reuses `sync::remote::parse` and the §22.10 checks, never a
   lighter path.
+
+## Progress
+
+- **Engine done (2026-10-09, `b1df19b`).** `peer::client`
+  (`envelope`, `status`, `removal`, the exchange), ops `peer_sync_begin`
+  and `peer_sync_step`, a shared `admit_rows`, and the revocation lock.
+  Tests: `tests/phone_sync.rs` (4), against the Mac's real `peer_serve`.
+- **App done (2026-10-09).** `PeerClient` (SPKI pin), the `PeerSync`
+  loop, sync after unlock and "Sync now", the sync bar, and the removal
+  screen. Tests: `PinTests` (2).
+- **Choices made in this milestone, for review:**
+  1. **`peer_state` and `peer_revs_put` are not requested yet.** A
+     provisional state moves nothing the phone can act on before its own
+     provider path exists. Without a verified provider exchange, the
+     phone may push only provider-confirmed revisions, and those came
+     from the Mac. Both move to F.2d.
+  2. **The removal lock is a marker file in the vault directory.**
+     Unlocking is still allowed so the vault can be read; authoring and
+     peer exchanges are refused; nothing is deleted (§22.9 "no automatic
+     deletion"). Lifting the lock needs the provider (F.2d).
+  3. **The Mac addressed is the authorizer of the phone's own enroll
+     entry**, which must still be active in the committed registry.
+  4. **Real-world consequence of §22.7 freshness:** the Mac serves its
+     local-only edits only within 15 minutes of a verified provider
+     exchange. Until a backup service is configured, the phone receives
+     only what reached it at pairing, plus provider-confirmed revisions.

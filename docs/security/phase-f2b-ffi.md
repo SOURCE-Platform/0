@@ -106,8 +106,20 @@ Keychain item.
 authorization, device revocation, total-loss recovery, and
 `rotate_recovery_key` — its phone form (rotation staged before the sheet,
 in a background task, the sheet saying whether the key is live, §22.10,
-IO-04) does not exist yet; it comes with F.2d. The peer client (F.2c
-phone side) comes with its own entries here.
+IO-04) does not exist yet; it comes with F.2d.
+
+**Peer sync (F.2c phone side, §22.8, §22.9):**
+
+- `peer_sync_begin` returns the first signed request (a carriage entry,
+  base64url) and the paired Mac's `peer_endpoint` (host hints, port, pin,
+  token). The token authorizes nothing in the vault.
+- `peer_sync_step {response | refused}` returns the next request, `done`
+  (counts only), or `removed`.
+- The engine builds and signs every request field, so no caller digest is
+  signed. It checks each answer in the requester order and admits
+  revisions under §22.7.
+- UNLOCKED only.
+- The Mac helper refuses both ops.
 
 ## 5. What never crosses
 
