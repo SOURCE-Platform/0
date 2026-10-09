@@ -66,6 +66,8 @@ pub struct Sessions {
     pub join: Option<crate::enroll::join::JoinSession>,
     /// The phone's peer exchange in progress (§22.8, `peer_sync_ops`).
     pub peer_client: Option<crate::peer::client::Exchange>,
+    /// A Mac answer too large for one FFI frame, streamed in (SEC-I1).
+    pub peer_answer: Option<Transfer>,
 }
 
 /// Wire annex A.2.2: at most two peer sessions open, idle 60 s.
@@ -83,6 +85,7 @@ impl Sessions {
         self.peer_in.clear();
         self.join = None; // and a pairing in progress
         self.peer_client = None; // and a phone's peer exchange
+        self.peer_answer = None;
     }
 
     pub fn peer_sessions(&self) -> usize {
@@ -108,6 +111,9 @@ impl Sessions {
         if let Some(t) = self.join.as_mut().and_then(|j| j.transfer.as_mut()).filter(|t| &t.id == id) {
             return Some(t);
         }
+        if let Some(t) = self.peer_answer.as_mut().filter(|t| &t.id == id) {
+            return Some(t);
+        }
         self.recovery.as_mut().filter(|r| &r.t.id == id).map(|r| &mut r.t)
     }
 
@@ -118,6 +124,7 @@ impl Sessions {
         self.bundle = self.bundle.take().filter(|b| !b.expired());
         self.peer.retain(|p| !p.idle_longer_than(PEER_IDLE));
         self.peer_in.retain(|(_, t)| !t.idle_longer_than(PEER_IDLE));
+        self.peer_answer = self.peer_answer.take().filter(|t| !t.idle_longer_than(PEER_IDLE));
         self.recovery = self.recovery.take().filter(|r| !r.t.expired());
     }
 }
@@ -143,7 +150,7 @@ impl VaultCore {
             v["behind"] = serde_json::json!(true);
         }
         // §22.9: this phone was removed by its Mac (locked; reads only).
-        if let Some(r) = crate::peer::client::removal::load(&self.vault_dir) {
+        if let Some(r) = crate::peer::client::removal::active(&self.vault_dir) {
             v["removed"] = serde_json::json!({ "published": r.published });
         }
         v

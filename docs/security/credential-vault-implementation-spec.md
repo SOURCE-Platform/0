@@ -5255,7 +5255,13 @@ Milestones (each with the review loop):
    FFI catalogue and lint, Keychain and file rules, QR pairing and pin,
    first materialization, Face ID / MP unlock.
 3. **F.2c — peer sync:** the wire annex (reviewed first), then
-   §22.5 – §22.9 end to end.
+   §22.5 – §22.9 end to end. *(Sequencing note, 2026-10-09, review
+   VER-I4: the phone requests `peer_state` and sends `peer_revs_put` once
+   it has its own provider path, in F.2d. Before that it can act on
+   neither. A provisional state moves nothing it can use (§22.5,
+   "Consequence"), and it may push only provider-confirmed revisions
+   (§22.7 freshness), which came from the Mac. The Mac serves both
+   already.)*
 4. **F.2d — phone authority:** publication, rotation, revocation (RC-01),
    total-loss recovery on a phone.
 5. **F.2e — reverse enrollment**, only after §22.13's review.

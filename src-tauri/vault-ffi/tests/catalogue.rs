@@ -93,3 +93,12 @@ fn the_op_allowlist_holds_nothing_mac_only() {
         assert!(!IOS_OPS.contains(op), "{op} is not an F.2b phone op");
     }
 }
+
+/// The phone's own ops are reachable through `ov0_engine_call` (review
+/// VER-I1: a dropped entry would silently disable pairing or sync).
+#[test]
+fn the_op_allowlist_holds_the_phone_ops() {
+    for op in ["join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort", "peer_sync_begin", "peer_sync_step", "peer_sync_receive"] {
+        assert!(IOS_OPS.contains(&op), "{op} is a phone op");
+    }
+}

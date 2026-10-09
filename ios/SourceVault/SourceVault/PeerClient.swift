@@ -14,7 +14,13 @@ final class PeerClient: NSObject, URLSessionTaskDelegate {
         /// An unsigned refusal (401, 403, 413, 429, 503) — the engine
         /// reads it as "unable to verify" or the rate limit.
         case refused(Int)
+        /// An answer over the §22.8 cap: never buffered (review SEC-I2).
+        case tooLarge
     }
+
+    /// §22.8: a response body is at most 8 MiB; the carriage adds the
+    /// envelope and signature (the engine's `MAX_ANSWER`).
+    static let maxAnswer = (8 << 20) + 4096
 
     private let hosts: [String]
     private let port: Int
@@ -44,8 +50,14 @@ final class PeerClient: NSObject, URLSessionTaskDelegate {
             req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             req.httpBody = body
-            guard let (data, response) = try? await session.data(for: req), let http = response as? HTTPURLResponse else { continue }
+            guard let (bytes, response) = try? await session.bytes(for: req), let http = response as? HTTPURLResponse else { continue }
             guard http.statusCode == 200 else { throw Failure.refused(http.statusCode) }
+            guard http.expectedContentLength <= Self.maxAnswer else { throw Failure.tooLarge }
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > Self.maxAnswer { throw Failure.tooLarge }
+            }
             return data
         }
         throw Failure.unreachable

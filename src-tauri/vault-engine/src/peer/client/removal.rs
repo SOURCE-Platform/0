@@ -23,18 +23,51 @@ fn path(dir: &Path) -> PathBuf {
     dir.join("removal.json")
 }
 
-pub fn load(dir: &Path) -> Option<Removal> {
-    std::fs::read(path(dir)).ok().and_then(|b| serde_json::from_slice(&b).ok())
+fn tmp(dir: &Path) -> PathBuf {
+    dir.join("removal.json.tmp")
 }
 
-/// Written atomically; a later `published` never turns back to pending.
+/// Fails closed (review SEC-I3): the marker's *existence* means removed —
+/// a torn, empty or unreadable file still locks (read as pending), and so
+/// does a write interrupted before its rename.
+pub fn load(dir: &Path) -> Option<Removal> {
+    let fallback = Removal { published: false, at: 0 };
+    for p in [path(dir), tmp(dir)] {
+        match std::fs::read(&p) {
+            Ok(b) => return Some(serde_json::from_slice(&b).unwrap_or(fallback)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Some(fallback),
+        }
+    }
+    None
+}
+
+/// Written and synced before the rename, and the directory synced after
+/// it; a later `published` never turns back to pending.
 pub fn record(dir: &Path, published: bool, now: u64) -> Result<Removal, ErrorCode> {
+    use std::io::Write;
     let r = match load(dir) {
-        Some(old) => Removal { published: old.published || published, at: old.at },
+        Some(old) => Removal { published: old.published || published, at: if old.at == 0 { now } else { old.at } },
         None => Removal { published, at: now },
     };
-    let tmp = dir.join("removal.json.tmp");
-    std::fs::write(&tmp, serde_json::to_vec(&r).map_err(|_| ErrorCode::Internal)?).map_err(|_| ErrorCode::Internal)?;
-    std::fs::rename(&tmp, path(dir)).map_err(|_| ErrorCode::Internal)?;
+    let bytes = serde_json::to_vec(&r).map_err(|_| ErrorCode::Internal)?;
+    let mut f = std::fs::File::create(tmp(dir)).map_err(|_| ErrorCode::Internal)?;
+    f.write_all(&bytes).and_then(|_| f.sync_all()).map_err(|_| ErrorCode::Internal)?;
+    std::fs::rename(tmp(dir), path(dir)).map_err(|_| ErrorCode::Internal)?;
+    std::fs::File::open(dir).and_then(|d| d.sync_all()).map_err(|_| ErrorCode::Internal)?;
     Ok(r)
+}
+
+/// The lock as it applies here: only on an iPhone (review SEC-O1). A Mac's
+/// device record says platform 1, so a marker planted in the helper's
+/// directory changes nothing there; anything else fails closed.
+pub fn active(dir: &Path) -> Option<Removal> {
+    let platform = std::fs::read(dir.join(crate::device::identity::DEVICE_FILE_NAME))
+        .ok()
+        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .and_then(|v| v.get("platform").and_then(serde_json::Value::as_u64));
+    if platform == Some(1) {
+        return None;
+    }
+    load(dir)
 }

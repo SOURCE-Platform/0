@@ -5,6 +5,12 @@
 //! (`seq ≤ committed_seq`) or still among the Mac's own entries — the vault
 //! locks either way; only a provider-confirmed state can lift that.
 //! Nothing here moves the committed tier (§22.5: provisional).
+//!
+//! Stricter than §22.9 by one case (review SEC-O2, accepted): an epoch
+//! bound to a manifest the phone does not hold is "unable to verify" even
+//! from an active signer, so a revocation after it is learned at the
+//! phone's next provider contact (F.2d) — liveness only, never a wrong
+//! lock.
 
 use serde::{Deserialize, Serialize};
 use vault_proto::crypto::registry::{entry_hash, EntryKind};

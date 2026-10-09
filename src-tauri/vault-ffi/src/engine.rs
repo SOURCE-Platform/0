@@ -27,7 +27,7 @@ pub const IOS_OPS: &[&str] = &[
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).
-    "peer_sync_begin", "peer_sync_step",
+    "peer_sync_begin", "peer_sync_step", "peer_sync_receive",
 ];
 
 /// The helper's frame cap (spec §1.4, `ipc/framing.rs`), kept here too.

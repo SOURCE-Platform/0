@@ -17,7 +17,7 @@ pub mod status;
 use std::collections::BTreeMap;
 
 use serde_json::{json, Value};
-use vault_proto::peer::body::{heads_digest, Hello, BUCKETS};
+use vault_proto::peer::body::{heads_digest, Hello, BUCKETS, MAX_HEADS};
 use vault_proto::peer::exchange::{encode_heads_req, encode_revs_get, HeadsItem, HeadsResp, Revs};
 use vault_proto::peer::{PeerOp, PeerStatus};
 
@@ -46,11 +46,14 @@ pub struct Summary {
     pub unavailable: u64,
     pub mac_behind: bool,
     pub limited: bool,
+    /// The Mac's signed status was verified this exchange (the §22.9 check
+    /// ran); false when it answered status 1 or 2 instead.
+    pub checked: bool,
 }
 
 impl Summary {
     pub fn json(&self) -> Value {
-        json!({ "admitted": self.admitted, "waiting": self.waiting, "refused": self.refused, "unavailable": self.unavailable, "mac_behind": self.mac_behind, "limited": self.limited })
+        json!({ "admitted": self.admitted, "waiting": self.waiting, "refused": self.refused, "unavailable": self.unavailable, "mac_behind": self.mac_behind, "limited": self.limited, "checked": self.checked })
     }
 }
 
@@ -139,7 +142,10 @@ impl Exchange {
         match std::mem::replace(&mut self.phase, Phase::Status) {
             Phase::Status => match status::check(env.committed, &self.vault_id, &env.me.device_id(), env.manifest_hash, env.vk, &body)? {
                 Standing::Removed { published } => Ok(Step::Removed { published }),
-                Standing::Active => self.ask(env, PeerOp::Hello, vault_proto::peer::body::empty(), Phase::Hello),
+                Standing::Active => {
+                    self.summary.checked = true;
+                    self.ask(env, PeerOp::Hello, vault_proto::peer::body::empty(), Phase::Hello)
+                }
             },
             Phase::Hello => {
                 let theirs = Hello::decode(&body).map_err(|_| ErrorCode::PeerAuthInvalid)?;
@@ -168,7 +174,9 @@ impl Exchange {
             match item {
                 HeadsItem::Heads { record_id, heads } => {
                     let have = mine.get(record_id).cloned().unwrap_or_default();
-                    if &have != heads {
+                    if have.len() > MAX_HEADS {
+                        self.summary.unavailable += 1; // A.3.4: ≤ 64 have_heads; the provider path
+                    } else if &have != heads {
                         self.wants.push((*record_id, have));
                     }
                 }
@@ -198,6 +206,9 @@ impl Exchange {
     /// out; then the next chunk.
     fn on_revs(&mut self, env: &mut Env<'_>, asked: Vec<([u8; 16], Vec<[u8; 32]>)>, body: &[u8]) -> Result<Step, ErrorCode> {
         let batch = Revs::decode(body, false).map_err(|_| ErrorCode::PeerAuthInvalid)?;
+        if batch.objects.len() > crate::peer::admit::MAX_BATCH {
+            return Err(ErrorCode::PeerAuthInvalid); // §22.8: ≤ 2,000 revisions per batch
+        }
         let rows = crate::peer::admit::decode_batch(&batch).map_err(|_| ErrorCode::PeerAuthInvalid)?;
         let mut served: Vec<[u8; 16]> = rows.iter().filter_map(|r| uuid_bytes(&r.record_id)).collect();
         served.extend(batch.unavailable.iter().map(|(id, _)| *id));

@@ -24,6 +24,8 @@ final class AppModel: ObservableObject {
     @Published var syncing = false
     @Published var lastSynced: Date?
     @Published var syncNote: String?
+    /// The sync in progress; a lock cancels it (review VER-O4).
+    var syncTask: Task<Void, Never>?
 
     private let services = VaultServices()
     private(set) var engine: VaultEngine?
@@ -68,6 +70,8 @@ final class AppModel: ObservableObject {
     }
 
     func lock() {
+        syncTask?.cancel()
+        syncTask = nil
         entry?.cancel()
         entry = nil
         engine?.lock()
@@ -101,7 +105,7 @@ final class AppModel: ObservableObject {
     /// §22.8 triggers: unlock and "Sync now" — never in the background
     /// (the app locks when it leaves the foreground).
     private func syncAfterUnlock() {
-        Task { @MainActor in await syncWithMac() }
+        Task { @MainActor in startSync() }
     }
 
     func loadItems() {
@@ -144,9 +148,11 @@ final class AppModel: ObservableObject {
 
     static func describe(_ error: String) -> String {
         switch error {
-        case "PEER_AUTH_INVALID": return "Couldn't verify the answer from your Mac. Nothing was changed."
-        case "PEER_NOT_PERMITTED": return "Your Mac no longer lets this iPhone sync."
+        case "PEER_AUTH_INVALID": return "Couldn't verify the answer from your Mac, so it was ignored. Try again later."
+        case "PEER_NOT_PERMITTED": return "This iPhone can't sync with your Mac right now."
         case "PEER_LIMIT": return "Your Mac is busy — try again in a minute."
+        case "FORMAT_INVALID": return "Your Mac didn't understand this iPhone's request. Update both apps."
+        case "DEVICE_NOT_AUTHORIZED": return "This iPhone's key isn't available. Use your master password."
         case "WRONG_CREDENTIAL": return "That password is not right."
         case "PRESENCE_DENIED": return "Face ID was cancelled."
         case "PANEL_CANCELLED": return "Cancelled."

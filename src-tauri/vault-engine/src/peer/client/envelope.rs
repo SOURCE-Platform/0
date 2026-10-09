@@ -48,8 +48,7 @@ pub fn request(me: &dyn DeviceIdentity, vault_id: [u8; 16], responder: [u8; 16],
 }
 
 /// The response to `out`, checked in the requester order; its status and
-/// body. Every failure is `PEER_AUTH_INVALID` ("unable to verify"), except
-/// a responder no longer active (`PEER_NOT_PERMITTED`).
+/// body. Every failure is `PEER_AUTH_INVALID` ("unable to verify").
 pub fn response(reg: &RegistryState, vault_id: [u8; 16], me: [u8; 16], out: &Outstanding, bytes: &[u8]) -> Result<(PeerStatus, Vec<u8>), ErrorCode> {
     let bad = ErrorCode::PeerAuthInvalid;
     let e = EntryReader::parse(bytes).map_err(|_| bad)?;
@@ -58,10 +57,13 @@ pub fn response(reg: &RegistryState, vault_id: [u8; 16], me: [u8; 16], out: &Out
     }
     let (tlv, sig, body) = (e.get(1).ok_or(bad)?, e.get(2).ok_or(bad)?, e.get(3).ok_or(bad)?);
     let resp = PeerResponse::decode(tlv).map_err(|_| bad)?;
+    // The responder check is defence in depth: the signature below is
+    // verified under the addressed Mac's key whatever the field says.
     if resp.request_prehash != out.prehash || resp.vault_id != vault_id || resp.requester_device_id != me || resp.responder_device_id != out.responder {
         return Err(bad);
     }
-    let signer = reg.active_device(&out.responder).ok_or(ErrorCode::PeerNotPermitted)?;
+    // A responder no longer active is "unable to verify" too (§22.8, PS-14).
+    let signer = reg.active_device(&out.responder).ok_or(bad)?;
     verify(&resp.prehash(), sig, &signer.sign_pub).map_err(|_| bad)?;
     if body_hash(body) != resp.body_sha256 || !status_body_ok(resp.status, body) {
         return Err(bad);

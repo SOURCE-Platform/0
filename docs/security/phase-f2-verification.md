@@ -704,3 +704,28 @@ commit.
 - `PinTests` (2) check the pin against CryptoKit's own SPKI DER, and that
   P-384 is refused.
 - `peer_followups`, `peer_hardening` and `phone_join` still pass.
+
+### 9.1 Review of the candidate (security + verification) and fixes
+
+Security review: no blockers. Verification review: one blocker (VER-B1).
+Every finding was checked against the repository before it was accepted.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| VER-B1 / SEC-I5 PA-05 passed without the prehash and body-hash checks; "wrong responder" untested | **Fixed.** Status replayed from an earlier exchange; a well-formed `Hello` body swapped by main; answers signed by, or addressed to, another device; another vault | `tests/phone_sync_tamper.rs` | `answers_from_another_exchange_or_with_a_swapped_body_are_refused`, `answers_signed_or_addressed_by_another_device_are_refused` |
+| VER-I1 / SEC-I5 many paths untested (status prefix, extension, vault, seq; extra record; paging; source; refusal/lock ending; allowlist) | **Fixed.** A lying Mac helper is simulated by re-signing with the Mac's own key | `phone_sync_tamper.rs`, `phone_sync.rs`, `vault-ffi/tests/catalogue.rs` | `a_status_that_does_not_extend_the_committed_chain_is_refused`, `an_unrequested_record_is_refused_and_a_stalled_page_ends_limited`, `heads_paging_converges`, `a_phone_pulls_the_macs_new_items_with_the_mac_as_source`, `a_refusal_or_a_lock_ends_the_exchange`, `the_op_allowlist_holds_the_phone_ops` |
+| SEC-I1 the 64 KiB FFI frame caps answers that may be 8 MiB, so sync stalls for good | **Fixed.** `peer_sync_receive {sha256, size}` → session (cap 8 MiB + 4 KiB); the bytes go through the §1.3 stream ops, hash-checked; `peer_sync_step {session}` consumes them. Swift streams above 40 KiB | `peer_sync_ops.rs`, `provider_ops.rs`, `PeerSync.swift` | `a_large_batch_streams_in` (140 items; answer over 64 KiB) |
+| SEC-I2 the phone buffered an unbounded body | **Fixed.** Streamed read, aborted past the cap or a larger `Content-Length` | `PeerClient.swift` | — (device) |
+| SEC-I3 / VER-I3 removal lock failed open; not crash-durable | **Fixed.** The marker's existence locks (torn, empty, unreadable or `.tmp` all count as pending); file and directory are fsynced | `peer/client/removal.rs` | `the_lock_survives_a_restart_and_fails_closed` |
+| SEC-I4 / VER-I2 copy said "removed" and advised re-pairing (which needs deleting the app); "Synced" shown when the status check never ran or revisions wait | **Fixed.** "Removal pending" everywhere; keep the vault, as it may hold the only copy; no re-pair advice. `checked` added to the summary; "Synced" only when checked and complete; banners for waiting, unavailable or limited, and for "your Mac needs to catch up" | `Views.swift`, `PeerSync.swift`, `client/mod.rs` | — |
+| VER-I4 choice 1 (no `peer_state` / `peer_revs_put`) departs from §22.17's F.2c scope | **Recorded in the spec** as a sequencing note on §22.17 (moved to F.2d, with the reason); owner informed. No invariant changes | spec §22.17 | — |
+| VER-I5 §9 overstated the evidence | **Corrected** by this table | — | — |
+| SEC-O1 a marker planted in the Mac helper's directory stopped authoring | **Fixed.** The lock applies only where the device record says iPhone; anything else fails closed | `removal.rs::active` | `a_marker_in_the_mac_helpers_directory_changes_nothing` |
+| SEC-O2 epoch check stricter than §22.9 (an epoch bound to an unknown manifest hides a later revocation) | **Accepted as stated**: liveness only; the phone reads it as "unable to verify" and learns at its next provider contact (F.2d). Noted in `status.rs` | `status.rs` | — |
+| SEC-O3 / VER-O6 caps on the phone | **Fixed.** At most 2,000 revisions per answer; a record with more than 64 heads is left to the provider; the 8 MiB answer cap (SEC-I2) | `client/mod.rs`, `PeerClient.swift` | — |
+| VER-O1 inactive responder → `PEER_NOT_PERMITTED` | **Fixed.** Now "unable to verify" | `envelope.rs` | — |
+| VER-O2 `separate_floors` hides real behind | **Kept, justified.** The reviewer confirmed that with its own floor a joined phone is not behind; documented in the helper | `tests/sync_fx` | — |
+| VER-O3 reconnection trigger, mDNS | **Deferred** (hints suffice for now); an endpoint with no hints shows a message | `PeerSync.swift` | — |
+| VER-O4 lock did not cancel the Swift loop | **Fixed.** `syncTask` is cancelled by lock; a `BAD_STATE` after a lock ends quietly | `AppModel.swift`, `PeerSync.swift` | — |
+| VER-O5 wording | **Fixed.** No "nothing was changed"; `FORMAT_INVALID` and `DEVICE_NOT_AUTHORIZED` covered; 503 says the Mac's vault isn't ready | `AppModel.swift`, `PeerSync.swift` | — |
+| VER-O7 shared pin vector Rust↔Swift; delegate untested | **Deferred to the device run** (IO-07) | — | — |

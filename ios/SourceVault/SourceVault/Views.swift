@@ -77,7 +77,7 @@ struct SyncBar: View {
     var body: some View {
         HStack {
             if model.removed != nil {
-                Text("This iPhone was removed from your vault.").font(.caption)
+                Text("Removal pending — your Mac removed this iPhone. Nothing has been deleted.").font(.caption)
             } else if model.syncing {
                 ProgressView().controlSize(.small)
                 Text("Syncing with your Mac…").font(.caption)
@@ -85,7 +85,7 @@ struct SyncBar: View {
                 Text(model.syncNote ?? model.lastSynced.map { "Synced with your Mac \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not synced yet")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Sync now") { Task { await model.syncWithMac() } }.font(.caption)
+                Button("Sync now") { model.startSync() }.font(.caption)
             }
         }
         .padding(.horizontal).padding(.vertical, 8)
@@ -93,16 +93,18 @@ struct SyncBar: View {
     }
 }
 
-/// §22.9: the Mac removed this iPhone. The vault stays readable and
-/// nothing is deleted; "Remove this vault" comes later (F.2d).
+/// §22.9: the Mac removed this iPhone — "removal pending" until the
+/// backup corroborates it (F.2d). The vault stays readable, nothing is
+/// deleted, and nothing here suggests deleting it: this may be the only
+/// remaining copy (reviews SEC-I4 / VER-I2).
 struct RemovedView: View {
     @EnvironmentObject var model: AppModel
 
     var body: some View {
         VStack(spacing: 16) {
             Image(systemName: "iphone.slash").font(.largeTitle)
-            Text("Your Mac removed this iPhone from your vault").font(.headline).multilineTextAlignment(.center)
-            Text("Removal pending. You can still open the vault to read it — nothing has been deleted. To use this iPhone again, pair it with your Mac again.")
+            Text("Removal pending").font(.headline)
+            Text("Your Mac says this iPhone was removed from your vault. You can still open the vault to read it — nothing has been deleted. Keep this iPhone's vault for now: it may hold the only copy of some items.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Open to read") { model.unlockWithFaceID() }
         }
