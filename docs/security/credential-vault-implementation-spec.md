@@ -4835,7 +4835,7 @@ the VK is resident and as LOCKED otherwise:
 
 | u16 | op | receiver state | request body → response body |
 |---|---|---|---|
-| 1 | `peer_hello` | serving | floors (committed registry head seq + hash; committed provider generation + manifest hash) and the heads digest → the same from the responder |
+| 1 | `peer_hello` | serving | floors (committed registry head seq + hash; committed provider generation + manifest hash) and the heads digest → the same from the responder *(request: the empty body, wire annex A.3.1 erratum)* |
 | 2 | `peer_state` | serving | the requester's committed generation → the responder's latest **provider-committed** state verbatim (§11.2 objects + `recovery_auth`), or status 3 |
 | 3 | `peer_heads` | serving | bucket numbers → per record in those buckets: `record_id` and its sorted head `revision_id`s |
 | 4 | `peer_revs_get` | serving | wanted `record_id`s with the requester's heads → revision objects (§3.7) with their parent closure (§22.7) |

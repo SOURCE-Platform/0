@@ -88,7 +88,6 @@ impl Objects {
     }
 }
 
-/// `{0x01 state}`: the stored verified `state_get` body, byte for byte.
 impl Objects {
     /// Strict: a flag header, then chunks `{sha256, offset, total_len,
     /// bytes}` that lie inside their object, or unavailable `{sha256,
@@ -118,6 +117,8 @@ impl Objects {
     }
 }
 
+/// `{0x01 state}`: the verified state re-encoded from its fields (annex
+/// A.3.2, `sync::remote::canonical`).
 pub fn encode_state(state: &[u8]) -> Vec<u8> {
     encode_document(&[entry(&[(0x01, state.to_vec())])])
 }
@@ -185,6 +186,23 @@ impl HeadsResp {
             });
         }
         let r = HeadsResp { complete: head.flag(0x01)?, buckets: head.opt(0x02).map(<[u8]>::to_vec).unwrap_or_default(), items };
+        // Annex A.3.3: covered buckets ascend; each item is in one of them,
+        // bucket by bucket, records ascending within a bucket; reasons 1–4.
+        if r.buckets.windows(2).any(|w| w[0] >= w[1]) {
+            return Err(bad());
+        }
+        let mut last: Option<(u8, [u8; 16])> = None;
+        for it in &r.items {
+            let (rid, reason) = match it {
+                HeadsItem::Heads { record_id, .. } => (*record_id, None),
+                HeadsItem::Unavailable { record_id, reason } => (*record_id, Some(*reason)),
+            };
+            let key = (super::body::bucket(&rid), rid);
+            if !r.buckets.contains(&key.0) || last.is_some_and(|l| l >= key) || reason.is_some_and(|x| !(1..=4).contains(&x)) {
+                return Err(bad());
+            }
+            last = Some(key);
+        }
         check_roundtrip(r.encode(), bytes)?;
         Ok(r)
     }

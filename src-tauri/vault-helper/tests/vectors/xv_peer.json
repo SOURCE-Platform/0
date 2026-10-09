@@ -369,9 +369,9 @@
     },
     {
       "decoder": "put_counts",
-      "expected": "signed status 4 (FORMAT_INVALID)",
+      "expected": "requester: unable to verify",
       "hex": "000000001401000000020001020000000100030000000100ff",
-      "rule": "padded integer in a body"
+      "rule": "padded integer in a response body"
     },
     {
       "decoder": "revs_get_req",
@@ -420,6 +420,30 @@
       "expected": "requester: unable to verify",
       "hex": "0000000007010000000101ff",
       "rule": "status 1–4 with a non-empty body"
+    },
+    {
+      "decoder": "revs_batch",
+      "expected": "requester: unable to verify",
+      "hex": "000000003f010000000101ff02000000105a5a5a5a5a5a5a5a5a5a5a5a000000c6050000000101ff02000000105a5a5a5a5a5a5a5a5a5a5a5a00000000050000000101ff",
+      "rule": "unavailable entries descending"
+    },
+    {
+      "decoder": "objects_resp",
+      "expected": "requester: unable to verify",
+      "hex": "0000000043010000000101ff0100000020717171717171717171717171717171717171717171717171717171717171717102000000010003000000010304000000053132333435ff",
+      "rule": "chunk past its object's total_len"
+    },
+    {
+      "decoder": "heads_resp",
+      "expected": "requester: unable to verify",
+      "hex": "00000000830100000001010200000001b0ff01000000105a5a5a5a5a5a5a5a5a5a5a5a0000003e02000000207777777777777777777777777777777777777777777777777777777777777777ff01000000105a5a5a5a5a5a5a5a5a5a5a5a0000000002000000207777777777777777777777777777777777777777777777777777777777777777ff",
+      "rule": "records out of order within a bucket"
+    },
+    {
+      "decoder": "heads_resp",
+      "expected": "requester: unable to verify",
+      "hex": "00000000480100000001010200000001b1ff01000000105a5a5a5a5a5a5a5a5a5a5a5a0000000002000000207777777777777777777777777777777777777777777777777777777777777777ff",
+      "rule": "record outside the covered buckets"
     }
   ],
   "keys": {
@@ -533,5 +557,12 @@
     "state_commit": "9e9d9fc8ad3f28a4f3f4d48ee1a7444d2dea06bc36660e57ec79cdb849f4ee41",
     "vault_id": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
   },
+  "valid_extra": [
+    {
+      "decoder": "heads_resp",
+      "hex": "000000008401000000010102000000022db0ff01000000105a5a5a5a5a5a5a5a5a5a5a5a0000000102000000207777777777777777777777777777777777777777777777777777777777777777ff01000000105a5a5a5a5a5a5a5a5a5a5a5a0000000002000000207878787878787878787878787878787878787878787878787878787878787878ff",
+      "rule": "two non-empty buckets, ascent per bucket"
+    }
+  ],
   "zero_integer": "00"
 }

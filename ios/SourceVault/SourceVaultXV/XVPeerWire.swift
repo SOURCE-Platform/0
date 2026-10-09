@@ -63,19 +63,23 @@ enum PeerWire {
         try need(!buckets.isEmpty && zip(buckets, buckets.dropFirst()).allSatisfy { $0 < $1 })
     }
 
-    /// A.3.3: `{complete, buckets?}`, then whole records ascending, each
-    /// `{record_id, heads}` or `{record_id, reason}`.
+    /// A.3.3: `{complete, buckets?}` (covered buckets, ascending), then
+    /// bucket by bucket, records ascending within a bucket, each
+    /// `{record_id, heads}` or `{record_id, reason}`, all in covered buckets.
     static func headsResponse(_ b: Data) throws {
         let d = try TLV.document(b)
         try need(d[0].tags == [1] || d[0].tags == [1, 2])
         _ = try flag(d[0].value(1))
-        if let bs = d[0].value(2) { try need(!bs.isEmpty && zip(bs, bs.dropFirst()).allSatisfy { $0 < $1 }) }
-        var last: Data?
+        let covered = [UInt8](d[0].value(2) ?? Data())
+        try need(zip(covered, covered.dropFirst()).allSatisfy { $0 < $1 })
+        var last: (UInt8, Data)?
         for e in d.dropFirst() {
             guard let rid = e.value(1), rid.count == 16 else { throw Bad() }
             if e.tags == [1, 2] { _ = try ids(e.value(2)!, max: 64) } else { try need(e.tags == [1, 5]); try reason(e.value(5)) }
-            if let l = last { try need(l.lexicographicallyPrecedes(rid)) }
-            last = rid
+            let b = rid.sha256[0]
+            try need(covered.contains(b))
+            if let (lb, lr) = last { try need(lb < b || (lb == b && lr.lexicographicallyPrecedes(rid))) }
+            last = (b, rid)
         }
     }
 

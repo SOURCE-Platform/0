@@ -155,7 +155,7 @@ pub fn invalid_cases(good: &[u8], r: &[[u8; 16]; 3], g: &Graph) -> Value {
         case("body without its header entry", "heads_req", STATUS4, vec![0x00, 0, 0, 0, 0]),
         case("document length wrong", "document", STATUS4, vec![0x00, 0, 0, 0, 2, 0xFF]),
         case("list out of order (buckets)", "heads_req", STATUS4, encode_document(&[entry(&[(0x01, vec![9, 3])])])),
-        case("padded integer in a body", "put_counts", STATUS4, encode_document(&[raw_entry(&[(1, &[0, 1]), (2, &[0]), (3, &[0])])])),
+        case("padded integer in a response body", "put_counts", UNVERIFIED, encode_document(&[raw_entry(&[(1, &[0, 1]), (2, &[0]), (3, &[0])])])),
         case("list out of order (record ids)", "revs_get_req", STATUS4, encode_revs_get(&[(r[1], vec![]), (r[0], vec![])])),
         case("empty list present instead of absent", "revs_get_req", STATUS4, encode_document(&[EntryBuilder::new().build(), raw_entry(&[(1, &r[0]), (2, &[])])])),
         case("absent offset (objects mode)", "state_req", STATUS4, encode_document(&[entry(&[(0x02, vec![0x77; 32])]), entry(&[(0x01, vec![0x01; 32])])])),
@@ -164,7 +164,35 @@ pub fn invalid_cases(good: &[u8], r: &[[u8; 16]; 3], g: &Graph) -> Value {
         case("revisions in first-in-first-out order", "revs_batch", UNVERIFIED, batch(&objects(&g.fifo))),
         case("unavailable entry before an object", "revs_batch", UNVERIFIED, after_objects),
         case("status 1–4 with a non-empty body", "status4_body", UNVERIFIED, status4_body),
+        case("unavailable entries descending", "revs_batch", UNVERIFIED, encode_document(&[entry(&[(0x01, uint(1))]), entry(&[(0x02, r[2].to_vec()), (0x05, vec![1])]), entry(&[(0x02, r[0].to_vec()), (0x05, vec![1])])])),
+        case("chunk past its object's total_len", "objects_resp", UNVERIFIED, encode_document(&[entry(&[(0x01, uint(1))]), entry(&[(0x01, vec![0x71; 32]), (0x02, uint(0)), (0x03, uint(3)), (0x04, b"12345".to_vec())])])),
+        case("records out of order within a bucket", "heads_resp", UNVERIFIED, heads_resp(bucket(&r[0]), &[r[1], r[0]])),
+        case("record outside the covered buckets", "heads_resp", UNVERIFIED, heads_resp(bucket(&r[0]).wrapping_add(1), &[r[0]])),
     ])
+}
+
+fn heads_resp(covered: u8, records: &[[u8; 16]]) -> Vec<u8> {
+    let mut es = vec![entry(&[(0x01, uint(1)), (0x02, vec![covered])])];
+    es.extend(records.iter().map(|id| entry(&[(0x01, id.to_vec()), (0x02, rev(0x77).to_vec())])));
+    encode_document(&es)
+}
+
+/// A valid heads answer covering two non-empty buckets, where the later
+/// bucket holds the smaller record id: ascent is per bucket (A.3.3).
+pub fn two_bucket_heads() -> Vec<u8> {
+    let id = |i: u32| {
+        let mut r = [0x5Au8; 16];
+        r[12..].copy_from_slice(&i.to_be_bytes());
+        r
+    };
+    let first = id(0);
+    let other = (1..).map(id).find(|x| bucket(x) < bucket(&first)).expect("a lower bucket");
+    let es = vec![
+        entry(&[(0x01, uint(1)), (0x02, vec![bucket(&other), bucket(&first)])]),
+        entry(&[(0x01, other.to_vec()), (0x02, rev(0x77).to_vec())]),
+        entry(&[(0x01, first.to_vec()), (0x02, rev(0x78).to_vec())]),
+    ];
+    encode_document(&es)
 }
 
 pub fn sha(bytes: &[u8]) -> String {

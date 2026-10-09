@@ -153,7 +153,7 @@ final class XVPeerTests: XCTestCase {
 
     func testEveryInvalidCaseIsRefused() throws {
         let cases = try XCTUnwrap(file["invalid"] as? [[String: Any]])
-        XCTAssertGreaterThanOrEqual(cases.count, 22)
+        XCTAssertGreaterThanOrEqual(cases.count, 26)
         for c in cases {
             let b = hexOf(c["hex"])
             let decode: (Data) throws -> Void
@@ -165,11 +165,20 @@ final class XVPeerTests: XCTestCase {
             case "state_req": decode = PeerWire.stateRequest
             case "document": decode = { _ = try TLV.document($0) }
             case "heads_resp": decode = PeerWire.headsResponse
+            case "objects_resp": decode = { _ = try PeerWire.objectsResponse($0) }
             case "status4_body": decode = PeerWire.empty
             case "revs_batch": decode = { _ = try PeerWire.revsBatch($0) }
             default: return XCTFail("unknown decoder \(c["decoder"]!)")
             }
             XCTAssertThrowsError(try decode(b), "\(c["rule"]!) must be refused")
+        }
+    }
+
+    /// A valid answer the checks must accept (ascent is per bucket).
+    func testExtraValidBodiesDecode() throws {
+        for c in try XCTUnwrap(file["valid_extra"] as? [[String: Any]]) {
+            XCTAssertEqual(c["decoder"] as? String, "heads_resp")
+            XCTAssertNoThrow(try PeerWire.headsResponse(hexOf(c["hex"])), "\(c["rule"]!)")
         }
     }
 }

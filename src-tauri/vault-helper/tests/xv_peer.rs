@@ -165,7 +165,7 @@ fn the_three_orders_differ() {
 #[test]
 fn every_invalid_case_is_refused_by_its_decoder() {
     let cases = file()["invalid"].as_array().unwrap().clone();
-    assert!(cases.len() >= 22, "one per A.1 rule");
+    assert!(cases.len() >= 26, "one per A.1 rule");
     for c in cases {
         let b = bytes(&c["hex"]);
         let expected = c["expected"].as_str().unwrap();
@@ -177,11 +177,20 @@ fn every_invalid_case_is_refused_by_its_decoder() {
             "revs_get_req" => decode_revs_get(&b).err(),
             "state_req" => StateReq::decode(&b).err(),
             "heads_resp" => HeadsResp::decode(&b).err(),
+            "objects_resp" => Objects::decode(&b).err(),
             "revs_batch" => Revs::decode(&b, false).and_then(|r| decode_batch(&r)).err(),
             "status4_body" => (!status_body_ok(PeerStatus::FormatInvalid, &b)).then_some(ErrorCode::FormatInvalid),
             other => panic!("unknown decoder {other}"),
         };
         let want = if expected.starts_with("unsigned 403") { ErrorCode::PeerAuthInvalid } else { ErrorCode::FormatInvalid };
         assert_eq!(err, Some(want), "{} must be refused ({expected})", c["rule"]);
+    }
+}
+
+#[test]
+fn the_extra_valid_bodies_decode() {
+    for c in file()["valid_extra"].as_array().unwrap() {
+        assert_eq!(c["decoder"], "heads_resp");
+        HeadsResp::decode(&bytes(&c["hex"])).unwrap_or_else(|e| panic!("{}: {e:?}", c["rule"]));
     }
 }

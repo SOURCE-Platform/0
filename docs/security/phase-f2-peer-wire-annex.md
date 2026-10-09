@@ -35,7 +35,8 @@ public data only.
   authentication is answered with signed status 4. *(Erratum, 2026-10-09,
   review SPEC-I7 of `9d7fc3d`: status 4 is for **bodies**. The same rule
   broken in `request_tlv` fails the §22.8 canonical parse and is an
-  unsigned `403` (`PEER_AUTH_INVALID`); broken in a response's
+  unsigned refusal — `401` from main on the HTTP route, `403`
+  (`PEER_AUTH_INVALID`) from the helper on the IPC path; broken in a response's
   `response_tlv` or body, the requester reads it as "unable to verify".)*
 - **Heads digest** (§22.8): an empty bucket's digest is `SHA-256("")`.
   The heads it covers are the responder's **servable** heads (§A.3.3).
@@ -131,8 +132,9 @@ than 64 heads.
 
 *(Erratum, 2026-10-09, review SPEC-I1: the **request** carries the empty
 body — the Mac never uses a requester's floors (§22.8 "Direction"), and
-the shipped responder answers any other request body with status 4. The
-§22.8 table's "floors … and the heads digest →" names the response.)*
+the shipped responder answers any other request body with status 4. This
+refines the request side of §22.8 table row 1, as §22.8 permits ("the annex
+may refine the body definitions of operations 1–5").)*
 Response, header entry only: `{0x01 registry_seq (u64),
 0x02 registry_head (32 B), 0x03 committed_generation (u64; 0x00 before
 the first commit), 0x04 committed_manifest_hash (32 B; zeros before the
@@ -152,7 +154,7 @@ next `state_get`, and declines meanwhile.
   `checkpoint` (base64), `recovery_auth` [`class`, `pub`, `salt`], no
   whitespace; *(clarified 2026-10-09, SPEC-I3: `manifest` and `checkpoint`
   are base64url without padding; each `recovery_auth` item is
-  `{"class": 2 (mp) | 3 (rk) (§11.2 class codes), "pub": hex 65 B, "salt": hex 16 B}`, ordered
+  `{"class": 2 (mp) | 3 (rk) (§11.4 `signer_class` codes), "pub": hex 65 B, "salt": hex 16 B}`, ordered
   by class; `generation` and `vk_generation` are also checked against the
   verified manifest, SPEC-O7)* the requester recomputes `state_commit` from the fields, so
   the encoding carries no trust) — or status 3 when its
@@ -277,7 +279,7 @@ A.1 rule.
 | ID | Test | Expected |
 |---|---|---|
 | PW-01 | carriage, inline and streamed, both directions, at the 24 KiB boundary | identical results; no frame over 64 KiB |
-| PW-02 | body validation | every A.1 rule → status 4, nothing applied |
+| PW-02 | body validation | every A.1 body rule → status 4, nothing applied |
 | PW-03a | streamed request with a bad envelope, a replay, an unknown or revoked sender, COMPROMISED op 5, `size` over the cap | answered at `peer_serve_begin` (refusal or signed status 1/2), before any body byte |
 | PW-03b | an orphan `stream_begin`; a revocation landing while the body streams; a failed stream | refused at completion (`403`); session single use |
 | PW-04 | objects mode | only objects of the named committed state; never bytes whose hash differs; wrong `state_commit` → status 3; byte ranges reassemble an 8 MiB index |

@@ -68,6 +68,13 @@ suite "full helper suite (Phases A–F)" "$T/helper.log" cargo test --no-fail-fa
 # which reads the iOS static library (review SEC-I5 / VER-I1).
 suite "vault engine and SOURCE Vault FFI (F.2b)" "$T/engine.log" \
     bash -c "cargo build -p vault-ffi --target aarch64-apple-ios && cargo test --no-fail-fast -p vault-engine -p vault-ffi"
+# XV-PEER, Rust side, by name (review SPEC-O13): from the full helper log.
+XV_RUST=""
+for t in every_exchange_verifies_and_decodes the_empty_body_and_zero_are_fixed the_heads_digest_recomputes \
+         the_three_orders_differ every_invalid_case_is_refused_by_its_decoder the_extra_valid_bodies_decode; do
+    ran_ok "$T/helper.log" "$t" || XV_RUST+=" $t"
+done
+if [ -z "$XV_RUST" ]; then record "XV-PEER Rust side (by name)" PASS "6 named tests ran"; else fail "XV-PEER Rust side (by name)" "missing:$XV_RUST"; fi
 # F.2b step 6: vector freshness (XV-PEER included), then SOURCE Vault's
 # simulator tests — the engine wrapper and the CryptoKit-only XV target.
 if cargo run -q -p source-vault-helper --bin gen_vectors -- --check >"$T/vectors.log" 2>&1; then
@@ -80,7 +87,7 @@ SIM="${OV0_SIMULATOR:-$(xcrun simctl list devices available | grep -m1 'iPhone' 
 XV_TESTS="XVPeerTests.testEveryExchangeVerifies XVPeerTests.testEveryInvalidCaseIsRefused XVPeerTests.testHeadsDigestRecomputes"
 XV_TESTS+=" XVPeerTests.testCanonicalOrderDiffersFromDepthFirst XVPeerTests.testEmptyBodyAndZero XVPeerTests.testKeysDeriveFromTheirScalars"
 XV_TESTS+=" XVRegistryTests.testRegistryEntriesHashAndVerify XVRegistryTests.testEcdsaLowSRule"
-XV_TESTS+=" XVHPKETests.testRfc9180VectorOpensAtTheExactSuite XVHPKETests.testEnvelopeInfoAndSealOpen"
+XV_TESTS+=" XVHPKETests.testRfc9180VectorOpensAtTheExactSuite XVHPKETests.testEnvelopeInfoAndSealOpen XVPeerTests.testExtraValidBodiesDecode"
 (cd "$ROOT/ios/SourceVault" && xcodebuild test -project SourceVault.xcodeproj -scheme SourceVault \
     -destination "platform=iOS Simulator,name=$SIM" -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO) >"$T/ios.log" 2>&1
 MISSING=""

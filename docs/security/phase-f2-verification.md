@@ -573,7 +573,8 @@ exists; it must be removed (or the app deleted) before any real use.
     `state_commit` recomputed from its fields;
   - **XV-HPKE-SE, the simulator legs:** the RFC 9180 vector opens at the
     exact suite, and the v2 envelope `info` is rebuilt from its parts. The
-    Secure Enclave legs stay with the §2.12 PoC and the device run.
+    Secure Enclave legs are §2.12 PoC / Phase E0 evidence (§22.2 as
+    clarified in §8.1).
 - `scripts/phase-f-gate.sh` adds vector freshness and SOURCE Vault's
   simulator tests.
 
@@ -626,3 +627,34 @@ was accepted.
     `peer_ipc`, `peer_serve`, `phone_join`;
   - vault-tests `peer_state`.
 - On the simulator, SOURCE Vault passes 12 of 12.
+
+### 8.2 Bounded re-review of the fixes (`95e53c9`) and closure
+
+Both reviewers: **no blockers; the checkpoint can close.** The remaining
+items were fixed in passing without another round:
+
+| Finding | Disposition | Fix / where |
+|---|---|---|
+| SPEC-I10 the A.3.1 erratum misdescribed §22.8 row 1 | **Fixed** (editorial): the erratum now says it refines the row's request side, as §22.8 permits; row 1 notes "request: the empty body" | annex A.3.1, spec §22.8 |
+| VER-I8 "padded integer" labelled status 4, but `PutCounts` is a response body | **Fixed**: relabelled "requester: unable to verify" | `vectors_peer_data.rs` |
+| SPEC-O9 HTTP refusal is 401 from main | **Fixed** (wording): "401 from main, 403 from the helper"; PW-02 says "body rule" | annex A.1, A.6 |
+| SPEC-O10 class-code reference | **Fixed**: §11.4 `signer_class` | annex A.3.2 |
+| SPEC-O11 / VER-O8 heads ordering: Swift too strict, Rust missing | **Fixed**: both sides require ascending covered buckets, each item in a covered bucket, ascending (bucket, record_id), reasons 1–4. Added a valid two-bucket answer (the later bucket holds the smaller id) and two invalid cases | `exchange.rs`, `XVPeerWire.swift`, `peer_wire.rs` test data made consistent |
+| VER-O7 new decoder rules unexercised | **Fixed**: cases "unavailable entries descending" and "chunk past its object's total_len" (26 cases now) | vectors, both decoders |
+| SPEC-O12 / VER-O10 stale text and comments | **Fixed** | §8, plan, `exchange.rs`, `vault.ts` |
+| SPEC-O13 Rust XV-PEER not gated by name | **Fixed**: six named tests from the helper log | `phase-f-gate.sh` |
+| VER-O9 outcome class only, not rule | **Accepted as is** (the reviewer confirmed by reading that each case is refused for its rule) | — |
+| VER-O10 card details under "Password" | noted; cosmetic, with F.2c's item screen | — |
+| VER-O11 plan file in a fix commit | noted | — |
+| VER-O12 §22.2 narrowed in a fix commit | **Owner informed** (it records where the existing evidence lives; no invariant changes) | spec §22.2 |
+
+Targeted results:
+
+- `xv_peer` (6) and `xv_vectors` (6) pass, and `gen_vectors --check` is
+  fresh.
+- vault-proto passes.
+- `peer_exchange`, `peer_hardening`, `peer_followups` and `peer_ipc` pass.
+- SOURCE Vault on the simulator passes 13 of 13.
+
+**F.2b step 6 is closed.** Still open for F.2b: the device checks IO-01…07
+and AU-04, several of which need F.2c and F.2d features.

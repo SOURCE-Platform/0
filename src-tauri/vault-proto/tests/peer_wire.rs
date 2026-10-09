@@ -116,14 +116,16 @@ fn bodies_round_trip() {
     for req in [StateReq::State { have_generation: 0 }, StateReq::Objects { state_commit: [1; 32], wants: vec![([1; 32], 0), ([2; 32], 4 << 20)] }] {
         assert_eq!(StateReq::decode(&req.encode()).unwrap(), req);
     }
-    let heads = HeadsResp {
-        complete: false,
-        buckets: vec![3, 9],
-        items: vec![
-            HeadsItem::Heads { record_id: [1; 16], heads: vec![[1; 32], [2; 32]] },
-            HeadsItem::Unavailable { record_id: [2; 16], reason: body::TOO_MANY_HEADS },
-        ],
-    };
+    // Items in covered buckets, bucket by bucket (annex A.3.3).
+    let mut items = vec![
+        HeadsItem::Heads { record_id: [1; 16], heads: vec![[1; 32], [2; 32]] },
+        HeadsItem::Unavailable { record_id: [2; 16], reason: body::TOO_MANY_HEADS },
+    ];
+    items.sort_by_key(|i| match i { HeadsItem::Heads { record_id, .. } | HeadsItem::Unavailable { record_id, .. } => (bucket(record_id), *record_id) });
+    let mut covered = vec![bucket(&[1; 16]), bucket(&[2; 16])];
+    covered.sort();
+    covered.dedup();
+    let heads = HeadsResp { complete: false, buckets: covered, items };
     assert_eq!(HeadsResp::decode(&heads.encode()).unwrap(), heads);
     let wants = vec![([1u8; 16], vec![[3u8; 32]]), ([2u8; 16], vec![])];
     assert_eq!(decode_revs_get(&encode_revs_get(&wants)).unwrap(), wants);

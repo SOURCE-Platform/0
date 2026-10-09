@@ -219,15 +219,15 @@ export function onVaultEvent(
   return listen<VaultEvent>("vault:event", (e) => callback(e.payload));
 }
 
-/** §15 user-facing copy for the codes this surface can produce. */
-/// Unlock only: a Mac whose Touch ID is unavailable (lid closed) gets
-/// DEVICE_NOT_AUTHORIZED from its envelope; the master password works.
+/** Unlock only: a Mac whose Touch ID is unavailable (lid closed) gets
+ * DEVICE_NOT_AUTHORIZED from its envelope; the master password works. */
 export function vaultUnlockErrorMessage(code: string): string {
   return code === "DEVICE_NOT_AUTHORIZED"
     ? "Touch ID can't be used right now (for example, the lid is closed). Use your master password instead."
     : vaultErrorMessage(code);
 }
 
+/** §15 user-facing copy for the codes this surface can produce. */
 export function vaultErrorMessage(code: string): string {
   if (code.startsWith("HELPER_UNAVAILABLE")) {
     return "The vault helper isn't available. Build and sign it (scripts/build-helper.sh) and try again.";

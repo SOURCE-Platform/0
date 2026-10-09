@@ -137,5 +137,5 @@ plan; the code it produces goes through the usual milestone review.
   AU-04 as separate device checks, and the CryptoKit-only Swift tests.
 - **Step 6 done in code (2026-10-08).** XV-PEER vectors (annex A.5) and the
   CryptoKit-only Swift target `SourceVaultXV` (XV-TLV, XV-ECDSA, XV-PEER,
-  XV-HPKE-SE simulator legs); phase-f2-verification §8. The device checks
+  XV-HPKE-SE RFC 9180 known-answer vector); phase-f2-verification §8; closed after review (§8.2). The device checks
   IO-01…07 and AU-04 remain, several waiting on F.2c/F.2d features.

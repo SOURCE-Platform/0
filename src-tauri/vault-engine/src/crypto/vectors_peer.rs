@@ -170,5 +170,6 @@ pub fn xv_peer() -> Value {
             "depth_first_record_1": data::graph_json(&g.depth_first),
         },
         "invalid": data::invalid_cases(&good_request, &r, &g),
+        "valid_extra": [{ "rule": "two non-empty buckets, ascent per bucket", "decoder": "heads_resp", "hex": hex::encode(data::two_bucket_heads()) }],
     })
 }
