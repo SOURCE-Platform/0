@@ -73,6 +73,7 @@ pub(super) fn to_secret(s: Zeroizing<String>) -> SecretVec {
 pub(super) fn field_plan(req: &PanelRequest) -> (Vec<&'static str>, u8) {
     match req {
         PanelRequest::MpEntry | PanelRequest::EnrollConfirm => (vec!["Master password"], 0),
+        PanelRequest::MpAdopt => (vec!["Master password your backup currently uses"], 0),
         PanelRequest::MpCreate => (vec!["New master password", "Confirm master password"], 1),
         PanelRequest::RkEntry => (vec!["Recovery Key — all 24 words, separated by spaces"], 3),
         PanelRequest::MpChange => (

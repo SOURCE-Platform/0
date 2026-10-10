@@ -47,8 +47,10 @@ impl Opened {
 
 /// When the complete sync session `id` will need this device's envelope
 /// (the served key generation differs, or a local rotation is pending),
-/// open it now, with the mutex released.
-pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps) -> Option<Opened> {
+/// open it now, with the mutex released. `interactive`: the user started
+/// this sync; a background one never raises the master-password panel
+/// (review SEC-I3) and answers `MP_ADOPTION_REQUIRED` instead.
+pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps, interactive: bool) -> Option<Opened> {
     let (tag, vid, file, wrap) = {
         let c = lock_core(core);
         let session = c.provider.sync.as_ref().filter(|s| &s.t.id == id)?;
@@ -59,28 +61,40 @@ pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps) -> Option<Op
         if session.remote.vk_generation == local && base == local {
             return None; // our own key: no envelope is opened
         }
-        // Never ask for a finger over a state no enrolled device signed
-        // (review VER-I17): a hostile provider must not be able to raise
-        // the prompt at will. Anything else is opened, if at all, by the
-        // apply after its full verification.
-        if !crate::sync::fetch::signed_by_our_registry(store, &session.remote).unwrap_or(false) {
+        // Never ask — for a finger or a password — over a state that does
+        // not pass the apply's own verification (reviews VER-I17, SEC-B1):
+        // registry extends ours and verifies, signer active, manifest
+        // signed, this device listed; when behind, also anchored on the
+        // floor (§22.14: the restored registry is no anchor). Pure checks,
+        // under the mutex; the prompts below run without it.
+        let me = SeDevice::load(&c.vault_dir).ok()?;
+        let vk = c.vk.as_ref()?;
+        let served = crate::sync::served::verify(store, vk, &session.remote, index, &session.t.received, me.device_id()).ok()?;
+        if served.revoked || (c.behind && !super::floor::anchored(store, &served.remote_entries).unwrap_or(false)) {
             return None;
         }
-        let me = SeDevice::load(&c.vault_dir).ok()?;
-        let blob = index.find(&Role::Env { device_id: me.device_id() }).and_then(|e| session.t.received.get(&e.blob))?;
+        let blob = crate::sync::served::blob(index, &session.t.received, &Role::Env { device_id: me.device_id() }).ok()?;
         let file: DeviceEnvelopeFile = serde_json::from_slice(blob).ok()?;
-        let wrap = crate::sync::adopt_mp::served_wrap(index, &session.t.received).ok();
-        (me.key_tag().to_string(), store.header.vault_id.0, file, wrap)
+        (me.key_tag().to_string(), store.header.vault_id.0, file, crate::sync::adopt_mp::checked_wrap(index, &session.t.received).ok())
     };
     let mut result = envelope::open_envelope_for(&tag, REASON, &vid, &file);
     if let (Err(ErrorCode::DeviceNotAuthorized), Some(wrap)) = (&result, wrap) {
-        emit_panel(deps, true, PanelRequest::MpEntry);
-        let outcome = deps.panel.run(PanelRequest::MpEntry, PANEL_TIMEOUT);
-        emit_panel(deps, false, PanelRequest::MpEntry);
-        result = match outcome {
-            PanelOutcome::Submitted(mp) => crate::sync::adopt_mp::open_with_mp(&wrap, &vid, &mp),
-            _ => Err(ErrorCode::PanelCancelled),
+        result = if !interactive {
+            Err(ErrorCode::MpAdoptionRequired)
+        } else {
+            emit_panel(deps, true, PanelRequest::MpAdopt);
+            let outcome = deps.panel.run(PanelRequest::MpAdopt, PANEL_TIMEOUT);
+            emit_panel(deps, false, PanelRequest::MpAdopt);
+            match outcome {
+                PanelOutcome::Submitted(mp) => crate::sync::adopt_mp::open_with_mp(&wrap, &vid, &mp),
+                _ => Err(ErrorCode::PanelCancelled),
+            }
         };
+        // §15 / §22.4: a wrong password at this gate drives the backoff
+        // too (review VER-B1); the mutex is not held here.
+        if let Err(e) = &result {
+            super::recovery_ops::backoff(core, *e);
+        }
     }
     Some(Opened { file: serde_json::to_vec(&file).ok()?, result: RefCell::new(Some(result)) })
 }

@@ -82,6 +82,9 @@ pub enum ErrorCode {
     PeerNotPermitted,
     PeerLimit,
     PeerStateUnconfirmed,
+    /// §2.7: a key change can be adopted only with the master password;
+    /// a background sync never asks — the user starts it (review SEC-I3).
+    MpAdoptionRequired,
     ProvenanceRefused,
     // Generic
     InvalidInput,
@@ -150,6 +153,7 @@ impl ErrorCode {
             ErrorCode::PeerNotPermitted => "PEER_NOT_PERMITTED",
             ErrorCode::PeerLimit => "PEER_LIMIT",
             ErrorCode::PeerStateUnconfirmed => "PEER_STATE_UNCONFIRMED",
+            ErrorCode::MpAdoptionRequired => "MP_ADOPTION_REQUIRED",
             ErrorCode::ProvenanceRefused => "PROVENANCE_REFUSED",
             ErrorCode::Internal => "INTERNAL",
         }

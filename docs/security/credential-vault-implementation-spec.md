@@ -679,17 +679,49 @@ nonces.
   to the master password (no presence prompt first). Verifying any served
   state at a key this Mac does not hold — another device's key change, or
   a §22.14 catch-up after its own directory was restored from an older
-  backup — uses the **master-password adoption path** (F.2d, landed
-  2026-10-10, before any other device can publish; review SEC-I2,
-  99760e0). When this device's own envelope cannot be opened
-  (`DEVICE_NOT_AUTHORIZED`: a discarded agreement key, or Touch ID
-  unavailable now), the secure panel asks for the master password. It
-  opens the served state's `wrap_mp`, hash-checked against the signed
-  index, and the apply then verifies the whole state under the key it
-  yields. As with the Touch ID prompt, this is asked only for a state
-  signed by a device of this Mac's confirmed registry, and outside the
-  core mutex. A wrong password adopts nothing. Adopting another device's
-  rotation asks for Touch ID too. **Residual (stated):** the signing key cannot be biometry-bound
+  backup — uses the **master-password adoption path** (F.2d step 1;
+  reviews SEC-I2 of 99760e0 and of e7da81a). It lands before any other
+  device can publish.
+
+  *When it applies.* This device's own envelope cannot be opened
+  (`DEVICE_NOT_AUTHORIZED`: a discarded agreement key, or Touch ID or
+  Face ID unavailable now).
+
+  *What it does.* The secure panel **"Source Vault — Apply a Security
+  Change"** asks for the master password the backup currently uses. It
+  opens the served state's `wrap_mp`.
+
+  *What is checked first.* Nothing is asked before:
+  - the served state passes the apply's own verification: the chain
+    extends ours and verifies, the head and signer match, the manifest is
+    signed, and this device is listed;
+  - when behind, the served state contains the head the floor recorded
+    (§22.14);
+  - the wrap is hash-checked against the signed index, and its KDF block
+    equals the served header's, which is held to the §2.3 allowlist.
+
+  *What is asked, and when.* The panel is raised only by a sync the user
+  started ("Back up now"; on the iPhone, "Sync now"). A background sync
+  answers `MP_ADOPTION_REQUIRED` and the app offers that action. The panel
+  and the derivation run outside the core mutex.
+
+  *What it is not.* This is **not an MP proof under §22.4**: the password
+  authorizes nothing by itself. The key it yields is trusted only because
+  the apply then verifies the whole served state under it (the checkpoint
+  binding) before adopting anything.
+
+  *A wrong password* adopts nothing and drives the §15 backoff.
+
+  Otherwise the adoption asks for Touch ID, as unlock does. A declined
+  finger is `PRESENCE_DENIED` and never falls back to the master password.
+  **On the iPhone** the same path serves a phone whose Face ID envelope is
+  unusable (re-registration, lockout; §22.4), through secure-entry kind 4.
+
+  *Stated residual, until F.2d step 4.* A device with a pending local
+  rotation of its own, whose served base state needs a master password the
+  user no longer knows (reset with the Recovery Key), cannot adopt it. It
+  cannot arise before another device can publish (review SEC-I4 of
+  e7da81a). **Residual (stated):** the signing key cannot be biometry-bound
   (background provider signing), so a thief with the login password can
   copy it and sign as the Mac — not read the vault, but publish
   disruptive states or enroll a device that would receive later changes,
@@ -5237,6 +5269,11 @@ the gate asserts them by name.
 | CX-04 | the same evidence via a peer | never COMPROMISED |
 | CX-05 | racing revocation: this device's revoke(D) is pending and D commits a registry entry at the same seq | COMPROMISED (§11.3 rule-2 exception, §11.4); never a silent adoption that leaves a D-enrolled device active |
 | SY-13 | (amended) restored older store | unlocks read-only; authoring `VAULT_BEHIND`; sync clears it |
+| MA-01 | master-password adoption, user-started (password-only Mac restored to before its own rotation) | one "Apply a Security Change" panel; the served key is adopted; read-only ends |
+| MA-02 | the same, from a background sync | `MP_ADOPTION_REQUIRED`; no panel |
+| MA-03 | wrong master password; cancel | nothing adopted; the §15 backoff counts it; the vault stays open |
+| MA-04 | behind, served state not containing the floor's head | refused; no panel |
+| MA-05 | a wrong key handed to the apply for a served state | refused (`SIGNATURE_INVALID`); nothing adopted |
 | FFI-01 | exported symbols vs the catalogue | lint fails on any extra entry |
 | XV-PEER | both TLVs, prehashes and the heads digest, plus the wire-annex A.5 set | Rust engine and the CryptoKit-only Swift target agree |
 | PW-01…12 | peer wire carriage, bodies, paging, token scope, sessions, rate, `target_device_ids` | as wire annex A.6 |

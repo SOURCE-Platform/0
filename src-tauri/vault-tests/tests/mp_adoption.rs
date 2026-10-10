@@ -82,29 +82,81 @@ fn restored_after_own_rotation(tag: &str) -> (mfx::Cloud, Fx) {
     (cloud, fx)
 }
 
+fn adopt_prompts(fx: &Fx) -> usize {
+    fx.panel.seen.lock().unwrap().iter().filter(|r| **r == vault_helper::vault::secure_ui::PanelRequest::MpAdopt).count()
+}
+
+fn code(r: &Result<Value, vault_coordinator::Failure>) -> String {
+    match r {
+        Err(vault_coordinator::Failure::Helper(c)) => c.clone(),
+        other => format!("{other:?}"),
+    }
+}
+
+/// MA-01: started by the user, the "Apply a Security Change" panel asks
+/// once; the password opens the served wrap and the Mac catches up.
 #[test]
 fn a_password_only_mac_catches_up_with_its_master_password() {
     let _g = vault_fx::serial();
     let (cloud, fx) = restored_after_own_rotation("ok");
     let transport = CloudTransport(&cloud);
     let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
-    fx.push_panel(submitted(MP)); // asked by the adoption, not the envelope
-    let synced = mac.run_sync().unwrap();
+    fx.push_panel(submitted(MP));
+    let synced = mac.run_sync_by_user().unwrap();
     assert_eq!(synced["adopted_vk"], true, "{synced}");
+    assert_eq!(adopt_prompts(&fx), 1, "one panel, titled for the flow");
     assert!(!fx.core.lock().unwrap().behind, "caught up");
     vault_fx::add_login(&fx); // authoring works again
     fx.remove_dir();
 }
 
+/// MA-02: a background sync never raises the panel.
 #[test]
-fn a_wrong_password_adopts_nothing() {
+fn a_background_sync_never_asks() {
+    let _g = vault_fx::serial();
+    let (cloud, fx) = restored_after_own_rotation("bg");
+    let transport = CloudTransport(&cloud);
+    let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
+    assert_eq!(code(&mac.run_sync()), "MP_ADOPTION_REQUIRED");
+    assert_eq!(adopt_prompts(&fx), 0);
+    assert!(fx.core.lock().unwrap().behind);
+    fx.remove_dir();
+}
+
+/// MA-03: a wrong password adopts nothing and drives the §15 backoff; a
+/// cancel adopts nothing.
+#[test]
+fn a_wrong_password_or_a_cancel_adopts_nothing() {
     let _g = vault_fx::serial();
     let (cloud, fx) = restored_after_own_rotation("bad");
     let transport = CloudTransport(&cloud);
     let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
+    let before = fx.core.lock().unwrap().failed_attempts;
     fx.push_panel(submitted(b"not-the-synthetic-master-password"));
-    let synced = mac.run_sync();
-    assert!(synced.is_err() || synced.as_ref().unwrap()["adopted_vk"] != true, "{synced:?}");
-    assert!(fx.core.lock().unwrap().behind, "still read-only");
+    assert_eq!(code(&mac.run_sync_by_user()), "WRONG_CREDENTIAL");
+    assert_eq!(adopt_prompts(&fx), 1);
+    assert_eq!(fx.core.lock().unwrap().failed_attempts, before + 1, "the backoff counted it");
+    assert_eq!(fx.state(), vault_helper::state::VaultState::Unlocked, "the vault stays open");
+    assert!(fx.core.lock().unwrap().behind);
+    fx.push_panel(vault_helper::vault::secure_ui::PanelOutcome::Cancelled);
+    assert_eq!(code(&mac.run_sync_by_user()), "PANEL_CANCELLED");
+    assert!(fx.core.lock().unwrap().behind);
+    fx.remove_dir();
+}
+
+/// MA-04: while behind, a served state that does not contain the head the
+/// floor recorded is no anchor — refused with no panel at all.
+#[test]
+fn an_unanchored_state_raises_no_panel() {
+    let _g = vault_fx::serial();
+    let (cloud, fx) = restored_after_own_rotation("anchor");
+    let mut floor = vault_helper::keychain::read_floor().unwrap();
+    floor.registry_head = Some("ab".repeat(32));
+    vault_helper::keychain::write_floor(&floor).unwrap();
+    let transport = CloudTransport(&cloud);
+    let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
+    fx.push_panel(submitted(MP));
+    assert!(mac.run_sync_by_user().is_err());
+    assert_eq!(adopt_prompts(&fx), 0, "no prompt before verification");
     fx.remove_dir();
 }

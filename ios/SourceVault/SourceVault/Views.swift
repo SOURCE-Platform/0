@@ -172,9 +172,15 @@ struct SecureEntryView: View {
                     SecureField("Repeat it", text: $third)
                 case .recoveryKey:
                     SecureField("Recovery Key (24 words)", text: $first)
+                case .adoptMasterPassword:
+                    Section {
+                        SecureField("Master password", text: $first)
+                    } footer: {
+                        Text("Another device changed your vault's security. Enter the master password your backup currently uses to apply the change.")
+                    }
                 }
             }
-            .navigationTitle("SOURCE Vault")
+            .navigationTitle(request.kind == .adoptMasterPassword ? "Apply a Security Change" : "SOURCE Vault")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { request.cancel(); dismiss() } }
                 ToolbarItem(placement: .confirmationAction) { Button("OK") { submit() }.disabled(!valid) }

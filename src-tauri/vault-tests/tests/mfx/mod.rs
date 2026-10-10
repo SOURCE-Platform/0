@@ -212,6 +212,13 @@ impl Mac {
 
     /// Fetch, verify and merge the provider's current state.
     pub fn sync(&mut self, cloud: &Cloud) -> Result<Option<Report>, ErrorCode> {
+        let (tag, vid) = (self.dev.key_tag().to_string(), self.vid());
+        self.sync_opening(cloud, &move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f))
+    }
+
+    /// `sync` with the served key opened by `open` (tests of what the
+    /// apply does with a key it was handed).
+    pub fn sync_opening(&mut self, cloud: &Cloud, open: apply::OpenEnvelope<'_>) -> Result<Option<Report>, ErrorCode> {
         let r = self.read(cloud, Operation::StateGet, None);
         if r.status != 200 {
             return Err(ErrorCode::AuthInvalid);
@@ -231,15 +238,12 @@ impl Mac {
             }
             blobs.insert(h, b.body);
         }
-        let tag = self.dev.key_tag().to_string();
-        let vid = self.vid();
-        let open = move |f: &envelope::DeviceEnvelopeFile| envelope::open_envelope(&tag, &vid, f);
         let store = self.store.take().unwrap();
         let vk = self.vk.take().unwrap();
         // Like the helper op: on failure reopen the committed vault (the
         // apply is transactional/journaled) and keep the key resident.
         let keep = SecretBytes::new(*vk.expose());
-        let applied = apply::apply(store, vk, &remote, &index, &blobs, self.dev.device_id(), &open);
+        let applied = apply::apply(store, vk, &remote, &index, &blobs, self.dev.device_id(), open);
         let applied = match applied {
             Ok(a) => a,
             Err(e) => {

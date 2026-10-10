@@ -1,118 +1,205 @@
 # Phase F.2d — phone authority: plan
 
-Date: 2026-10-10. Spec: v0.5 §22.17 milestone 4 ("publication, rotation,
-revocation (RC-01), total-loss recovery on a phone"), §2.7 (master-password
-adoption), §22.5 (tiers), §22.7 (freshness), §22.9 (lifting the removal
-lock, `BACKUP_ACCESS_LOST`), §22.10 (iPhone rules: staged-first rotation,
-background task), and the items earlier milestones deferred here
-(phase-f2-verification §5–§9). Internal working plan; each step goes
-through the usual review loop. **Step 2 changes the FFI catalogue, which
-is a spec change, so its design below is reviewed before any of its code
-is written.**
+Date: 2026-10-10. **Revision 2**, after the spec and security reviews of
+revision 1 (`e7da81a`).
+
+Spec: v0.5 §22.17 milestone 4 ("publication, rotation, revocation (RC-01),
+total-loss recovery on a phone"), plus:
+- §2.7 (master-password adoption);
+- §22.5 (tiers);
+- §22.7 (freshness, publish first);
+- §22.9 (lifting the removal lock, `BACKUP_ACCESS_LOST`);
+- §22.10 (iPhone rules: staged-first rotation, background task, file
+  protection);
+- §22.11 (on-disk staging);
+- the items earlier milestones deferred here (phase-f2-verification
+  §5–§9).
+
+This is an internal working plan; each step goes through the usual review
+loop. **Steps 2, 5 and 6 change the FFI catalogue or the §22.2 seal
+crossing, which is a spec change. Each gets its own design review before
+code (SPEC-I10).**
 
 ## Steps
 
-1. **Master-password adoption (done in code, 2026-10-10).**
+### 1. Master-password adoption — in review
 
-   *Why first:* it must land before any other device can publish (§2.7,
-   owner decision 2026-10-02).
+It must land before any other device can publish (§2.7, owner decision
+2026-10-02).
 
-   *How it works:*
-   - `sync::adopt_mp` opens the served state's `wrap_mp`. The wrap is
-     hash-checked against the signed index, and the apply verifies the
-     whole state under the key it yields.
-   - `vault::adopt_prompt::pre_open` asks for the master password in the
-     secure panel when this device's envelope answers
-     `DEVICE_NOT_AUTHORIZED` (a discarded agreement key, or Touch ID
-     unavailable). It does this only for a state signed by our registry,
-     and outside the core mutex.
-   - The §2.7 stated limitation is lifted.
+- The served `wrap_mp` is opened with the master password when this
+  device's envelope answers `DEVICE_NOT_AUTHORIZED`.
+- The revision-1 review asked for these fixes, all before closing (see
+  phase-f2-verification §10.1):
+  - **Gate:** the prompt is raised only after the apply's own
+    verification of the served state (chain, head, signer, manifest,
+    extension), and after the floor anchoring when behind. It no longer
+    checks against the local registry (SEC-B1, SPEC-I4, VER-I2).
+  - **KDF:** the wrap's KDF block must equal the served header's,
+    policy-checked, before any prompt (SEC-I1).
+  - **Backoff:** a wrong password drives the §15 backoff (VER-B1,
+    SEC-I2).
+  - **Panel:** a dedicated "Apply a Security Change" panel. It is raised
+    only by a user-started sync; a timer sync answers
+    `MP_ADOPTION_REQUIRED` (SEC-I3).
+  - **Base key:** a pending local rotation keeps its base key sealed
+    under the current key, so a served state at the base generation needs
+    no credential (SEC-I4).
+  - **Tests and spec text:** tests for each property (VER-B2). The §2.7
+    text covers the phone and the §22.4 relation; a §22.16 row is added
+    (SPEC-I5, SPEC-I6).
 
-   *Test:* `vault-tests/tests/mp_adoption.rs`. A password-only Mac,
-   restored to before its own rotation, catches up; a wrong password
-   adopts nothing.
+### 2. The phone's provider path — design under review
 
-2. **The phone's provider path (design for review).** The phone needs its
-   own backup-service exchanges to:
-   - verify a provider state (committed tier, §22.5);
-   - be "fresh" (§22.7);
-   - publish its own edits;
-   - lift a removal lock (§22.9);
-   - see `BACKUP_ACCESS_LOST`.
+`vault-coordinator` is linked into `vault-ffi`. Swift supplies one
+transport callback.
 
-   On the Mac this is `vault-coordinator`: pure logic over two traits —
-   `Helper` (one engine op) and `Transport` (one HTTPS request) — holding
-   no secret. Proposal:
-   - Link `vault-coordinator` into `vault-ffi` on the phone, with
-     `Helper` = the engine's own dispatcher (in-process, as `vault-tests`
-     already does).
-   - Add **one callback**, `http_send(origin, method, path, auth, body) →
-     (status, body, date)`, to `Ov0Callbacks`. Swift implements it with
-     URLSession and standard certificate validation — no pinning, as on
-     the Mac (§11.1).
-   - Add **ops** `provider_sync` and `provider_publish` (and `provider_run`
-     for a staged publication), each running one coordinator flow on the
-     engine's FFI thread. No new exported symbol (FFI-01 unchanged); the
-     catalogue gains one callback and three ops.
-   - The coordinator still sees no plaintext, MP, PK, RK, VK or private
-     key (its §11.1 contract). Signing stays inside the engine (the
-     `sign_provider_request` op).
-   - The provider origin comes from the vault itself (the header's
-     allowlisted origin) and is never taken from Swift.
+**Spec amendments, written and reviewed before code (SPEC-I1):**
+- §22.2: Swift's list gains "network carriage" (the pinned pairing and
+  peer channels, and provider HTTPS through `http_send`). Each carries only
+  ciphertext, public data and single-use requests the engine signed.
+- §22.2: "the catalogue lists every exported entry point and every
+  callback".
+- §11.1: an iPhone mapping of the helper and main rows.
+- §1.2: on SOURCE Vault the engine and the network share one process (the
+  stated residual).
+- Catalogue §1, §2, §4 and §6: the callback, the ops, state gating, and
+  `provider_run` allowed while LOCKED.
 
-   Alternatives rejected:
-   - Porting the coordinator to Swift: a second implementation of the
-     flows.
-   - Swift calling the existing ops one by one: it would carry the
-     coordinator's state machine.
+**The in-process adapter (SEC-I6, SPEC-I2):**
+- It never takes the op lane.
+- It runs only a fixed list of provider sub-ops, checked like `IOS_OPS`.
+  Recovery ops stay excluded until step 5's design.
+- `MAX_REQUEST` applies to every frame it builds.
+- Events are flushed between sub-ops.
+- A thread-local re-entrancy guard answers `BAD_STATE` to a callback that
+  calls the engine.
+- A cancel flag is set by lock, by `ov0_engine_close` and by
+  background-task expiry. It is checked before each `http_send` and passed
+  to Swift.
 
-3. **Using the provider path.**
-   - Freshness on the phone (§22.7). With it, the phone pushes its
-     local-only revisions (`peer_revs_put`, deferred from F.2c).
-   - `peer_state` from the phone (§22.5 provisional, deferred from F.2c).
-   - A provider-confirmed state in which the phone is still active lifts
-     the removal lock (§22.9).
-   - The `BACKUP_ACCESS_LOST` copy: "removal pending" becomes "this iPhone
-     was removed".
-   - Triggers: unlock and "Sync now", never in the background (§4.7).
+**`http_send` contract (SEC-I7, SEC-O1, SPEC-I2):**
+- Inputs: origin, method, path, auth, body, `timeout_ms`, `max_body`.
+- The engine asserts that the origin equals the vault header's provider.
+- The response body goes into an engine-owned buffer of `max_body`;
+  anything over it is refused.
+- Caps: `state_get` and commit/put answers ≤ 64 KiB; `blob_get` ≤ the
+  transfer cap of that hash (≤ 8 MiB).
+- "Unreachable" is reported apart from an HTTP status.
+- Swift session: ephemeral, `urlCache = nil`, standard certificate
+  validation (no pinning, D-12), and redirects refused.
+- Called only on the op thread, never from lock, close or tick.
+- Must not call back into the engine.
 
-4. **Publication from the phone.** The phone's own edits are published as
-   on the Mac (`backup_prepare` … `backup_commit_result`, through the
-   coordinator). The phone's UI gains add and edit for logins (synthetic
-   data only until Phase J).
+**Retry and access-loss state lives in the engine (SPEC-I3):**
+- The §11.3.2 strike count is persisted in `kv`, with the policy
+  constants and a phone BK-13 variant.
+- Locate is probed at the engine's origin.
+- Security-driven retry follows §11.3.2, with `BACKUP_REVOCATION_FAILED`.
 
-5. **Authority on the phone.**
-   - `rotate_recovery_key` in its §22.10 staged-first form: the rotation
-     is staged before the sheet, in a background task, and the sheet says
-     whether the key is live (IO-04). The op returns to `IOS_OPS` only in
-     this form (SEC-B2 of F.2b).
-   - Revocation of another device from the phone (RC-01).
-   - Total-loss recovery on a phone (with the Recovery Key or the master
-     password, as on the Mac).
-   - The owner decision "iPhone adds replacement Mac" depends on reverse
-     enrollment (F.2e, §22.13), so it is not in this milestone.
+Once the `provider_*` ops exist, the step-wise `backup_*`, `stream_*` and
+`sign_provider_request` ops leave `IOS_OPS` (SEC-O2, SPEC-O6). `cargo vet`
+scope covers `vault-coordinator` on iOS.
 
-6. **"Remove this vault"** (§22.9). An explicit action that deletes the
-   phone's keys and store. It warns that this may be the only remaining
-   copy until `BACKUP_ACCESS_LOST` corroborates the removal. It also
-   covers the ACK-lost path from F.2b (VER-O1).
+### 3. Using the provider path
 
-7. **Carried items:**
-   - a cached LOCKED store open for peer serving;
-   - the header refresh and items-changed event after a peer put;
-   - the RK sheet copy says "this iPhone" on the phone;
-   - SEC-O3 / SEC-O4 of §5.2.
+- Freshness on the phone (§22.7). With it, the phone pushes local-only
+  revisions (`peer_revs_put`).
+- `peer_state` (provisional, §22.5). **Objects mode (PW-04) is either
+  implemented or explicitly replaced by provider fetches (SPEC-I9).**
+- A provider-confirmed state in which the phone is still active lifts the
+  removal lock (§22.9).
+- The `BACKUP_ACCESS_LOST` copy.
+- *Sync* triggers: unlock and "Sync now". Publication of a staged change
+  follows §22.10/§22.11 instead (step 4).
+
+### 4. Publication from the phone
+
+- The phone publishes its own edits through the coordinator.
+- On-disk staging (§22.11) with the §22.10 file protection.
+- A `BGProcessingTask` for a staged publication; `provider_run` while
+  LOCKED.
+- IO-06.
+- Add and edit for logins in the phone UI (synthetic data until Phase J).
+- **Before this step:**
+  - §5.2 SEC-O3 (the early prompt for a signer only the served registry
+    knows) is resolved by step 1's gate (SPEC-I4);
+  - SEC-I4 of `e7da81a` must be closed: a pending local rotation keeps
+    its base key, sealed under the current key, so a served base state
+    needs no credential.
+
+### 5. Authority on the phone — own design review before code
+
+**Staged-first rule (SPEC-B1).** Every phone op that rotates the vault key
+or issues a Recovery Key returns to `IOS_OPS` only in the §22.10
+staged-first, background-task form. The rotation is fully staged before
+the sheet, and the sheet says whether the key is live. This applies to:
+- `rotate_recovery_key`;
+- `revoke_device` (RC-01);
+- recovery finalize;
+- the scenario-8 sequences built from them.
+
+IO-04 covers each one. Catalogue §4 is amended accordingly.
+
+**Publish first (§22.7, SPEC-I8a).** A rotation the phone starts itself is
+preceded by an ordinary publication, which omits revisions only the
+revoked device delivered.
+
+**Total-loss recovery on a phone:**
+- an iOS identity with a biometry-bound key (not "This Mac");
+- the origin from the engine's default;
+- a fresh floor (§22.14);
+- an `Uninitialized` start, which depends on step 6 for an already-paired
+  phone.
+- Stated: no Mac can join a phone-recovered vault until F.2e (§22.13).
+
+**Seal crossing.** The §22.2 seal crossing gains its phone forms
+(`ov0_hpke_seal` carries a VK, catalogue §3). They are reviewed here.
+
+The owner decision "iPhone adds replacement Mac" needs reverse enrollment
+(F.2e) and is not in this milestone.
+
+### 6. "Remove this vault" — own design review before code
+
+The explicit action deletes the phone's keys, store and Keychain items
+(floor, `peer_endpoint`).
+- It warns that this may be the only remaining copy, until
+  `BACKUP_ACCESS_LOST` corroborates the removal, and whenever local-only
+  revisions exist.
+- It covers the F.2b ACK-lost path (VER-O1).
+- It is how the owner's synthetic test vault (verification §7.3) is
+  removed.
+
+Before a Face ID re-registration, the phone publishes its pending
+revisions, or warns how many would be lost (§22.4, SPEC-I8b).
+
+### 7. Carried items
+
+- the cached LOCKED store open;
+- the header refresh and items-changed event after a peer put;
+- the RK sheet says "this iPhone";
+- §5.2 SEC-O4;
+- §22.10 table rows: scenario 8 as the surviving device, and restoring a
+  damaged record from a peer;
+- AU-06 and AU-07 on the phone;
+- the open floor and authorizer negative cases that need a provider
+  fixture.
+
+## Tests per step (§22.16 IDs)
+
+| Step | Tests |
+|---|---|
+| 1 | new MA rows (§22.16); SY-13 (password-only Mac); IO-02 (phone adoption) |
+| 2 | FFI-01; PA-07; catalogue §6 additions; PV-01 PR-01/BK-18 canaries over `http_send` transcripts |
+| 3 | PS-02, PS-05–07, PS-12 (push side), PS-13, PS-14; CX-01…04 phone variants; SY-13 phone variant; PV-01 SY-01…12 variants; PW-04 and the requester side of PW-01/05; phone BK-13 |
+| 4 | PV-01 ST-01…05, RU-01…05, BK-26/27; SG-01…03 phone variants; IO-06; AU-06; AU-07; PR-01/BK-18 over the phone's disk and logs |
+| 5 | RC-01; AU-01, AU-03 (iPhone), AU-04; IO-04 for each rotating op; PS-08–10; CX-05; SY-10/SY-11; CP-01…08, FR-01…03, KD-01…03 on a phone; IO-02 (re-enrollment) |
+| 6 | PS-13 / PS-14 "nothing deleted" until the explicit action; a new removal row |
+| 7 | PW-11 (LOCKED behind); the persisted COMPROMISED evidence test |
 
 ## Owner-facing consequence
 
 From step 2 on, the phone needs network access to the backup service.
 The real service is owner infrastructure and is not configured yet. All
-tests use the in-process provider core, and a device run of steps 2–6
-waits for the owner's backup service.
-
-## Review plan
-
-- Step 1: security + verification review.
-- Step 2: spec + security review of this design before code; then the
-  usual implementation review.
-- Steps 3–7: each with its review loop.
+tests use the in-process provider core; a device run of steps 2–6 waits
+for it.

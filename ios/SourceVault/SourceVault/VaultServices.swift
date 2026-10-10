@@ -10,6 +10,8 @@ import UIKit
 /// What the UI is asked to collect (catalogue §2 kinds).
 enum EntryKind: UInt8 {
     case newMasterPassword = 0, masterPassword = 1, changeMasterPassword = 2, recoveryKey = 3
+    /// Adopting a key change made on another device (§2.7, F.2d).
+    case adoptMasterPassword = 4
 }
 
 /// One secure-entry request waiting on the user.

@@ -22,6 +22,10 @@ pub enum PanelRequest {
     MpChange,
     /// Recovery Key entry: one secure field, 24 words (§1.7, §2.4).
     RkEntry,
+    /// Adopting another device's key change with the master password the
+    /// backup currently uses (§2.7 master-password adoption, F.2d) — its
+    /// own title, never "Unlock" (review SEC-I3).
+    MpAdopt,
     /// Adding a device (§5.1, §22.4): the code the new device must show,
     /// in this panel — never in the main app (owner decision 2026-10-03,
     /// review SEC-B3) — and the current MP.
@@ -39,6 +43,7 @@ impl PanelRequest {
             PanelRequest::MpChange => "Source Vault — Change Master Password",
             PanelRequest::RkEntry => "Source Vault — Enter Recovery Key",
             PanelRequest::EnrollConfirm => "Source Vault — Add Device",
+            PanelRequest::MpAdopt => "Source Vault — Apply a Security Change",
         }
     }
 }

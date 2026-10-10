@@ -775,7 +775,7 @@ Each check below was removed, the suite re-run, and the file restored
   signature is always verified under the addressed Mac's key, and
   `paired_mac` refuses an inactive Mac before any request.
 
-## 10. F.2d step 1 — master-password adoption (candidate)
+## 10. F.2d step 1 — master-password adoption (candidate `e7da81a`)
 
 Plan: `phase-f2d-plan.md`.
 
@@ -801,3 +801,54 @@ Plan: `phase-f2d-plan.md`.
 - Removing the fallback makes the success test fail.
 - Still passing: `peer_followups`, `singleton_scenarios`, `ipc_backup`,
   `behind_sync`.
+
+### 10.1 Review of `e7da81a` (security, spec, verification) and fixes
+
+There were three blockers: SEC-B1, SPEC-B1 (a plan item) and VER-B1/B2.
+Every finding was checked against the repository before it was accepted.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 / VER-I2 / SPEC-I4 / SPEC-I5c the gate read the restored local registry (a since-revoked device could raise the panel; a signer the restored registry lacks could never adopt) | **Fixed.** The prompt now follows the apply's own verification of the served state (factored into `sync::served::verify`, used by both) and, when behind, the floor anchoring. The Touch ID prompt uses the same gate | `sync/served.rs`, `adopt_prompt.rs`, `apply.rs` | MA-04 `an_unanchored_state_raises_no_panel` |
+| SEC-I1 / VER-O4 Argon2 ran with whatever costs the served wrap named | **Fixed.** The wrap's KDF block must equal the served header's (held to the §2.3 allowlist by `parse_header`); otherwise `KDF_POLICY_VIOLATION`, no prompt | `adopt_mp::checked_wrap` | MA-07 `a_wrap_with_other_kdf_costs_raises_no_panel` |
+| VER-B1 / SEC-I2 no backoff | **Fixed.** `recovery_ops::backoff` after a failed adoption, outside the mutex | `adopt_prompt.rs` | MA-03 |
+| SEC-I3 / VER-O2 an "Unlock" panel from timer syncs | **Fixed.** A dedicated `PanelRequest::MpAdopt` titled "Source Vault — Apply a Security Change", with the field "Master password your backup currently uses" (iPhone kind 4, its own copy). Only a user-started sync prompts (`backup_apply {interactive}`; coordinator `run_sync_by_user` / `backup_now_by_user`; the Mac's "Back up now" is `Trigger::User`). A background sync answers `MP_ADOPTION_REQUIRED`, shown with plain copy | `secure_ui.rs`, `panel/*`, `callbacks.rs`, `Views.swift`, `flows.rs`, `worker.rs`, `vaultErrors.ts` | MA-01, MA-02 |
+| SEC-I4 a pending local rotation with a forgotten base password | **Deferred with a stated residual** (§2.7). It cannot arise until another device can publish; the plan makes it a precondition of F.2d step 4 | spec §2.7, plan step 4 | — |
+| VER-B2 / SEC-I5 the safety properties were untested; the wrong-password test was vacuous | **Fixed.** MA-01…05 assert the panel count and kind, exact codes, the attempt counter, the open vault, and refusal of a wrong key | `mp_adoption.rs`, `adopt_key_check.rs`, `mfx::sync_opening` | MA-01…05 |
+| VER-I1 stale mutant in the build cache | **Fixed.** `cargo clean` of the vault crates, then a clean re-run of every recent suite: all pass. Mutation scripts now restore with a fresh mtime | — | — |
+| VER-I3 cancel, panel events, error mapping | **Fixed** for cancel and error mapping (MA-03); panel events are covered by the existing panel tests | — | MA-03 |
+| VER-I4 / SPEC-O2 / SPEC-O3 §10 wording | **Corrected** here; spec §2.7 rewritten | — | — |
+| SPEC-I5b/d, SPEC-I6, SPEC-O1 §2.7 relation to §22.4, a test ID, the iPhone, "asks for Touch ID too" | **Fixed** in §2.7 and §22.16 (MA rows) | spec | — |
+| SPEC-B1, SPEC-I1…I3, I7…I10, SEC-I6, SEC-I7, SEC-O1, SEC-O2 (the step 2–7 plan and design) | **Accepted into plan revision 2.** Spec amendments and the `http_send` contract are written before any step 2 code | `phase-f2d-plan.md` | — |
+
+Added after the table (MA-06, MA-07, `mp_adoption_forged.rs`):
+
+- A forging transport re-signs the current state at a new key generation
+  with a provider's own key: no panel (MA-06).
+- With this Mac's own key (the stolen-signing-key residual) it serves a
+  wrap whose KDF block differs from the header's: no panel (MA-07).
+
+**Deliberately broken builds**, each restored with a fresh mtime; every
+one is caught by a test:
+
+| Check removed | Caught by |
+|---|---|
+| the verification gate | MA-06 |
+| the floor anchoring | MA-04 |
+| the background rule | MA-02 |
+| the backoff | MA-03 |
+| the KDF check | MA-07 |
+| the apply's key binding | MA-05 |
+| the panel kind | MA-01 |
+
+With a raised Argon2 cost instead of a different salt, the KDF-check
+mutant made the suite hang — the denial of service SEC-I1 described.
+
+**Targeted results, from a clean build:**
+
+- `mp_adoption` (4), `mp_adoption_forged` (2), `adopt_key_check` (1)
+- `singleton_scenarios`, `ipc_backup`, `behind_sync`
+- `peer_followups`, `ipc`
+- engine, FFI and coordinator unit tests
+- Mac app `cargo check` and `tsc`
+- SOURCE Vault on the simulator

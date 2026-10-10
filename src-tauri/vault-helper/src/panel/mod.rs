@@ -213,7 +213,7 @@ fn scripted(req: &PanelRequest) -> Option<PanelOutcome> {
     let first = parts.next().unwrap_or("");
     let second = parts.next().unwrap_or("");
     match req {
-        PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::EnrollConfirm => {
+        PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::EnrollConfirm => {
             Some(PanelOutcome::Submitted(secret(first)))
         }
         PanelRequest::MpChange => Some(PanelOutcome::SubmittedChange(secret(first), secret(second))),

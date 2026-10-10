@@ -21,7 +21,7 @@ pub async fn vault_backup_status() -> Result<Value, String> {
 #[tauri::command]
 pub async fn vault_backup_now() -> Result<Value, String> {
     #[cfg(target_os = "macos")]
-    crate::core::vault_backup::worker::trigger(crate::core::vault_backup::worker::Trigger::Now);
+    crate::core::vault_backup::worker::trigger(crate::core::vault_backup::worker::Trigger::User);
     Ok(json!({ "ok": true }))
 }
 

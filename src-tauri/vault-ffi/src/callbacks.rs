@@ -26,6 +26,8 @@ pub const KIND_MP_CREATE: u8 = 0;
 pub const KIND_MP_ENTRY: u8 = 1;
 pub const KIND_MP_CHANGE: u8 = 2;
 pub const KIND_RK_ENTRY: u8 = 3;
+/// The master password for adopting a key change (§2.7, F.2d).
+pub const KIND_MP_ADOPT: u8 = 4;
 
 /// Callback results: the user submitted / acknowledged (0), anything else
 /// is a cancel.
@@ -134,6 +136,7 @@ impl PanelRunner for Shared {
             PanelRequest::MpEntry => KIND_MP_ENTRY,
             PanelRequest::MpChange => KIND_MP_CHANGE,
             PanelRequest::RkEntry => KIND_RK_ENTRY,
+            PanelRequest::MpAdopt => KIND_MP_ADOPT,
         };
         let mut a = Zeroizing::new(vec![0u8; ENTRY_CAP]);
         let mut b = Zeroizing::new(vec![0u8; ENTRY_CAP]);
@@ -148,7 +151,7 @@ impl PanelRunner for Shared {
         match req {
             PanelRequest::MpChange if acceptable_new_mp(&b) => PanelOutcome::SubmittedChange(a, b),
             PanelRequest::MpCreate if acceptable_new_mp(&a) => PanelOutcome::Submitted(a),
-            PanelRequest::MpEntry | PanelRequest::RkEntry => PanelOutcome::Submitted(a),
+            PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::RkEntry => PanelOutcome::Submitted(a),
             _ => PanelOutcome::Cancelled,
         }
     }

@@ -116,6 +116,17 @@ impl Flows<'_> {
     /// Returns the helper's final answer (`up_to_date`, a merge report, or
     /// in RECOVERING the FR-01 preview).
     pub fn run_sync(&self) -> Outcome<Value> {
+        self.sync_as(false)
+    }
+
+    /// `run_sync` started by the user: a key change that needs the master
+    /// password may ask for it (§2.7). A background sync gets
+    /// `MP_ADOPTION_REQUIRED` instead (review SEC-I3).
+    pub fn run_sync_by_user(&self) -> Outcome<Value> {
+        self.sync_as(true)
+    }
+
+    fn sync_as(&self, interactive: bool) -> Outcome<Value> {
         let s = self.call("state_get", None, b"", None)?;
         if s.status != 200 {
             return Err(Failure::Provider(s.status, code_of(&s.body)));
@@ -135,7 +146,7 @@ impl Flows<'_> {
                 }
                 self.push(&session, &r.body)?;
             }
-            let applied = ok(self.helper.op(json!({ "op": "backup_apply", "session": session })))?;
+            let applied = ok(self.helper.op(json!({ "op": "backup_apply", "session": session, "interactive": interactive })))?;
             match applied["need"].as_array() {
                 Some(n) if !n.is_empty() => need = strings(&applied["need"]),
                 _ => return Ok(applied),
@@ -146,12 +157,21 @@ impl Flows<'_> {
     /// Publish the unlocked vault; on STATE_MOVED merge and re-stage, at
     /// most three times (§11.3), then `BACKUP_CONFLICT`.
     pub fn backup_now(&self) -> Outcome<Value> {
+        self.backup_as(false)
+    }
+
+    /// `backup_now` started by the user ("Back up now").
+    pub fn backup_now_by_user(&self) -> Outcome<Value> {
+        self.backup_as(true)
+    }
+
+    fn backup_as(&self, interactive: bool) -> Outcome<Value> {
         for _ in 0..=MAX_MERGES {
             let prep = match ok(self.helper.op(json!({ "op": "backup_prepare" }))) {
                 // §22.14: a store older than this Mac has seen publishes
                 // nothing; syncing is what lets it catch up.
                 Err(Failure::Helper(code)) if code == "VAULT_BEHIND" => {
-                    let synced = self.run_sync()?;
+                    let synced = self.sync_as(interactive)?;
                     return Ok(json!({ "nothing_to_publish": true, "behind": true, "sync": synced }));
                 }
                 other => other?,
@@ -161,7 +181,7 @@ impl Flows<'_> {
             }
             match self.run_publication(&prep) {
                 Err(Failure::Provider(409, code)) if code == "STATE_MOVED" => {
-                    self.run_sync()?;
+                    self.sync_as(interactive)?;
                 }
                 other => return other,
             }

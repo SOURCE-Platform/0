@@ -20,8 +20,11 @@ pub const BACKUP_EVENT_CHANNEL: &str = "vault:backup";
 const PERIOD: Duration = Duration::from_secs(15 * 60);
 
 pub enum Trigger {
-    /// Run a cycle now.
+    /// Run a cycle now (timer, network change, item change).
     Now,
+    /// The user asked ("Back up now"): only such a cycle may ask for the
+    /// master password to adopt a key change (§2.7, review SEC-I3).
+    User,
     /// Post a publication the helper already staged (setup's `create`).
     Staged(Value),
 }
@@ -109,7 +112,8 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
     let flows = Flows { helper: &AppHelper, transport: &transport };
     let result = match trigger {
         Trigger::Staged(p) => flows.run_publication(&p).map(Some),
-        Trigger::Now => run_unlocked(&flows),
+        Trigger::Now => run_unlocked(&flows, false),
+        Trigger::User => run_unlocked(&flows, true),
     };
     let pending = vault_coordinator::Helper::op(&AppHelper, json!({"op": "remote_update_status"})).unwrap_or(Value::Null);
     match result {
@@ -160,14 +164,14 @@ fn cycle(app: &AppHandle, trigger: Trigger, watch: &mut AccessWatch) -> Duration
 /// (BK-28). A publication left staged by a failed upload (`backing_up`)
 /// is resumed — also while LOCKED (§11.3.2 retries); otherwise nothing
 /// runs while locked.
-fn run_unlocked(flows: &Flows<'_>) -> Result<Option<Value>, Failure> {
+fn run_unlocked(flows: &Flows<'_>, by_user: bool) -> Result<Option<Value>, Failure> {
     let state = vault_coordinator::Helper::op(&AppHelper, json!({"op": "get_state"})).map_err(Failure::Helper)?;
     if state["state"] != "unlocked" && state["state"] != "backing_up" {
         return Ok(None);
     }
-    let out = flows.backup_now()?;
+    let out = if by_user { flows.backup_now_by_user()? } else { flows.backup_now()? };
     if out["nothing_to_publish"] == true && out["behind"] != true {
-        flows.run_sync()?;
+        if by_user { flows.run_sync_by_user()? } else { flows.run_sync()? };
     }
     Ok(Some(out))
 }

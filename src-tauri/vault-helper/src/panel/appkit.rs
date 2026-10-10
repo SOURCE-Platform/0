@@ -318,7 +318,7 @@ pub fn present(req: &PanelRequest, code: Option<&str>, abort: Arc<AtomicBool>) -
             let old = v.pop().unwrap_or_default();
             PanelOutcome::SubmittedChange(to_secret(old), to_secret(new))
         }
-        (PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::RkEntry | PanelRequest::EnrollConfirm, Some(v)) => {
+        (PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::RkEntry | PanelRequest::EnrollConfirm, Some(v)) => {
             PanelOutcome::Submitted(to_secret(v.into_iter().next().unwrap_or_default()))
         }
     }

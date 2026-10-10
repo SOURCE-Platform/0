@@ -96,7 +96,7 @@ pub fn backup_apply(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) ->
     if recovering {
         return super::recovery_flow::recovery_apply(core, &id);
     }
-    let opened = super::adopt_prompt::pre_open(core, &id, deps);
+    let opened = super::adopt_prompt::pre_open(core, &id, deps, frame.get("interactive").and_then(Value::as_bool) == Some(true));
     let run = || -> Result<Value, ErrorCode> {
         let mut c = lock_core(core);
         let c = &mut *c;
