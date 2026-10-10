@@ -42,7 +42,7 @@ fn with_env<T>(c: &mut VaultCore, f: impl FnOnce(&mut Env<'_>, &mut Option<Excha
     if c.state != VaultState::Unlocked || c.behind || c.unverified_key {
         return Err(ErrorCode::BadState);
     }
-    if removal::active(&c.vault_dir).is_some() {
+    if removal::active(c.phone, &c.vault_dir).is_some() {
         return Err(ErrorCode::PeerNotPermitted);
     }
     let me = SeDevice::load(&c.vault_dir)?;

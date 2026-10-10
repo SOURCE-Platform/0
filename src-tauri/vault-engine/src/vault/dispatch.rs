@@ -20,7 +20,7 @@ pub fn dispatch(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
         return OpOutcome::err(ErrorCode::VaultBehind);
     }
     // §22.9: a phone its Mac removed authors nothing.
-    if AUTHORING.contains(&op) && crate::peer::client::removal::active(&lock_core(core).vault_dir).is_some() {
+    if AUTHORING.contains(&op) && { let c = lock_core(core); crate::peer::client::removal::active(c.phone, &c.vault_dir) }.is_some() {
         return OpOutcome::err(ErrorCode::PeerNotPermitted);
     }
     // §22.4: a key no SE commitment vouches for serves reads only, for the

@@ -20,6 +20,7 @@ pub fn paired() -> (Fx, Fx, String) {
     setup_and_unlock(&mac);
     let item = add_login(&mac);
     let phone = fx();
+    phone.core.lock().unwrap().phone = true; // SOURCE Vault's engine (`boot_phone`)
     let (bundle, _) = pair_up_to_bundle(&mac, &phone, |_| {});
     let done = complete(&phone, &serde_json::to_vec(&bundle).unwrap());
     assert_eq!(mac.op(json!({"op": "enroll_proof", "proof": done["proof"]}))["ok"], true);
@@ -105,7 +106,7 @@ pub fn deliver(phone: &Fx, answer: &[u8]) -> Value {
 /// One whole exchange; `tamper(step, answer)` may edit each answer.
 pub fn sync_with(mac: &Fx, phone: &Fx, mut tamper: impl FnMut(usize, Vec<u8>) -> Vec<u8>) -> Value {
     let mut at = phone.op(json!({"op": "peer_sync_begin"}));
-    for i in 0..64 {
+    for i in 0..1000 {
         let Some(request) = at["request"].as_str().map(|r| b64::decode(r).unwrap()) else { return at };
         at = match relay(mac, &request) {
             Ok(answer) => deliver(phone, &tamper(i, answer)),

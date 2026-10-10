@@ -150,7 +150,7 @@ impl VaultCore {
             v["behind"] = serde_json::json!(true);
         }
         // §22.9: this phone was removed by its Mac (locked; reads only).
-        if let Some(r) = crate::peer::client::removal::active(&self.vault_dir) {
+        if let Some(r) = crate::peer::client::removal::active(self.phone, &self.vault_dir) {
             v["removed"] = serde_json::json!({ "published": r.published });
         }
         v

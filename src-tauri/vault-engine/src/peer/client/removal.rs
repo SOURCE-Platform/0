@@ -58,16 +58,9 @@ pub fn record(dir: &Path, published: bool, now: u64) -> Result<Removal, ErrorCod
     Ok(r)
 }
 
-/// The lock as it applies here: only on an iPhone (review SEC-O1). A Mac's
-/// device record says platform 1, so a marker planted in the helper's
-/// directory changes nothing there; anything else fails closed.
-pub fn active(dir: &Path) -> Option<Removal> {
-    let platform = std::fs::read(dir.join(crate::device::identity::DEVICE_FILE_NAME))
-        .ok()
-        .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .and_then(|v| v.get("platform").and_then(serde_json::Value::as_u64));
-    if platform == Some(1) {
-        return None;
-    }
-    load(dir)
+/// The lock as it applies here: only in SOURCE Vault's engine (review
+/// SEC-O1 and its re-review — a flag set at boot, never a file the same
+/// user could edit), so a marker in the Mac helper's directory is inert.
+pub fn active(phone: bool, dir: &Path) -> Option<Removal> {
+    if phone { load(dir) } else { None }
 }

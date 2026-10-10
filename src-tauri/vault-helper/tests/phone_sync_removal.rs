@@ -48,10 +48,13 @@ fn a_removal_from_the_mac_locks_the_phone() {
 fn the_lock_survives_a_restart_and_fails_closed() {
     let _g = serial();
     let (mac, phone) = removed_phone();
-    // A torn marker (crash mid-write) still locks.
+    // A torn marker (crash mid-write) still locks, and so does a write
+    // interrupted before its rename (only the .tmp left).
     std::fs::write(phone.dir.join("removal.json"), b"").unwrap();
     let rebooted = VaultCore::boot_phone(phone.dir.clone());
     assert_eq!(rebooted.state_answer()["removed"]["published"], false, "{}", rebooted.state_answer());
+    std::fs::rename(phone.dir.join("removal.json"), phone.dir.join("removal.json.tmp")).unwrap();
+    assert!(VaultCore::boot_phone(phone.dir.clone()).state_answer().get("removed").is_some(), "the .tmp alone locks");
     assert_eq!(phone.op(json!({"op": "unlock"}))["ok"], true);
     separate_floors(&phone);
     let add = phone.op(json!({"op": "add_item", "kind": "login", "title": "x", "username": "u", "hosts": ["example.test"], "password": "p"}));

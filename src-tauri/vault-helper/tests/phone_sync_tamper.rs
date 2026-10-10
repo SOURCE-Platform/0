@@ -120,7 +120,7 @@ fn a_status_that_does_not_extend_the_committed_chain_is_refused() {
         last.signature = last.signature.map(|mut sig| { sig[5] ^= 1; sig });
         s.registry = file::encode(&entries).unwrap();
     }), "unverifiable revocation");
-    assert!(vault_helper::peer::client::removal::active(&phone.dir).is_none(), "never a lock on unverifiable evidence");
+    assert!(vault_helper::peer::client::removal::active(true, &phone.dir).is_none(), "never a lock on unverifiable evidence");
     mac.remove_dir();
     phone.remove_dir();
 }

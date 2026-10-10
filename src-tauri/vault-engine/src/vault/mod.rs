@@ -159,22 +159,20 @@ pub struct VaultCore {
     pub last_authorization: Option<Instant>,
     pub auto_lock_minutes: u32,
     pub vault_dir: PathBuf,
-    /// The one in-flight device enrollment, if any (§5: one session at
-    /// a time, torn down on lock, cancel, expiry or failure).
+    /// The one in-flight enrollment (§5; torn down on lock, cancel, expiry or failure).
     pub enroll: Option<crate::enroll::EnrollSession>,
-    /// v0.4 provider work (§11): at most one publication, one sync and
-    /// one recovery session.
+    /// v0.4 provider work (§11): at most one publication, sync and recovery.
     pub provider: crate::vault::provider_ops::Sessions,
-    /// §22.14 (SY-13): unlocked over a store older than the Keychain
-    /// floor — reads only until a sync reaches it.
+    /// §22.14 (SY-13): over a store older than the floor — reads only until caught up.
     pub behind: bool,
     /// The resident key's commitment could not be signed yet (§22.4).
     pub vk_commit_pending: bool,
     /// Unlocked without a usable SE identity: reads only (§22.4).
     pub unverified_key: bool,
-    /// The last verified provider exchange (§22.7 freshness, 15 min);
-    /// cleared by every lock.
+    /// The last verified provider exchange (§22.7 freshness, 15 min); cleared by every lock.
     pub provider_checked: Option<peer_serve::Checked>,
+    /// SOURCE Vault's engine (`boot_phone`): the §22.9 removal lock applies.
+    pub phone: bool,
 }
 
 impl VaultCore {
@@ -186,7 +184,7 @@ impl VaultCore {
     /// marker cannot make it wipe its own keys (review SEC-I3, 0f5f21b).
     pub fn boot_phone(vault_dir: PathBuf) -> VaultCore {
         join_ops::recover_at_boot(&vault_dir);
-        Self::boot(vault_dir)
+        VaultCore { phone: true, ..Self::boot(vault_dir) }
     }
 
     pub fn boot(vault_dir: PathBuf) -> VaultCore {
@@ -224,6 +222,7 @@ impl VaultCore {
             vk_commit_pending: false,
             unverified_key: false,
             provider_checked: None,
+            phone: false,
         }
     }
 

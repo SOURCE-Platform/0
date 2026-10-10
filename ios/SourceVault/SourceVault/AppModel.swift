@@ -26,6 +26,7 @@ final class AppModel: ObservableObject {
     @Published var syncNote: String?
     /// The sync in progress; a lock cancels it (review VER-O4).
     var syncTask: Task<Void, Never>?
+    var syncID: UUID?
 
     private let services = VaultServices()
     private(set) var engine: VaultEngine?
@@ -72,6 +73,8 @@ final class AppModel: ObservableObject {
     func lock() {
         syncTask?.cancel()
         syncTask = nil
+        syncID = nil
+        syncing = false
         entry?.cancel()
         entry = nil
         engine?.lock()

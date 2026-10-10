@@ -716,11 +716,11 @@ Every finding was checked against the repository before it was accepted.
 | VER-I1 / SEC-I5 many paths untested (status prefix, extension, vault, seq; extra record; paging; source; refusal/lock ending; allowlist) | **Fixed.** A lying Mac helper is simulated by re-signing with the Mac's own key | `phone_sync_tamper.rs`, `phone_sync.rs`, `vault-ffi/tests/catalogue.rs` | `a_status_that_does_not_extend_the_committed_chain_is_refused`, `an_unrequested_record_is_refused_and_a_stalled_page_ends_limited`, `heads_paging_converges`, `a_phone_pulls_the_macs_new_items_with_the_mac_as_source`, `a_refusal_or_a_lock_ends_the_exchange`, `the_op_allowlist_holds_the_phone_ops` |
 | SEC-I1 the 64 KiB FFI frame caps answers that may be 8 MiB, so sync stalls for good | **Fixed.** `peer_sync_receive {sha256, size}` → session (cap 8 MiB + 4 KiB); the bytes go through the §1.3 stream ops, hash-checked; `peer_sync_step {session}` consumes them. Swift streams above 40 KiB | `peer_sync_ops.rs`, `provider_ops.rs`, `PeerSync.swift` | `a_large_batch_streams_in` (140 items; answer over 64 KiB) |
 | SEC-I2 the phone buffered an unbounded body | **Fixed.** Streamed read, aborted past the cap or a larger `Content-Length` | `PeerClient.swift` | — (device) |
-| SEC-I3 / VER-I3 removal lock failed open; not crash-durable | **Fixed.** The marker's existence locks (torn, empty, unreadable or `.tmp` all count as pending); file and directory are fsynced | `peer/client/removal.rs` | `the_lock_survives_a_restart_and_fails_closed` |
+| SEC-I3 / VER-I3 removal lock failed open; not crash-durable | **Fixed.** The marker's existence locks (torn, empty, unreadable or `.tmp` all count as pending); file and directory are fsynced | `peer/client/removal.rs` | `the_lock_survives_a_restart_and_fails_closed` (empty file and `.tmp` alone, since §9.2) |
 | SEC-I4 / VER-I2 copy said "removed" and advised re-pairing (which needs deleting the app); "Synced" shown when the status check never ran or revisions wait | **Fixed.** "Removal pending" everywhere; keep the vault, as it may hold the only copy; no re-pair advice. `checked` added to the summary; "Synced" only when checked and complete; banners for waiting, unavailable or limited, and for "your Mac needs to catch up" | `Views.swift`, `PeerSync.swift`, `client/mod.rs` | — |
 | VER-I4 choice 1 (no `peer_state` / `peer_revs_put`) departs from §22.17's F.2c scope | **Recorded in the spec** as a sequencing note on §22.17 (moved to F.2d, with the reason); owner informed. No invariant changes | spec §22.17 | — |
 | VER-I5 §9 overstated the evidence | **Corrected** by this table | — | — |
-| SEC-O1 a marker planted in the Mac helper's directory stopped authoring | **Fixed.** The lock applies only where the device record says iPhone; anything else fails closed | `removal.rs::active` | `a_marker_in_the_mac_helpers_directory_changes_nothing` |
+| SEC-O1 a marker planted in the Mac helper's directory stopped authoring | **Fixed.** At first by reading the device record; since §9.2, by a flag set only by `boot_phone` | `removal.rs::active` | `a_marker_in_the_mac_helpers_directory_changes_nothing` |
 | SEC-O2 epoch check stricter than §22.9 (an epoch bound to an unknown manifest hides a later revocation) | **Accepted as stated**: liveness only; the phone reads it as "unable to verify" and learns at its next provider contact (F.2d). Noted in `status.rs` | `status.rs` | — |
 | SEC-O3 / VER-O6 caps on the phone | **Fixed.** At most 2,000 revisions per answer; a record with more than 64 heads is left to the provider; the 8 MiB answer cap (SEC-I2) | `client/mod.rs`, `PeerClient.swift` | — |
 | VER-O1 inactive responder → `PEER_NOT_PERMITTED` | **Fixed.** Now "unable to verify" | `envelope.rs` | — |
@@ -729,3 +729,48 @@ Every finding was checked against the repository before it was accepted.
 | VER-O4 lock did not cancel the Swift loop | **Fixed.** `syncTask` is cancelled by lock; a `BAD_STATE` after a lock ends quietly | `AppModel.swift`, `PeerSync.swift` | — |
 | VER-O5 wording | **Fixed.** No "nothing was changed"; `FORMAT_INVALID` and `DEVICE_NOT_AUTHORIZED` covered; 503 says the Mac's vault isn't ready | `AppModel.swift`, `PeerSync.swift` | — |
 | VER-O7 shared pin vector Rust↔Swift; delegate untested | **Deferred to the device run** (IO-07) | — | — |
+
+### 9.2 Bounded re-review of the fixes (`f0106fe`) and closure
+
+Both reviewers: **no blockers; the checkpoint can close.** The remaining
+items were fixed in passing without another round:
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-I1 (re-review) the FFI catalogue did not list `peer_sync_receive` or `step {session}` | **Fixed** | `phase-f2b-ffi.md` | — |
+| VER-I1 (residual) bounds and paging untested | **Fixed**, each check confirmed by a deliberately broken build (see below) | `tests/phone_sync_bounds.rs` | `at_most_512_records_per_request`, `a_dripping_responder_stops_at_the_round_trip_bound`, `a_truncated_revisions_page_is_re_asked_and_converges`, `a_bucket_nobody_asked_for_is_refused` |
+| VER-O1 streamed-answer guards untested | **Fixed** | `phone_sync_bounds.rs` | `the_streamed_answer_guards_hold` |
+| SEC-O1 (re-review) the iPhone check trusted an editable file | **Fixed**: `VaultCore.phone`, set only by `boot_phone` | `vault/mod.rs`, `removal.rs` | `a_marker_in_the_mac_helpers_directory_changes_nothing` |
+| SEC-O2 / VER-O3 re-pair advice on an endpoint without hints | **Fixed**: neutral copy | `PeerSync.swift` | — |
+| SEC-O3 / VER-O4 a cancelled sync could clear a newer one's slot; a quiet return on cancellation | **Fixed**: the slot is cleared only by its own run; the cancelled run stays silent | `PeerSync.swift`, `AppModel.swift` | — |
+| VER-O2 §9.1 overstated `.tmp` and revisions paging | **Corrected** (both now tested) | §9.1 | — |
+| VER-O5 `stream_end` result ignored | **Fixed** | `PeerSync.swift` | — |
+
+The deliberately broken builds — each check removed, the suite re-run —
+are listed in §9.3.
+
+**F.2c phone side is closed.** Still open, recorded:
+
+- `peer_state` and `peer_revs_put` from the phone (F.2d, §22.17 note);
+- the reconnection trigger and mDNS;
+- a Rust↔Swift pin vector (with the device run, IO-07);
+- the device run of sync. It needs the Mac to have had a verified
+  provider exchange, and so the owner's backup service.
+
+### 9.3 Deliberately broken builds (mutation check)
+
+Each check below was removed, the suite re-run, and the file restored
+(scratch harness, synthetic data):
+
+- **Caught, before the §9.2 tests:** request prehash, body hash,
+  requester id, status prefix, status extension, status vault, status
+  `committed_seq`, served-records check, Mac as source, heads re-ask,
+  refusal and lock ending the exchange, the authoring refusal, fail-closed
+  marker, Mac platform guard.
+- **Caught by the §9.2 tests:** `MAX_STEPS`, `MAX_WANTS`, bucket subset,
+  revisions re-ask, answer size cap, session id, a lock clearing the
+  answer, no-exchange guard, `.tmp` marker, phone flag.
+- **Not catchable through the API (defence in depth, accepted by both
+  reviewers):** the responder field and the responder-active check. The
+  signature is always verified under the addressed Mac's key, and
+  `paired_mac` refuses an inactive Mac before any request.

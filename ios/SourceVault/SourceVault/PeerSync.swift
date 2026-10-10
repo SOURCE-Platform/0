@@ -11,9 +11,13 @@ extension AppModel {
     @MainActor
     func startSync() {
         guard syncTask == nil else { return }
+        let id = UUID()
+        syncID = id
         syncTask = Task { @MainActor [weak self] in
             await self?.syncWithMac()
-            self?.syncTask = nil
+            // Only this run's slot: a lock may have cancelled it and a
+            // newer sync taken its place (reviews SEC-O3 / VER-O4).
+            if self?.syncID == id { self?.syncTask = nil }
         }
     }
 
@@ -25,14 +29,14 @@ extension AppModel {
         let now = await engine.callAsync(["op": "get_state"])
         guard now["state"] as? String == "unlocked", now["removed"] == nil else { return }
         syncing = true
-        defer { syncing = false }
+        defer { if !Task.isCancelled { syncing = false } }
         let begun = await engine.callAsync(["op": "peer_sync_begin"])
         guard let first = begun["request"] as? String, let endpoint = begun["endpoint"] as? [String: Any] else {
             if let error = begun["error"] as? String, error != "BAD_STATE" { syncNote = Self.describe(error) }
             return
         }
         guard let client = PeerClient(endpoint: endpoint) else {
-            syncNote = "This iPhone doesn't know where your Mac is. Pair it with your Mac again."
+            syncNote = "This iPhone has no network address for your Mac yet. Make sure your Mac and iPhone are on the same Wi-Fi."
             return
         }
         defer { client.close() }
@@ -48,7 +52,7 @@ extension AppModel {
                 step = await engine.callAsync(["op": "peer_sync_step", "refused": code])
                 if code == 503 { syncNote = "Your Mac's vault isn't ready. Open SOURCE on your Mac."; return }
             } catch {
-                syncNote = "Your Mac isn't reachable. Open SOURCE on your Mac, on the same Wi-Fi."
+                if !Task.isCancelled { syncNote = "Your Mac isn't reachable. Open SOURCE on your Mac, on the same Wi-Fi." }
                 return
             }
             if let next = step["request"] as? String {
@@ -88,7 +92,8 @@ extension AppModel {
             offset += chunk
             seq += 1
         }
-        _ = await engine.callAsync(["op": "stream_end", "session": session, "stream_id": stream])
+        let end = await engine.callAsync(["op": "stream_end", "session": session, "stream_id": stream])
+        guard end["ok"] as? Bool == true else { return end }
         return await engine.callAsync(["op": "peer_sync_step", "session": session])
     }
 
