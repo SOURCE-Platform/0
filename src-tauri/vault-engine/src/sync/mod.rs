@@ -3,6 +3,7 @@
 //! merging provider states, and signing provider requests. The helper
 //! never touches the network; the main process moves the bytes.
 
+pub mod adopt_mp;
 pub mod apply;
 pub mod change;
 pub mod compare;

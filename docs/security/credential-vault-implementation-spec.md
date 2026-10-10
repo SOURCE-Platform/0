@@ -679,12 +679,17 @@ nonces.
   to the master password (no presence prompt first). Verifying any served
   state at a key this Mac does not hold — another device's key change, or
   a §22.14 catch-up after its own directory was restored from an older
-  backup — needs the master-password adoption path (F.2d), which must
-  land **before any other device can publish** (review SEC-I2, 99760e0).
-  Until then (stated limitation): such a Mac whose directory is restored
-  to before one of its own rotations stays read-only, and its way out is
-  Recovery Key recovery. Adopting another device's rotation asks for Touch ID
-  too. **Residual (stated):** the signing key cannot be biometry-bound
+  backup — uses the **master-password adoption path** (F.2d, landed
+  2026-10-10, before any other device can publish; review SEC-I2,
+  99760e0). When this device's own envelope cannot be opened
+  (`DEVICE_NOT_AUTHORIZED`: a discarded agreement key, or Touch ID
+  unavailable now), the secure panel asks for the master password. It
+  opens the served state's `wrap_mp`, hash-checked against the signed
+  index, and the apply then verifies the whole state under the key it
+  yields. As with the Touch ID prompt, this is asked only for a state
+  signed by a device of this Mac's confirmed registry, and outside the
+  core mutex. A wrong password adopts nothing. Adopting another device's
+  rotation asks for Touch ID too. **Residual (stated):** the signing key cannot be biometry-bound
   (background provider signing), so a thief with the login password can
   copy it and sign as the Mac — not read the vault, but publish
   disruptive states or enroll a device that would receive later changes,

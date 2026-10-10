@@ -774,3 +774,30 @@ Each check below was removed, the suite re-run, and the file restored
   reviewers):** the responder field and the responder-active check. The
   signature is always verified under the addressed Mac's key, and
   `paired_mac` refuses an inactive Mac before any request.
+
+## 10. F.2d step 1 — master-password adoption (candidate)
+
+Plan: `phase-f2d-plan.md`.
+
+**What changed**
+
+- `sync::adopt_mp`: `served_wrap` returns the served `wrap_mp`,
+  hash-checked against the signed index. `open_with_mp` opens it: wrong
+  password gives `WRONG_CREDENTIAL`, anything else broken gives
+  `WRAP_CORRUPT`.
+- `adopt_prompt::pre_open`: when this device's envelope answers
+  `DEVICE_NOT_AUTHORIZED`, the secure panel asks for the master password
+  (the `MpEntry` panel, outside the core mutex). This happens only for a
+  state signed by our registry, the existing guard. The apply then
+  verifies everything under the key the password opened.
+- Spec §2.7: the stated limitation is lifted.
+
+**Tests**
+
+- `vault-tests/tests/mp_adoption.rs` (2), through the real dispatcher and
+  coordinator. A password-only Mac, restored to before its own rotation,
+  catches up with its master password and can author again. A wrong
+  password adopts nothing and stays read-only.
+- Removing the fallback makes the success test fail.
+- Still passing: `peer_followups`, `singleton_scenarios`, `ipc_backup`,
+  `behind_sync`.

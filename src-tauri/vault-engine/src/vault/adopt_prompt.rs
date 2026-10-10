@@ -7,11 +7,20 @@
 //! result — for exactly the envelope file it was opened from. It does so
 //! only for a state signed by a device this Mac's confirmed registry
 //! knows; any other state is fully verified before any prompt.
+//!
+//! When this device's own key cannot open its envelope
+//! (`DEVICE_NOT_AUTHORIZED`: an agreement key discarded by the owner
+//! decision "password every time", or Touch ID unavailable now), the
+//! master password opens the served `wrap_mp` instead (F.2d, §2.7) —
+//! asked in the same secure panel, also outside the mutex.
 
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
-use super::{lock_core, VaultCore};
+use super::secure_ui::{PanelOutcome, PanelRequest};
+use super::setup::emit_panel;
+use super::setup::PANEL_TIMEOUT_PUB as PANEL_TIMEOUT;
+use super::{lock_core, Deps, VaultCore};
 use crate::backup::index::Role;
 use crate::crypto::wrap::DeviceEnvelopePayload;
 use crate::device::envelope::{self, DeviceEnvelopeFile};
@@ -39,8 +48,8 @@ impl Opened {
 /// When the complete sync session `id` will need this device's envelope
 /// (the served key generation differs, or a local rotation is pending),
 /// open it now, with the mutex released.
-pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id) -> Option<Opened> {
-    let (tag, vid, file) = {
+pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps) -> Option<Opened> {
+    let (tag, vid, file, wrap) = {
         let c = lock_core(core);
         let session = c.provider.sync.as_ref().filter(|s| &s.t.id == id)?;
         let index = session.index.as_ref().filter(|_| session.t.still_needed().is_empty())?;
@@ -60,8 +69,18 @@ pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id) -> Option<Opened> {
         let me = SeDevice::load(&c.vault_dir).ok()?;
         let blob = index.find(&Role::Env { device_id: me.device_id() }).and_then(|e| session.t.received.get(&e.blob))?;
         let file: DeviceEnvelopeFile = serde_json::from_slice(blob).ok()?;
-        (me.key_tag().to_string(), store.header.vault_id.0, file)
+        let wrap = crate::sync::adopt_mp::served_wrap(index, &session.t.received).ok();
+        (me.key_tag().to_string(), store.header.vault_id.0, file, wrap)
     };
-    let result = envelope::open_envelope_for(&tag, REASON, &vid, &file);
+    let mut result = envelope::open_envelope_for(&tag, REASON, &vid, &file);
+    if let (Err(ErrorCode::DeviceNotAuthorized), Some(wrap)) = (&result, wrap) {
+        emit_panel(deps, true, PanelRequest::MpEntry);
+        let outcome = deps.panel.run(PanelRequest::MpEntry, PANEL_TIMEOUT);
+        emit_panel(deps, false, PanelRequest::MpEntry);
+        result = match outcome {
+            PanelOutcome::Submitted(mp) => crate::sync::adopt_mp::open_with_mp(&wrap, &vid, &mp),
+            _ => Err(ErrorCode::PanelCancelled),
+        };
+    }
     Some(Opened { file: serde_json::to_vec(&file).ok()?, result: RefCell::new(Some(result)) })
 }
