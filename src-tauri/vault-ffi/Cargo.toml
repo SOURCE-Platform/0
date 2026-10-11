@@ -11,6 +11,9 @@ publish = false
 
 [dependencies]
 vault-engine = { path = "../vault-engine" }
+# The provider flows (spec §11.1), pure logic over two traits: the engine's
+# own dispatcher and the `http_send` callback (F.2d step 2).
+vault-coordinator = { path = "../vault-coordinator" }
 serde_json = "1"
 zeroize = "1"
 

@@ -85,6 +85,9 @@ pub const NOT_ON_THE_PHONE: &[&str] = &[
     "setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
     "cancel_enrollment", "revoke_device", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle",
     "rotate_recovery_key", "enroll_proof",
+    // F.2d step 2: only the in-engine provider flows reach these (SEC-O2).
+    "backup_prepare", "backup_blob_list", "backup_transition_body", "backup_commit_result", "backup_state_offer",
+    "backup_apply", "sign_provider_request",
 ];
 
 #[test]
@@ -98,7 +101,7 @@ fn the_op_allowlist_holds_nothing_mac_only() {
 /// VER-I1: a dropped entry would silently disable pairing or sync).
 #[test]
 fn the_op_allowlist_holds_the_phone_ops() {
-    for op in ["join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort", "peer_sync_begin", "peer_sync_step", "peer_sync_receive"] {
+    for op in ["join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort", "peer_sync_begin", "peer_sync_step", "peer_sync_receive", "provider_sync", "provider_publish"] {
         assert!(IOS_OPS.contains(&op), "{op} is a phone op");
     }
 }

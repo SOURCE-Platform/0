@@ -52,7 +52,8 @@ fn with_env<T>(c: &mut VaultCore, f: impl FnOnce(&mut Env<'_>, &mut Option<Excha
     let committed = crate::registry::log::read_state(&c.vault_dir, &store.header.vault_id.0, &EpochPolicy::CheckpointAnchored)?;
     let manifest_hash = crate::sync::seen::load(&store.conn)?.map(|s| s.manifest_hash.0);
     let mut exchange = c.provider.peer_client.take();
-    let mut env = Env { store, vk: &vk, me: &me, committed: &committed, manifest_hash, now: now_epoch() };
+    let fresh = c.provider_checked.as_ref().is_some_and(|t| t.fresh());
+    let mut env = Env { store, vk: &vk, me: &me, committed: &committed, manifest_hash, now: now_epoch(), fresh };
     let out = f(&mut env, &mut exchange);
     c.provider.peer_client = exchange;
     out

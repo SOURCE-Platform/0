@@ -55,6 +55,7 @@ struct LockedView: View {
 
 struct ItemListView: View {
     @EnvironmentObject var model: AppModel
+    @State private var adding = false
 
     var body: some View {
         List(model.items) { item in
@@ -67,6 +68,57 @@ struct ItemListView: View {
         }
         .overlay { if model.behind { Text("Read-only until this iPhone catches up.").font(.caption) } }
         .safeAreaInset(edge: .bottom) { SyncBar() }
+        .toolbar {
+            if !model.behind && model.removed == nil {
+                Button { adding = true } label: { Image(systemName: "plus") }.accessibilityLabel("Add login")
+            }
+        }
+        .sheet(isPresented: $adding) { AddLoginView() }
+    }
+}
+
+/// A new login, typed on the iPhone (F.2d step 4). The password field is
+/// secure; everything is cleared when the sheet goes, and the sheet covers
+/// itself for the app-switcher snapshot.
+struct AddLoginView: View {
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var phase
+    @State private var title = ""
+    @State private var username = ""
+    @State private var password = ""
+    @State private var host = ""
+    @State private var problem: String?
+    @State private var saving = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("Title", text: $title)
+                TextField("Username", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                SecureField("Password", text: $password)
+                TextField("Website (example.com)", text: $host).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                if let problem { Text(problem).foregroundStyle(.secondary) }
+            }
+            .navigationTitle("New Login")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { save() }.disabled(title.isEmpty || password.isEmpty || saving)
+                }
+            }
+        }
+        .onDisappear { title = ""; username = ""; password = ""; host = "" }
+        .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
+    }
+
+    private func save() {
+        saving = true
+        problem = nil
+        model.addLogin(title: title, username: username, password: password, host: host) { error in
+            saving = false
+            if let error { problem = error } else { dismiss() }
+        }
     }
 }
 
@@ -76,16 +128,18 @@ struct SyncBar: View {
 
     var body: some View {
         HStack {
-            if model.removed != nil {
+            if model.accessLost {
+                Text("Your backup no longer accepts this iPhone — it may have been removed. Nothing has been deleted.").font(.caption)
+            } else if model.removed != nil {
                 Text("Removal pending — your Mac removed this iPhone. Nothing has been deleted.").font(.caption)
             } else if model.syncing {
                 ProgressView().controlSize(.small)
-                Text("Syncing with your Mac…").font(.caption)
+                Text("Syncing…").font(.caption)
             } else {
                 Text(model.syncNote ?? model.lastSynced.map { "Synced with your Mac \($0.formatted(date: .omitted, time: .shortened))" } ?? "Not synced yet")
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Sync now") { model.startSync() }.font(.caption)
+                Button("Sync now") { model.startSync(byUser: true) }.font(.caption)
             }
         }
         .padding(.horizontal).padding(.vertical, 8)

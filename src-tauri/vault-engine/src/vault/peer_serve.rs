@@ -51,7 +51,7 @@ impl Checked {
         Checked { at: std::time::Instant::now(), wall: now_epoch() }
     }
 
-    fn fresh(&self) -> bool {
+    pub fn fresh(&self) -> bool {
         let wall = now_epoch();
         self.at.elapsed() < FRESH && wall >= self.wall && wall - self.wall < FRESH.as_secs()
     }

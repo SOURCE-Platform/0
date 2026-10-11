@@ -22,7 +22,7 @@ code (SPEC-I10).**
 
 ## Steps
 
-### 1. Master-password adoption — in review
+### 1. Master-password adoption — closed (`1e111d7`)
 
 It must land before any other device can publish (§2.7, owner decision
 2026-10-02).
@@ -48,7 +48,7 @@ It must land before any other device can publish (§2.7, owner decision
     text covers the phone and the §22.4 relation; a §22.16 row is added
     (SPEC-I5, SPEC-I6).
 
-### 2. The phone's provider path — design under review
+### 2. The phone's provider path — built, in chunk review
 
 `vault-coordinator` is linked into `vault-ffi`. Swift supplies one
 transport callback.
@@ -104,6 +104,13 @@ Once the `provider_*` ops exist, the step-wise `backup_*` and
 SPEC-I15). They may be narrowed to join and peer sessions. `cargo vet`
 scope covers `vault-coordinator` on iOS.
 
+**Built (chunk 2–4, verification §11):** the spec amendments (§1.2,
+§11.1, §22.2), catalogue §1/§2/§4/§6, `provider.rs`, `http_send`
+(`ProviderHTTP.swift`), the persisted access count, and the removal of
+the step-wise ops from `IOS_OPS`. **Not yet:** `provider_run` while
+LOCKED and the background-task expiry of the cancel flag — they come with
+the staged publication (step 4 remainder).
+
 ### 3. Using the provider path
 
 - Freshness on the phone (§22.7). With it, the phone pushes local-only
@@ -120,7 +127,28 @@ scope covers `vault-coordinator` on iOS.
 - *Sync* triggers: unlock and "Sync now". Publication of a staged change
   follows §22.10/§22.11 instead (step 4).
 
+**Built:** freshness and push (`peer/client/push.rs`), the removal lift
+and set, the `BACKUP_ACCESS_LOST` copy, the triggers (unlock →
+`provider_sync`; "Sync now" → `provider_publish {interactive}`; then the
+Mac). **Replaced:** `peer_state` objects mode (PW-04) is replaced by
+provider fetches — a phone missing objects gets them from the backup at
+its next provider sync (SPEC-I9). **Carried to the chunk review:** the
+epoch at next provider contact, the MA phone variants and IO-02.
+
 ### 4. Publication from the phone
+
+**Built:** edits are published by `provider_publish` (an unstaged
+publication of edits under the current key, like the Mac's "Back up
+now"); add-login in the phone UI. **Not yet:** on-disk staging, the
+`BGProcessingTask`, `provider_run` while LOCKED, IO-06, edit-login — they
+only matter for staged key changes, which the phone cannot make before
+step 5.
+
+**SEC-I4, re-read (chunk review to confirm):** the residual needs a
+served state under a *new key* that the Mac must adopt while it holds a
+pending rotation of its own. The phone's publications in this chunk are
+edits under the current key; it makes no key change before step 5. So
+the case still cannot arise, and the precondition moves to step 5.
 
 - The phone publishes its own edits through the coordinator.
 - On-disk staging (§22.11) with the §22.10 file protection.

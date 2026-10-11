@@ -57,8 +57,13 @@ extern "C" fn event(_: *mut c_void, json: *const u8, len: usize) {
     EVENTS.lock().unwrap().push(String::from_utf8_lossy(unsafe { std::slice::from_raw_parts(json, len) }).into_owned());
 }
 
+/// No provider here: every request is "unreachable".
+extern "C" fn http(_: *mut c_void, _: *const c_char, _: *const c_char, _: *const c_char, _: *const c_char, _: *const u8, _: usize, _: u64, _: *mut u8, _: usize, _: *mut usize, _: *mut u16, _: *mut u64) -> i32 {
+    1
+}
+
 fn table() -> Ov0Callbacks {
-    Ov0Callbacks { ctx: std::ptr::null_mut(), secure_entry: Some(entry), recovery_sheet: Some(sheet), presence: Some(yes), capture_suppressed: Some(yes), event: Some(event) }
+    Ov0Callbacks { ctx: std::ptr::null_mut(), secure_entry: Some(entry), recovery_sheet: Some(sheet), presence: Some(yes), capture_suppressed: Some(yes), event: Some(event), http_send: Some(http) }
 }
 
 fn open(tag: &str) -> (*const Ov0Engine, std::path::PathBuf) {
@@ -88,13 +93,14 @@ fn a_handle_answers_only_the_allowlist() {
     let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let (e, dir) = open("allow");
     assert_eq!(call(e, r#"{"op":"get_state"}"#)["state"], "uninitialized");
-    for op in ["setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack", "cancel_enrollment", "revoke_device", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle", "rotate_recovery_key", "no_such_op"] {
+    for op in ["setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack", "cancel_enrollment", "revoke_device", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle", "rotate_recovery_key", "backup_prepare", "backup_apply", "backup_state_offer", "sign_provider_request", "no_such_op"] {
         assert_eq!(call(e, &format!(r#"{{"op":"{op}"}}"#))["error"], "UNKNOWN_OP", "{op}");
     }
     assert_eq!(call(e, "not json")["error"], "INVALID_INPUT");
     let big = format!(r#"{{"op":"list_items","pad":"{}"}}"#, "x".repeat(MAX_REQUEST));
     assert_eq!(call(e, &big)["error"], "INVALID_INPUT", "over the frame cap");
     let missing = Ov0Callbacks { event: None, ..table() };
+    assert!(Shared::new(&Ov0Callbacks { http_send: None, ..table() }).is_none(), "the provider callback is required too");
     let path = CString::new(dir.to_str().unwrap()).unwrap();
     assert!(unsafe { ov0_engine_open(path.as_ptr(), &missing) }.is_null(), "an incomplete table is refused");
     unsafe { ov0_engine_close(e) };

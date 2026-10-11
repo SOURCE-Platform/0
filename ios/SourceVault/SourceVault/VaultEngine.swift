@@ -21,7 +21,8 @@ final class VaultEngine: @unchecked Sendable {
             recovery_sheet: vaultRecoverySheet,
             presence: vaultPresence,
             capture_suppressed: vaultCaptureSuppressed,
-            event: vaultEvent
+            event: vaultEvent,
+            http_send: vaultHttpSend
         )
         guard let h = dir.path.withCString({ path in ov0_engine_open(path, &table) }) else { return nil }
         handle = h
@@ -89,4 +90,23 @@ private let vaultCaptureSuppressed: @convention(c) (UnsafeMutableRawPointer?, Un
 private let vaultEvent: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<UInt8>?, Int) -> Void = { ctx, json, len in
     guard let json else { return }
     services(ctx).event(Data(bytes: json, count: len))
+}
+
+/// Provider HTTPS (catalogue §2 `http_send`), on the engine's op thread:
+/// it waits here for `ProviderHTTP`, which never calls the engine.
+private let vaultHttpSend: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafePointer<UInt8>?, Int, UInt64, UnsafeMutablePointer<UInt8>?, Int, UnsafeMutablePointer<Int>?, UnsafeMutablePointer<UInt16>?, UnsafeMutablePointer<UInt64>?) -> Int32 = { _, origin, method, path, auth, body, bodyLen, timeout, out, cap, outLen, status, date in
+    guard let origin, let method, let path, let out, let outLen, let status, let date else { return 1 }
+    let payload = body.map { Data(bytes: $0, count: bodyLen) } ?? Data()
+    let answer = ProviderHTTP.shared.send(origin: String(cString: origin), method: String(cString: method), path: String(cString: path),
+                                          auth: auth.map { String(cString: $0) }, body: payload, timeoutMs: timeout, maxBody: cap)
+    switch answer {
+    case .answered(let code, let data, let when):
+        data.withUnsafeBytes { raw in if let base = raw.bindMemory(to: UInt8.self).baseAddress { out.update(from: base, count: data.count) } }
+        outLen.pointee = data.count
+        status.pointee = code
+        date.pointee = when ?? 0
+        return 0
+    case .tooLarge: return 2
+    case .unreachable: return 1
+    }
 }

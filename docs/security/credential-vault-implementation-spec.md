@@ -169,6 +169,15 @@ and even that path is helper → nm-host → Chrome, bypassing the main process
 entirely (§9). The main process's own vault UI receives metadata (titles,
 usernames, hosts) only, after unlock.
 
+**SOURCE Vault (iPhone, v0.5 F.2d).** There is one process. The engine
+(`vault-ffi`) holds the helper column; Swift holds the main column's
+network role (provider HTTPS, the pinned pairing and peer channels) and
+the UI. The engine and the network share one address space — a stated
+residual of the iPhone form: the separation is by interface (the
+catalogued C ABI), not by process. Every network byte Swift carries is
+ciphertext, public data, or a single-use request the engine built and
+signed.
+
 ### 1.3 IPC transport
 
 - **Transport:** AF_UNIX `SOCK_STREAM` socket at
@@ -2509,6 +2518,14 @@ in Phase F the iPhone only fetches its own envelope (§4.7).
   locate pepper (§11.5), which carries no vault authority; logs record
   route, status, `vid` and `key_id` only, never request or response
   bodies.
+- **On the iPhone (v0.5 F.2d step 2).** The coordinator's flows run
+  inside the engine (`vault-ffi/src/provider.rs`, ops `provider_sync` and
+  `provider_publish`): the "Helper" column is the engine's own dispatcher,
+  limited to a fixed list of sub-ops; "HTTP/TLS" is Swift's `http_send`
+  callback, called only for the vault header's own provider origin and
+  capped per answer (FFI catalogue §2). Retry and the §11.3.2 access-loss
+  count are kept in the engine's store, since the app's lifetimes are too
+  short for a count held in memory.
 
 ### 11.2 Storage and state model
 
@@ -4534,6 +4551,12 @@ autofill (Phase H).
   plaintext; nothing else secret reaches it. **Erratum (F.2b review
   VER-I6):** this replaces "a Swift callback table" — the mechanism is an
   in-process call either way; the import list is what is checked.
+- **Network carriage (v0.5 F.2d step 2).** Swift also carries the
+  network: the pinned pairing and peer channels, and provider HTTPS
+  through the `http_send` callback. Each carries only ciphertext, public
+  data and single-use requests the engine signed; nothing in this list is
+  a new crossing. The catalogue lists every exported entry point **and
+  every callback**.
 
 ### 22.3 The SOURCE Vault iOS app (F2-D2)
 

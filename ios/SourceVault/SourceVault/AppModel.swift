@@ -21,6 +21,8 @@ final class AppModel: ObservableObject {
     /// §22.9: the Mac removed this iPhone (`published`: among its
     /// provider-committed entries); nil while still a vault device.
     @Published var removed: Bool?
+    /// §11.3.2 corroborated: the backup no longer accepts this iPhone.
+    @Published var accessLost = false
     @Published var syncing = false
     @Published var lastSynced: Date?
     @Published var syncNote: String?
@@ -86,6 +88,7 @@ final class AppModel: ObservableObject {
             self?.state = answer["state"] as? String ?? "error"
             self?.behind = answer["behind"] as? Bool ?? false
             self?.removed = (answer["removed"] as? [String: Any]).map { $0["published"] as? Bool ?? false }
+            self?.accessLost = answer["access_lost"] as? Bool == true
             if answer["vault_open"] as? Bool == true { self?.loadItems() }
         }
     }
@@ -123,6 +126,20 @@ final class AppModel: ObservableObject {
         engine?.call(["op": "reveal", "ref": ref], done: done)
     }
 
+    /// A new login (§1.5 `add_item`; Face ID confirms it in the engine),
+    /// then a sync that publishes it — the user is here, so it may ask for
+    /// the master password to apply a security change first (§2.7).
+    func addLogin(title: String, username: String, password: String, host: String, done: @escaping (String?) -> Void) {
+        var item: [String: Any] = ["op": "add_item", "kind": "login", "title": title, "username": username, "password": password]
+        if !host.isEmpty { item["hosts"] = [host] }
+        engine?.call(item) { [weak self] answer in
+            guard answer["ok"] as? Bool == true else { return done(Self.describe(answer["error"] as? String ?? "REFUSED")) }
+            done(nil)
+            self?.loadItems()
+            Task { @MainActor in self?.startSync(byUser: true) }
+        }
+    }
+
     private func run(_ request: [String: Any], then: (([String: Any]) -> Void)? = nil) {
         message = nil
         engine?.call(request) { [weak self] answer in
@@ -155,7 +172,12 @@ final class AppModel: ObservableObject {
         case "PEER_NOT_PERMITTED": return "This iPhone can't sync with your Mac right now."
         case "PEER_LIMIT": return "Your Mac is busy — try again in a minute."
         case "FORMAT_INVALID": return "Your Mac didn't understand this iPhone's request. Update both apps."
+        case "MP_ADOPTION_REQUIRED": return "Another device changed your vault's security. Tap “Sync now” and enter your master password to apply it."
+        case "BACKUP_UNAVAILABLE": return "Your backup can't be reached right now. Your vault keeps working on this iPhone."
+        case "BACKUP_ACCESS_LOST": return "This iPhone can no longer reach your backup — it may have been removed from your vault."
+        case "BACKUP_CONFLICT": return "Two devices changed the vault at once. Tap “Sync now” to try again."
         case "DEVICE_NOT_AUTHORIZED": return "This iPhone's key isn't available. Use your master password."
+        case "INVALID_INPUT": return "Check the fields and try again."
         case "WRONG_CREDENTIAL": return "That password is not right."
         case "PRESENCE_DENIED": return "Face ID was cancelled."
         case "PANEL_CANCELLED": return "Cancelled."

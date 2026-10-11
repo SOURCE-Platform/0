@@ -889,3 +889,22 @@ confirmed by a deliberately broken build, restored with a fresh mtime.
 **F.2d step 1 is closed.** Next: drafting step 2's spec amendments and
 the `http_send` contract (plan revision 2), for review before any step 2
 code.
+
+## 11. F.2d chunk — steps 2–4 (review per chunk, owner decision 2026-10-11)
+
+**Candidate:** the commit that adds this section. **Process:** one
+security review and one verification review (which also checks spec
+consistency) over the whole chunk; one fix round; blockers and important
+security items fixed now, the rest logged for the final audit.
+
+| Area | Where | Tests |
+|---|---|---|
+| Provider flows in the engine (`provider_sync`, `provider_publish`), sub-op list, frame cap, re-entrancy guard, cancel flag, origin check | `vault-ffi/src/provider.rs`, `engine.rs`, `lib.rs` | `vault-tests/tests/phone_provider.rs` (sync and publish end to end through C callbacks) |
+| `http_send` callback, refused when missing | `callbacks.rs`, `VaultFFI.h`, `VaultEngine.swift`, `ProviderHTTP.swift` | `handle.rs` |
+| Step-wise `backup_*` / `sign_provider_request` out of `IOS_OPS` | `engine.rs` | `catalogue.rs`, `handle.rs` |
+| Persisted §11.3.2 access count, `access_lost` in `get_state` | `provider.rs`, `policy.rs`, `provider_ops.rs` | — (carried: a phone 401 fixture) |
+| Removal lock lifted by a provider-confirmed state, set by a revoking one | `provider.rs`, `removal.rs` | `a_provider_confirmed_state_lifts_the_removal_lock` |
+| Phone push (`peer_revs_put`) only when fresh | `peer/client/push.rs`, `mod.rs`, `peer_sync_ops.rs` | `a_phone_pushes_its_own_edit_only_when_fresh` |
+| Triggers, copy, add-login | `PeerSync.swift`, `AppModel.swift`, `Views.swift` | simulator build and unit tests |
+| Spec §1.2, §11.1, §22.2; catalogue §1/§2/§4/§6; plan progress and the SEC-I4 re-reading | docs | — |
+

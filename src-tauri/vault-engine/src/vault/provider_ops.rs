@@ -153,6 +153,11 @@ impl VaultCore {
         if let Some(r) = crate::peer::client::removal::active(self.phone, &self.vault_dir) {
             v["removed"] = serde_json::json!({ "published": r.published });
         }
+        // §11.3.2 corroborated (the phone's provider path keeps the count).
+        let lost = self.phone && self.store.as_ref().is_some_and(|s| crate::storage::kv::get::<bool>(&s.conn, "phone_access_lost").ok().flatten() == Some(true));
+        if lost {
+            v["access_lost"] = serde_json::json!(true);
+        }
         v
     }
 }

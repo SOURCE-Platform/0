@@ -1,24 +1,46 @@
-// "Sync with your Mac" (spec v0.5 §22.8): the engine builds, signs and
-// checks every message; this loop only carries the bytes to the Mac and
-// back, one request at a time, and reports the outcome in plain words.
-// It runs after unlock and on "Sync now" — never in the background — and
-// a lock cancels it.
+// "Sync" (spec v0.5 §11.1, §22.8): first the backup provider — the
+// engine's own provider flows (F.2d step 2), which also publish this
+// iPhone's edits when the user asked — then the Mac. The engine builds,
+// signs and checks every message; this file only carries bytes and reports
+// the outcome in plain words. It runs after unlock and on "Sync now" —
+// never in the background — and a lock cancels it.
 
 import Foundation
 
 extension AppModel {
     /// Start a sync unless one is running; a lock cancels it.
+    /// `byUser`: "Sync now" — it may publish and may ask for the master
+    /// password to adopt a key change (§2.7); the sync after unlock never
+    /// asks.
     @MainActor
-    func startSync() {
+    func startSync(byUser: Bool = false) {
         guard syncTask == nil else { return }
         let id = UUID()
         syncID = id
         syncTask = Task { @MainActor [weak self] in
+            await self?.syncWithProvider(byUser: byUser)
             await self?.syncWithMac()
             // Only this run's slot: a lock may have cancelled it and a
             // newer sync taken its place (reviews SEC-O3 / VER-O4).
             if self?.syncID == id { self?.syncTask = nil }
         }
+    }
+
+    /// The backup provider. A removed iPhone runs it too: a provider state
+    /// in which it is still active is what lifts the lock (§22.9).
+    @MainActor
+    private func syncWithProvider(byUser: Bool) async {
+        guard let engine, !Task.isCancelled else { return }
+        let now = await engine.callAsync(["op": "get_state"])
+        guard now["state"] as? String == "unlocked" else { return }
+        syncing = true
+        syncNote = nil
+        defer { if !Task.isCancelled { syncing = false } }
+        let answer = await engine.callAsync(["op": byUser ? "provider_publish" : "provider_sync", "interactive": byUser])
+        if answer["ok"] as? Bool != true, let error = answer["error"] as? String, error != "BAD_STATE" {
+            syncNote = Self.describe(error)
+        }
+        refresh()
     }
 
     @MainActor
@@ -112,7 +134,8 @@ extension AppModel {
         } else if n("unavailable") > 0 || done["limited"] as? Bool == true {
             syncNote = "Some items couldn't come from your Mac directly. They'll arrive through your backup."
         } else {
-            syncNote = n("admitted") > 0 ? "Updated from your Mac." : nil
+            // A note from the backup step stays (it ran first, §11.1).
+            syncNote = n("admitted") > 0 ? "Updated from your Mac." : syncNote
         }
     }
 }

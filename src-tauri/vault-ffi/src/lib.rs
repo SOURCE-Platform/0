@@ -20,6 +20,7 @@
 
 mod callbacks;
 mod engine;
+mod provider;
 
 use std::ffi::{c_char, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -148,6 +149,7 @@ pub unsafe extern "C" fn ov0_engine_close(engine: *const Ov0Engine) {
             return;
         }
         let e = Arc::from_raw(engine);
+        e.cancel.store(true, std::sync::atomic::Ordering::SeqCst); // a provider flow stops sending
         e.end_tick();
         e.lock(LockReason::Explicit);
         // Wait for an op still running (it fails closed at its re-lock

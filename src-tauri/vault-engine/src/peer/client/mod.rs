@@ -11,6 +11,7 @@
 //! Mac or its bundle).
 
 pub mod envelope;
+mod push;
 pub mod removal;
 pub mod status;
 
@@ -46,6 +47,9 @@ pub struct Summary {
     pub unavailable: u64,
     pub mac_behind: bool,
     pub limited: bool,
+    /// Pushed with `peer_revs_put` and admitted / waiting at the Mac.
+    pub pushed: u64,
+    pub push_waiting: u64,
     /// The Mac's signed status was verified this exchange (the §22.9 check
     /// ran); false when it answered status 1 or 2 instead.
     pub checked: bool,
@@ -53,7 +57,7 @@ pub struct Summary {
 
 impl Summary {
     pub fn json(&self) -> Value {
-        json!({ "admitted": self.admitted, "waiting": self.waiting, "refused": self.refused, "unavailable": self.unavailable, "mac_behind": self.mac_behind, "limited": self.limited, "checked": self.checked })
+        json!({ "admitted": self.admitted, "waiting": self.waiting, "refused": self.refused, "unavailable": self.unavailable, "mac_behind": self.mac_behind, "limited": self.limited, "checked": self.checked, "pushed": self.pushed, "push_waiting": self.push_waiting })
     }
 }
 
@@ -83,6 +87,7 @@ enum Phase {
     Hello,
     Heads { asked: Vec<u8> },
     Revs { asked: Vec<([u8; 16], Vec<[u8; 32]>)> },
+    Put,
 }
 
 /// What one step needs from the unlocked engine.
@@ -93,6 +98,8 @@ pub struct Env<'a> {
     pub committed: &'a RegistryState,
     pub manifest_hash: Option<[u8; 32]>,
     pub now: u64,
+    /// §22.7: this phone verified its provider state within 15 minutes.
+    pub fresh: bool,
 }
 
 pub struct Exchange {
@@ -101,6 +108,10 @@ pub struct Exchange {
     phase: Phase,
     out: Outstanding,
     wants: Vec<([u8; 16], Vec<[u8; 32]>)>,
+    /// The Mac's heads per record, and the buckets it answered whole.
+    theirs: BTreeMap<[u8; 16], Vec<[u8; 32]>>,
+    covered: Vec<u8>,
+    pushed: bool,
     steps: u32,
     summary: Summary,
 }
@@ -109,7 +120,7 @@ impl Exchange {
     /// Start with `peer_status`; returns the exchange and its first request.
     pub fn begin(env: &Env<'_>, vault_id: [u8; 16], mac: [u8; 16]) -> Result<(Exchange, Vec<u8>), ErrorCode> {
         let (bytes, out) = envelope::request(env.me, vault_id, mac, PeerOp::Status, &vault_proto::peer::body::empty(), env.now)?;
-        Ok((Exchange { vault_id, mac, phase: Phase::Status, out, wants: Vec::new(), steps: 0, summary: Summary::default() }, bytes))
+        Ok((Exchange { vault_id, mac, phase: Phase::Status, out, wants: Vec::new(), theirs: BTreeMap::new(), covered: Vec::new(), pushed: false, steps: 0, summary: Summary::default() }, bytes))
     }
 
     fn ask(&mut self, env: &Env<'_>, op: PeerOp, body: Vec<u8>, phase: Phase) -> Result<Step, ErrorCode> {
@@ -159,6 +170,12 @@ impl Exchange {
             }
             Phase::Heads { asked } => self.on_heads(env, &asked, &body),
             Phase::Revs { asked } => self.on_revs(env, asked, &body),
+            Phase::Put => {
+                let c = vault_proto::peer::body::PutCounts::decode(&body).map_err(|_| ErrorCode::PeerAuthInvalid)?;
+                self.summary.pushed = c.admitted;
+                self.summary.push_waiting = c.waiting;
+                Ok(Step::Done(self.summary))
+            }
         }
     }
 
@@ -173,6 +190,7 @@ impl Exchange {
         for item in &resp.items {
             match item {
                 HeadsItem::Heads { record_id, heads } => {
+                    self.theirs.insert(*record_id, heads.clone());
                     let have = mine.get(record_id).cloned().unwrap_or_default();
                     if have.len() > MAX_HEADS {
                         self.summary.unavailable += 1; // A.3.4: ≤ 64 have_heads; the provider path
@@ -183,6 +201,7 @@ impl Exchange {
                 HeadsItem::Unavailable { .. } => self.summary.unavailable += 1,
             }
         }
+        self.covered.extend(resp.buckets.iter().copied());
         let rest: Vec<u8> = asked.iter().copied().filter(|b| !resp.buckets.contains(b)).collect();
         if !rest.is_empty() && !resp.buckets.is_empty() {
             return self.ask(env, PeerOp::Heads, encode_heads_req(&rest), Phase::Heads { asked: rest });
@@ -195,6 +214,13 @@ impl Exchange {
 
     fn next_revs(&mut self, env: &Env<'_>) -> Result<Step, ErrorCode> {
         if self.wants.is_empty() {
+            // Then what the Mac lacks from us (§22.7, annex A.3.5).
+            if !self.pushed {
+                self.pushed = true;
+                if let Some(body) = push::batch(env.store, &self.covered, &self.theirs, env.fresh)? {
+                    return self.ask(env, PeerOp::RevsPut, body, Phase::Put);
+                }
+            }
             return Ok(Step::Done(self.summary));
         }
         self.wants.sort_by_key(|w| w.0);

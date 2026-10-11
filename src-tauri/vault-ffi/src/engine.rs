@@ -21,9 +21,12 @@ use crate::callbacks::Shared;
 pub const IOS_OPS: &[&str] = &[
     "get_state", "unlock", "begin_recovery_unlock", "list_items", "reveal", "add_item", "update_item", "delete_item",
     "list_history", "list_deleted", "restore_revision", "resolve_conflict", "change_master_password", "list_devices",
-    "registry_status", "set_auto_lock_minutes", "backup_prepare", "backup_blob_list", "backup_transition_body",
-    "backup_commit_result", "backup_state_offer", "backup_apply", "stream_read", "stream_begin", "stream_write", "stream_end",
-    "stream_cancel", "sign_provider_request", "session_close", "quarantine_status", "remote_update_status",
+    "registry_status", "set_auto_lock_minutes", "stream_read", "stream_begin", "stream_write", "stream_end",
+    "stream_cancel", "session_close", "quarantine_status", "remote_update_status",
+    // F.2d step 2: the provider flows run in-process (`provider.rs`); the
+    // step-wise `backup_*` and `sign_provider_request` are theirs alone
+    // (review SEC-O2). The stream ops stay: pairing and peer answers.
+    "provider_sync", "provider_publish",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).
@@ -41,6 +44,10 @@ pub struct Inner {
     /// `lock` and the tick never take it.
     pub lane: Mutex<()>,
     pub stop: AtomicBool,
+    /// Set by `ov0_engine_close` (never by lock: a staged publication
+    /// finishes while the vault is locked, §22.10): a provider flow sends
+    /// nothing more. Cleared at the start of each `provider_*` op.
+    pub cancel: AtomicBool,
     /// The auto-lock tick; joined by `close`, so no engine thread calls
     /// Swift after `ov0_engine_close` returns (review VER-I10 / SEC-I1).
     pub tick: Mutex<Option<JoinHandle<()>>>,
@@ -55,6 +62,7 @@ impl Inner {
             deps,
             lane: Mutex::new(()),
             stop: AtomicBool::new(false),
+            cancel: AtomicBool::new(false),
             tick: Mutex::new(None),
         });
         // The tick holds a weak reference: it never keeps the engine alive,
@@ -95,6 +103,11 @@ impl Inner {
         if !IOS_OPS.contains(&op) {
             return OpOutcome::err(ErrorCode::UnknownOp);
         }
+        // A callback calling back in while a provider flow runs (its lane
+        // is held by this thread): refused, never a deadlock.
+        if crate::provider::in_provider() {
+            return OpOutcome::err(ErrorCode::BadState);
+        }
         // Never act on a window that has already run out.
         self.lock_if_due();
         if op == "get_state" {
@@ -103,6 +116,9 @@ impl Inner {
         }
         let _lane = self.lane.lock().unwrap_or_else(|p| p.into_inner());
         self.lock_if_due(); // again: the wait for the lane may have been long
+        if op.starts_with("provider_") {
+            return crate::provider::run(self, frame);
+        }
         dispatch::dispatch(&self.core, frame, &self.deps)
     }
 }

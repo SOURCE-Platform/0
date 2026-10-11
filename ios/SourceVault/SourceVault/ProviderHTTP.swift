@@ -1,0 +1,69 @@
+// Provider HTTPS for the engine's provider flows (spec §11.1; catalogue §2
+// `http_send`; plan `phase-f2d-plan.md` step 2): standard certificate
+// validation (no pinning, D-12), an ephemeral session with no cache, no
+// redirects, a time limit, and an answer never larger than the engine's
+// buffer. It carries ciphertext, public data and requests the engine
+// signed — it never reads them, and never calls back into the engine.
+
+import Foundation
+
+final class ProviderHTTP: NSObject, URLSessionTaskDelegate {
+    enum Answer {
+        case answered(UInt16, Data, UInt64?)
+        case tooLarge
+        case unreachable
+    }
+
+    static let shared = ProviderHTTP()
+
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+
+    /// Blocks the calling (engine) thread until the answer or the timeout.
+    func send(origin: String, method: String, path: String, auth: String?, body: Data, timeoutMs: UInt64, maxBody: Int) -> Answer {
+        guard let url = URL(string: origin + path), url.scheme == "https" || url.host == "localhost" else { return .unreachable }
+        var req = URLRequest(url: url, timeoutInterval: TimeInterval(timeoutMs) / 1000)
+        req.httpMethod = method
+        if let auth { req.setValue(auth, forHTTPHeaderField: "Ov0-Auth") }
+        if !body.isEmpty {
+            req.httpBody = body
+            req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type") // as the Mac sends it
+        }
+        let done = DispatchSemaphore(value: 0)
+        var answer = Answer.unreachable
+        Task {
+            defer { done.signal() }
+            guard let (bytes, response) = try? await session.bytes(for: req), let http = response as? HTTPURLResponse else { return }
+            if http.expectedContentLength > maxBody { answer = .tooLarge; return }
+            var data = Data()
+            do {
+                for try await byte in bytes {
+                    data.append(byte)
+                    if data.count > maxBody { answer = .tooLarge; return }
+                }
+            } catch { return }
+            let date = (http.value(forHTTPHeaderField: "Date")).flatMap { Self.httpDate.date(from: $0) }.map { UInt64($0.timeIntervalSince1970) }
+            answer = .answered(UInt16(http.statusCode), data, date)
+        }
+        done.wait()
+        return answer
+    }
+
+    private static let httpDate: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "GMT")
+        f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        return f
+    }()
+
+    /// Never follow a redirect: it would carry the signed request and its
+    /// body to an origin the provider chose (review SEC-O1).
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
+}

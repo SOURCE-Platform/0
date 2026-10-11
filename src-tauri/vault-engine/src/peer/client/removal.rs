@@ -64,3 +64,16 @@ pub fn record(dir: &Path, published: bool, now: u64) -> Result<Removal, ErrorCod
 pub fn active(phone: bool, dir: &Path) -> Option<Removal> {
     if phone { load(dir) } else { None }
 }
+
+/// A provider-confirmed state in which this phone is still active lifts
+/// the lock (§22.9) — the only way it is lifted.
+pub fn clear(dir: &Path) -> Result<(), ErrorCode> {
+    for p in [path(dir), tmp(dir)] {
+        match std::fs::remove_file(&p) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err(ErrorCode::Internal),
+        }
+    }
+    std::fs::File::open(dir).and_then(|d| d.sync_all()).map_err(|_| ErrorCode::Internal)
+}

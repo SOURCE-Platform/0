@@ -51,6 +51,17 @@ pub struct AccessWatch {
 }
 
 impl AccessWatch {
+    /// Persisted form (SOURCE Vault keeps it in the engine's store: its
+    /// app lifetimes are too short for a count held in memory, review
+    /// SPEC-I3 of F.2d).
+    pub fn parts(&self) -> (u32, Option<u64>) {
+        (self.strikes, self.last_strike)
+    }
+
+    pub fn from_parts(strikes: u32, last_strike: Option<u64>) -> AccessWatch {
+        AccessWatch { strikes, last_strike }
+    }
+
     pub fn success(&mut self) {
         *self = AccessWatch::default();
     }

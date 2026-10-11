@@ -97,3 +97,24 @@ fn a_refusal_or_a_lock_ends_the_exchange() {
     mac.remove_dir();
     phone.remove_dir();
 }
+
+/// F.2d step 3 (§22.7, annex A.3.5): the phone pushes its own edit to the
+/// Mac only within 15 minutes of its own verified provider exchange.
+#[test]
+fn a_phone_pushes_its_own_edit_only_when_fresh() {
+    let _g = serial();
+    let (mac, phone, _) = paired();
+    fresh(&mac); // the Mac serves its own edits, so its heads are complete
+    add(&phone, "Edited On The Phone");
+    let stale = sync(&mac, &phone);
+    assert_eq!(stale["done"]["pushed"], 0, "not fresh: local-only stays home: {stale}");
+    assert!(!titles(&mac).contains("Edited On The Phone"));
+    fresh(&phone);
+    let pushed = sync(&mac, &phone);
+    assert!(pushed["done"]["pushed"].as_u64().unwrap() >= 1, "{pushed}");
+    assert!(titles(&mac).contains("Edited On The Phone"), "the Mac admitted it");
+    let again = sync(&mac, &phone);
+    assert_eq!(again["done"]["pushed"], 0, "nothing left to push");
+    mac.remove_dir();
+    phone.remove_dir();
+}

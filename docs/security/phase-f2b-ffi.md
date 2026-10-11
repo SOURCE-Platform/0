@@ -14,7 +14,7 @@ imports from the §2.12 bridge. A change here is a spec change. Enforced by
 | `ov0_engine_call` | `engine`, `request: *const u8`, `len`, `out: *mut *mut u8`, `out_len: *mut usize` | `i32`: 0 with a JSON answer; -1 unusable arguments | one §1.5 op `{"op": …}`, limited to §3; requests over 64 KiB (the §1.4 frame cap) answer `INVALID_INPUT` |
 | `ov0_engine_lock` | `engine` | — | locks at once; never waits behind an op |
 | `ov0_engine_free` | `buf` (an answer) | — | zeroes, then frees; the length is read from the answer's own 8-byte prefix, never from the caller |
-| `ov0_engine_close` | `engine` | — | stops and joins the tick, locks, waits for the op in flight, locks again, releases the handle; no engine thread calls Swift after it returns |
+| `ov0_engine_close` | `engine` | — | sets the provider cancel flag (no further `http_send`; one already in Swift ends within its own timeout), stops and joins the tick, locks, waits for the op in flight, locks again, releases the handle; no engine thread calls Swift after it returns |
 
 No unwinding crosses: every entry point runs inside `catch_unwind` and
 aborts the process on a panic (the spec's `panic = "abort"`, met per
@@ -52,6 +52,7 @@ entry point; the workspace profile is shared with the macOS app).
 | `recovery_sheet` | `(ctx, words, words_len, checkpoint, recovery, reason, timeout_ms) -> i32` | **(c) out** | the 24 words with the three non-secret lines; 0 only when the user confirmed they saved it; Swift keeps no copy |
 | `presence` | `(ctx, reason) -> bool` | — | `LAPolicy.deviceOwnerAuthentication` (§22.4) |
 | `capture_suppressed` | `(ctx, surface) -> bool` | — | whether the surface is hidden from capture (§14.4) |
+| `http_send` | `(ctx, origin, method, path, auth (null = none), body, body_len, timeout_ms, out, out_cap, out_len, status: *mut u16, date: *mut u64) -> i32` | — (ciphertext, public data, engine-signed requests) | F.2d step 2: provider HTTPS for `provider_sync` / `provider_publish`. The engine calls it only from the op thread, during a `provider_*` op, and only for the vault header's own provider origin. `auth` goes in the `Ov0-Auth` header. Swift writes the answer body into the **engine-owned buffer** of `out_cap` (the per-flow cap, 8 MiB + 4 KiB) and its HTTP `Date` (Unix seconds, 0 if absent); 0 = answered (any status), 1 = unreachable (no answer within `timeout_ms`, TLS failure, a redirect), 2 = the body would exceed `out_cap`. Swift's session: ephemeral, no URL cache, standard certificate validation (no pinning, D-12), redirects refused, `https` only. It must not call back into the engine (a call meanwhile answers `BAD_STATE`) |
 | `event` | `(ctx, json, len)` | — | the §1.5 events, never secret; delivered in order, only after the engine has released its locks (a handler may block, but must not call back into the engine); an op's own events arrive before its call returns |
 
 ## 3. Bridge imports (`Bridge.swift`, linked into the app; the complete list)
@@ -76,12 +77,10 @@ error path skips the zeroing.
 `update_item`, `delete_item`, `list_history`, `list_deleted`,
 `restore_revision`, `resolve_conflict`, `change_master_password` (incl.
 `mode: "reset"` with the RK), `list_devices`, `registry_status`,
-`set_auto_lock_minutes`, and the provider ops (`backup_prepare`,
-`backup_blob_list`, `backup_transition_body`, `backup_commit_result`,
-`backup_state_offer`, `backup_apply`, `stream_read`, `stream_begin`,
-`stream_write`, `stream_end`, `stream_cancel`, `sign_provider_request` —
-the engine builds every signed field, §11.4 — `session_close`,
-`quarantine_status`, `remote_update_status`), and the phone's side of
+`set_auto_lock_minutes`, the stream ops (`stream_read`, `stream_begin`,
+`stream_write`, `stream_end`, `stream_cancel`; pairing and large peer
+answers), `session_close`, `quarantine_status`, `remote_update_status`,
+the provider flows (below), and the phone's side of
 enrollment (§5, §22.10; `vault/join_ops.rs`): `join_begin {qr, name}`
 (the QR checked first, including `mac_key`; then fresh Secure Enclave
 keys — refused if this phone has no Face ID, whose envelope could never
@@ -107,6 +106,28 @@ authorization, device revocation, total-loss recovery, and
 `rotate_recovery_key` — its phone form (rotation staged before the sheet,
 in a background task, the sheet saying whether the key is live, §22.10,
 IO-04) does not exist yet; it comes with F.2d.
+
+**Provider flows (F.2d step 2, §11.1):**
+
+- `provider_sync {interactive}` and `provider_publish {interactive}` run
+  the coordinator's sync and "back up now" flows inside the call
+  (`vault-ffi/src/provider.rs`). `interactive` is set only for "Sync now"
+  or an edit the user just saved; it decides whether the §2.7 adoption
+  panel (kind 4) may appear.
+- Sub-ops are the fixed list `SUB_OPS` (state, `backup_*`, stream,
+  `sign_provider_request`, `session_close`, `remote_update_status`); each
+  frame is held to the 64 KiB cap, and events are flushed between them.
+  The step-wise `backup_*` and `sign_provider_request` ops are **not** in
+  this section's list any more: only the flows reach them (review
+  SEC-O2).
+- Answer: `{ok:true, result}` or `{ok:false, error, status}` —
+  `BACKUP_UNAVAILABLE`, `BACKUP_CONFLICT`, `MP_ADOPTION_REQUIRED`, a
+  provider code, or an engine code.
+- After each flow the engine updates the persisted §11.3.2 access count
+  (a 401 runs the locate probe first, outside the core mutex) and sets
+  `access_lost` in `get_state`; a state that revokes this phone records
+  the removal lock, and one in which it is still active lifts it (§22.9).
+- A Mac helper refuses both ops.
 
 **Peer sync (F.2c phone side, §22.8, §22.9):**
 
@@ -151,7 +172,9 @@ of an answer as its buffer grows — as in the helper's IPC (residual).
   exactly §3; the library must exist (the Phase F gate builds it in the
   same step);
 - §4 holds none of the Mac-only ops, and a handle answers `UNKNOWN_OP`
-  for each of them;
+  for each of them (now including the step-wise `backup_*` and
+  `sign_provider_request`);
+- a callback table without `http_send` is refused at open;
 - `get_state` and lock answer while an op holds the lane;
 - the secure-entry kinds, the MP-change pair, cancels and the new-MP rule;
 - events wait for the engine to be free, and an op's events arrive before

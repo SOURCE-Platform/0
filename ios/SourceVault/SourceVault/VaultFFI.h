@@ -14,6 +14,11 @@ typedef struct {
     bool (*presence)(void *ctx, const char *reason);
     bool (*capture_suppressed)(void *ctx, const char *surface);
     void (*event)(void *ctx, const uint8_t *json, size_t len);
+    // Provider HTTPS (F.2d step 2): 0 answered, 1 unreachable/cancelled,
+    // 2 an answer over out_cap. `auth` may be NULL.
+    int32_t (*http_send)(void *ctx, const char *origin, const char *method, const char *path, const char *auth,
+                         const uint8_t *body, size_t body_len, uint64_t timeout_ms,
+                         uint8_t *out, size_t out_cap, size_t *out_len, uint16_t *status, uint64_t *date);
 } Ov0Callbacks;
 
 const Ov0Engine *ov0_engine_open(const char *vault_dir, const Ov0Callbacks *callbacks);

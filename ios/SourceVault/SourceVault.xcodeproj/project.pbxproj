@@ -30,6 +30,7 @@
 		CAA0810BB3B548A9596A1E4A /* PinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D426D84805FA26C7D0742E /* PinTests.swift */; };
 		CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */; };
 		D2AAB2D64CC7F2498B7A06E3 /* XVRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */; };
+		EFDD18B45CFFCD46A79CD9D7 /* ProviderHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B5AD94E46478825F59B190 /* ProviderHTTP.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -51,6 +52,7 @@
 		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
 		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		3E0DB7DD1EC28519F1EA2D5C /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		47B5AD94E46478825F59B190 /* ProviderHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderHTTP.swift; sourceTree = "<group>"; };
 		48BCF2CB286287C8B75DD854 /* VaultServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultServices.swift; sourceTree = "<group>"; };
 		5978FB9BAE962487F1227C05 /* XVHPKETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVHPKETests.swift; sourceTree = "<group>"; };
 		5AAD6AAC531EFD6C0C4B18C1 /* SourceVaultXV.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultXV.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -175,6 +177,7 @@
 				0D99DB8E35238A1EE22C1601 /* PairingViews.swift */,
 				956B40F606AD3F7766C05E0B /* PeerClient.swift */,
 				111B54DD33A7E739DF471B6D /* PeerSync.swift */,
+				47B5AD94E46478825F59B190 /* ProviderHTTP.swift */,
 				81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */,
 				2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */,
 				CFA995A490F9FABDB3C9C2E7 /* VaultEngine.swift */,
@@ -381,6 +384,7 @@
 				38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */,
 				A7F1C9101A08609477C0BCB1 /* PeerClient.swift in Sources */,
 				C6ACDEC5A74807A02BF0E26B /* PeerSync.swift in Sources */,
+				EFDD18B45CFFCD46A79CD9D7 /* ProviderHTTP.swift in Sources */,
 				C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */,
 				B7B81E1445DFE0E9BC946080 /* VaultEngine.swift in Sources */,
 				05CF220F342D9CA43AC0204F /* VaultServices.swift in Sources */,

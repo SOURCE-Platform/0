@@ -7386,6 +7386,7 @@ name = "vault-ffi"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "vault-coordinator",
  "vault-engine",
  "zeroize",
 ]
@@ -7428,6 +7429,7 @@ dependencies = [
  "sha2 0.11.0",
  "source-vault-helper",
  "vault-coordinator",
+ "vault-ffi",
  "vault-proto",
  "vault-provider-core",
 ]

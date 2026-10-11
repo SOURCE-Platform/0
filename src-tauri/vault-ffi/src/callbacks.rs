@@ -37,6 +37,13 @@ type EntryFn = extern "C" fn(ctx: *mut c_void, kind: u8, timeout_ms: u64, a: *mu
 type SheetFn = extern "C" fn(ctx: *mut c_void, words: *const u8, words_len: usize, checkpoint: *const c_char, recovery: *const c_char, reason: *const c_char, timeout_ms: u64) -> i32;
 type AskFn = extern "C" fn(ctx: *mut c_void, text: *const c_char) -> bool;
 type EventFn = extern "C" fn(ctx: *mut c_void, json: *const u8, len: usize);
+/// One HTTPS request to the backup provider (catalogue §2 `http_send`):
+/// 0 answered (`status`, `date`, `out_len` set), 1 unreachable or
+/// cancelled, 2 an answer over `out_cap` (refused, never truncated).
+type HttpFn = extern "C" fn(
+    ctx: *mut c_void, origin: *const c_char, method: *const c_char, path: *const c_char, auth: *const c_char,
+    body: *const u8, body_len: usize, timeout_ms: u64, out: *mut u8, out_cap: usize, out_len: *mut usize, status: *mut u16, date: *mut u64,
+) -> i32;
 
 /// The table Swift passes. Every member must be non-null; a table with a
 /// missing one is refused at `ov0_engine_open` (review VER-O6).
@@ -53,6 +60,9 @@ pub struct Ov0Callbacks {
     pub presence: Option<AskFn>,
     pub capture_suppressed: Option<AskFn>,
     pub event: Option<EventFn>,
+    /// Provider HTTPS (F.2d step 2): ciphertext, public data and requests
+    /// the engine signed, nothing else (§11.1). `auth` may be null.
+    pub http_send: Option<HttpFn>,
 }
 
 /// The validated table.
@@ -64,6 +74,7 @@ struct Table {
     presence: AskFn,
     capture_suppressed: AskFn,
     event: EventFn,
+    http_send: HttpFn,
 }
 
 impl Table {
@@ -75,6 +86,7 @@ impl Table {
             presence: cb.presence?,
             capture_suppressed: cb.capture_suppressed?,
             event: cb.event?,
+            http_send: cb.http_send?,
         })
     }
 }
@@ -178,5 +190,35 @@ impl CaptureChecker for Shared {
 impl EventSink for Shared {
     fn emit(&self, event: Value) {
         self.queue.lock().unwrap_or_else(|p| p.into_inner()).push(event);
+    }
+}
+
+/// What `http_send` answered.
+pub enum HttpOutcome {
+    Answered { status: u16, body: Vec<u8>, date: Option<u64> },
+    Unreachable,
+    TooLarge,
+}
+
+impl Shared {
+    /// One provider request through Swift; the answer lands in a buffer
+    /// of `max_body` bytes the engine owns. Called only on the op thread.
+    pub fn http(&self, origin: &str, method: &str, path: &str, auth: Option<&str>, body: &[u8], timeout_ms: u64, max_body: usize) -> HttpOutcome {
+        let (o, m, p) = (c(origin), c(method), c(path));
+        let a = auth.map(c);
+        let mut out = vec![0u8; max_body];
+        let (mut len, mut status, mut date) = (0usize, 0u16, 0u64);
+        let rc = (self.cb.http_send)(
+            self.cb.ctx, o.as_ptr(), m.as_ptr(), p.as_ptr(), a.as_ref().map_or(std::ptr::null(), |a| a.as_ptr()),
+            body.as_ptr(), body.len(), timeout_ms, out.as_mut_ptr(), out.len(), &mut len, &mut status, &mut date,
+        );
+        match rc {
+            0 if len <= max_body => {
+                out.truncate(len);
+                HttpOutcome::Answered { status, body: out, date: (date != 0).then_some(date) }
+            }
+            2 => HttpOutcome::TooLarge,
+            _ => HttpOutcome::Unreachable,
+        }
     }
 }
