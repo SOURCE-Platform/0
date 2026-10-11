@@ -289,7 +289,7 @@ human-safe context.
 | `backup_commit_result` | report the provider outcome | as `backup_blob_list` | committed → persist last-seen state; `STATE_MOVED` → sync then re-stage (≤ 3, then `BACKUP_CONFLICT`); failure → retry policy |
 | `backup_state_offer` | verify a fetched provider state | UNLOCKED → SYNCING; RECOVERING | `{state}` → signature/rollback/fork checked → `{session, need pages}` |
 | `stream_begin` / `stream_write` / `stream_end` / `stream_cancel` | inbound ciphertext | SYNCING, RECOVERING; v0.5: the §22.8 serving states for a **peer session** only | §1.3 |
-| `backup_apply` | merge a verified state | SYNCING → UNLOCKED | §3.2 merge + envelope refresh; counts only |
+| `backup_apply` | merge a verified state | SYNCING → UNLOCKED | §3.2 merge + envelope refresh; counts only. v0.5 `{interactive}`: set only for a sync the user started; it decides whether the §2.7 master-password panel may appear (a user-experience control: the security comes from the verification gate, not from this flag) |
 | `recovery_begin` | start total-loss recovery | UNINITIALIZED/LOCKED → RECOVERING | `{kind, locate_response}`; the KDF-policy check (§11.5) runs **before** the panel collects MP/RK; → `{session}` |
 | `recovery_preview` | FR-01 data | RECOVERING | generation, date, item count, sheet comparison |
 | `recovery_complete` | epoch + re-encryption + stage `finalize` | RECOVERING | §11.8 |
@@ -714,6 +714,10 @@ nonces.
 
   Otherwise the adoption asks for Touch ID, as unlock does. A declined
   finger is `PRESENCE_DENIED` and never falls back to the master password.
+  The Touch ID prompt of an adoption may come from a background sync, as
+  it has since Phase F. It is the system's own biometric sheet, not a
+  helper panel, so §1.7's rule for panels does not apply to it; only the
+  master-password panel waits for the user (review SPEC-O8).
   **On the iPhone** the same path serves a phone whose Face ID envelope is
   unusable (re-registration, lockout; §22.4), through secure-entry kind 4.
 
@@ -4633,8 +4637,12 @@ RK that fails to open the wrap never reveals which check failed beyond
   publication still sign (§2.8).
 - **MP fallback trigger.** The vault app offers MP unlock only when the
   envelope path is unusable — no envelope, an envelope at a retired
-  `vk_generation`, or an agreement key the Secure Enclave reports
-  invalidated — never after a declined or failed Face ID check (§2.8).
+  `vk_generation`, an agreement key the Secure Enclave reports
+  invalidated, or a biometry lockout or any other Enclave refusal that is
+  not the user's own cancel or failure (reconciled with §2.7, review
+  SPEC-I11 of F.2d step 1) — never after a declined or failed Face ID
+  check (§2.8). The same trigger, and no other, opens the §2.7
+  master-password adoption path.
 - **Face ID re-registration** invalidates the agreement key. The phone's
   device identity stays active (its signing key is unaffected), and it
   unlocks with the MP from then on. Face ID unlock is restored by **a
@@ -5211,6 +5219,7 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
 | Provisional state contradicted by the provider | `PEER_STATE_UNCONFIRMED` | discard, attribute to the source (§22.5) | "Your Mac or your backup provider disagrees about the latest vault" |
 | Revision only from a revoked peer, not in its revocation index | `PROVENANCE_REFUSED` | refused and counted (§22.7) | "N changes from removed device X were not accepted" |
 | Local store older than the device's floor | `VAULT_BEHIND` | read-only until synced (§22.14) | §22.14 copy |
+| A served key change needs the master password, from a background sync (§2.7) | `MP_ADOPTION_REQUIRED` | nothing adopted; no panel; the app offers the user-started action | "Another device changed your vault's security. Click “Back up now” and enter your master password to apply it." |
 
 `RECORD_CORRUPT`: "restore from backup" and "restore from a peer" (§22.10)
 are both offered.
@@ -5274,6 +5283,11 @@ the gate asserts them by name.
 | MA-03 | wrong master password; cancel | nothing adopted; the §15 backoff counts it; the vault stays open |
 | MA-04 | behind, served state not containing the floor's head | refused; no panel |
 | MA-05 | a wrong key handed to the apply for a served state | refused (`SIGNATURE_INVALID`); nothing adopted |
+| MA-06 | a state signed by no enrolled device, at a new key generation | refused; no panel |
+| MA-07 | a served `wrap_mp` whose KDF block differs from the served header's (salt; a lower cost) | `KDF_POLICY_VIOLATION`; no panel |
+| MA-08 | restored from before a second device existed; the served head is that device's | one panel; adopted; read-only ends |
+| MA-09 | "Back up now" on a restored password-only Mac | the sync it runs asks once and adopts |
+| MA-10 | this device's served envelope unparseable (not `DEVICE_NOT_AUTHORIZED`) | no panel |
 | FFI-01 | exported symbols vs the catalogue | lint fails on any extra entry |
 | XV-PEER | both TLVs, prehashes and the heads digest, plus the wire-annex A.5 set | Rust engine and the CryptoKit-only Swift target agree |
 | PW-01…12 | peer wire carriage, bodies, paging, token scope, sessions, rate, `target_device_ids` | as wire annex A.6 |

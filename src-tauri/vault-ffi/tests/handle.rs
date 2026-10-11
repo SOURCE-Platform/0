@@ -141,7 +141,8 @@ fn the_secure_entry_callback_maps_kinds_and_refuses_weak_new_mps() {
     assert!(matches!(deps.panel.run(PanelRequest::MpEntry, t), PanelOutcome::Submitted(a) if a.as_slice() == b"old-password-1"));
     assert!(matches!(deps.panel.run(PanelRequest::RkEntry, t), PanelOutcome::Submitted(_)));
     assert!(matches!(deps.panel.run(PanelRequest::MpCreate, t), PanelOutcome::Submitted(_)));
-    assert_eq!(*KINDS.lock().unwrap(), vec![KIND_MP_CHANGE, KIND_MP_ENTRY, KIND_RK_ENTRY, KIND_MP_CREATE]);
+    assert!(matches!(deps.panel.run(PanelRequest::MpAdopt, t), PanelOutcome::Submitted(a) if a.as_slice() == b"old-password-1"));
+    assert_eq!(*KINDS.lock().unwrap(), vec![KIND_MP_CHANGE, KIND_MP_ENTRY, KIND_RK_ENTRY, KIND_MP_CREATE, KIND_MP_ADOPT]);
     *NEXT.lock().unwrap() = (b"old-password-1".to_vec(), b"short".to_vec(), SUBMITTED);
     assert!(matches!(deps.panel.run(PanelRequest::MpChange, t), PanelOutcome::Cancelled), "a new MP under 8 characters");
     *NEXT.lock().unwrap() = ("éééé".as_bytes().to_vec(), Vec::new(), SUBMITTED);

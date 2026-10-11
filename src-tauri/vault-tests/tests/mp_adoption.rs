@@ -105,6 +105,12 @@ fn a_password_only_mac_catches_up_with_its_master_password() {
     let synced = mac.run_sync_by_user().unwrap();
     assert_eq!(synced["adopted_vk"], true, "{synced}");
     assert_eq!(adopt_prompts(&fx), 1, "one panel, titled for the flow");
+    // The visibility events register the title for capture suppression
+    // (§14.2; review VER-I7): shown with its own title, then hidden.
+    let title = "Source Vault — Apply a Security Change";
+    let log = fx.events.log.lock().unwrap().clone();
+    let shown = log.iter().position(|e| e.to_string().contains(title)).expect("shown with its title");
+    assert!(log[shown + 1..].iter().any(|e| e["event"] == "secure_panel_visible" && e["visible"] == false), "then hidden");
     assert!(!fx.core.lock().unwrap().behind, "caught up");
     vault_fx::add_login(&fx); // authoring works again
     fx.remove_dir();
@@ -140,6 +146,7 @@ fn a_wrong_password_or_a_cancel_adopts_nothing() {
     assert!(fx.core.lock().unwrap().behind);
     fx.push_panel(vault_helper::vault::secure_ui::PanelOutcome::Cancelled);
     assert_eq!(code(&mac.run_sync_by_user()), "PANEL_CANCELLED");
+    assert_eq!(fx.core.lock().unwrap().failed_attempts, before + 1, "a cancel is not a failed attempt");
     assert!(fx.core.lock().unwrap().behind);
     fx.remove_dir();
 }
@@ -156,7 +163,23 @@ fn an_unanchored_state_raises_no_panel() {
     let transport = CloudTransport(&cloud);
     let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
     fx.push_panel(submitted(MP));
-    assert!(mac.run_sync_by_user().is_err());
+    assert_eq!(code(&mac.run_sync_by_user()), "SIGNATURE_INVALID", "§22.14: no anchor");
     assert_eq!(adopt_prompts(&fx), 0, "no prompt before verification");
+    fx.remove_dir();
+}
+
+/// MA-09: "Back up now" on a restored Mac is a user-started sync — the
+/// route the copy points to (behind → sync, interactive; review VER-I6).
+#[test]
+fn back_up_now_on_a_restored_mac_asks_and_catches_up() {
+    let _g = vault_fx::serial();
+    let (cloud, fx) = restored_after_own_rotation("now");
+    let transport = CloudTransport(&cloud);
+    let mac = Flows { helper: &FxHelper(&fx), transport: &transport };
+    fx.push_panel(submitted(MP));
+    let out = mac.backup_now_by_user().unwrap();
+    assert_eq!(out["sync"]["adopted_vk"], true, "{out}");
+    assert_eq!(adopt_prompts(&fx), 1);
+    assert!(!fx.core.lock().unwrap().behind);
     fx.remove_dir();
 }

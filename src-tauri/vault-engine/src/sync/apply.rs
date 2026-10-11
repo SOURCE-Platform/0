@@ -23,7 +23,6 @@ use crate::crypto::wrap::DeviceEnvelopePayload;
 use crate::device::envelope::DeviceEnvelopeFile;
 use crate::errors::ErrorCode;
 
-
 use crate::storage::adopt::{adopt, Adoption};
 use crate::storage::header::parse_header;
 use crate::storage::merge::{apply_batch, MergeOutcome};

@@ -31,7 +31,7 @@ use vault_engine::errors::ErrorCode;
 use vault_engine::vault::{LockReason, OpOutcome};
 use zeroize::{Zeroize, Zeroizing};
 
-pub use callbacks::{Ov0Callbacks, Shared, ENTRY_CAP, KIND_MP_CHANGE, KIND_MP_CREATE, KIND_MP_ENTRY, KIND_RK_ENTRY, MIN_MP_CHARS, SUBMITTED};
+pub use callbacks::{Ov0Callbacks, Shared, ENTRY_CAP, KIND_MP_ADOPT, KIND_MP_CHANGE, KIND_MP_CREATE, KIND_MP_ENTRY, KIND_RK_ENTRY, MIN_MP_CHARS, SUBMITTED};
 pub use engine::{Inner as Ov0Engine, IOS_OPS, MAX_REQUEST};
 
 /// Every exported symbol. Adding one is a spec change (§22.2).

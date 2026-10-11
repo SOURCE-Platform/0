@@ -42,9 +42,8 @@ It must land before any other device can publish (§2.7, owner decision
   - **Panel:** a dedicated "Apply a Security Change" panel. It is raised
     only by a user-started sync; a timer sync answers
     `MP_ADOPTION_REQUIRED` (SEC-I3).
-  - **Base key:** a pending local rotation keeps its base key sealed
-    under the current key, so a served state at the base generation needs
-    no credential (SEC-I4).
+  - **Base key (SEC-I4): deferred to before step 4.** It is a stated §2.7
+    residual: it cannot arise until another device can publish.
   - **Tests and spec text:** tests for each property (VER-B2). The §2.7
     text covers the phone and the §22.4 relation; a §22.16 row is added
     (SPEC-I5, SPEC-I6).
@@ -74,9 +73,11 @@ transport callback.
 - Events are flushed between sub-ops.
 - A thread-local re-entrancy guard answers `BAD_STATE` to a callback that
   calls the engine.
-- A cancel flag is set by lock, by `ov0_engine_close` and by
-  background-task expiry. It is checked before each `http_send` and passed
-  to Swift.
+- A cancel flag is set by `ov0_engine_close` and by background-task
+  expiry, never by lock: a fully staged publication finishes while the
+  vault is locked (§22.10; review SEC-I9). Lock ends sync flows, whose
+  sessions die with it anyway. The flag is cleared at the start of each
+  `provider_*` op, checked before each `http_send` and passed to Swift.
 
 **`http_send` contract (SEC-I7, SEC-O1, SPEC-I2):**
 - Inputs: origin, method, path, auth, body, `timeout_ms`, `max_body`.
@@ -97,8 +98,10 @@ transport callback.
 - Locate is probed at the engine's origin.
 - Security-driven retry follows §11.3.2, with `BACKUP_REVOCATION_FAILED`.
 
-Once the `provider_*` ops exist, the step-wise `backup_*`, `stream_*` and
-`sign_provider_request` ops leave `IOS_OPS` (SEC-O2, SPEC-O6). `cargo vet`
+Once the `provider_*` ops exist, the step-wise `backup_*` and
+`sign_provider_request` ops leave `IOS_OPS` (SEC-O2, SPEC-O6). The
+`stream_*` ops stay: pairing and large peer answers use them (review
+SPEC-I15). They may be narrowed to join and peer sessions. `cargo vet`
 scope covers `vault-coordinator` on iOS.
 
 ### 3. Using the provider path
@@ -110,6 +113,10 @@ scope covers `vault-coordinator` on iOS.
 - A provider-confirmed state in which the phone is still active lifts the
   removal lock (§22.9).
 - The `BACKUP_ACCESS_LOST` copy.
+- An epoch learned at the phone's next provider contact (verification
+  §9.1 SEC-O2; review SPEC-O12).
+- Phone variants of the MA rows, and IO-02 for adoption on the phone
+  (review SPEC-O10).
 - *Sync* triggers: unlock and "Sync now". Publication of a staged change
   follows §22.10/§22.11 instead (step 4).
 
@@ -129,6 +136,10 @@ scope covers `vault-coordinator` on iOS.
     needs no credential.
 
 ### 5. Authority on the phone — own design review before code
+
+On the agenda of that review (SPEC-O11): catalogue §1 locks the engine on
+entering the background, while §22.10's rotation runs inside a background
+task. Reconcile the two, together with the step 2 cancel flag.
 
 **Staged-first rule (SPEC-B1).** Every phone op that rotates the vault key
 or issues a Recovery Key returns to `IOS_OPS` only in the §22.10
@@ -170,8 +181,10 @@ The explicit action deletes the phone's keys, store and Keychain items
 - It is how the owner's synthetic test vault (verification §7.3) is
   removed.
 
-Before a Face ID re-registration, the phone publishes its pending
-revisions, or warns how many would be lost (§22.4, SPEC-I8b).
+Before the Face ID re-enrollment starts — the app cannot act before iOS
+Settings changes the enrollment, only before its own re-enrollment
+(§22.4) — the phone publishes its pending revisions, or warns how many
+would be lost (SPEC-I8b, SPEC-O7).
 
 ### 7. Carried items
 
@@ -189,7 +202,7 @@ revisions, or warns how many would be lost (§22.4, SPEC-I8b).
 
 | Step | Tests |
 |---|---|
-| 1 | new MA rows (§22.16); SY-13 (password-only Mac); IO-02 (phone adoption) |
+| 1 | MA-01…10 (§22.16); SY-13 (password-only Mac) |
 | 2 | FFI-01; PA-07; catalogue §6 additions; PV-01 PR-01/BK-18 canaries over `http_send` transcripts |
 | 3 | PS-02, PS-05–07, PS-12 (push side), PS-13, PS-14; CX-01…04 phone variants; SY-13 phone variant; PV-01 SY-01…12 variants; PW-04 and the requester side of PW-01/05; phone BK-13 |
 | 4 | PV-01 ST-01…05, RU-01…05, BK-26/27; SG-01…03 phone variants; IO-06; AU-06; AU-07; PR-01/BK-18 over the phone's disk and logs |

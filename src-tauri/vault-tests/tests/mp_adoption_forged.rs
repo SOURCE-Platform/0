@@ -62,7 +62,7 @@ impl Transport for Forging<'_> {
 
 /// The current state re-signed by `signer` at the next generation and key
 /// generation; `edit_wrap` may replace the served `wrap_mp`.
-fn forge(cloud: &mfx::Cloud, signer: &dyn DeviceIdentity, state: &[u8], edit_wrap: Option<&(dyn Fn(&mut Value) + Sync)>) -> (Vec<u8>, Vec<Vec<u8>>) {
+fn forge(cloud: &mfx::Cloud, signer: &dyn DeviceIdentity, state: &[u8], edit_wrap: Option<&(dyn Fn(&mut Value) + Sync)>, bad_env: bool) -> (Vec<u8>, Vec<Vec<u8>>) {
     let real = vault_helper::sync::remote::parse(state).unwrap();
     let vid = real.manifest.vault_id;
     let get = |h: &[u8; 32]| cloud.fs.get(&vid, h).unwrap().unwrap();
@@ -75,6 +75,15 @@ fn forge(cloud: &mfx::Cloud, signer: &dyn DeviceIdentity, state: &[u8], edit_wra
         edit(&mut w);
         let bytes = serde_json::to_vec_pretty(&w).unwrap();
         *e = IndexEntry::of(Role::WrapMp, &bytes);
+        blobs.push(bytes);
+    }
+    if bad_env {
+        let me = signer.device_id();
+        let e = entries.iter_mut().find(|e| e.role == Role::Env { device_id: me }).unwrap();
+        let mut env: Value = serde_json::from_slice(&get(&e.blob)).unwrap();
+        env["kind"] = json!("not-an-envelope");
+        let bytes = serde_json::to_vec_pretty(&env).unwrap();
+        *e = IndexEntry::of(Role::Env { device_id: me }, &bytes);
         blobs.push(bytes);
     }
     let forged_index = ObjectIndex { generation: real.generation + 1, entries, ..index };
@@ -132,7 +141,7 @@ fn a_state_signed_by_no_enrolled_device_raises_no_panel() {
     let _g = vault_fx::serial();
     let (cloud, fx) = password_only_mac("forged-signer");
     let evil = SoftwareDevice::generate("Provider's device", PLATFORM_MACOS);
-    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &evil, s, None)), extra: Mutex::default() };
+    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &evil, s, None, false)), extra: Mutex::default() };
     let mac = Flows { helper: &FxHelper(&fx), transport: &t };
     fx.push_panel(submitted(MP));
     assert!(mac.run_sync_by_user().is_err(), "refused");
@@ -149,10 +158,49 @@ fn a_wrap_with_other_kdf_costs_raises_no_panel() {
     // Another KDF block than the served header's. (A raised cost would make
     // a regression hang rather than fail; a different salt fails fast.)
     let heavy = |w: &mut Value| w["argon2id"]["salt"] = json!("ab".repeat(16));
-    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &own, s, Some(&heavy))), extra: Mutex::default() };
+    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &own, s, Some(&heavy), false)), extra: Mutex::default() };
     let mac = Flows { helper: &FxHelper(&fx), transport: &t };
     fx.push_panel(submitted(MP));
-    assert!(mac.run_sync_by_user().is_err(), "refused");
+    assert_eq!(code(&mac.run_sync_by_user()), "KDF_POLICY_VIOLATION", "reported as tampering");
     assert_eq!(adopt_prompts(&fx), 0, "a wrap outside the header's KDF block is never offered the password");
     fx.remove_dir();
+}
+
+/// MA-07, the cost half (review VER-I5): a wrap naming a lower Argon2
+/// memory cost than the header — the other comparisons of the block.
+#[test]
+fn a_wrap_with_a_lower_kdf_cost_raises_no_panel() {
+    let _g = vault_fx::serial();
+    let (cloud, fx) = password_only_mac("forged-cost");
+    let own = vault_helper::device::SeDevice::load(&fx.dir).unwrap();
+    let cheap = |w: &mut Value| w["argon2id"]["m"] = json!(8);
+    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &own, s, Some(&cheap), false)), extra: Mutex::default() };
+    let mac = Flows { helper: &FxHelper(&fx), transport: &t };
+    fx.push_panel(submitted(MP));
+    assert_eq!(code(&mac.run_sync_by_user()), "KDF_POLICY_VIOLATION");
+    assert_eq!(adopt_prompts(&fx), 0);
+    fx.remove_dir();
+}
+
+/// MA-10 (review VER-I8): only DEVICE_NOT_AUTHORIZED falls back to the
+/// master password. An envelope this device cannot even parse fails
+/// otherwise — no panel.
+#[test]
+fn an_unreadable_envelope_never_falls_back_to_the_password() {
+    let _g = vault_fx::serial();
+    let (cloud, fx) = password_only_mac("forged-env");
+    let own = vault_helper::device::SeDevice::load(&fx.dir).unwrap();
+    let t = Forging { cloud: &cloud, forge: Box::new(|s| forge(&cloud, &own, s, None, true)), extra: Mutex::default() };
+    let mac = Flows { helper: &FxHelper(&fx), transport: &t };
+    fx.push_panel(submitted(MP));
+    assert!(mac.run_sync_by_user().is_err());
+    assert_eq!(adopt_prompts(&fx), 0);
+    fx.remove_dir();
+}
+
+fn code(r: &Result<Value, vault_coordinator::Failure>) -> String {
+    match r {
+        Err(vault_coordinator::Failure::Helper(c)) => c.clone(),
+        other => format!("{other:?}"),
+    }
 }

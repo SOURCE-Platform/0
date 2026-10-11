@@ -75,10 +75,14 @@ pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps, interactive:
         }
         let blob = crate::sync::served::blob(index, &session.t.received, &Role::Env { device_id: me.device_id() }).ok()?;
         let file: DeviceEnvelopeFile = serde_json::from_slice(blob).ok()?;
-        (me.key_tag().to_string(), store.header.vault_id.0, file, crate::sync::adopt_mp::checked_wrap(index, &session.t.received).ok())
+        (me.key_tag().to_string(), store.header.vault_id.0, file, crate::sync::adopt_mp::checked_wrap(index, &session.t.received))
     };
     let mut result = envelope::open_envelope_for(&tag, REASON, &vid, &file);
-    if let (Err(ErrorCode::DeviceNotAuthorized), Some(wrap)) = (&result, wrap) {
+    if let (Err(ErrorCode::DeviceNotAuthorized), Err(e)) = (&result, &wrap) {
+        // A served wrap outside the header's KDF block is a tampering
+        // signal, reported as such, never offered the password (SEC-O3).
+        result = Err(*e);
+    } else if let (Err(ErrorCode::DeviceNotAuthorized), Ok(wrap)) = (&result, wrap) {
         result = if !interactive {
             Err(ErrorCode::MpAdoptionRequired)
         } else {

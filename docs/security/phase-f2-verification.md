@@ -810,13 +810,13 @@ Every finding was checked against the repository before it was accepted.
 | Finding | Disposition | Fix / where | Test |
 |---|---|---|---|
 | SEC-B1 / VER-I2 / SPEC-I4 / SPEC-I5c the gate read the restored local registry (a since-revoked device could raise the panel; a signer the restored registry lacks could never adopt) | **Fixed.** The prompt now follows the apply's own verification of the served state (factored into `sync::served::verify`, used by both) and, when behind, the floor anchoring. The Touch ID prompt uses the same gate | `sync/served.rs`, `adopt_prompt.rs`, `apply.rs` | MA-04 `an_unanchored_state_raises_no_panel` |
-| SEC-I1 / VER-O4 Argon2 ran with whatever costs the served wrap named | **Fixed.** The wrap's KDF block must equal the served header's (held to the §2.3 allowlist by `parse_header`); otherwise `KDF_POLICY_VIOLATION`, no prompt | `adopt_mp::checked_wrap` | MA-07 `a_wrap_with_other_kdf_costs_raises_no_panel` |
+| SEC-I1 / VER-O4 Argon2 ran with whatever costs the served wrap named | **Fixed.** The wrap's KDF block must equal the served header's (held to the §2.3 allowlist by `parse_header`); otherwise no prompt, reported as `KDF_POLICY_VIOLATION` since §10.2 | `adopt_mp::checked_wrap` | MA-07 `a_wrap_with_other_kdf_costs_raises_no_panel` |
 | VER-B1 / SEC-I2 no backoff | **Fixed.** `recovery_ops::backoff` after a failed adoption, outside the mutex | `adopt_prompt.rs` | MA-03 |
 | SEC-I3 / VER-O2 an "Unlock" panel from timer syncs | **Fixed.** A dedicated `PanelRequest::MpAdopt` titled "Source Vault — Apply a Security Change", with the field "Master password your backup currently uses" (iPhone kind 4, its own copy). Only a user-started sync prompts (`backup_apply {interactive}`; coordinator `run_sync_by_user` / `backup_now_by_user`; the Mac's "Back up now" is `Trigger::User`). A background sync answers `MP_ADOPTION_REQUIRED`, shown with plain copy | `secure_ui.rs`, `panel/*`, `callbacks.rs`, `Views.swift`, `flows.rs`, `worker.rs`, `vaultErrors.ts` | MA-01, MA-02 |
 | SEC-I4 a pending local rotation with a forgotten base password | **Deferred with a stated residual** (§2.7). It cannot arise until another device can publish; the plan makes it a precondition of F.2d step 4 | spec §2.7, plan step 4 | — |
 | VER-B2 / SEC-I5 the safety properties were untested; the wrong-password test was vacuous | **Fixed.** MA-01…05 assert the panel count and kind, exact codes, the attempt counter, the open vault, and refusal of a wrong key | `mp_adoption.rs`, `adopt_key_check.rs`, `mfx::sync_opening` | MA-01…05 |
 | VER-I1 stale mutant in the build cache | **Fixed.** `cargo clean` of the vault crates, then a clean re-run of every recent suite: all pass. Mutation scripts now restore with a fresh mtime | — | — |
-| VER-I3 cancel, panel events, error mapping | **Fixed** for cancel and error mapping (MA-03); panel events are covered by the existing panel tests | — | MA-03 |
+| VER-I3 cancel, panel events, error mapping | **Fixed** for cancel and error mapping (MA-03); the panel's visibility events are asserted in MA-01 since §10.2 | — | MA-01, MA-03 |
 | VER-I4 / SPEC-O2 / SPEC-O3 §10 wording | **Corrected** here; spec §2.7 rewritten | — | — |
 | SPEC-I5b/d, SPEC-I6, SPEC-O1 §2.7 relation to §22.4, a test ID, the iPhone, "asks for Touch ID too" | **Fixed** in §2.7 and §22.16 (MA rows) | spec | — |
 | SPEC-B1, SPEC-I1…I3, I7…I10, SEC-I6, SEC-I7, SEC-O1, SEC-O2 (the step 2–7 plan and design) | **Accepted into plan revision 2.** Spec amendments and the `http_send` contract are written before any step 2 code | `phase-f2d-plan.md` | — |
@@ -852,3 +852,40 @@ mutant made the suite hang — the denial of service SEC-I1 described.
 - engine, FFI and coordinator unit tests
 - Mac app `cargo check` and `tsc`
 - SOURCE Vault on the simulator
+
+### 10.2 Bounded re-review of the fixes (`3228ca0`) and closure
+
+All three reviewers: **no blockers; step 1 can close.** The remaining
+items were fixed in passing without another round. Each new test was
+confirmed by a deliberately broken build, restored with a fresh mtime.
+
+| Finding | Disposition | Test |
+|---|---|---|
+| SEC-I8 the SEC-B1(a) case untested (the old gate would pass every MA test) | **Fixed.** The Mac is restored from before a second device existed; the head is that device's; it adopts with one panel. The old gate fails it | MA-08 `mp_adoption_signer.rs` |
+| VER-I5 KDF check tested only with a salt | **Fixed:** a lower Argon2 memory cost too (salt-only comparison fails it) | MA-07 `a_wrap_with_a_lower_kdf_cost_raises_no_panel` |
+| VER-I6 "Back up now" route untested | **Fixed:** `backup_now_by_user` on a restored Mac asks once and adopts (a non-interactive behind branch fails it). The STATE_MOVED retry branch is covered by reading only | MA-09 |
+| VER-I7 panel visibility events untested; §10.1 claimed otherwise | **Fixed:** MA-01 asserts the event with the "Apply a Security Change" title, then hidden. §10.1 corrected | MA-01 |
+| VER-I8 / SPEC-O9 only `DEVICE_NOT_AUTHORIZED` falls back | **Fixed:** an unparseable served envelope (`FORMAT_INVALID`) gives no panel (an any-error trigger fails it) | MA-10 |
+| SEC-O3 / VER-O6 a KDF mismatch reported as `DEVICE_NOT_AUTHORIZED` | **Fixed:** reported as `KDF_POLICY_VIOLATION` | MA-07 |
+| SPEC-O9 MA-04 code, MA-03 cancel counter, catalogue kind 4 in `handle.rs` | **Fixed** | MA-03, MA-04, `handle.rs` |
+| SPEC-I11 §22.4 lockout | **Fixed:** §22.4's iPhone trigger list now includes a biometry lockout or any Enclave refusal that is not the user's own, and names it as the adoption trigger too | — |
+| SPEC-I12 / SEC-O4 / VER-O7 `MP_ADOPTION_REQUIRED` and `{interactive}` unregistered | **Fixed:** §22.15 row with copy; §1.5 `backup_apply` documents `{interactive}` as a user-experience control | — |
+| SPEC-I13 MA-06/07 not in §22.16 | **Fixed:** MA-06…10 added | — |
+| SPEC-I14 / SEC-O5 plan step 1 listed SEC-I4 as fixed | **Fixed:** marked deferred to before step 4 | — |
+| SPEC-I15 plan would remove `stream_*` | **Fixed:** they stay (pairing, large peer answers) | — |
+| SEC-I9 the step-2 cancel flag set by lock | **Fixed in the plan:** set only by close and background-task expiry; lock ends sync flows | — |
+| SPEC-O7, O8, O10, O11, O12 | **Fixed** in the plan and §2.7 (Touch ID adoption from background stated) | — |
+| VER-O5 the revoked early-out untested | noted (low impact: the apply returns `Revoked` before any envelope) | — |
+| VER-O8 cosmetic | **Fixed** | — |
+
+**Results:**
+- `mp_adoption` (5), `mp_adoption_forged` (4), `mp_adoption_signer` (1)
+  and `adopt_key_check` (1) pass.
+- `vault-ffi` passes.
+- Deliberately broken builds of the salt-only comparison, an any-error
+  trigger, the panel events, the behind branch and the old gate are each
+  caught.
+
+**F.2d step 1 is closed.** Next: drafting step 2's spec amendments and
+the `http_send` contract (plan revision 2), for review before any step 2
+code.
