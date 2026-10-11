@@ -16,7 +16,7 @@
 //! app's lifetimes are too short for a count held in memory (SPEC-I3).
 
 use std::cell::Cell;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{json, Value};
 use vault_coordinator::flows::Flows;
@@ -24,6 +24,7 @@ use vault_coordinator::policy::{AccessSignal, AccessWatch};
 use vault_coordinator::{Failure, Helper, HttpResponse, Transport, TransportError};
 use vault_engine::errors::ErrorCode;
 use vault_engine::peer::client::removal;
+use vault_engine::state::VaultState;
 use vault_engine::storage::kv;
 use vault_engine::vault::{dispatch, lock_core, OpOutcome};
 
@@ -80,6 +81,9 @@ impl Helper for EngineHelper<'_> {
 struct EngineTransport<'a> {
     inner: &'a Inner,
     origin: String,
+    /// The provider answered at least one request with a 2xx: only then
+    /// does a flow count as provider contact (§11.3.2; review SEC-I2).
+    answered: AtomicBool,
 }
 
 impl Transport for EngineTransport<'_> {
@@ -91,7 +95,12 @@ impl Transport for EngineTransport<'_> {
             return Err(TransportError::Unreachable("not this vault's provider".into()));
         }
         match self.inner.shared.http(origin, method, path, auth, body, TIMEOUT_MS, MAX_ANSWER) {
-            HttpOutcome::Answered { status, body, date } => Ok(HttpResponse { status, body, date }),
+            HttpOutcome::Answered { status, body, date } => {
+                if (200..300).contains(&status) {
+                    self.answered.store(true, Ordering::SeqCst);
+                }
+                Ok(HttpResponse { status, body, date })
+            }
             HttpOutcome::TooLarge => Err(TransportError::Unreachable("answer over the cap".into())),
             HttpOutcome::Unreachable => Err(TransportError::Unreachable("unreachable".into())),
         }
@@ -102,10 +111,16 @@ fn now() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
+/// A provider's error code reaches the app's copy only in the §15 shape;
+/// anything else is reported by its status (review SEC-I4).
+fn code_ok(c: &str) -> bool {
+    (1..=48).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+}
+
 fn failure(f: &Failure) -> Value {
     let (code, status) = match f {
         Failure::Helper(c) => (c.clone(), None),
-        Failure::Provider(s, c) if !c.is_empty() => (c.clone(), Some(*s)),
+        Failure::Provider(s, c) if code_ok(c) => (c.clone(), Some(*s)),
         Failure::Provider(s, _) => (format!("PROVIDER_{s}"), Some(*s)),
         Failure::Unreachable => ("BACKUP_UNAVAILABLE".into(), None),
         Failure::Conflict => ("BACKUP_CONFLICT".into(), None),
@@ -117,30 +132,45 @@ fn failure(f: &Failure) -> Value {
 pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
     let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
     let interactive = frame.get("interactive").and_then(Value::as_bool) == Some(true);
-    let origin = match lock_core(&inner.core).header.as_ref() {
-        Some(h) => h.provider.clone(),
-        None => return OpOutcome::err(ErrorCode::BadState),
+    // UNLOCKED only until the staged publication's design (step 4
+    // remainder) allows `provider_run` while LOCKED (review VER-I5).
+    let origin = {
+        let c = lock_core(&inner.core);
+        match c.header.as_ref() {
+            Some(h) if c.state == VaultState::Unlocked => h.provider.clone(),
+            _ => return OpOutcome::err(ErrorCode::BadState),
+        }
     };
-    inner.cancel.store(false, Ordering::SeqCst);
+    // The cancel flag is never cleared: only `ov0_engine_close` sets it,
+    // and a closing handle runs no further flow (review VER-O5).
+    if !matches!(op, "provider_sync" | "provider_publish") {
+        return OpOutcome::err(ErrorCode::UnknownOp);
+    }
     IN_PROVIDER.with(|f| f.set(true));
     let _guard = Guard;
-    let transport = EngineTransport { inner, origin: origin.clone() };
+    let transport = EngineTransport { inner, origin: origin.clone(), answered: AtomicBool::new(false) };
     let flows = Flows { helper: &EngineHelper(inner), transport: &transport };
-    let result = match (op, interactive) {
-        ("provider_sync", true) => flows.run_sync_by_user(),
-        ("provider_sync", false) => flows.run_sync(),
-        ("provider_publish", true) => flows.backup_now_by_user(),
-        ("provider_publish", false) => flows.backup_now(),
-        _ => return OpOutcome::err(ErrorCode::UnknownOp),
+    let sync = |f: &Flows<'_>| if interactive { f.run_sync_by_user() } else { f.run_sync() };
+    let result = if op == "provider_sync" {
+        sync(&flows)
+    } else {
+        // "Sync now" always checks the provider (§22.7): with nothing of
+        // its own to publish, it syncs, as the Mac's "Back up now" does
+        // (reviews VER-B1 / SEC-I2).
+        let published = if interactive { flows.backup_now_by_user() } else { flows.backup_now() };
+        match published {
+            Ok(v) if v["nothing_to_publish"] == true && v["behind"] != true => sync(&flows),
+            other => other,
+        }
     };
-    settle(inner, &flows, &origin, &result);
+    settle(inner, &flows, &origin, &result, transport.answered.load(Ordering::SeqCst));
     OpOutcome { response: result.map_or_else(|f| failure(&f), |v| json!({ "ok": true, "result": v })) }
 }
 
 /// After a flow: the access-loss count (§11.3.2), and the §22.9 removal
 /// lock — set by a provider state that revokes this phone, lifted by one
 /// in which it is still active.
-fn settle(inner: &Inner, flows: &Flows<'_>, origin: &str, result: &Result<Value, Failure>) {
+fn settle(inner: &Inner, flows: &Flows<'_>, origin: &str, result: &Result<Value, Failure>, answered: bool) {
     // The locate probe runs before the core is locked: no network wait
     // ever holds the engine (lock and `get_state` stay immediate).
     let probe = matches!(result, Err(Failure::Provider(401, _))).then(|| {
@@ -149,17 +179,24 @@ fn settle(inner: &Inner, flows: &Flows<'_>, origin: &str, result: &Result<Value,
     });
     let c = lock_core(&inner.core);
     let (dir, phone) = (c.vault_dir.clone(), c.phone);
+    // A revoking state locks the engine and closes the store first: the
+    // §22.9 lock is recorded before anything needs the store (review
+    // SEC-I1 / VER-I1).
+    let revoked = result.as_ref().is_ok_and(|v| v["revoked"] == true || v["sync"]["revoked"] == true);
+    if phone && revoked {
+        let _ = removal::record(&dir, true, now());
+    }
     let Some(store) = c.store.as_ref() else { return };
     let saved: Option<(u32, Option<u64>)> = kv::get(&store.conn, WATCH_KEY).ok().flatten();
     let mut watch = saved.map_or_else(AccessWatch::default, |(s, t)| AccessWatch::from_parts(s, t));
     match result {
-        Ok(v) => {
+        // Success with no provider answer (nothing to publish while
+        // behind) is no provider contact: nothing resets, nothing lifts.
+        Ok(_) if !answered => return,
+        Ok(_) => {
             watch.success();
             let _ = kv::delete(&store.conn, ACCESS_LOST_KEY);
-            let revoked = v["revoked"] == true || v["sync"]["revoked"] == true;
-            if phone && revoked {
-                let _ = removal::record(&dir, true, now());
-            } else if phone && removal::active(true, &dir).is_some() {
+            if phone && !revoked && removal::active(true, &dir).is_some() {
                 let _ = removal::clear(&dir); // provider-confirmed: still active (§22.9)
             }
         }

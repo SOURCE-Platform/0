@@ -129,7 +129,7 @@ struct SyncBar: View {
     var body: some View {
         HStack {
             if model.accessLost {
-                Text("Your backup no longer accepts this iPhone — it may have been removed. Nothing has been deleted.").font(.caption)
+                Text("Your backup no longer accepts this iPhone. It may have been removed, or your vault may have been recovered on another device. If you didn't do this, treat it as a security incident. Nothing has been deleted here.").font(.caption)
             } else if model.removed != nil {
                 Text("Removal pending — your Mac removed this iPhone. Nothing has been deleted.").font(.caption)
             } else if model.syncing {

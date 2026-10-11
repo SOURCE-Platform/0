@@ -52,7 +52,7 @@ entry point; the workspace profile is shared with the macOS app).
 | `recovery_sheet` | `(ctx, words, words_len, checkpoint, recovery, reason, timeout_ms) -> i32` | **(c) out** | the 24 words with the three non-secret lines; 0 only when the user confirmed they saved it; Swift keeps no copy |
 | `presence` | `(ctx, reason) -> bool` | — | `LAPolicy.deviceOwnerAuthentication` (§22.4) |
 | `capture_suppressed` | `(ctx, surface) -> bool` | — | whether the surface is hidden from capture (§14.4) |
-| `http_send` | `(ctx, origin, method, path, auth (null = none), body, body_len, timeout_ms, out, out_cap, out_len, status: *mut u16, date: *mut u64) -> i32` | — (ciphertext, public data, engine-signed requests) | F.2d step 2: provider HTTPS for `provider_sync` / `provider_publish`. The engine calls it only from the op thread, during a `provider_*` op, and only for the vault header's own provider origin. `auth` goes in the `Ov0-Auth` header. Swift writes the answer body into the **engine-owned buffer** of `out_cap` (the per-flow cap, 8 MiB + 4 KiB) and its HTTP `Date` (Unix seconds, 0 if absent); 0 = answered (any status), 1 = unreachable (no answer within `timeout_ms`, TLS failure, a redirect), 2 = the body would exceed `out_cap`. Swift's session: ephemeral, no URL cache, standard certificate validation (no pinning, D-12), redirects refused, `https` only. It must not call back into the engine (a call meanwhile answers `BAD_STATE`) |
+| `http_send` | `(ctx, origin, method, path, auth (null = none), body, body_len, timeout_ms, out, out_cap, out_len, status: *mut u16, date: *mut u64) -> i32` | — (ciphertext, public data, engine-signed requests) | F.2d step 2: provider HTTPS for `provider_sync` / `provider_publish`. The engine calls it only from the op thread, during a `provider_*` op, and only for the vault header's own provider origin. `auth` goes in the `Ov0-Auth` header. Swift writes the answer body into the **engine-owned buffer** of `out_cap` (the per-flow cap, 8 MiB + 4 KiB) and its HTTP `Date` (Unix seconds, 0 if absent); 0 = answered (any non-3xx status), 1 = unreachable (no complete answer within `timeout_ms` — a deadline on the whole exchange, not on the gaps between bytes — TLS failure, a refused redirect), 2 = the body would exceed `out_cap`. Swift's session: ephemeral, no URL cache, standard certificate validation (no pinning, D-12), redirects refused, `https` only (debug builds also allow `http://localhost` for a local test provider). The cancel flag is the engine's: it stops further calls; one already in Swift ends by its own deadline. It must not call back into the engine (a call meanwhile answers `BAD_STATE`) |
 | `event` | `(ctx, json, len)` | — | the §1.5 events, never secret; delivered in order, only after the engine has released its locks (a handler may block, but must not call back into the engine); an op's own events arrive before its call returns |
 
 ## 3. Bridge imports (`Bridge.swift`, linked into the app; the complete list)
@@ -111,7 +111,12 @@ IO-04) does not exist yet; it comes with F.2d.
 
 - `provider_sync {interactive}` and `provider_publish {interactive}` run
   the coordinator's sync and "back up now" flows inside the call
-  (`vault-ffi/src/provider.rs`). `interactive` is set only for "Sync now"
+  (`vault-ffi/src/provider.rs`). UNLOCKED only (`BAD_STATE` otherwise)
+  until the staged publication allows a LOCKED run. `provider_publish`
+  with nothing of the phone's own to publish runs the sync instead, as
+  the Mac's "Back up now" does: "Sync now" always checks the provider
+  (§22.7). A publication carries every pending local change — edits, and
+  a master-password change or reset made on the phone. `interactive` is set only for "Sync now"
   or an edit the user just saved; it decides whether the §2.7 adoption
   panel (kind 4) may appear.
 - Sub-ops are the fixed list `SUB_OPS` (state, `backup_*`, stream,
@@ -122,10 +127,12 @@ IO-04) does not exist yet; it comes with F.2d.
   SEC-O2).
 - Answer: `{ok:true, result}` or `{ok:false, error, status}` —
   `BACKUP_UNAVAILABLE`, `BACKUP_CONFLICT`, `MP_ADOPTION_REQUIRED`, a
-  provider code, or an engine code.
+  provider code (only in the §15 shape, `[A-Z0-9_]{1,48}`; otherwise
+  `PROVIDER_<status>`), or an engine code.
 - After each flow the engine updates the persisted §11.3.2 access count
-  (a 401 runs the locate probe first, outside the core mutex) and sets
-  `access_lost` in `get_state`; a state that revokes this phone records
+  (a 401 runs the locate probe first, outside the core mutex; a success
+  counts only when the provider answered a request with a 2xx) and sets
+  `access_lost` in `get_state` (reported while the vault is open); a state that revokes this phone records
   the removal lock, and one in which it is still active lifts it (§22.9).
 - A Mac helper refuses both ops.
 

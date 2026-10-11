@@ -61,6 +61,13 @@ pub fn pre_open(core: &Arc<Mutex<VaultCore>>, id: &Id, deps: &Deps, interactive:
         if session.remote.vk_generation == local && base == local {
             return None; // our own key: no envelope is opened
         }
+        // The base of our pending rotation: its kept key opens it (SEC-I4).
+        if base < local && session.remote.vk_generation == base {
+            let vk = c.vk.as_ref()?;
+            if crate::sync::base_key::open(&store.conn, &store.header.vault_id.0, vk, local, base).ok().flatten().is_some() {
+                return None;
+            }
+        }
         // Never ask — for a finger or a password — over a state that does
         // not pass the apply's own verification (reviews VER-I17, SEC-B1):
         // registry extends ours and verifies, signer active, manifest

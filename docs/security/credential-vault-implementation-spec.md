@@ -176,7 +176,8 @@ the UI. The engine and the network share one address space — a stated
 residual of the iPhone form: the separation is by interface (the
 catalogued C ABI), not by process. Every network byte Swift carries is
 ciphertext, public data, or a single-use request the engine built and
-signed.
+signed — except the peer channel's bearer token (annex A.4), which
+authorizes nothing in the vault.
 
 ### 1.3 IPC transport
 
@@ -730,11 +731,16 @@ nonces.
   **On the iPhone** the same path serves a phone whose Face ID envelope is
   unusable (re-registration, lockout; §22.4), through secure-entry kind 4.
 
-  *Stated residual, until F.2d step 4.* A device with a pending local
-  rotation of its own, whose served base state needs a master password the
-  user no longer knows (reset with the Recovery Key), cannot adopt it. It
-  cannot arise before another device can publish (review SEC-I4 of
-  e7da81a). **Residual (stated):** the signing key cannot be biometry-bound
+  *The base key of a pending rotation (closed in F.2d, review SEC-I4 of
+  e7da81a; chunk review SEC-B1).* A rotation of this device's own that
+  waits to publish keeps the VK of its base generation, sealed under the
+  current VK (`sync/base_key.rs`: XChaCha20-Poly1305 under
+  `HKDF(VK, vault_id, "ov0/pending-base-key/v1")`, the AAD binding the
+  base and sealing generations). A served state at that base generation —
+  another device's publication meanwhile — opens with it: no envelope, no
+  master password, so a pending revocation never waits on a password the
+  user may have reset. The key is trusted only as far as the checkpoint
+  binding verifies under it; it is dropped with the pending record. **Residual (stated):** the signing key cannot be biometry-bound
   (background provider signing), so a thief with the login password can
   copy it and sign as the Mac — not read the vault, but publish
   disruptive states or enroll a device that would receive later changes,
@@ -2523,9 +2529,11 @@ in Phase F the iPhone only fetches its own envelope (§4.7).
   `provider_publish`): the "Helper" column is the engine's own dispatcher,
   limited to a fixed list of sub-ops; "HTTP/TLS" is Swift's `http_send`
   callback, called only for the vault header's own provider origin and
-  capped per answer (FFI catalogue §2). Retry and the §11.3.2 access-loss
-  count are kept in the engine's store, since the app's lifetimes are too
-  short for a count held in memory.
+  capped per answer (FFI catalogue §2). The §11.3.2 access-loss count is
+  kept in the engine's store, since the app's lifetimes are too short for
+  a count held in memory; a flow counts as provider contact only when the
+  provider answered a request with a 2xx. The phone has no retry queue:
+  its triggers are unlock, "Sync now" and a saved edit.
 
 ### 11.2 Storage and state model
 

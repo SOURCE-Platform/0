@@ -908,3 +908,36 @@ security items fixed now, the rest logged for the final audit.
 | Triggers, copy, add-login | `PeerSync.swift`, `AppModel.swift`, `Views.swift` | simulator build and unit tests |
 | Spec §1.2, §11.1, §22.2; catalogue §1/§2/§4/§6; plan progress and the SEC-I4 re-reading | docs | — |
 
+
+### 11.1 Chunk review of `9f96521` (security + verification) and the fix round
+
+Two blockers, both agreed by the two reviewers. Every finding was checked
+against the repository before it was accepted.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 / VER-B2 the SEC-I4 re-reading was wrong: phone publications make a pending rotation's base state reachable; a password-only Mac with a reset MP and a pending revocation could never publish | **Fixed (closed SEC-I4).** A pending rotation keeps its base key sealed under the current VK; a served state at the base generation opens with it, no envelope or MP; dropped with the pending record. Spec §2.7 and plan step 4 corrected | `sync/base_key.rs`, `storage/rotation.rs`, `sync/apply.rs`, `adopt_prompt.rs`, `pending.rs` | `pending_base_key.rs` (fails without the kept key) |
+| VER-B1 / SEC-I2 "Sync now" made no provider contact with nothing to publish; that no-network success reset the §11.3.2 count | **Fixed.** `provider_publish` with nothing to publish runs the sync (as the Mac's worker does); success counts only when the provider answered a request with a 2xx | `provider.rs` | `sync_now_with_nothing_to_publish_still_syncs` |
+| SEC-I1 / VER-I1 "set by a revoking state" was dead code (the store is closed first) | **Fixed.** Recorded before the store check | `provider.rs` | — carried: needs a non-conforming provider fixture (a conforming one answers 401) |
+| SEC-I3 / VER-I2 no total deadline on `http_send` | **Fixed.** `wait(timeout:)` on the whole exchange, task cancelled; resource timeout as a backstop; plan text on the cancel flag reconciled | `ProviderHTTP.swift`, plan | simulator build |
+| SEC-I4 provider text reached the UI unbounded | **Fixed.** Only `[A-Z0-9_]{1,48}` passes; otherwise `PROVIDER_<status>` | `provider.rs` | — |
+| VER-I5 no state gate on `provider_*` | **Fixed.** UNLOCKED only; catalogue §4 says so | `provider.rs` | `an_unreachable_provider_lifts_nothing_and_callbacks_cannot_reenter` |
+| SEC-I5 / VER-I3 adapter properties untested | **Fixed in part:** re-entrancy → `BAD_STATE`, unreachable lifts nothing, locked runs no flow, one origin. **Carried to the final audit:** frame cap, return code 2, event flush, persisted count across restarts, PV-01 canaries over `http_send` transcripts, Swift `ProviderHTTP` unit tests | `phone_provider.rs` | 4 tests |
+| VER-I4 per-route caps | **Plan amended** (one buffer; the frame and per-hash caps apply after it) | plan | — |
+| VER-I6 access-loss copy and reporting while locked | **Copy fixed** (§22.9 wording; the dead `BACKUP_ACCESS_LOST` case removed). **Carried:** `access_lost` while LOCKED (the flag lives in the store) | `Views.swift`, `AppModel.swift` | — |
+| VER-I7 spec amendment text | **Fixed:** §11.1 (no retry queue; count only), §1.2 (the bearer token) | spec | — |
+| VER-I8 phone MP change/reset published, undocumented | **Documented** (catalogue §4, plan step 4). **Carried:** a test of a phone MP change adopted by the Mac | — | — |
+| VER-O3 / SEC-O4 push `break` starved later records | **Fixed** (`continue`) | `push.rs` | `phone_sync` suite |
+| VER-O4 event-callback re-entry deadlocked | **Fixed:** no flush inside a provider flow | `lib.rs` | — |
+| VER-O5 / SEC-O4 cancel cleared at op start | **Fixed:** never cleared | `provider.rs` | — |
+| VER-O1 / SEC-O2 `http://localhost` | **Fixed:** debug builds only | `ProviderHTTP.swift` | — |
+| VER-O2 refused redirect reported as answered | **Fixed:** 3xx → unreachable | `ProviderHTTP.swift` | — |
+| SEC-O1, SEC-O3, VER-O6…O10 | **Logged for the final audit** (lift ignores `published`; stale sync session after a failure; strike on any 401; `ClockSkew` dropped; dropped add-sync; `PEER_STATE_UNCONFIRMED` on lift; a header-vs-catalogue check for callbacks) | — | — |
+
+**Found during the fix round (pre-existing, not from this chunk):** two
+local rotations before either publishes (for example a revocation, then
+an RK rotation) raise the key generation by two, which the provider's
+`publish` rule (§11.4 step 6: `vk_generation` = current + 1) refuses with
+`MANIFEST_INVALID` — the pending record can then never publish. It needs
+a decision (refuse a second rotation while one is pending, or fold both
+into one generation) and is carried as its own item.

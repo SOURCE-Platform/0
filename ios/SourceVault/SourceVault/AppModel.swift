@@ -174,7 +174,6 @@ final class AppModel: ObservableObject {
         case "FORMAT_INVALID": return "Your Mac didn't understand this iPhone's request. Update both apps."
         case "MP_ADOPTION_REQUIRED": return "Another device changed your vault's security. Tap “Sync now” and enter your master password to apply it."
         case "BACKUP_UNAVAILABLE": return "Your backup can't be reached right now. Your vault keeps working on this iPhone."
-        case "BACKUP_ACCESS_LOST": return "This iPhone can no longer reach your backup — it may have been removed from your vault."
         case "BACKUP_CONFLICT": return "Two devices changed the vault at once. Tap “Sync now” to try again."
         case "DEVICE_NOT_AUTHORIZED": return "This iPhone's key isn't available. Use your master password."
         case "INVALID_INPUT": return "Check the fields and try again."

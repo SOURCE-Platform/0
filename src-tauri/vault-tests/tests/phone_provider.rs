@@ -7,6 +7,7 @@
 
 mod mfx;
 
+use std::cell::{Cell, RefCell};
 use std::ffi::{c_char, c_void, CStr, CString};
 
 use mfx::*;
@@ -17,8 +18,28 @@ fn s(p: *const c_char) -> String {
     unsafe { CStr::from_ptr(p) }.to_string_lossy().into_owned()
 }
 
-extern "C" fn http(ctx: *mut c_void, _origin: *const c_char, method: *const c_char, path: *const c_char, auth: *const c_char, body: *const u8, body_len: usize, _t: u64, out: *mut u8, cap: usize, out_len: *mut usize, status: *mut u16, date: *mut u64) -> i32 {
-    let cloud = unsafe { &*(ctx as *const Cloud) };
+/// The callbacks' context: the provider core, and test switches.
+struct Ctx {
+    cloud: Cloud,
+    /// No answer at all (`http_send` → 1).
+    offline: Cell<bool>,
+    /// Call back into this engine from inside `http_send` once.
+    reenter: Cell<*const Ov0Engine>,
+    reentered: RefCell<Option<Value>>,
+    origins: RefCell<Vec<String>>,
+}
+
+extern "C" fn http(ctx: *mut c_void, origin: *const c_char, method: *const c_char, path: *const c_char, auth: *const c_char, body: *const u8, body_len: usize, _t: u64, out: *mut u8, cap: usize, out_len: *mut usize, status: *mut u16, date: *mut u64) -> i32 {
+    let ctx = unsafe { &*(ctx as *const Ctx) };
+    ctx.origins.borrow_mut().push(s(origin));
+    let e = ctx.reenter.replace(std::ptr::null());
+    if !e.is_null() {
+        *ctx.reentered.borrow_mut() = Some(call(e, r#"{"op":"list_items"}"#));
+    }
+    if ctx.offline.get() {
+        return 1;
+    }
+    let cloud = &ctx.cloud;
     let auth = (!auth.is_null()).then(|| s(auth));
     let body = unsafe { std::slice::from_raw_parts(body, body_len) };
     let r = cloud.send(&s(method), &s(path), auth.as_deref(), body);
@@ -58,13 +79,13 @@ fn call(e: *const Ov0Engine, frame: &str) -> Value {
 }
 
 /// A Mac (A) and a second device (B) whose vault runs behind the C ABI.
-fn pair(tag: &str) -> (Box<Cloud>, Mac, Mac) {
-    let cloud = Box::new(Cloud::new(tag));
+fn pair(tag: &str) -> (Box<Ctx>, Mac, Mac) {
+    let cloud = Box::new(Ctx { cloud: Cloud::new(tag), offline: Cell::new(false), reenter: Cell::new(std::ptr::null()), reentered: RefCell::new(None), origins: RefCell::new(Vec::new()) });
     let mut a = Mac::new(&format!("{tag}-a"));
-    a.setup(&cloud, &format!("synthetic-{tag}@example.test")).unwrap();
+    a.setup(&cloud.cloud, &format!("synthetic-{tag}@example.test")).unwrap();
     let mut b = Mac::new(&format!("{tag}-b"));
-    a.enroll(&cloud, &b);
-    b.join(&cloud, a.vid());
+    a.enroll(&cloud.cloud, &b);
+    b.join(&cloud.cloud, a.vid());
     // The simulator keeps B's identity beside its vault directory; the
     // engine (like the iPhone app) finds it inside.
     std::fs::copy(b.root.join("device.json"), b.dir.join("device.json")).unwrap();
@@ -77,9 +98,9 @@ fn pair(tag: &str) -> (Box<Cloud>, Mac, Mac) {
     (cloud, a, b)
 }
 
-fn open(cloud: &Cloud, dir: &std::path::Path) -> *const Ov0Engine {
+fn open(cloud: &Ctx, dir: &std::path::Path) -> *const Ov0Engine {
     let table = Ov0Callbacks {
-        ctx: cloud as *const Cloud as *mut c_void,
+        ctx: cloud as *const Ctx as *mut c_void,
         secure_entry: Some(entry),
         recovery_sheet: Some(sheet),
         presence: Some(yes),
@@ -99,7 +120,7 @@ fn open(cloud: &Cloud, dir: &std::path::Path) -> *const Ov0Engine {
 fn a_phone_engine_syncs_and_publishes_through_the_provider_path() {
     let (cloud, mut a, b) = pair("ffi-provider");
     a.add("from-a");
-    a.publish(&cloud).unwrap();
+    a.publish(&cloud.cloud).unwrap();
     let e = open(&cloud, &b.dir);
     let synced = call(e, r#"{"op":"provider_sync","interactive":true}"#);
     assert_eq!(synced["ok"], true, "{synced}");
@@ -109,7 +130,7 @@ fn a_phone_engine_syncs_and_publishes_through_the_provider_path() {
     let published = call(e, r#"{"op":"provider_publish","interactive":true}"#);
     assert_eq!(published["ok"], true, "{published}");
     assert_eq!(published["result"]["committed"], true, "{published}");
-    a.sync(&cloud).unwrap();
+    a.sync(&cloud.cloud).unwrap();
     assert!(a.titles().contains(&"from-b".to_string()), "the Mac received the phone's edit");
     // The step-wise ops are the flows' alone now (review SEC-O2).
     assert_eq!(call(e, r#"{"op":"backup_prepare"}"#)["error"], "UNKNOWN_OP");
@@ -127,3 +148,40 @@ fn a_provider_confirmed_state_lifts_the_removal_lock() {
     assert!(call(e, r#"{"op":"get_state"}"#).get("removed").is_none(), "lifted: the provider says this device is active");
     unsafe { ov0_engine_close(e) };
 }
+
+/// "Sync now" with nothing of the phone's own to publish still checks the
+/// provider and brings in what others published (reviews VER-B1 / SEC-I2);
+/// every request went to the vault's own provider origin.
+#[test]
+fn sync_now_with_nothing_to_publish_still_syncs() {
+    let (cloud, mut a, b) = pair("ffi-syncnow");
+    let e = open(&cloud, &b.dir);
+    assert_eq!(call(e, r#"{"op":"provider_sync"}"#)["ok"], true);
+    a.add("later-from-a");
+    a.publish(&cloud.cloud).unwrap();
+    let now = call(e, r#"{"op":"provider_publish","interactive":true}"#);
+    assert_eq!(now["ok"], true, "{now}");
+    assert!(call(e, r#"{"op":"list_items"}"#)["items"].to_string().contains("later-from-a"), "{now}");
+    let origins = cloud.origins.borrow();
+    assert!(!origins.is_empty() && origins.iter().all(|o| *o == origins[0]), "one origin: {origins:?}");
+    unsafe { ov0_engine_close(e) };
+}
+
+/// An unreachable provider lifts nothing; a callback calling back into
+/// the engine gets `BAD_STATE` (no deadlock); a locked engine runs no flow.
+#[test]
+fn an_unreachable_provider_lifts_nothing_and_callbacks_cannot_reenter() {
+    let (cloud, _a, b) = pair("ffi-guard");
+    std::fs::write(b.dir.join("removal.json"), br#"{"published":false,"at":1}"#).unwrap();
+    let e = open(&cloud, &b.dir);
+    cloud.offline.set(true);
+    cloud.reenter.set(e);
+    let r = call(e, r#"{"op":"provider_sync"}"#);
+    assert_eq!(r["error"], "BACKUP_UNAVAILABLE", "{r}");
+    assert_eq!(cloud.reentered.borrow().as_ref().unwrap()["error"], "BAD_STATE");
+    assert!(call(e, r#"{"op":"get_state"}"#).get("removed").is_some(), "still removed");
+    unsafe { ov0_engine_lock(e) };
+    assert_eq!(call(e, r#"{"op":"provider_sync"}"#)["error"], "BAD_STATE", "locked: no flow");
+    unsafe { ov0_engine_close(e) };
+}
+

@@ -7,7 +7,8 @@
 //! provider-confirmed ones (whose ancestors are all provider-confirmed, so
 //! the batch stays closed). Never a set-aside revision. Caps: 2,000
 //! revisions and the 1 MiB request (an object that would not fit waits
-//! for the provider path); whole closures only.
+//! for the provider path); whole closures only, and one that does not fit
+//! never holds back the records after it.
 
 use std::collections::BTreeMap;
 
@@ -47,7 +48,7 @@ pub fn batch(store: &VaultStore, covered: &[u8], theirs: &BTreeMap<[u8; 16], Vec
         let objs: Vec<Vec<u8>> = send.iter().map(object::encode).collect::<Result<_, _>>()?;
         let cost: usize = objs.iter().map(|o| o.len() + 16).sum();
         if objects.len() + objs.len() > crate::peer::admit::MAX_BATCH || size + cost > MAX_PUT {
-            break; // whole closures only; the rest at the next sync
+            continue; // whole closures only; this one waits, smaller ones still go (reviews VER-O3 / SEC-O4)
         }
         size += cost;
         objects.extend(objs);

@@ -124,6 +124,8 @@ pub fn rotate(
     if let Some(e) = extra {
         let next = Connection::open(&next_db).map_err(|_| ErrorCode::DbCorrupt)?;
         e.stage_db(&next, &new_header)?;
+        // SEC-I4: a pending change keeps its base key (§2.7).
+        crate::sync::base_key::carry(&next, &old.vault_id.0, old_vk, old.vk_generation, &new_vk, new_gen)?;
     }
     let mut new_manifest = store.manifest.clone();
     new_manifest.vk_generation = new_gen;

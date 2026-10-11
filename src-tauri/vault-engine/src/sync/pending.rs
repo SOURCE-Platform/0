@@ -135,6 +135,7 @@ pub fn save(conn: &Connection, p: &PendingRemote) -> Result<(), ErrorCode> {
 }
 
 pub fn clear(conn: &Connection) -> Result<(), ErrorCode> {
+    kv::delete(conn, super::base_key::KEY)?;
     kv::delete(conn, KEY)
 }
 

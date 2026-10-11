@@ -102,7 +102,12 @@ pub unsafe extern "C" fn ov0_engine_call(engine: *const Ov0Engine, request: *con
                 Err(_) => OpOutcome::err(ErrorCode::InvalidInput).response,
             }
         };
-        e.shared.flush();
+        // A call from inside a callback during a provider flow answered
+        // `BAD_STATE`; flushing here would wait on the delivery the outer
+        // call holds (review VER-O4).
+        if !provider::in_provider() {
+            e.shared.flush();
+        }
         let json = Zeroizing::new(serde_json::to_vec(&answer).unwrap_or_default());
         let mut buf = vec![0u8; PREFIX + json.len()].into_boxed_slice();
         buf[..PREFIX].copy_from_slice(&(json.len() as u64).to_le_bytes());

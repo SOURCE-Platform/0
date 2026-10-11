@@ -73,8 +73,10 @@ transport callback.
 - Events are flushed between sub-ops.
 - A thread-local re-entrancy guard answers `BAD_STATE` to a callback that
   calls the engine.
-- A cancel flag is set by `ov0_engine_close` and by background-task
-  expiry, never by lock: a fully staged publication finishes while the
+- A cancel flag is set by `ov0_engine_close` (and, with the staged
+  publication, by background-task expiry), never by lock and never
+  cleared; it stops further `http_send` calls and is not passed to Swift,
+  whose own deadline ends a call in flight (chunk review VER-I2): a fully staged publication finishes while the
   vault is locked (§22.10; review SEC-I9). Lock ends sync flows, whose
   sessions die with it anyway. The flag is cleared at the start of each
   `provider_*` op, checked before each `http_send` and passed to Swift.
@@ -84,8 +86,9 @@ transport callback.
 - The engine asserts that the origin equals the vault header's provider.
 - The response body goes into an engine-owned buffer of `max_body`;
   anything over it is refused.
-- Caps: `state_get` and commit/put answers ≤ 64 KiB; `blob_get` ≤ the
-  transfer cap of that hash (≤ 8 MiB).
+- Caps: one buffer of 8 MiB + 4 KiB per call; the per-route limits are
+  enforced after it — the 64 KiB frame cap for state and commit answers,
+  the per-hash transfer caps for `blob_get` (chunk review VER-I4).
 - "Unreachable" is reported apart from an HTTP status.
 - Swift session: ephemeral, `urlCache = nil`, standard certificate
   validation (no pinning, D-12), and redirects refused.
@@ -144,11 +147,13 @@ now"); add-login in the phone UI. **Not yet:** on-disk staging, the
 only matter for staged key changes, which the phone cannot make before
 step 5.
 
-**SEC-I4, re-read (chunk review to confirm):** the residual needs a
-served state under a *new key* that the Mac must adopt while it holds a
-pending rotation of its own. The phone's publications in this chunk are
-edits under the current key; it makes no key change before step 5. So
-the case still cannot arise, and the precondition moves to step 5.
+**SEC-I4: closed in the chunk's fix round.** The re-reading that moved
+it to step 5 was wrong (chunk reviews SEC-B1 / VER-B2): any served state
+at the base of a pending rotation needs the envelope, and phone
+publications are exactly such states. A pending rotation now keeps its
+base key (§2.7, `sync/base_key.rs`; test `pending_base_key.rs`). Phone
+publications carry every pending change, including a phone MP change or
+reset (VER-I8).
 
 - The phone publishes its own edits through the coordinator.
 - On-disk staging (§22.11) with the §22.10 file protection.

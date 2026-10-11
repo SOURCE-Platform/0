@@ -83,8 +83,13 @@ pub fn apply(
     let local_gen = store.header.vk_generation;
     let base_gen = pending.as_ref().map_or(local_gen, |p| p.base.vk_generation);
     let rotated = base_gen < local_gen;
+    // SEC-I4: a served state at the base of our pending rotation opens
+    // with the base key that rotation kept — no envelope, no password.
+    let carried = if rotated && remote.vk_generation == base_gen { super::base_key::open(&store.conn, &vid, &vk, local_gen, base_gen)? } else { None };
     let remote_vk: SecretBytes<32> = if !rotated && remote.vk_generation == local_gen {
         SecretBytes::new(*vk.expose())
+    } else if let Some(k) = carried {
+        k
     } else if remote.vk_generation >= base_gen {
         let env: DeviceEnvelopeFile = serde_json::from_slice(get(&Role::Env { device_id: me })?).map_err(|_| ErrorCode::WrapCorrupt)?;
         let payload = open_env(&env)?;

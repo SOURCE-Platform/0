@@ -5,6 +5,7 @@
 
 pub mod adopt_mp;
 pub mod apply;
+pub mod base_key;
 pub mod change;
 pub mod compare;
 pub mod fetch;
