@@ -5070,7 +5070,7 @@ and is not undone by a cancel. A marker written before the sheet, removed
 only by the commit, tells after a cancel, timeout, lock or kill that the
 sheet's key is void; the sheet is refused while the screen is captured —
 FFI catalogue §4. A second rotation while one of this device's own waits
-to publish is refused, `ROTATION_PENDING` (provisional, §22.15): it would
+to publish is refused, `ROTATION_PENDING` (owner decision 2026-10-12, §22.15): it would
 raise the key generation by two, which the §11.3 step 6 rules never
 accept. The phone never runs an ordinary publication before a
 revocation, and syncs without publishing at unlock, so a revoked
@@ -5263,7 +5263,7 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
 | Provisional state contradicted by the provider | `PEER_STATE_UNCONFIRMED` | discard, attribute to the source (§22.5) | "Your Mac or your backup provider disagrees about the latest vault" |
 | Revision only from a revoked peer, not in its revocation index | `PROVENANCE_REFUSED` | refused and counted (§22.7) | "N changes from removed device X were not accepted" |
 | Local store older than the device's floor | `VAULT_BEHIND` | read-only until synced (§22.14) | §22.14 copy |
-| A key rotation of this device's own still waits to publish, and the user starts another (`rotate_recovery_key`, `revoke_device`; v0.5 F.2d: a second rotation would raise the key generation by two, which the provider's §11.3 step 6 rules never accept — **provisional, pending the owner's choice between refusing and folding both changes into one generation**; until then an offline device with an unpublished rotation cannot start a revocation, which departs from §22.7's "never delays or blocks the revocation's local commit") | `ROTATION_PENDING` | refused before any prompt; nothing changes | "Your last security change hasn't reached your backup yet. Click “Back up now”, then try again." |
+| A key rotation of this device's own still waits to publish, and the user starts another (`rotate_recovery_key`, `revoke_device`; v0.5 F.2d: a second rotation would raise the key generation by two, which the provider's §11.3 step 6 rules never accept — **owner decision 2026-10-12: refuse and ask to sync first** (not fold); an offline device with an unpublished rotation therefore starts a revocation only after the first change publishes — an amendment of §22.7's "never delays or blocks the revocation's local commit" for this one case) | `ROTATION_PENDING` | refused before any prompt; nothing changes | "Your last security change hasn't reached your backup yet. Click “Back up now”, then try again." |
 | A served key change needs the master password, from a background sync (§2.7) | `MP_ADOPTION_REQUIRED` | nothing adopted; no panel; the app offers the user-started action | "Another device changed your vault's security. Click “Back up now” and enter your master password to apply it." |
 
 `RECORD_CORRUPT`: "restore from backup" and "restore from a peer" (§22.10)
