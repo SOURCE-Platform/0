@@ -229,6 +229,13 @@ pub fn revocation_targets(conn: &Connection) -> Result<Vec<[u8; 16]>, ErrorCode>
         .collect())
 }
 
+/// A key rotation of ours that has not published yet: the committed key
+/// generation is past the pending record's base. A second rotation now
+/// would raise it by two, which no provider `publish` accepts (§11.4).
+pub fn rotation_waiting(conn: &Connection, current: &Header) -> Result<bool, ErrorCode> {
+    Ok(load(conn)?.is_some_and(|p| !p.needs_user && p.base.vk_generation < current.vk_generation))
+}
+
 /// The base a new change builds on: the pending record's, unless it needs
 /// the user (then the adopted, current header is the base).
 pub fn base_for(conn: &Connection, current: &Header) -> Result<Base, ErrorCode> {

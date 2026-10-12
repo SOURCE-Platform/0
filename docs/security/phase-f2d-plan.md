@@ -168,7 +168,20 @@ reset (VER-I8).
     its base key, sealed under the current key, so a served base state
     needs no credential.
 
-### 5. Authority on the phone — own design review before code
+### 5. Authority on the phone — chunk 2 built (design folded into its review)
+
+**Built (verification §12):** the staged-first form for
+`rotate_recovery_key` and `revoke_device` on both platforms
+(`rotate_gated`, `staged_sheet.rs`), the void-sheet notice, the
+`ROTATION_PENDING` refusal (the double-rotation finding of §11.1), the
+phone's Security screen and Recovery Key sheet (capture-hidden, screenshot
+warning), publish-first and publish-after inside a background task, and
+the unlock trigger now running the publish flow so a cut-short change
+uploads at the next unlock. Reconciled with catalogue §1: the app still
+locks on leaving the foreground; a lock before the commit voids the
+change, and the background task only covers the commit and the upload.
+**Not yet (chunk 3):** total-loss recovery on a phone, the
+`BGProcessingTask` / LOCKED publication, the phone seal-crossing review.
 
 On the agenda of that review (SPEC-O11): catalogue §1 locks the engine on
 entering the background, while §22.10's rotation runs inside a background
@@ -203,7 +216,12 @@ revoked device delivered.
 The owner decision "iPhone adds replacement Mac" needs reverse enrollment
 (F.2e) and is not in this milestone.
 
-### 6. "Remove this vault" — own design review before code
+### 6. "Remove this vault" — chunk 2 built
+
+**Built:** `remove_vault_preview` / `remove_vault` (phone only), the button
+on the Security screen and the removal screen, with the local-only count
+and the "may be the only copy" warning. **Not yet:** publishing before a
+Face ID re-enrollment (SPEC-I8b).
 
 The explicit action deletes the phone's keys, store and Keychain items
 (floor, `peer_endpoint`).

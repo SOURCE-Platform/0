@@ -13,11 +13,10 @@ use vault_engine::vault::{dispatch, lock_core, Deps, LockReason, OpOutcome, Vaul
 
 use crate::callbacks::Shared;
 
-/// The §1.5 ops SOURCE Vault may run (F.2b). Everything else answers
+/// The §1.5 ops SOURCE Vault may run (F.2b–F.2d). Everything else answers
 /// `UNKNOWN_OP` — the Mac-only serving, enrollment authorization, vault
-/// creation, revocation and total-loss recovery ops, and
-/// `rotate_recovery_key`, whose phone form (rotation staged before the
-/// sheet, §22.10) does not exist yet (review SEC-B2 / VER-B1).
+/// creation and total-loss recovery ops. The rotating ops run in their
+/// staged-first form (§22.10; F.2d step 5).
 pub const IOS_OPS: &[&str] = &[
     "get_state", "unlock", "begin_recovery_unlock", "list_items", "reveal", "add_item", "update_item", "delete_item",
     "list_history", "list_deleted", "restore_revision", "resolve_conflict", "change_master_password", "list_devices",
@@ -27,6 +26,11 @@ pub const IOS_OPS: &[&str] = &[
     // step-wise `backup_*` and `sign_provider_request` are theirs alone
     // (review SEC-O2). The stream ops stay: pairing and peer answers.
     "provider_sync", "provider_publish",
+    // F.2d step 5: the rotating ops, staged first (§22.10,
+    // `vault/staged_sheet.rs`), and the notice of a sheet that went void.
+    "rotate_recovery_key", "revoke_device", "dismiss_rk_sheet_notice",
+    // F.2d step 6: the explicit "Remove this vault" (§22.9).
+    "remove_vault_preview", "remove_vault",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).

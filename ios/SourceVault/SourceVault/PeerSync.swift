@@ -36,7 +36,10 @@ extension AppModel {
         syncing = true
         syncNote = nil
         defer { if !Task.isCancelled { syncing = false } }
-        let answer = await engine.callAsync(["op": byUser ? "provider_publish" : "provider_sync", "interactive": byUser])
+        // Always the publish flow: it uploads anything waiting (an edit, or
+        // a security change cut short by a lock, §22.10) and otherwise
+        // syncs (F.2d chunk 2).
+        let answer = await engine.callAsync(["op": "provider_publish", "interactive": byUser])
         if answer["ok"] as? Bool != true, let error = answer["error"] as? String, error != "BAD_STATE" {
             syncNote = Self.describe(error)
         }

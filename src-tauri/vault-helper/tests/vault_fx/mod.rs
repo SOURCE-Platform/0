@@ -45,6 +45,8 @@ pub struct Panel {
     pub sheets: Mutex<Vec<String>>,
     pub shown_rk: Mutex<Option<String>>,
     pub refuse_sheet: Mutex<bool>,
+    /// Runs as a Recovery Key sheet appears (a lock, a look at the disk).
+    pub on_sheet: Mutex<Option<Box<dyn Fn() + Send>>>,
 }
 
 impl PanelRunner for Panel {
@@ -71,6 +73,9 @@ impl PanelRunner for Panel {
     /// Acknowledge by default and remember the words (never printed).
     fn show_recovery_key(&self, sheet: &RecoverySheet, _timeout: Duration) -> PanelOutcome {
         self.sheets.lock().unwrap().push(sheet.checkpoint.clone());
+        if let Some(f) = self.on_sheet.lock().unwrap().as_ref() {
+            f();
+        }
         if *self.refuse_sheet.lock().unwrap() {
             return PanelOutcome::Cancelled;
         }
@@ -161,6 +166,7 @@ pub fn fx_with_presence(allow: bool) -> Fx {
         sheets: Mutex::new(Vec::new()),
         shown_rk: Mutex::new(None),
         refuse_sheet: Mutex::new(false),
+        on_sheet: Mutex::new(None),
     });
     let la = Arc::new(La {
         allow,

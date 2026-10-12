@@ -5061,7 +5061,15 @@ as on the Mac (§4.8) or through §22.9.
 | restore a damaged record from a peer (§3.6) | yes | the peer's provider-confirmed revision, verified (§22.7) and AEAD-opened. §3.6's whole-vault "restore from peer device" is first materialization again (re-enrollment), not a separate mechanism |
 
 **Rotation, publication and background.** The shared engine journals
-rotations as §2.10. On iOS a rotation is **fully staged before the new RK
+rotations as §2.10. *(v0.5 F.2d, both platforms: `rotation::rotate_gated`
+stages everything, then the sheet runs at a gate just before the commit
+marker; `vault/staged_sheet.rs` keeps the store out of the core and no
+mutex held while staging and showing the sheet, and commits with the
+mutex held. A marker written before the sheet tells, after a kill or a
+lock, that the sheet's key is void — FFI catalogue §4. A second rotation
+while one of this device's own waits to publish is refused,
+`ROTATION_PENDING`: it would raise the key generation by two, which §11.4
+step 6 never accepts.)* On iOS a rotation is **fully staged before the new RK
 sheet is shown** and runs inside a background task; if the app is killed
 the journal rolls back, or forward if its commit marker was written
 (§2.10), and the UI says plainly which: the sheet shown is void, or the
@@ -5250,6 +5258,7 @@ behaviour (§3.2, §4.6) and Phase F's "refuses to unlock":
 | Provisional state contradicted by the provider | `PEER_STATE_UNCONFIRMED` | discard, attribute to the source (§22.5) | "Your Mac or your backup provider disagrees about the latest vault" |
 | Revision only from a revoked peer, not in its revocation index | `PROVENANCE_REFUSED` | refused and counted (§22.7) | "N changes from removed device X were not accepted" |
 | Local store older than the device's floor | `VAULT_BEHIND` | read-only until synced (§22.14) | §22.14 copy |
+| A key rotation of this device's own still waits to publish, and the user starts another (`rotate_recovery_key`, `revoke_device`; v0.5 F.2d: a second rotation would raise the key generation by two, which §11.4 step 6 never accepts) | `ROTATION_PENDING` | refused before any prompt; nothing changes | "Your last security change hasn't reached your backup yet. Click “Back up now”, then try again." |
 | A served key change needs the master password, from a background sync (§2.7) | `MP_ADOPTION_REQUIRED` | nothing adopted; no panel; the app offers the user-started action | "Another device changed your vault's security. Click “Back up now” and enter your master password to apply it." |
 
 `RECORD_CORRUPT`: "restore from backup" and "restore from a peer" (§22.10)

@@ -67,6 +67,13 @@ pub trait ExtraStaging {
     }
 }
 
+/// Called once the rotation is fully staged, just before the commit
+/// marker: `false` discards the staging and the rotation answers
+/// `PANEL_CANCELLED` (spec v0.5 §22.10: on the iPhone a rotation is fully
+/// staged before the new Recovery Key sheet is shown, so the sheet is
+/// followed by nothing but the commit).
+pub type Gate<'a> = &'a mut dyn FnMut() -> bool;
+
 pub struct RotationOutcome {
     pub new_vk: SecretBytes<32>,
     pub vk_generation: u32,
@@ -83,6 +90,19 @@ pub fn rotate(
     rk: RkWrap<'_>,
     extra: Option<&dyn ExtraStaging>,
     fail: Option<FailAt>,
+) -> Result<RotationOutcome, ErrorCode> {
+    rotate_gated(store, old_vk, mp, rk, extra, fail, None)
+}
+
+/// `rotate` with a `Gate` between the staging and the commit.
+pub fn rotate_gated(
+    store: VaultStore,
+    old_vk: &SecretBytes<32>,
+    mp: MpWrap<'_>,
+    rk: RkWrap<'_>,
+    extra: Option<&dyn ExtraStaging>,
+    fail: Option<FailAt>,
+    gate: Option<Gate<'_>>,
 ) -> Result<RotationOutcome, ErrorCode> {
     let dir = store.dir.clone();
     journal::discard_staged(&dir);
@@ -155,6 +175,12 @@ pub fn rotate(
         },
         stage: staged_extra,
     };
+    if let Some(gate) = gate {
+        if !gate() {
+            journal::discard_staged(&dir);
+            return Err(ErrorCode::PanelCancelled);
+        }
+    }
     journal::commit(&dir, &marker, fail)?;
     Ok(RotationOutcome {
         new_vk,

@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
-use super::rk_ops::{make_sheet, show_sheet};
+use super::rk_ops::make_sheet;
 use super::setup::{emit_panel, PANEL_TIMEOUT_PUB as PANEL_TIMEOUT};
 use super::{lock_core, Deps, OpOutcome, PanelOutcome, PanelRequest, VaultCore};
 use crate::crypto::hex;
@@ -100,6 +100,9 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
     else {
         return OpOutcome::err(ErrorCode::InvalidInput);
     };
+    if super::rk_ops::rotation_waiting(core) {
+        return OpOutcome::err(ErrorCode::RotationPending);
+    }
     if let Err(e) = super::rk_ops::authorize_pub(core, deps, "Source Vault: remove a device") {
         return super::rk_ops::finish_pub(core, deps, Err(e));
     }
@@ -156,62 +159,42 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
 
     // The rotation invalidates the current recovery wrap, so the user
     // leaves with a Recovery Key that works — or nothing is committed.
-    let rk = random_secret();
-    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::DeviceRemoved)) {
-        return super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled));
-    }
-
+    // §22.10: staged first, then the sheet, then only the commit.
     drop(pk);
-    match commit_revocation(core, &me, target, &mp, &rk) {
-        Ok(v) => {
+    let rk = random_secret();
+    let sheet = make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::DeviceRemoved);
+    let outcome = super::staged_sheet::rotate_with_sheet(core, deps, &sheet, |store, vk, gate| {
+        super::revoke_core::revoke_gated(store, vk, &me, target, &mp, &rk, Some(gate))
+    });
+    match outcome {
+        super::staged_sheet::Outcome::Committed(mut c, done) => {
+            let generation = done.store.header.manifest_generation;
+            let _ = super::floor::raise(&done.store);
+            c.header = Some(done.store.header.clone());
+            c.store = Some(done.store);
+            c.vk = Some(done.vk.mlock_best_effort());
+            super::vk_commit::commit_resident(&mut c);
+            drop(c);
+            let v = json!({
+                "device_id": hex::encode(target),
+                "registry_head": hex::encode(done.registry_head),
+                "vk_generation": done.vk_generation,
+                "manifest_generation": generation,
+            });
             let out = super::rk_ops::finish_pub(core, deps, Ok(()));
             if out.response["ok"] == Value::Bool(true) {
                 return OpOutcome::ok(v);
             }
             out
         }
-        Err(e) => {
-            let mut c = lock_core(core);
-            let events = c.lock(super::LockReason::Fatal);
-            drop(c);
+        super::staged_sheet::Outcome::Cancelled => super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled)),
+        super::staged_sheet::Outcome::Failed(ErrorCode::BadState) => OpOutcome::err(ErrorCode::BadState),
+        super::staged_sheet::Outcome::Failed(e) => {
+            let events = lock_core(core).lock(super::LockReason::Fatal);
             for ev in events {
                 deps.events.emit(ev);
             }
-            OpOutcome::err(e)
+            OpOutcome::err(if e == ErrorCode::WrongCredential { e } else { ErrorCode::RotationFailed })
         }
     }
-}
-
-fn commit_revocation(
-    core: &Arc<Mutex<VaultCore>>,
-    me: &SeDevice,
-    target: [u8; 16],
-    mp: &[u8],
-    rk: &crate::crypto::secret::SecretBytes<32>,
-) -> Result<Value, ErrorCode> {
-    let mut c = lock_core(core);
-    if c.state != VaultState::Authorizing {
-        return Err(ErrorCode::BadState);
-    }
-    let (Some(store), Some(vk)) = (c.store.take(), c.vk.take()) else {
-        return Err(ErrorCode::BadState);
-    };
-    let done = match super::revoke_core::revoke(store, &vk, me, target, mp, rk) {
-        Ok(d) => d,
-        Err(ErrorCode::WrongCredential) => return Err(ErrorCode::WrongCredential),
-        Err(_) => return Err(ErrorCode::RotationFailed),
-    };
-    drop(vk);
-    let generation = done.store.header.manifest_generation;
-    let _ = super::floor::raise(&done.store);
-    c.header = Some(done.store.header.clone());
-    c.store = Some(done.store);
-    c.vk = Some(done.vk.mlock_best_effort());
-    super::vk_commit::commit_resident(&mut c);
-    Ok(json!({
-        "device_id": hex::encode(target),
-        "registry_head": hex::encode(done.registry_head),
-        "vk_generation": done.vk_generation,
-        "manifest_generation": generation,
-    }))
 }

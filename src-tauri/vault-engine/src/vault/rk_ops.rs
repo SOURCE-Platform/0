@@ -103,6 +103,13 @@ pub fn begin_rk_unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
 }
 
 /// Enter AUTHORIZING with fresh presence (UNLOCKED + presence, §1.5).
+/// A rotation of ours still waits to publish (`ROTATION_PENDING`): asked
+/// before any prompt, so the user is not asked for anything in vain.
+pub fn rotation_waiting(core: &Arc<Mutex<VaultCore>>) -> bool {
+    let c = lock_core(core);
+    c.store.as_ref().is_some_and(|s| crate::sync::pending::rotation_waiting(&s.conn, &s.header).unwrap_or(true))
+}
+
 fn authorize(core: &Arc<Mutex<VaultCore>>, deps: &Deps, reason: &str) -> Result<(), ErrorCode> {
     {
         let mut c = lock_core(core);
@@ -158,6 +165,9 @@ fn finish(core: &Arc<Mutex<VaultCore>>, deps: &Deps, result: Result<(), ErrorCod
 /// §12 scenario 7: persistent warning, priority retry).
 pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Value, deps: &Deps) -> OpOutcome {
     let security_driven = frame.get("suspected_theft").and_then(serde_json::Value::as_bool).unwrap_or(false);
+    if rotation_waiting(core) {
+        return OpOutcome::err(ErrorCode::RotationPending);
+    }
     if let Err(e) = authorize(core, deps, "Source Vault: replace your Recovery Key") {
         return finish(core, deps, Err(e));
     }
@@ -184,22 +194,15 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
     };
     drop(mp);
     let rk = random_secret();
-    if !show_sheet(deps, &make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::Replaced)) {
-        return finish(core, deps, Err(ErrorCode::PanelCancelled)); // nothing committed
-    }
-    let mut c = lock_core(core);
-    if c.state != VaultState::Authorizing {
-        return OpOutcome::err(ErrorCode::BadState); // a lock landed meanwhile
-    }
-    let (Some(store), Some(vk)) = (c.store.take(), c.vk.take()) else {
-        return OpOutcome::err(ErrorCode::BadState);
-    };
-    let dir = store.dir.clone();
-    let rotated = super::recovery_ops::rotate_with_rk(store, &vk, &pk, &rk, security_driven);
-    drop(vk);
-    let reopened = rotated.and_then(|r| VaultStore::open(&dir).map(|s| (r, s)));
-    match reopened {
-        Ok((r, store)) => {
+    let sheet = make_sheet(&rk, &vault_id, next_gen, &head, handle.as_deref(), super::SheetReason::Replaced);
+    // §22.10: staged first, then the sheet, then only the commit.
+    let outcome = super::staged_sheet::rotate_with_sheet(core, deps, &sheet, |store, vk, gate| {
+        let dir = store.dir.clone();
+        let r = super::recovery_ops::rotate_with_rk_gated(store, vk, &pk, &rk, security_driven, Some(gate))?;
+        VaultStore::open(&dir).map(|s| (r, s))
+    });
+    match outcome {
+        super::staged_sheet::Outcome::Committed(mut c, (r, store)) => {
             c.header = Some(store.header.clone());
             let _ = super::floor::raise(&store);
             c.store = Some(store);
@@ -208,11 +211,12 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
             drop(c);
             finish(core, deps, Ok(()))
         }
-        Err(_) => {
+        super::staged_sheet::Outcome::Cancelled => finish(core, deps, Err(ErrorCode::PanelCancelled)),
+        super::staged_sheet::Outcome::Failed(ErrorCode::BadState) => OpOutcome::err(ErrorCode::BadState),
+        super::staged_sheet::Outcome::Failed(_) => {
             // Journal guarantees old-or-new on disk; drop to LOCKED so the
             // next unlock opens whichever state is committed.
-            let events = c.lock(super::LockReason::Fatal);
-            drop(c);
+            let events = lock_core(core).lock(super::LockReason::Fatal);
             for e in events {
                 deps.events.emit(e);
             }

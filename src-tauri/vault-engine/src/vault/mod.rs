@@ -30,6 +30,8 @@ pub mod dispatch;
 pub use dispatch::dispatch;
 pub mod enroll_commit;
 pub mod enroll_ops;
+mod events;
+pub use events::{ev_capture_unsafe, ev_locked, ev_panel, ev_state};
 pub mod floor;
 pub mod gate;
 pub mod history;
@@ -41,6 +43,7 @@ pub mod items;
 pub mod join_ops;
 pub mod recovery_ops;
 pub mod registry_status;
+pub mod remove_vault;
 pub mod resolve;
 pub mod revoke_core;
 pub mod provider_ops;
@@ -52,6 +55,7 @@ pub mod rk_ops;
 pub mod sync_ops;
 pub mod secure_ui;
 pub mod setup;
+pub mod staged_sheet;
 pub mod vk_commit;
 
 pub use secure_ui::{
@@ -129,24 +133,6 @@ impl LockReason {
             LockReason::Fatal => "fatal",
         }
     }
-}
-
-pub fn ev_state(state: VaultState) -> Value {
-    json!({"event": "state", "state": state.as_str()})
-}
-
-pub fn ev_locked(reason: LockReason) -> Value {
-    json!({"event": "locked", "reason": reason.as_str()})
-}
-
-/// §1.5 event. `title` is present when `visible` so the main app can
-/// register the exact panel window title (§14.2).
-pub fn ev_panel(visible: bool, title: Option<&str>) -> Value {
-    json!({"event": "secure_panel_visible", "visible": visible, "title": title})
-}
-
-pub fn ev_capture_unsafe(op: &str) -> Value {
-    json!({"event": "capture_unsafe", "op": op})
 }
 
 pub struct VaultCore {

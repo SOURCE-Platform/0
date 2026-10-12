@@ -206,7 +206,7 @@ pub fn join_abort(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
 }
 
 /// Remove an attempt's vault files, Secure Enclave keys and Keychain items.
-fn discard(dir: &Path) {
+pub(crate) fn discard(dir: &Path) {
     identity::wipe(dir);
     crate::keychain::remove_item(PEER_ENDPOINT_ITEM);
     crate::keychain::remove_floor();

@@ -185,3 +185,42 @@ fn an_unreachable_provider_lifts_nothing_and_callbacks_cannot_reenter() {
     unsafe { ov0_engine_close(e) };
 }
 
+
+/// RC-01 (§22.10, F.2d step 5): the phone revokes the Mac — staged first,
+/// the new Recovery Key acknowledged, then committed — and publishes it;
+/// the provider then refuses the Mac.
+#[test]
+fn a_phone_revokes_the_mac_and_publishes_the_cutoff() {
+    use vault_helper::registry::device::DeviceIdentity;
+    let (cloud, mut a, b) = pair("ffi-revoke");
+    let e = open(&cloud, &b.dir);
+    assert_eq!(call(e, r#"{"op":"provider_sync"}"#)["ok"], true);
+    let mac = vault_helper::crypto::hex::encode(a.dev.device_id());
+    let r = call(e, &format!(r#"{{"op":"revoke_device","device_id":"{mac}"}}"#));
+    assert_eq!(r["ok"], true, "{r}");
+    let p = call(e, r#"{"op":"provider_publish"}"#);
+    assert_eq!(p["result"]["committed"], true, "{p}");
+    assert_eq!(a.sync(&cloud.cloud).err(), Some(vault_helper::errors::ErrorCode::AuthInvalid), "the Mac is cut off");
+    // Nothing else waits: a second rotation is allowed again.
+    assert!(call(e, r#"{"op":"get_state"}"#).get("rk_sheet_void").is_none());
+    unsafe { ov0_engine_close(e) };
+}
+
+/// F.2d step 6 (§22.9): "Remove this vault" says what only this phone
+/// holds, then removes everything — files, keys, Keychain items — and the
+/// engine is ready to pair again.
+#[test]
+fn remove_this_vault_warns_then_removes_everything() {
+    let (cloud, _a, b) = pair("ffi-remove");
+    let e = open(&cloud, &b.dir);
+    let add = call(e, r#"{"op":"add_item","kind":"login","title":"only-here","username":"u@example.test","hosts":["example.test"],"password":"synthetic-x"}"#);
+    assert_eq!(add["ok"], true, "{add}");
+    let preview = call(e, r#"{"op":"remove_vault_preview"}"#);
+    assert!(preview["local_only"].as_u64().unwrap() >= 1, "{preview}");
+    assert_eq!(call(e, r#"{"op":"remove_vault"}"#)["error"], "INVALID_INPUT", "needs confirm");
+    let r = call(e, r#"{"op":"remove_vault","confirm":true}"#);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(call(e, r#"{"op":"get_state"}"#)["state"], "uninitialized");
+    assert_eq!(std::fs::read_dir(&b.dir).unwrap().count(), 0, "nothing left in the vault directory");
+    unsafe { ov0_engine_close(e) };
+}

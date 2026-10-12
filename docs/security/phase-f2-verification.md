@@ -941,3 +941,20 @@ an RK rotation) raise the key generation by two, which the provider's
 `MANIFEST_INVALID` — the pending record can then never publish. It needs
 a decision (refuse a second rotation while one is pending, or fold both
 into one generation) and is carried as its own item.
+
+## 12. F.2d chunk 2 — security changes and removal on the iPhone
+
+**Candidate:** the commit that adds this section. **Process:** as §11
+(one security review, one verification review including spec
+consistency, one fix round).
+
+| Area | Where | Tests |
+|---|---|---|
+| Staged-first rotation behind the Recovery Key sheet (both platforms): gate before the commit marker; store out of the core while staging and showing the sheet; commit under the mutex | `storage/rotation.rs` (`rotate_gated`), `vault/staged_sheet.rs`, `rk_ops.rs`, `devices.rs`, `revoke_core.rs`, `recovery_ops.rs` | `vault-helper/tests/staged_sheet.rs` (staged before the sheet; lock voids; user cancel; acknowledged goes live) |
+| Void-sheet marker and notice | `staged_sheet.rs`, `provider_ops.rs` (`rk_sheet_void`), `dispatch.rs` | `staged_sheet.rs` |
+| `ROTATION_PENDING` (second rotation before the first publishes) | `pending.rs`, `rk_ops.rs`, `devices.rs`, `vault-proto` errors, spec §22.15 | `an_acknowledged_sheet_goes_live` |
+| Phone ops: `rotate_recovery_key`, `revoke_device`, `dismiss_rk_sheet_notice`, `remove_vault_preview`, `remove_vault` | `vault-ffi/src/engine.rs`, catalogue §4 | `catalogue.rs`, `handle.rs`, `phone_provider.rs` (RC-01: the phone revokes the Mac and publishes; remove this vault) |
+| Remove this vault (phone only) | `vault/remove_vault.rs`, `join_ops.rs` (`discard`) | `phone_provider.rs`, `remove_vault_mac.rs` |
+| iPhone: Recovery Key sheet, Security screen, background task, publish first/after, unlock publishes, lock before dismiss | `VaultServices.swift`, `SecurityViews.swift`, `AppModel.swift`, `PeerSync.swift`, `Views.swift` | simulator build and unit tests |
+| Docs: catalogue §4, spec §22.10 and §22.15, plan steps 5–6 | docs | — |
+

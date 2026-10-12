@@ -38,9 +38,42 @@ final class EntryRequest: Identifiable {
     }
 }
 
+/// A new Recovery Key on screen (crossing c, catalogue §2): the words stay
+/// in this request's buffer, zeroed when the sheet goes; the engine's
+/// thread waits for the user's "I saved it".
+final class SheetRequest: Identifiable {
+    let id = UUID()
+    let checkpoint: String
+    let recovery: String
+    let reason: String
+    fileprivate var words: Data
+    fileprivate let done = DispatchSemaphore(value: 0)
+    fileprivate var acknowledged = false
+
+    fileprivate init(words: Data, checkpoint: String, recovery: String, reason: String) {
+        self.words = words
+        self.checkpoint = checkpoint
+        self.recovery = recovery
+        self.reason = reason
+    }
+
+    /// The words, for display only (a String cannot be zeroed: stated).
+    var text: String { String(decoding: words, as: UTF8.self) }
+
+    func acknowledge() {
+        acknowledged = true
+        done.signal()
+    }
+
+    func cancel() {
+        done.signal()
+    }
+}
+
 final class VaultServices: @unchecked Sendable {
     /// Main-queue hooks set by the app model.
     var onEntry: (EntryRequest) -> Void = { $0.cancel() }
+    var onSheet: (SheetRequest) -> Void = { $0.cancel() }
     var onEvent: ([String: Any]) -> Void = { _ in }
     /// Kept current from `UIScreen.capturedDidChangeNotification` so the
     /// engine's thread never has to wait on the main queue.
@@ -80,10 +113,17 @@ final class VaultServices: @unchecked Sendable {
         return 0
     }
 
-    /// No F.2b phone op issues a Recovery Key (catalogue §4); a sheet that
-    /// cannot be shown is never acknowledged.
+    /// F.2d step 5: the sheet of `rotate_recovery_key` / `revoke_device`,
+    /// shown after the rotation is fully staged (§22.10). 0 only when the
+    /// user confirmed they saved it; a lock or the timeout cancels it.
     func recoverySheet(words: UnsafePointer<UInt8>?, len: Int, checkpoint: UnsafePointer<CChar>?, recovery: UnsafePointer<CChar>?, reason: UnsafePointer<CChar>?, timeoutMs: UInt64) -> Int32 {
-        1
+        guard let words, len > 0 else { return 1 }
+        let text = { (p: UnsafePointer<CChar>?) in p.map { String(cString: $0) } ?? "" }
+        let request = SheetRequest(words: Data(bytes: words, count: len), checkpoint: text(checkpoint), recovery: text(recovery), reason: text(reason))
+        DispatchQueue.main.async { self.onSheet(request) }
+        let waited = request.done.wait(timeout: .now() + .milliseconds(Int(min(timeoutMs, 600_000))))
+        request.words.resetBytes(in: 0..<request.words.count)
+        return waited == .success && request.acknowledged ? 0 : 1
     }
 
     func presence(reason: String) -> Bool {

@@ -17,6 +17,11 @@ final class AppModel: ObservableObject {
     @Published var behind = false
     @Published var items: [ItemSummary] = []
     @Published var entry: EntryRequest?
+    /// A new Recovery Key on screen (F.2d step 5).
+    @Published var sheet: SheetRequest?
+    /// §22.10: a Recovery Key sheet was shown for a change that never
+    /// took effect; the earlier key still works.
+    @Published var sheetVoid = false
     @Published var message: String?
     /// §22.9: the Mac removed this iPhone (`published`: among its
     /// provider-committed entries); nil while still a vault device.
@@ -35,6 +40,7 @@ final class AppModel: ObservableObject {
 
     init() {
         services.onEntry = { [weak self] request in self?.entry = request }
+        services.onSheet = { [weak self] request in self?.sheet = request }
         services.onEvent = { [weak self] event in self?.handle(event) }
         NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in
             self?.lock()
@@ -77,9 +83,13 @@ final class AppModel: ObservableObject {
         syncTask = nil
         syncID = nil
         syncing = false
+        // Lock first: a sheet dismissed by the lock is then recorded as
+        // void (§22.10), never taken for the user's own cancel.
+        engine?.lock()
         entry?.cancel()
         entry = nil
-        engine?.lock()
+        sheet?.cancel()
+        sheet = nil
         items = []
     }
 
@@ -89,6 +99,7 @@ final class AppModel: ObservableObject {
             self?.behind = answer["behind"] as? Bool ?? false
             self?.removed = (answer["removed"] as? [String: Any]).map { $0["published"] as? Bool ?? false }
             self?.accessLost = answer["access_lost"] as? Bool == true
+            self?.sheetVoid = answer["rk_sheet_void"] as? Bool == true
             if answer["vault_open"] as? Bool == true { self?.loadItems() }
         }
     }
@@ -157,6 +168,8 @@ final class AppModel: ObservableObject {
             // Catalogue §1: dismiss any secure entry still on screen.
             entry?.cancel()
             entry = nil
+            sheet?.cancel()
+            sheet = nil
             items = []
             state = "locked"
         case "state":
@@ -174,6 +187,7 @@ final class AppModel: ObservableObject {
         case "FORMAT_INVALID": return "Your Mac didn't understand this iPhone's request. Update both apps."
         case "MP_ADOPTION_REQUIRED": return "Another device changed your vault's security. Tap “Sync now” and enter your master password to apply it."
         case "BACKUP_UNAVAILABLE": return "Your backup can't be reached right now. Your vault keeps working on this iPhone."
+        case "ROTATION_PENDING": return "Your last security change hasn't reached your backup yet. Tap “Sync now”, then try again."
         case "BACKUP_CONFLICT": return "Two devices changed the vault at once. Tap “Sync now” to try again."
         case "DEVICE_NOT_AUTHORIZED": return "This iPhone's key isn't available. Use your master password."
         case "INVALID_INPUT": return "Check the fields and try again."

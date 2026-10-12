@@ -93,7 +93,7 @@ fn a_handle_answers_only_the_allowlist() {
     let _g = SERIAL.lock().unwrap_or_else(|p| p.into_inner());
     let (e, dir) = open("allow");
     assert_eq!(call(e, r#"{"op":"get_state"}"#)["state"], "uninitialized");
-    for op in ["setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack", "cancel_enrollment", "revoke_device", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle", "rotate_recovery_key", "backup_prepare", "backup_apply", "backup_state_offer", "sign_provider_request", "no_such_op"] {
+    for op in ["setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack", "cancel_enrollment", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle", "backup_prepare", "backup_apply", "backup_state_offer", "sign_provider_request", "no_such_op"] {
         assert_eq!(call(e, &format!(r#"{{"op":"{op}"}}"#))["error"], "UNKNOWN_OP", "{op}");
     }
     assert_eq!(call(e, "not json")["error"], "INVALID_INPUT");

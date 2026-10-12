@@ -85,6 +85,10 @@ pub enum ErrorCode {
     /// §2.7: a key change can be adopted only with the master password;
     /// a background sync never asks — the user starts it (review SEC-I3).
     MpAdoptionRequired,
+    /// A key rotation of this device's own still waits to publish; a
+    /// second one would skip a generation the provider never accepts
+    /// (§11.4 step 6). Publish first (F.2d chunk 2).
+    RotationPending,
     ProvenanceRefused,
     // Generic
     InvalidInput,
@@ -154,6 +158,7 @@ impl ErrorCode {
             ErrorCode::PeerLimit => "PEER_LIMIT",
             ErrorCode::PeerStateUnconfirmed => "PEER_STATE_UNCONFIRMED",
             ErrorCode::MpAdoptionRequired => "MP_ADOPTION_REQUIRED",
+            ErrorCode::RotationPending => "ROTATION_PENDING",
             ErrorCode::ProvenanceRefused => "PROVENANCE_REFUSED",
             ErrorCode::Internal => "INTERNAL",
         }

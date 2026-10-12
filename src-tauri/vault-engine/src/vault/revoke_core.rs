@@ -32,12 +32,25 @@ pub struct Revoked {
 /// `mp` is verified against the committed `password.wrap` (a typo can
 /// never become the vault's MP); `new_rk` is the acknowledged new RK.
 pub fn revoke(
+    store: VaultStore,
+    vk: &SecretBytes<32>,
+    me: &dyn DeviceIdentity,
+    target: [u8; 16],
+    mp: &[u8],
+    new_rk: &SecretBytes<32>,
+) -> Result<Revoked, ErrorCode> {
+    revoke_gated(store, vk, me, target, mp, new_rk, None)
+}
+
+/// `revoke` with the §22.10 gate before the commit.
+pub fn revoke_gated(
     mut store: VaultStore,
     vk: &SecretBytes<32>,
     me: &dyn DeviceIdentity,
     target: [u8; 16],
     mp: &[u8],
     new_rk: &SecretBytes<32>,
+    gate: Option<rotation::Gate<'_>>,
 ) -> Result<Revoked, ErrorCode> {
     let dir = store.dir.clone();
     let vid = store.header.vault_id.0;
@@ -78,7 +91,7 @@ pub fn revoke(
     // The new head rides in the staged header and manifest.
     store.header.registry_head = Hex32(after.head);
     store.manifest.registry_head = Hex32(after.head);
-    let rotated = rotation::rotate(store, vk, MpWrap::Fresh(mp), RkWrap::SealNew(new_rk), Some(&change), None)?;
+    let rotated = rotation::rotate_gated(store, vk, MpWrap::Fresh(mp), RkWrap::SealNew(new_rk), Some(&change), None, gate)?;
     // The target's envelope is not in the staged set; remove the old file.
     crate::device::envelope::remove_envelope(&dir, &target);
     let store = VaultStore::open(&dir)?;

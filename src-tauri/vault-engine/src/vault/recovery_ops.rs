@@ -97,11 +97,23 @@ pub fn rotate_recovery_key(
 /// The rotation behind an RK replacement, for a caller that already
 /// issued (and had the user acknowledge) `new_rk`.
 pub fn rotate_with_rk(
+    store: VaultStore,
+    vk: &SecretBytes<32>,
+    pk: &SecretBytes<32>,
+    new_rk: &SecretBytes<32>,
+    security_driven: bool,
+) -> Result<RotationOutcome, ErrorCode> {
+    rotate_with_rk_gated(store, vk, pk, new_rk, security_driven, None)
+}
+
+/// `rotate_with_rk` with the §22.10 gate before the commit.
+pub fn rotate_with_rk_gated(
     mut store: VaultStore,
     vk: &SecretBytes<32>,
     pk: &SecretBytes<32>,
     new_rk: &SecretBytes<32>,
     security_driven: bool,
+    gate: Option<rotation::Gate<'_>>,
 ) -> Result<RotationOutcome, ErrorCode> {
     use crate::registry::chain::EpochPolicy;
     use crate::sync::pending::{self, PendingOp};
@@ -125,7 +137,7 @@ pub fn rotate_with_rk(
         registry: None,
         cutoff: Vec::new(),
     };
-    rotation::rotate(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(new_rk), Some(&change), None)
+    rotation::rotate_gated(store, vk, MpWrap::Reseal(pk), RkWrap::SealNew(new_rk), Some(&change), None, gate)
 }
 
 /// An MP change in either mode (§1.5; §12 scenario 5 `reset` passes no

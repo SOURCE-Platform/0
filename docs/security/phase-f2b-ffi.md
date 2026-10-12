@@ -101,11 +101,31 @@ directory; an attempt that fails, is aborted, or is interrupted (found at
 the next start) is removed whole — files, Secure Enclave keys and the
 Keychain item.
 
+**Security changes (F.2d step 5, §22.10):** `rotate_recovery_key` and
+`revoke_device {device_id}` run in their staged-first form
+(`vault/staged_sheet.rs`): the rotation is fully staged with the store out
+of the core and no mutex held; then the `recovery_sheet` callback; then,
+with the core mutex held so a lock waits for it, only the commit. A lock
+during the staging or the sheet commits nothing. A marker naming the next
+key generation is written before the sheet appears: if the rotation never
+commits, `get_state` reports `rk_sheet_void` ("the key on that sheet does
+not work; the earlier one still does") until `dismiss_rk_sheet_notice`.
+Either op answers `ROTATION_PENDING`, before any prompt, while a rotation
+of this device's own still waits to publish. Swift publishes first
+(§22.7), runs the op inside a background task, and publishes again; Swift
+locks the engine before it dismisses a sheet, so a sheet ended by a lock
+is recorded as void.
+
+**Remove this vault (F.2d step 6, §22.9):** `remove_vault_preview` →
+`{local_only, unknown, access_lost, removed}` (revisions with no provider
+source; `unknown` while LOCKED); `remove_vault {confirm: true}` → presence,
+then the files, Secure Enclave keys and Keychain items (floor,
+`peer_endpoint`) are removed and the engine is UNINITIALIZED. Phone only;
+the Mac's helper answers `UNKNOWN_OP`.
+
 **Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, enrollment
-authorization, device revocation, total-loss recovery, and
-`rotate_recovery_key` — its phone form (rotation staged before the sheet,
-in a background task, the sheet saying whether the key is live, §22.10,
-IO-04) does not exist yet; it comes with F.2d.
+authorization, and total-loss recovery (its phone form comes with F.2d
+chunk 3).
 
 **Provider flows (F.2d step 2, §11.1):**
 

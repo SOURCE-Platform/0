@@ -63,6 +63,8 @@ export function vaultErrorMessage(code: string): string {
       return "Backup access lost — this Mac may have been removed, or your vault may have been recovered on another device. If you did not do this, treat it as a security incident.";
     case "MP_ADOPTION_REQUIRED":
       return "Another device changed your vault's security. Click “Back up now” and enter your master password to apply it.";
+    case "ROTATION_PENDING":
+      return "Your last security change hasn't reached your backup yet. Click “Back up now”, then try again.";
     case "CONFLICT_PENDING":
       return "This item was changed on two devices — choose which version to keep.";
     default:

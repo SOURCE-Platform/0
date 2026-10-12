@@ -158,6 +158,12 @@ impl VaultCore {
         if lost {
             v["access_lost"] = serde_json::json!(true);
         }
+        // §22.10: a Recovery Key sheet that was shown for a rotation that
+        // never committed (not while that rotation is still running).
+        let gen = self.header.as_ref().map(|h| h.vk_generation);
+        if self.state != crate::state::VaultState::Authorizing && gen.is_some_and(|g| super::staged_sheet::void(&self.vault_dir, g)) {
+            v["rk_sheet_void"] = serde_json::json!(true);
+        }
         v
     }
 }

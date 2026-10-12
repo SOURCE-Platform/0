@@ -121,6 +121,12 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "registry_status" => registry_status::registry_status(core),
         "revoke_device" => devices::revoke_device(core, frame, deps),
         "set_auto_lock_minutes" => prefs::set_auto_lock_minutes(core, frame),
+        "remove_vault_preview" => super::remove_vault::preview(core),
+        "remove_vault" => super::remove_vault::remove(core, frame, deps),
+        "dismiss_rk_sheet_notice" => {
+            super::staged_sheet::dismiss(&lock_core(core).vault_dir);
+            OpOutcome::ok(serde_json::json!({}))
+        }
         // v0.4 provider work (§1.3, §1.5, §11).
         "backup_prepare" => backup_ops::backup_prepare(core, deps),
         "backup_blob_list" => backup_ops::backup_blob_list(core, frame),

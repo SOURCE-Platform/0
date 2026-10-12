@@ -28,14 +28,25 @@ struct ContentView: View {
                 if model.state != "uninitialized" && model.state != "locked" {
                     Button("Lock") { model.lock() }
                 }
+                if model.state == "unlocked" && model.removed == nil {
+                    NavigationLink(destination: SecurityView()) { Image(systemName: "lock.shield") }.accessibilityLabel("Security")
+                }
             }
         }
         .safeAreaInset(edge: .top) {
             if model.state == "uninitialized", let message = model.message {
                 Text(message).font(.callout).padding(8).frame(maxWidth: .infinity).background(.yellow.opacity(0.2))
+            } else if model.sheetVoid {
+                // §22.10: the app was interrupted before the change took effect.
+                HStack {
+                    Text("A Recovery Key change was interrupted. The new key you saw does not work — your earlier Recovery Key still does.").font(.callout)
+                    Button("OK") { model.dismissVoidNotice() }
+                }
+                .padding(8).frame(maxWidth: .infinity).background(.yellow.opacity(0.2))
             }
         }
         .sheet(item: $model.entry) { SecureEntryView(request: $0) }
+        .fullScreenCover(item: $model.sheet) { RecoveryKeyView(request: $0) }
         .overlay { CaptureShield() }
     }
 }
@@ -161,6 +172,7 @@ struct RemovedView: View {
             Text("Your Mac says this iPhone was removed from your vault. You can still open the vault to read it — nothing has been deleted. Keep this iPhone's vault for now: it may hold the only copy of some items.")
                 .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center)
             Button("Open to read") { model.unlockWithFaceID() }
+            RemoveVaultButton()
         }
         .padding()
     }

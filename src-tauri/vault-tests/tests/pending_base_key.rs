@@ -1,10 +1,10 @@
 //! SEC-I4 (spec v0.5 §2.7; F.2d chunk review SEC-B1 / VER-B2): a Mac whose
 //! envelope cannot be opened (a "password every time" Mac, Touch ID
-//! unavailable) holds a pending revocation when
-//! another device publishes an edit at the base generation. The kept base
-//! key opens that state — no envelope, no master password — so the Mac
-//! its revocation still publishes, and the edit follows re-sealed. Without the kept
-//! key the same sync would need the envelope. Synthetic data only.
+//! unavailable) holds a pending revocation when another device publishes
+//! an edit at the base generation. The kept base key opens that state — no
+//! envelope, no master password — so the revocation still publishes, and
+//! the edit follows re-sealed. Without the kept key the same sync would
+//! need the envelope. Synthetic data only.
 
 mod mfx;
 
