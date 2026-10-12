@@ -14,8 +14,9 @@ use vault_engine::vault::{dispatch, lock_core, Deps, LockReason, OpOutcome, Vaul
 use crate::callbacks::Shared;
 
 /// The §1.5 ops SOURCE Vault may run (F.2b–F.2d). Everything else answers
-/// `UNKNOWN_OP` — the Mac-only serving, enrollment authorization, vault
-/// creation and total-loss recovery ops. The rotating ops run in their
+/// `UNKNOWN_OP` — the Mac-only serving, enrollment authorization and vault
+/// creation ops, and the step-wise backup and recovery ops, which only the
+/// in-engine provider flows reach. The rotating ops run in their
 /// staged-first form (§22.10; F.2d step 5).
 pub const IOS_OPS: &[&str] = &[
     "get_state", "unlock", "begin_recovery_unlock", "list_items", "reveal", "add_item", "update_item", "delete_item",

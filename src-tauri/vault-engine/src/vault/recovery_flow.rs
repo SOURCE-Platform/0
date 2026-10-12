@@ -46,6 +46,12 @@ pub fn recovery_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) 
             if c.state != VaultState::Uninitialized || c.provider.recovery.is_some() {
                 return Err(ErrorCode::BadState);
             }
+            // A pairing in progress owns this directory: its marker would
+            // remove the recovered vault at the next start (chunk-3 review
+            // SEC-B1). It is finished or abandoned first.
+            if c.provider.join.is_some() || c.vault_dir.join(super::join_ops::ATTEMPT_MARKER).exists() {
+                return Err(ErrorCode::BadState);
+            }
         }
         // §11.5: origin allowlist and KDF policy before any prompt.
         let origin = default_provider()?;
@@ -179,10 +185,20 @@ pub fn recovery_complete(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome
         if let Some(rk) = &done.new_rk {
             let st = &done.staging;
             let sheet = make_sheet(rk, &session.rec.locate.vault_id, st.generation, &done.store.header.registry_head.0, session.handle.as_deref(), SheetReason::Recovered);
-            if !show_sheet(deps, &sheet) {
+            // Never shown while the screen is captured (as rotations,
+            // chunk-3 reviews VER-I3 / SEC-O2).
+            let refused = if !deps.capture.suppressed("recovery_sheet") {
+                Some(ErrorCode::CaptureUnsafe)
+            } else if !show_sheet(deps, &sheet) {
+                Some(ErrorCode::PanelCancelled)
+            } else {
+                None
+            };
+            if let Some(e) = refused {
                 drop(done);
                 let _ = std::fs::remove_dir_all(&staging_dir);
-                return abort(core, session, ErrorCode::PanelCancelled);
+                crate::device::identity::wipe(&dir);
+                return abort(core, session, e);
             }
         }
         session.t = transfer_for(&done.staging);

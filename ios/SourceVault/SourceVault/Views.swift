@@ -17,9 +17,6 @@ struct ContentView: View {
                 case "uninitialized":
                     if let flow = model.pairing() {
                         PairingView(flow: flow)
-                            .safeAreaInset(edge: .bottom) {
-                                Button("Lost every other device? Recover from backup") { model.startRecovery() }.font(.footnote).padding()
-                            }
                     } else {
                         ContentUnavailableView("Not paired yet", systemImage: "qrcode", description: Text("Unlock this iPhone to pair it with your Mac."))
                     }
@@ -53,7 +50,7 @@ struct ContentView: View {
             }
         }
         .sheet(item: $model.entry) { SecureEntryView(request: $0) }
-        .fullScreenCover(item: $model.sheet) { RecoveryKeyView(request: $0) }
+        .fullScreenCover(item: $model.sheet) { RecoveryKeyView(request: $0, onConfirmed: { model.sheetConfirmed() }) }
         .overlay { CaptureShield() }
     }
 }

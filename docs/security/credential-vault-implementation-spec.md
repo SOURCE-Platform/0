@@ -5074,7 +5074,10 @@ to publish is refused, `ROTATION_PENDING` (owner decision 2026-10-12, §22.15): 
 raise the key generation by two, which the §11.3 step 6 rules never
 accept. The phone never runs an ordinary publication before a
 revocation, and syncs without publishing at unlock, so a revoked
-device's deliveries stay under the cutoff.)* On iOS a rotation is **fully staged before the new RK
+device's deliveries stay under the cutoff. A total-loss recovery onto
+an iPhone confirms its new Recovery Key before the finalize; leaving the
+app then lets the finalize finish (at most 30 s) before the lock, an
+exception to locking on background — owner decision 2026-10-13.)* On iOS a rotation is **fully staged before the new RK
 sheet is shown** and runs inside a background task; if the app is killed
 the journal rolls back, or forward if its commit marker was written
 (§2.10), and the UI says plainly which: the sheet shown is void, or the

@@ -6,6 +6,7 @@ import SwiftUI
 
 struct PairingView: View {
     @StateObject var flow: PairingFlow
+    @EnvironmentObject var model: AppModel
 
     var body: some View {
         VStack(spacing: 20) {
@@ -37,6 +38,11 @@ struct PairingView: View {
             case .failed(let message):
                 Text(message).multilineTextAlignment(.center)
                 Button("Start over") { flow.restart() }
+            }
+            // Only while no pairing is under way: a pairing in progress owns
+            // the vault directory (chunk-3 review SEC-B1).
+            if flow.step == .scan || { if case .failed = flow.step { return true } else { return false } }() {
+                Button("Lost every other device? Recover from backup") { model.startRecovery() }.font(.footnote)
             }
         }
         .padding()

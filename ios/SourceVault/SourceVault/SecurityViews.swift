@@ -115,6 +115,7 @@ struct SecurityView: View {
 /// recorded and from the app-switcher snapshot; a screenshot warns.
 struct RecoveryKeyView: View {
     let request: SheetRequest
+    var onConfirmed: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var saved = false
@@ -152,6 +153,7 @@ struct RecoveryKeyView: View {
 
     private func answer(_ ok: Bool) {
         answered = true
+        if ok { onConfirmed() }
         ok ? request.acknowledge() : request.cancel()
         dismiss()
     }

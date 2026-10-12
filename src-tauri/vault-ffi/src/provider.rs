@@ -1,12 +1,15 @@
 //! The phone's provider path (spec v0.5 §11.1, F.2d step 2; plan
 //! `phase-f2d-plan.md` revision 2): `vault-coordinator`'s flows run inside
-//! one `ov0_engine_call` (`provider_sync`, `provider_publish`), with
+//! one `ov0_engine_call` (`provider_sync`, `provider_publish`, and the
+//! total-loss recovery `provider_recover_start` / `provider_recover_finish`),
+//! with
 //!
 //! - `Helper` = the engine's own dispatcher, limited to `SUB_OPS`, each
 //!   frame held to `MAX_REQUEST`, events flushed between sub-ops — and the
 //!   op lane is never taken again (it is held by this very call);
 //! - `Transport` = Swift's `http_send`, only to the vault header's own
-//!   provider origin, each answer capped at `MAX_ANSWER`, 30 s each,
+//!   provider origin (for recovery, with no vault yet, the engine's
+//!   allowlisted default), each answer capped at `MAX_ANSWER`, 30 s each,
 //!   refused once `ov0_engine_close` has set the cancel flag.
 //!
 //! A callback that calls back into the engine meanwhile gets `BAD_STATE`
@@ -33,7 +36,7 @@ use crate::callbacks::HttpOutcome;
 use crate::engine::{Inner, MAX_REQUEST};
 
 /// The engine ops a provider flow may run (a subset of what the Mac's
-/// coordinator uses; recovery stays out until F.2d step 5's design).
+/// coordinator uses; recovery since F.2d chunk 3).
 pub const SUB_OPS: &[&str] = &[
     "get_state", "backup_prepare", "backup_blob_list", "backup_transition_body", "backup_commit_result", "backup_state_offer",
     "backup_apply", "stream_begin", "stream_write", "stream_end", "stream_cancel", "stream_read", "sign_provider_request",
@@ -142,10 +145,10 @@ pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
         return OpOutcome::err(ErrorCode::UnknownOp);
     }
     let recover = op.starts_with("provider_recover");
-    // Sync and publish: UNLOCKED only until the staged publication's design
-    // allows a LOCKED run (review VER-I5); the vault header names the
-    // origin. Recovery: there is no vault yet, so the origin is the
-    // engine's own default, checked against the allowlist (§11.5).
+    // Sync and publish: UNLOCKED, except that a fully staged publication
+    // also finishes LOCKED (below); the vault header names the origin.
+    // Recovery: there is no vault yet, so the origin is the engine's own
+    // default, checked against the allowlist (§11.5).
     let origin = {
         let c = lock_core(&inner.core);
         let wanted = match op {
@@ -157,7 +160,11 @@ pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
         // cut short by a lock) finishes while the vault is LOCKED — at the
         // next foreground — with no key: only what is staged is signed.
         let resume = op == "provider_publish" && c.state == VaultState::Locked && c.provider.publish.is_some();
-        if c.state != wanted && !resume {
+        // `{resume: true}` (the foreground trigger) only ever finishes such
+        // an upload, never stages a new one — even if an unlock raced it
+        // (chunk-3 review SEC-O1).
+        let resume_only = frame.get("resume").and_then(Value::as_bool) == Some(true);
+        if (c.state != wanted && !resume) || (resume_only && !resume) {
             return OpOutcome::err(ErrorCode::BadState);
         }
         match (recover, c.header.as_ref()) {

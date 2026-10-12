@@ -30,7 +30,7 @@ final class AppModel: ObservableObject {
     func finishWaitingUpload() {
         engine?.call(["op": "get_state"]) { [weak self] answer in
             guard answer["upload_waiting"] as? Bool == true, answer["vault_open"] as? Bool != true else { return }
-            self?.engine?.call(["op": "provider_publish", "interactive": false]) { _ in self?.refresh() }
+            self?.engine?.call(["op": "provider_publish", "interactive": false, "resume": true]) { _ in self?.refresh() }
         }
     }
 
@@ -88,10 +88,51 @@ final class AppModel: ObservableObject {
 
     @MainActor func startRecovery() {
         guard let engine else { return }
-        recovery = RecoveryFlow(engine: engine) { [weak self] in
+        recovery = RecoveryFlow(engine: engine, onFinishing: { [weak self] busy in self?.recoveryFinishing(busy) }) { [weak self] in
             self?.recovery = nil
             self?.refresh()
         }
+    }
+
+    // Owner decision 2026-10-13: once the new Recovery Key of a recovery
+    // is confirmed, leaving the app lets the finalize finish (at most 30 s)
+    // and locks right after, so the user always learns whether that key is
+    // in effect (chunk-3 reviews VER-B2 / SEC-I1). Before the confirmation,
+    // and when the iPhone itself locks, the vault locks at once.
+    private var finishing = false
+    private var holdLock = false
+    private var deferredLock: DispatchWorkItem?
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+
+    private func recoveryFinishing(_ busy: Bool) {
+        finishing = busy
+        if busy { return }
+        holdLock = false
+        if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+        if let pending = deferredLock {
+            pending.cancel()
+            deferredLock = nil
+            lock()
+        }
+    }
+
+    /// The recovery's Recovery Key sheet was confirmed.
+    func sheetConfirmed() {
+        guard finishing else { return }
+        holdLock = true
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "vault-recovery-finalize") { [weak self] in self?.lock() }
+    }
+
+    /// The app left the foreground.
+    func leaveForeground() {
+        guard holdLock else { return lock() }
+        guard deferredLock == nil else { return }
+        let item = DispatchWorkItem { [weak self] in
+            self?.deferredLock = nil
+            self?.lock()
+        }
+        deferredLock = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30, execute: item)
     }
 
     /// A pairing flow on this engine; ends by refreshing the state.
@@ -209,7 +250,10 @@ final class AppModel: ObservableObject {
             items = []
             state = "locked"
         case "state":
-            state = event["state"] as? String ?? state
+            // BACKING_UP or RECOVERING say nothing about a resident key:
+            // ask the engine (review SEC-O3 / VER-O1).
+            let s = event["state"] as? String ?? state
+            if s == "backing_up" || s == "recovering" { refresh() } else { state = s }
         default:
             break
         }

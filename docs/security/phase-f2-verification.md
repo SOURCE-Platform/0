@@ -996,3 +996,45 @@ provider fixture; publishing before a Face ID re-enrollment (SPEC-I8b);
 the RK-path phone recovery test; and every item marked "carried" in
 §11.1 and §12.1.
 
+### 13.1 Chunk-3 review of `52e28be` (security + verification) and the fix round
+
+Every finding was checked against the repository before it was accepted.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 recovery over a pairing in progress left the attempt marker; the next start removed the recovered vault | **Fixed.** `recovery_begin` refuses while a join session or its marker exists; the recovery link shows only before a pairing starts or after it failed | `recovery_flow.rs`, `PairingViews.swift`, `Views.swift` | `recovery_is_refused_over_a_pairing_or_a_vault_and_resume_never_stages` |
+| SEC-B2 / VER-B1 the phone preview lacked the version and check code (§11.7, FR-01/02) | **Fixed:** the backup's date and time, items, version, check code and the compare-with-your-sheet text (the Mac's) | `RecoveryViews.swift` | — (Swift) |
+| VER-B2 / SEC-I1 an interrupted finalize never said whether the new key is live; no retry; Cancel during work | **Fixed, owner decision 2026-10-13 ("finish then lock"):** once the key is confirmed, leaving the app lets the finalize finish (≤ 30 s, background task) then locks; "Try again" resends the kept attempt; Cancel hidden while working; a failed start resets for a retry; recovery's own error wording | `AppModel.swift`, `RecoveryViews.swift`, `SecurityViews.swift`, `SourceVaultApp.swift`, catalogue §1, spec §22.10 | — (Swift) |
+| SEC-I2 / VER-I1 an in-memory staging from before a revocation went out in its place (now also LOCKED) | **Fixed.** A staging is resumed only while `vault.db` still records it; otherwise dropped and restaged | `backup_ops.rs` | `a_publication_staged_before_a_revocation_never_goes_out_in_its_place` (fails without the fix) |
+| VER-I2 "Sync now" did nothing while the vault was open with a staged upload | **Fixed:** sync proceeds whenever the vault is open | `PeerSync.swift` | — |
+| VER-I3 / SEC-O2 the recovery sheet skipped the capture refusal | **Fixed** (`CAPTURE_UNSAFE`; the attempt's identity is wiped) | `recovery_flow.rs` | — carried: a capture-off FFI test |
+| VER-I4 dead-ends and wrong copy in recovery | **Fixed** (above) | `RecoveryViews.swift` | — |
+| VER-I5 catalogue and plan contradictions; stale comments | **Fixed** | catalogue §1/§2/§4, plan steps 2/4, `provider.rs`, `engine.rs` | — |
+| SEC-O1 the foreground trigger could publish after a racing unlock | **Fixed:** `{resume: true}` only finishes a staged upload | `provider.rs`, `AppModel.swift` | same guard test |
+| SEC-O3 / VER-O1 state events briefly showed the item list | **Fixed:** `backing_up` / `recovering` events re-read the state | `AppModel.swift` | — |
+| VER-I6 the carried list was incomplete; VER-I7 untested claims; VER-O2…O9 | **Carried to the final audit**, listed below | — | — |
+
+**Carried to the final audit (complete list for F.2d):**
+- Phone variants of the step-5 test IDs: CP-01…08, FR-01…03, KD-01…03,
+  AU-01/03/04, IO-04 for recovery finalize, PS-08…10, CX-05, SY-10/11,
+  IO-02; step-4 SG-01…03 phone variants and IO-06 (the shared engine's
+  Mac tests cover the logic; the phone variants exercise the FFI).
+- Untested claims: refusal without Face ID (`OV0_VAULT_SE_BIOMETRY=absent`),
+  the fresh floor after recovery, the default origin asserted, the
+  recover gates from LOCKED, `provider_publish` LOCKED with nothing
+  staged, a relaunch resume (SG-01 on the phone), callback counts for
+  "needs no key", the preview contents, the capture-off recovery sheet,
+  Swift tests for the recovery and sheet flows.
+- Plan step 7: the cached LOCKED store open; the header refresh and
+  items-changed event after a peer put; the RK sheet saying "this
+  iPhone"; §5.2 SEC-O4; the scenario-8 and damaged-record rows; AU-06 /
+  AU-07 on the phone; the floor and authorizer negatives needing a
+  provider fixture; publishing before a Face ID re-enrollment (SPEC-I8b).
+- VER-O2 lock-screen banner while an upload waits; VER-O3 toolbar while
+  RECOVERING; VER-O4 Face ID checked before any prompt, the fixed
+  "iPhone" name; VER-O5 the session dropped on an identity error; VER-O6
+  the floor reset result; VER-O8 the root cause of the parallel-test
+  deadlock (serialized for now); VER-O9 recovery sub-ops limited to the
+  recovery flows.
+- Every item marked "carried" in §11.1 and §12.1.
+

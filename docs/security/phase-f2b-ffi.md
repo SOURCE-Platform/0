@@ -29,7 +29,13 @@ entry point; the workspace profile is shared with the macOS app).
   `get_state` and `ov0_engine_lock` answer at once.
 - **Swift must call `ov0_engine_lock`** on
   `protectedDataWillBecomeUnavailable` and on entering the background —
-  the iOS forms of §1.6's sleep and screen-lock triggers. The §1.6
+  the iOS forms of §1.6's sleep and screen-lock triggers. **One exception
+  (owner decision 2026-10-13):** once the new Recovery Key of a total-loss
+  recovery has been confirmed, entering the background lets
+  `provider_recover_finish` return — at most 30 s, inside a background
+  task, the app covered — and locks right after, so the user always
+  learns whether that key is in effect. Before the confirmation, and on
+  `protectedDataWillBecomeUnavailable`, the lock is immediate. The §1.6
   auto-lock window (since the last authorization, `set_auto_lock_minutes`)
   is enforced by the engine itself: a tick once a second, and a check
   before every op.
@@ -52,7 +58,7 @@ entry point; the workspace profile is shared with the macOS app).
 | `recovery_sheet` | `(ctx, words, words_len, checkpoint, recovery, reason, timeout_ms) -> i32` | **(c) out** | the 24 words with the three non-secret lines; 0 only when the user confirmed they saved it; Swift keeps no copy |
 | `presence` | `(ctx, reason) -> bool` | — | `LAPolicy.deviceOwnerAuthentication` (§22.4) |
 | `capture_suppressed` | `(ctx, surface) -> bool` | — | whether the surface is hidden from capture (§14.4) |
-| `http_send` | `(ctx, origin, method, path, auth (null = none), body, body_len, timeout_ms, out, out_cap, out_len, status: *mut u16, date: *mut u64) -> i32` | — (ciphertext, public data, engine-signed requests) | F.2d step 2: provider HTTPS for `provider_sync` / `provider_publish`. The engine calls it only from the op thread, during a `provider_*` op, and only for the vault header's own provider origin. `auth` goes in the `Ov0-Auth` header. Swift writes the answer body into the **engine-owned buffer** of `out_cap` (the per-flow cap, 8 MiB + 4 KiB) and its HTTP `Date` (Unix seconds, 0 if absent); 0 = answered (any non-3xx status), 1 = unreachable (no complete answer within `timeout_ms` — a deadline on the whole exchange, not on the gaps between bytes — TLS failure, a refused redirect), 2 = the body would exceed `out_cap`. Swift's session: ephemeral, no URL cache, standard certificate validation (no pinning, D-12), redirects refused, `https` only (debug builds also allow `http://localhost` for a local test provider). The cancel flag is the engine's: it stops further calls; one already in Swift ends by its own deadline. It must not call back into the engine (a call meanwhile answers `BAD_STATE`) |
+| `http_send` | `(ctx, origin, method, path, auth (null = none), body, body_len, timeout_ms, out, out_cap, out_len, status: *mut u16, date: *mut u64) -> i32` | — (ciphertext, public data, engine-signed requests) | F.2d: provider HTTPS for the `provider_*` ops. The engine calls it only from the op thread, during a `provider_*` op, and only for the vault header's own provider origin — or, for `provider_recover_*` (no vault yet), the engine's allowlisted default origin. `auth` goes in the `Ov0-Auth` header. Swift writes the answer body into the **engine-owned buffer** of `out_cap` (the per-flow cap, 8 MiB + 4 KiB) and its HTTP `Date` (Unix seconds, 0 if absent); 0 = answered (any non-3xx status), 1 = unreachable (no complete answer within `timeout_ms` — a deadline on the whole exchange, not on the gaps between bytes — TLS failure, a refused redirect), 2 = the body would exceed `out_cap`. Swift's session: ephemeral, no URL cache, standard certificate validation (no pinning, D-12), redirects refused, `https` only (debug builds also allow `http://localhost` for a local test provider). The cancel flag is the engine's: it stops further calls; one already in Swift ends by its own deadline. It must not call back into the engine (a call meanwhile answers `BAD_STATE`) |
 | `event` | `(ctx, json, len)` | — | the §1.5 events, never secret; delivered in order, only after the engine has released its locks (a handler may block, but must not call back into the engine); an op's own events arrive before its call returns |
 
 ## 3. Bridge imports (`Bridge.swift`, linked into the app; the complete list)
@@ -151,7 +157,13 @@ Stated: no Mac can join a phone-recovered vault until F.2e (§22.13).
 **A staged upload while LOCKED (§22.10, §22.11):** `provider_publish` is
 also accepted while LOCKED when a fully staged publication survives (a
 security change whose upload was cut short); it signs only what is staged
-and needs no key. `get_state` reports `upload_waiting`, and Swift runs it
+and needs no key. A staging is resumed — LOCKED or UNLOCKED — only while
+it is still the one `vault.db` records: an authority change since
+supersedes it (chunk-3 reviews SEC-I2 / VER-I1). The foreground trigger
+sends `{resume: true}`, which only ever finishes such an upload and never
+stages one. Recovery is refused while a pairing is in progress (its
+marker owns the directory), and its Recovery Key sheet, like a
+rotation's, is refused while the screen is captured. `get_state` reports `upload_waiting`, and Swift runs it
 at every foreground. (LOCKED with a staged publication reports
 `backing_up`, §13.) No `BGProcessingTask`: §22.10's "or the next
 foreground" is the trigger.
@@ -163,8 +175,8 @@ enrollment authorization.
 
 - `provider_sync {interactive}` and `provider_publish {interactive}` run
   the coordinator's sync and "back up now" flows inside the call
-  (`vault-ffi/src/provider.rs`). UNLOCKED only (`BAD_STATE` otherwise)
-  until the staged publication allows a LOCKED run. `provider_publish`
+  (`vault-ffi/src/provider.rs`). UNLOCKED only (`BAD_STATE` otherwise),
+  except the LOCKED finish of a staged upload below. `provider_publish`
   with nothing of the phone's own to publish runs the sync instead, as
   the Mac's "Back up now" does: "Sync now" always checks the provider
   (§22.7). A publication carries every pending local change — edits, and
@@ -172,7 +184,9 @@ enrollment authorization.
   or an edit the user just saved; it decides whether the §2.7 adoption
   panel (kind 4) may appear.
 - Sub-ops are the fixed list `SUB_OPS` (state, `backup_*`, stream,
-  `sign_provider_request`, `session_close`, `remote_update_status`); each
+  `sign_provider_request`, `session_close`, `remote_update_status`, and
+  since chunk 3 `recovery_begin` / `recovery_preview` /
+  `recovery_complete`); each
   frame is held to the 64 KiB cap, and events are flushed between them.
   The step-wise `backup_*` and `sign_provider_request` ops are **not** in
   this section's list any more: only the flows reach them (review
@@ -186,7 +200,8 @@ enrollment authorization.
   counts only when the provider answered a request with a 2xx) and sets
   `access_lost` in `get_state` (reported while the vault is open); a state that revokes this phone records
   the removal lock, and one in which it is still active lifts it (§22.9).
-- A Mac helper refuses both ops.
+- A Mac helper refuses every `provider_*` op (the Mac's coordinator runs
+  in its main process).
 
 **Peer sync (F.2c phone side, §22.8, §22.9):**
 

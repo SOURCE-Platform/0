@@ -32,7 +32,7 @@ extension AppModel {
     private func syncWithProvider(byUser: Bool) async {
         guard let engine, !Task.isCancelled else { return }
         let now = await engine.callAsync(["op": "get_state"])
-        guard now["state"] as? String == "unlocked" else { return }
+        guard now["vault_open"] as? Bool == true else { return }
         syncing = true
         syncNote = nil
         defer { if !Task.isCancelled { syncing = false } }
@@ -54,7 +54,7 @@ extension AppModel {
         // The engine's own state, not the published one a refresh may not
         // have updated yet.
         let now = await engine.callAsync(["op": "get_state"])
-        guard now["state"] as? String == "unlocked", now["removed"] == nil else { return }
+        guard now["vault_open"] as? Bool == true, now["removed"] == nil else { return }
         syncing = true
         defer { if !Task.isCancelled { syncing = false } }
         let begun = await engine.callAsync(["op": "peer_sync_begin"])

@@ -20,7 +20,7 @@ struct SourceVaultApp: App {
         }
         .onChange(of: phase) { _, now in
             switch now {
-            case .background: model.lock()
+            case .background: model.leaveForeground()
             case .active: model.start(); model.refresh(); model.finishWaitingUpload()
             default: break
             }

@@ -53,7 +53,14 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         let mut c = lock_core(core);
         if matches!(c.state, VaultState::Unlocked | VaultState::Locked) {
             if let Some(p) = &c.provider.publish {
-                return Ok(staging_summary(&p.t, &p.staging));
+                // §22.11: resumed only while it is still the recorded
+                // staging; an authority change since (`pending::add`
+                // deletes the record) supersedes it (chunk-3 reviews
+                // SEC-I2 / VER-I1).
+                if still_recorded(&c, &p.staging) {
+                    return Ok(staging_summary(&p.t, &p.staging));
+                }
+                c.provider.publish = None;
             }
         }
         if c.state != VaultState::Unlocked || c.provider.sync.is_some() {
@@ -84,6 +91,23 @@ pub fn backup_prepare(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
         Ok(out)
     };
     run().map_or_else(OpOutcome::err, OpOutcome::ok)
+}
+
+/// The in-memory staging is the one `vault.db` records (and its files
+/// still validate) — read through a short-lived store when LOCKED.
+fn still_recorded(c: &VaultCore, st: &Staging) -> bool {
+    let opened;
+    let store = match c.store.as_ref() {
+        Some(s) => s,
+        None => {
+            opened = VaultStore::open(&c.vault_dir).ok();
+            match opened.as_ref() {
+                Some(s) => s,
+                None => return false,
+            }
+        }
+    };
+    crate::sync::staged_disk::load(store).ok().flatten().is_some_and(|d| d.body_sha256 == st.body_sha256)
 }
 
 /// §22.11: at launch, resume a publication staged on disk before the

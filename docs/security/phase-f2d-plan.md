@@ -68,7 +68,7 @@ transport callback.
 **The in-process adapter (SEC-I6, SPEC-I2):**
 - It never takes the op lane.
 - It runs only a fixed list of provider sub-ops, checked like `IOS_OPS`.
-  Recovery ops stay excluded until step 5's design.
+  Recovery ops joined in chunk 3 (total-loss recovery onto a phone).
 - `MAX_REQUEST` applies to every frame it builds.
 - Events are flushed between sub-ops.
 - A thread-local re-entrancy guard answers `BAD_STATE` to a callback that
@@ -110,9 +110,10 @@ scope covers `vault-coordinator` on iOS.
 **Built (chunk 2–4, verification §11):** the spec amendments (§1.2,
 §11.1, §22.2), catalogue §1/§2/§4/§6, `provider.rs`, `http_send`
 (`ProviderHTTP.swift`), the persisted access count, and the removal of
-the step-wise ops from `IOS_OPS`. **Not yet:** `provider_run` while
-LOCKED and the background-task expiry of the cancel flag — they come with
-the staged publication (step 4 remainder).
+the step-wise ops from `IOS_OPS`. The LOCKED finish of a staged upload
+came in chunk 3. **Dropped:** a background-task expiry of the cancel flag
+— no flow runs in an iOS background task except a recovery finalize,
+which `http_send`'s own deadline bounds.
 
 ### 3. Using the provider path
 
@@ -156,9 +157,11 @@ publications carry every pending change, including a phone MP change or
 reset (VER-I8).
 
 - The phone publishes its own edits through the coordinator.
-- On-disk staging (§22.11) with the §22.10 file protection.
-- A `BGProcessingTask` for a staged publication; `provider_run` while
-  LOCKED.
+- On-disk staging (§22.11) with the §22.10 file protection — shared
+  with the Mac, in place.
+- The LOCKED finish of a staged publication — built in chunk 3, at the
+  next foreground; no `BGProcessingTask` (§22.10's "or the next
+  foreground").
 - IO-06.
 - Add and edit for logins in the phone UI (synthetic data until Phase J).
 - **Before this step:**
