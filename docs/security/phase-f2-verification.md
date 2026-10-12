@@ -978,3 +978,21 @@ Every finding was checked against the repository before it was accepted.
 | VER-O4 / SEC-O1 double `endBackgroundTask`, word-buffer race, Security screen popping mid-operation | **Fixed** | `SecurityViews.swift`, `VaultServices.swift`, `Views.swift` | — |
 | VER-O1, VER-O3, VER-O5, SEC-O3, SEC-O4 | **Logged for the final audit** | — | — |
 
+## 13. F.2d chunk 3 — recovery onto the iPhone, the LOCKED upload
+
+**Candidate:** the commit that adds this section. **Process:** as §11.
+
+| Area | Where | Tests |
+|---|---|---|
+| Total-loss recovery onto a phone: `provider_recover_start` / `provider_recover_finish`, the default origin, recovery sub-ops, a Face ID-bound `iPhone` identity | `vault-ffi/src/provider.rs`, `engine.rs`, `vault/recovery_flow.rs` | `total_loss_recovery_onto_a_phone` (the old Mac cut off; items present); `catalogue.rs`, `handle.rs` |
+| A fully staged upload finishes while LOCKED; `upload_waiting` | `provider.rs`, `provider_ops.rs` | `a_cut_short_revocation_finishes_while_locked` |
+| iPhone: recovery screen, lock screen while an upload waits, foreground finish | `RecoveryViews.swift`, `AppModel.swift`, `Views.swift`, `SourceVaultApp.swift` | simulator build and unit tests |
+| Docs: catalogue §4, plan step 5 | docs | — |
+
+**Carried to the final audit (plan step 7 and earlier logs):** the
+cached LOCKED store open; the header refresh after a peer put; AU-06 /
+AU-07 on the phone; the floor and authorizer negatives that need a
+provider fixture; publishing before a Face ID re-enrollment (SPEC-I8b);
+the RK-path phone recovery test; and every item marked "carried" in
+§11.1 and §12.1.
+

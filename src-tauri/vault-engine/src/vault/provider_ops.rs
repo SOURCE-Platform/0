@@ -158,6 +158,10 @@ impl VaultCore {
         if lost {
             v["access_lost"] = serde_json::json!(true);
         }
+        // §22.11: a fully staged publication waits (it may finish LOCKED).
+        if self.provider.publish.is_some() {
+            v["upload_waiting"] = serde_json::json!(true);
+        }
         // §22.10: a Recovery Key sheet that was shown for a rotation that
         // never committed (not while that rotation is still running).
         let gen = self.header.as_ref().map(|h| h.vk_generation);

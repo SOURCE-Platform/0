@@ -83,7 +83,7 @@ fn the_ios_library_exports_the_catalogue_and_imports_the_bridge() {
 /// Everything the engine dispatches that a phone must not run in F.2b.
 pub const NOT_ON_THE_PHONE: &[&str] = &[
     "setup_vault", "peer_serve", "peer_serve_begin", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
-    "cancel_enrollment", "recovery_begin", "recovery_preview", "recovery_complete", "setup_retry_handle",
+    "cancel_enrollment", "recovery_begin", "recovery_complete", "setup_retry_handle",
     "enroll_proof",
     // F.2d step 2: only the in-engine provider flows reach these (SEC-O2).
     "backup_prepare", "backup_blob_list", "backup_transition_body", "backup_commit_result", "backup_state_offer",

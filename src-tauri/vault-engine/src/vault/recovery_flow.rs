@@ -25,7 +25,7 @@ use crate::errors::ErrorCode;
 use crate::recovery::complete::Plan;
 use crate::recovery::locate;
 use crate::recovery::total_loss::{Credential, Recovery};
-use crate::registry::device::PLATFORM_MACOS;
+use crate::registry::device::{PLATFORM_IOS, PLATFORM_MACOS};
 use crate::state::VaultState;
 use crate::storage::header::{check_provider, default_provider};
 use crate::storage::store::now_epoch;
@@ -154,7 +154,15 @@ pub fn recovery_complete(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome
         } else {
             None
         };
-        let me = SeDevice::create(&dir, "This Mac", PLATFORM_MACOS)?;
+        // The identity this device joins the recovered vault with: on the
+        // iPhone a Face ID-bound key (F.2d chunk 3); a phone without Face ID
+        // could never open its own envelope, as at pairing.
+        let phone = lock_core(core).phone;
+        let me = if phone { SeDevice::create(&dir, "iPhone", PLATFORM_IOS)? } else { SeDevice::create(&dir, "This Mac", PLATFORM_MACOS)? };
+        if phone && me.agreement_discarded() {
+            crate::device::identity::wipe(&dir);
+            return abort(core, session, ErrorCode::DeviceNotAuthorized);
+        }
         let staging_dir = dir.join(STAGING);
         let plan = Plan { new_mp: new_mp.as_ref().map(|m| m.as_slice()), keep_rk: None };
         let done = match session.rec.complete(&staging_dir, &me, plan) {

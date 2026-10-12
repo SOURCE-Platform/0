@@ -136,9 +136,28 @@ then the files, Secure Enclave keys and Keychain items (floor,
 `peer_endpoint`) are removed and the engine is UNINITIALIZED. Phone only;
 the Mac's helper answers `UNKNOWN_OP`.
 
-**Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, enrollment
-authorization, and total-loss recovery (its phone form comes with F.2d
-chunk 3).
+**Total-loss recovery onto the phone (F.2d chunk 3, §11.5, §11.8):**
+`provider_recover_start {handle, kind: "mp"|"rk"}` (UNINITIALIZED only;
+the origin is the engine's allowlisted default, as there is no vault yet)
+runs the coordinator's locate, `recovery_begin` (its secure entry) and
+download-and-verify; `recovery_preview` returns the FR-01 preview;
+`provider_recover_finish` (RECOVERING only) runs `recovery_complete` — a
+Face ID-bound `iPhone` identity (refused, `DEVICE_NOT_AUTHORIZED`, on a
+phone without Face ID), the new Recovery Key sheet — and the finalize,
+leaving the phone UNLOCKED on the fresh key with a fresh floor. The
+step-wise `recovery_begin` / `recovery_complete` are the flows' alone.
+Stated: no Mac can join a phone-recovered vault until F.2e (§22.13).
+
+**A staged upload while LOCKED (§22.10, §22.11):** `provider_publish` is
+also accepted while LOCKED when a fully staged publication survives (a
+security change whose upload was cut short); it signs only what is staged
+and needs no key. `get_state` reports `upload_waiting`, and Swift runs it
+at every foreground. (LOCKED with a staged publication reports
+`backing_up`, §13.) No `BGProcessingTask`: §22.10's "or the next
+foreground" is the trigger.
+
+**Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, and
+enrollment authorization.
 
 **Provider flows (F.2d step 2, §11.1):**
 

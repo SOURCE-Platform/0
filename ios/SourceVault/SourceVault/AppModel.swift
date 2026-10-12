@@ -25,6 +25,17 @@ final class AppModel: ObservableObject {
     /// §22.10: a security change made here still waits to reach the
     /// backup; the banner stays until it does (review SEC-I3).
     @Published var securityPending = false
+    /// §22.11: a fully staged upload is waiting; it finishes at the next
+    /// foreground even while the vault is locked (F.2d chunk 3).
+    func finishWaitingUpload() {
+        engine?.call(["op": "get_state"]) { [weak self] answer in
+            guard answer["upload_waiting"] as? Bool == true, answer["vault_open"] as? Bool != true else { return }
+            self?.engine?.call(["op": "provider_publish", "interactive": false]) { _ in self?.refresh() }
+        }
+    }
+
+    /// Total-loss recovery onto this iPhone, while it runs (F.2d chunk 3).
+    @Published var recovery: RecoveryFlow?
     @Published var message: String?
     /// §22.9: the Mac removed this iPhone (`published`: among its
     /// provider-committed entries); nil while still a vault device.
@@ -75,6 +86,14 @@ final class AppModel: ObservableObject {
         refresh()
     }
 
+    @MainActor func startRecovery() {
+        guard let engine else { return }
+        recovery = RecoveryFlow(engine: engine) { [weak self] in
+            self?.recovery = nil
+            self?.refresh()
+        }
+    }
+
     /// A pairing flow on this engine; ends by refreshing the state.
     @MainActor func pairing() -> PairingFlow? {
         guard let engine else { return nil }
@@ -102,7 +121,11 @@ final class AppModel: ObservableObject {
 
     func refresh() {
         engine?.call(["op": "get_state"]) { [weak self] answer in
-            self?.state = answer["state"] as? String ?? "error"
+            // LOCKED with a staged upload reports BACKING_UP (§13): for the
+            // screens it is the lock screen — no key is resident.
+            let open = answer["vault_open"] as? Bool == true
+            let reported = answer["state"] as? String ?? "error"
+            self?.state = reported == "backing_up" && !open ? "locked" : reported
             self?.behind = answer["behind"] as? Bool ?? false
             self?.removed = (answer["removed"] as? [String: Any]).map { $0["published"] as? Bool ?? false }
             self?.accessLost = answer["access_lost"] as? Bool == true

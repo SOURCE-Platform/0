@@ -10,10 +10,16 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             Group {
+                if let recovery = model.recovery {
+                    RecoverView(flow: recovery)
+                } else {
                 switch model.state {
                 case "uninitialized":
                     if let flow = model.pairing() {
                         PairingView(flow: flow)
+                            .safeAreaInset(edge: .bottom) {
+                                Button("Lost every other device? Recover from backup") { model.startRecovery() }.font(.footnote).padding()
+                            }
                     } else {
                         ContentUnavailableView("Not paired yet", systemImage: "qrcode", description: Text("Unlock this iPhone to pair it with your Mac."))
                     }
@@ -21,6 +27,7 @@ struct ContentView: View {
                     if model.removed != nil { RemovedView() } else { LockedView() }
                 default:
                     ItemListView()
+                }
                 }
             }
             .navigationTitle("SOURCE Vault")

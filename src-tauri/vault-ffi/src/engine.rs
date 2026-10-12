@@ -31,6 +31,9 @@ pub const IOS_OPS: &[&str] = &[
     "rotate_recovery_key", "revoke_device", "dismiss_rk_sheet_notice",
     // F.2d step 6: the explicit "Remove this vault" (§22.9).
     "remove_vault_preview", "remove_vault",
+    // F.2d chunk 3: total-loss recovery onto the phone (the step-wise
+    // `recovery_begin` / `recovery_complete` are the flows' alone).
+    "provider_recover_start", "provider_recover_finish", "recovery_preview",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).
@@ -50,7 +53,7 @@ pub struct Inner {
     pub stop: AtomicBool,
     /// Set by `ov0_engine_close` (never by lock: a staged publication
     /// finishes while the vault is locked, §22.10): a provider flow sends
-    /// nothing more. Cleared at the start of each `provider_*` op.
+    /// nothing more. Never cleared (review VER-O5).
     pub cancel: AtomicBool,
     /// The auto-lock tick; joined by `close`, so no engine thread calls
     /// Swift after `ov0_engine_close` returns (review VER-I10 / SEC-I1).

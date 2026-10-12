@@ -25,6 +25,7 @@ use vault_coordinator::{Failure, Helper, HttpResponse, Transport, TransportError
 use vault_engine::errors::ErrorCode;
 use vault_engine::peer::client::removal;
 use vault_engine::state::VaultState;
+use vault_engine::storage::header::default_provider;
 use vault_engine::storage::kv;
 use vault_engine::vault::{dispatch, lock_core, OpOutcome};
 
@@ -37,6 +38,8 @@ pub const SUB_OPS: &[&str] = &[
     "get_state", "backup_prepare", "backup_blob_list", "backup_transition_body", "backup_commit_result", "backup_state_offer",
     "backup_apply", "stream_begin", "stream_write", "stream_end", "stream_cancel", "stream_read", "sign_provider_request",
     "session_close", "remote_update_status",
+    // F.2d chunk 3: total-loss recovery onto this phone (§11.5, §11.8).
+    "recovery_begin", "recovery_preview", "recovery_complete",
 ];
 
 /// §22.8 / §11.2: no provider answer the engine takes is larger.
@@ -128,24 +131,46 @@ fn failure(f: &Failure) -> Value {
     json!({ "ok": false, "error": code, "status": status })
 }
 
-/// `provider_sync {interactive}` / `provider_publish {interactive}`.
+/// `provider_sync {interactive}` / `provider_publish {interactive}`, and
+/// total-loss recovery onto this phone: `provider_recover_start {handle,
+/// kind}` (UNINITIALIZED → the FR-01 preview) and
+/// `provider_recover_finish` (RECOVERING → UNLOCKED on a fresh key).
 pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
     let op = frame.get("op").and_then(Value::as_str).unwrap_or("");
     let interactive = frame.get("interactive").and_then(Value::as_bool) == Some(true);
-    // UNLOCKED only until the staged publication's design (step 4
-    // remainder) allows `provider_run` while LOCKED (review VER-I5).
+    if !matches!(op, "provider_sync" | "provider_publish" | "provider_recover_start" | "provider_recover_finish") {
+        return OpOutcome::err(ErrorCode::UnknownOp);
+    }
+    let recover = op.starts_with("provider_recover");
+    // Sync and publish: UNLOCKED only until the staged publication's design
+    // allows a LOCKED run (review VER-I5); the vault header names the
+    // origin. Recovery: there is no vault yet, so the origin is the
+    // engine's own default, checked against the allowlist (§11.5).
     let origin = {
         let c = lock_core(&inner.core);
-        match c.header.as_ref() {
-            Some(h) if c.state == VaultState::Unlocked => h.provider.clone(),
-            _ => return OpOutcome::err(ErrorCode::BadState),
+        let wanted = match op {
+            "provider_recover_start" => VaultState::Uninitialized,
+            "provider_recover_finish" => VaultState::Recovering,
+            _ => VaultState::Unlocked,
+        };
+        // §22.10 / §22.11: a fully staged publication (a security change
+        // cut short by a lock) finishes while the vault is LOCKED — at the
+        // next foreground — with no key: only what is staged is signed.
+        let resume = op == "provider_publish" && c.state == VaultState::Locked && c.provider.publish.is_some();
+        if c.state != wanted && !resume {
+            return OpOutcome::err(ErrorCode::BadState);
+        }
+        match (recover, c.header.as_ref()) {
+            (true, _) => match default_provider() {
+                Ok(o) => o.to_string(),
+                Err(e) => return OpOutcome::err(e),
+            },
+            (false, Some(h)) => h.provider.clone(),
+            (false, None) => return OpOutcome::err(ErrorCode::BadState),
         }
     };
     // The cancel flag is never cleared: only `ov0_engine_close` sets it,
     // and a closing handle runs no further flow (review VER-O5).
-    if !matches!(op, "provider_sync" | "provider_publish") {
-        return OpOutcome::err(ErrorCode::UnknownOp);
-    }
     IN_PROVIDER.with(|f| f.set(true));
     let _guard = Guard;
     let transport = EngineTransport { inner, origin: origin.clone(), answered: AtomicBool::new(false) };
@@ -158,7 +183,12 @@ pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
         let c = lock_core(&inner.core);
         c.phone && removal::active(true, &c.vault_dir).is_some()
     };
-    let result = if op == "provider_sync" || removed {
+    let result = if op == "provider_recover_start" {
+        let (handle, kind) = (frame.get("handle").and_then(Value::as_str).unwrap_or(""), frame.get("kind").and_then(Value::as_str).unwrap_or(""));
+        flows.recovery_start(&origin, handle, kind)
+    } else if op == "provider_recover_finish" {
+        flows.recovery_finish()
+    } else if op == "provider_sync" || removed {
         sync(&flows)
     } else {
         // "Sync now" always checks the provider (§22.7): with nothing of
@@ -170,7 +200,9 @@ pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
             other => other,
         }
     };
-    settle(inner, &flows, &origin, &result, transport.answered.load(Ordering::SeqCst));
+    if !recover {
+        settle(inner, &flows, &origin, &result, transport.answered.load(Ordering::SeqCst));
+    }
     OpOutcome { response: result.map_or_else(|f| failure(&f), |v| json!({ "ok": true, "result": v })) }
 }
 

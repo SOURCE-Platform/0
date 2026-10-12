@@ -184,8 +184,11 @@ the commit — the upload needs the vault open. **Deferred:** the Mac's
 own void-sheet notice (the marker and `get_state` field exist; the Mac UI
 does not show them yet — chunk-2 reviews SEC-I5 / VER-I6); the
 per-device unpublished count in the phone's device list.
-**Not yet (chunk 3):** total-loss recovery on a phone, the
-`BGProcessingTask` / LOCKED publication, the phone seal-crossing review.
+**Chunk 3 built (verification §13):** total-loss recovery onto a phone
+(`provider_recover_*`, a Face ID-bound identity, the preview, the
+recovery screen) and the LOCKED finish of a staged upload at the next
+foreground (no `BGProcessingTask`). The phone seal-crossing review was
+folded into the chunk-2 review (catalogue §3).
 
 On the agenda of that review (SPEC-O11): catalogue §1 locks the engine on
 entering the background, while §22.10's rotation runs inside a background
