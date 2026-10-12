@@ -12,7 +12,7 @@ imports from the §2.12 bridge. A change here is a spec change. Enforced by
 |---|---|---|---|
 | `ov0_engine_open` | `vault_dir: *const c_char` (UTF-8 path), `callbacks: *const Ov0Callbacks` | handle, null on failure (a missing or non-UTF-8 path, a missing callback) | boots the engine and its auto-lock tick |
 | `ov0_engine_call` | `engine`, `request: *const u8`, `len`, `out: *mut *mut u8`, `out_len: *mut usize` | `i32`: 0 with a JSON answer; -1 unusable arguments | one §1.5 op `{"op": …}`, limited to §3; requests over 64 KiB (the §1.4 frame cap) answer `INVALID_INPUT` |
-| `ov0_engine_lock` | `engine` | — | locks at once; never waits behind an op |
+| `ov0_engine_lock` | `engine` | — | locks at once; never waits behind an op — except the instant of a rotation's commit, which holds the core mutex (F.2d step 5, §4) |
 | `ov0_engine_free` | `buf` (an answer) | — | zeroes, then frees; the length is read from the answer's own 8-byte prefix, never from the caller |
 | `ov0_engine_close` | `engine` | — | sets the provider cancel flag (no further `http_send`; one already in Swift ends within its own timeout), stops and joins the tick, locks, waits for the op in flight, locks again, releases the handle; no engine thread calls Swift after it returns |
 
@@ -66,11 +66,14 @@ Swift supply one. Crossing **(a)** is the VK as the plaintext of
 `ov0_hpke_open_se_auth`, written into an engine buffer; the bridge zeroes
 its own copy (on every unlock, and on an adoption that opens the served
 envelope). `ov0_hpke_seal` receives a VK when a vault is created, a device
-is enrolled, or the key is rotated — none of which a §4 op does on the
-phone in F.2b; the bridge zeroes that copy too, and copies it last so no
-error path skips the zeroing.
+is enrolled, or the key is rotated — since F.2d step 5 the phone rotates
+(`rotate_recovery_key`, `revoke_device`), sealing the new VK to every
+surviving device's agreement key; the bridge zeroes that copy too, and
+copies it last so no error path skips the zeroing. (The plan's separate
+phone seal-crossing review is folded into the chunk-2 review, which
+found nothing in the seal path; it is listed for the final audit.)
 
-## 4. Ops allowed through `ov0_engine_call` (F.2b)
+## 4. Ops allowed through `ov0_engine_call` (F.2b–F.2d)
 
 `get_state` (with `vault_open` and §22.14's `behind`), `unlock`,
 `begin_recovery_unlock`, `list_items`, `reveal`, `add_item`,
@@ -106,15 +109,25 @@ Keychain item.
 (`vault/staged_sheet.rs`): the rotation is fully staged with the store out
 of the core and no mutex held; then the `recovery_sheet` callback; then,
 with the core mutex held so a lock waits for it, only the commit. A lock
-during the staging or the sheet commits nothing. A marker naming the next
-key generation is written before the sheet appears: if the rotation never
-commits, `get_state` reports `rk_sheet_void` ("the key on that sheet does
-not work; the earlier one still does") until `dismiss_rk_sheet_notice`.
-Either op answers `ROTATION_PENDING`, before any prompt, while a rotation
-of this device's own still waits to publish. Swift publishes first
-(§22.7), runs the op inside a background task, and publishes again; Swift
-locks the engine before it dismisses a sheet, so a sheet ended by a lock
-is recorded as void.
+during the staging or the sheet discards the staged rotation; the §22.7
+set-aside that precedes it has already committed (as §22.7 requires) and
+is not undone. The sheet is refused while the screen is captured
+(`CAPTURE_UNSAFE`, before anything is shown) and waits up to 600 s. A
+marker naming the next key generation is written before the sheet
+appears and removed only by the commit: any sheet shown that did not go
+live — cancel, timeout, lock, kill — makes `get_state` report
+`rk_sheet_void` ("the key on that sheet does not work; the earlier one
+still does") until `dismiss_rk_sheet_notice`. Either op answers
+`ROTATION_PENDING`, before any prompt, while a rotation of this device's
+own still waits to publish. Swift publishes first before
+`rotate_recovery_key` only — never before `revoke_device`, whose cutoff
+an ordinary publication would defeat — runs the op inside a background
+task (it covers the commit), and publishes again; a security change still
+waiting to upload keeps a banner until "Sync now" lands it. Swift locks
+the engine before it dismisses a sheet, dismisses a sheet the engine
+stopped waiting for, and hides the sheet from capture itself. The words
+become a Swift `String` for display, which cannot be zeroed (stated
+residual of crossing c).
 
 **Remove this vault (F.2d step 6, §22.9):** `remove_vault_preview` →
 `{local_only, unknown, access_lost, removed}` (revisions with no provider

@@ -87,7 +87,7 @@ pub enum ErrorCode {
     MpAdoptionRequired,
     /// A key rotation of this device's own still waits to publish; a
     /// second one would skip a generation the provider never accepts
-    /// (§11.4 step 6). Publish first (F.2d chunk 2).
+    /// (§11.3 step 6). Publish first (F.2d chunk 2; provisional).
     RotationPending,
     ProvenanceRefused,
     // Generic

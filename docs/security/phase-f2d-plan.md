@@ -176,10 +176,14 @@ reset (VER-I8).
 `ROTATION_PENDING` refusal (the double-rotation finding of §11.1), the
 phone's Security screen and Recovery Key sheet (capture-hidden, screenshot
 warning), publish-first and publish-after inside a background task, and
-the unlock trigger now running the publish flow so a cut-short change
-uploads at the next unlock. Reconciled with catalogue §1: the app still
-locks on leaving the foreground; a lock before the commit voids the
-change, and the background task only covers the commit and the upload.
+and a persistent banner while a security change waits to upload ("Sync
+now" lands it; unlock only syncs, review SEC-B1). Reconciled with
+catalogue §1: the app still locks on leaving the foreground; a lock
+before the commit voids the change, and the background task covers only
+the commit — the upload needs the vault open. **Deferred:** the Mac's
+own void-sheet notice (the marker and `get_state` field exist; the Mac UI
+does not show them yet — chunk-2 reviews SEC-I5 / VER-I6); the
+per-device unpublished count in the phone's device list.
 **Not yet (chunk 3):** total-loss recovery on a phone, the
 `BGProcessingTask` / LOCKED publication, the phone seal-crossing review.
 

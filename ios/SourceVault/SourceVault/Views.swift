@@ -28,7 +28,7 @@ struct ContentView: View {
                 if model.state != "uninitialized" && model.state != "locked" {
                     Button("Lock") { model.lock() }
                 }
-                if model.state == "unlocked" && model.removed == nil {
+                if !["uninitialized", "locked", "error"].contains(model.state) && model.removed == nil {
                     NavigationLink(destination: SecurityView()) { Image(systemName: "lock.shield") }.accessibilityLabel("Security")
                 }
             }
@@ -139,7 +139,11 @@ struct SyncBar: View {
 
     var body: some View {
         HStack {
-            if model.accessLost {
+            if model.securityPending && !model.syncing {
+                Text("A security change hasn't reached your backup yet. Keep this iPhone online and tap “Sync now”.").font(.caption)
+                Spacer()
+                Button("Sync now") { model.startSync(byUser: true) }.font(.caption)
+            } else if model.accessLost {
                 Text("Your backup no longer accepts this iPhone. It may have been removed, or your vault may have been recovered on another device. If you didn't do this, treat it as a security incident. Nothing has been deleted here.").font(.caption)
             } else if model.removed != nil {
                 Text("Removal pending — your Mac removed this iPhone. Nothing has been deleted.").font(.caption)
@@ -257,6 +261,7 @@ struct SecureEntryView: View {
         // The sheet sits above the app's own cover: it covers itself for
         // the app-switcher snapshot too (review VER-O3, 0f5f21b).
         .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
+        .overlay { CaptureShield() }
     }
 
     /// The Mac panel's rules: a new master password is at least 8

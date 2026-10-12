@@ -36,10 +36,12 @@ extension AppModel {
         syncing = true
         syncNote = nil
         defer { if !Task.isCancelled { syncing = false } }
-        // Always the publish flow: it uploads anything waiting (an edit, or
-        // a security change cut short by a lock, §22.10) and otherwise
-        // syncs (F.2d chunk 2).
-        let answer = await engine.callAsync(["op": "provider_publish", "interactive": byUser])
+        // Unlock only syncs; "Sync now" or a saved edit publishes (and
+        // syncs). Publishing at every unlock would make whatever a peer
+        // delivered provider-confirmed before the user could remove that
+        // peer (chunk-2 review SEC-B1); a security change waiting to upload
+        // keeps its banner until "Sync now".
+        let answer = await engine.callAsync(["op": byUser ? "provider_publish" : "provider_sync", "interactive": byUser])
         if answer["ok"] as? Bool != true, let error = answer["error"] as? String, error != "BAD_STATE" {
             syncNote = Self.describe(error)
         }

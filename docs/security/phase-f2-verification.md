@@ -937,7 +937,7 @@ against the repository before it was accepted.
 **Found during the fix round (pre-existing, not from this chunk):** two
 local rotations before either publishes (for example a revocation, then
 an RK rotation) raise the key generation by two, which the provider's
-`publish` rule (§11.4 step 6: `vk_generation` = current + 1) refuses with
+`publish` rule (§11.3 step 6 and `validate.rs`: `vk_generation` = current or current + 1) refuses with
 `MANIFEST_INVALID` — the pending record can then never publish. It needs
 a decision (refuse a second rotation while one is pending, or fold both
 into one generation) and is carried as its own item.
@@ -957,4 +957,24 @@ consistency, one fix round).
 | Remove this vault (phone only) | `vault/remove_vault.rs`, `join_ops.rs` (`discard`) | `phone_provider.rs`, `remove_vault_mac.rs` |
 | iPhone: Recovery Key sheet, Security screen, background task, publish first/after, unlock publishes, lock before dismiss | `VaultServices.swift`, `SecurityViews.swift`, `AppModel.swift`, `PeerSync.swift`, `Views.swift` | simulator build and unit tests |
 | Docs: catalogue §4, spec §22.10 and §22.15, plan steps 5–6 | docs | — |
+
+### 12.1 Chunk-2 review of `fcfe83c` (security + verification) and the fix round
+
+Every finding was checked against the repository before it was accepted.
+
+| Finding | Disposition | Fix / where | Test |
+|---|---|---|---|
+| SEC-B1 publish-first before `revoke_device` made the revoked device's deliveries provider-confirmed, past the §22.7 cutoff; unlock publishing widened it | **Fixed.** No ordinary publication before a revocation; unlock syncs only ("Sync now" or a saved edit publishes); a banner keeps a waiting security change visible | `SecurityViews.swift`, `PeerSync.swift`, `AppModel.swift`, `Views.swift` | — (Swift); the cutoff itself: `peer_cutoff`, `revocation` |
+| SEC-B2 the removal lock could never lift once unlock ran the publish flow (`backup_prepare` is authoring) | **Fixed.** A removed phone's `provider_publish` runs the sync | `vault-ffi/src/provider.rs` | `a_provider_confirmed_state_lifts_the_removal_lock` now sends `provider_publish` (fails without the fix) |
+| SEC-B3 / VER-B2 the RK words were not hidden from capture | **Fixed.** The engine refuses the sheet while capture is not suppressed (`CAPTURE_UNSAFE`, before any marker); the sheet and secure entry carry their own capture shield | `staged_sheet.rs`, `SecurityViews.swift`, `Views.swift` | `the_sheet_is_never_shown_while_the_screen_is_captured` |
+| SEC-B4 / VER-B1 a timed-out sheet stayed up and its void key had no notice | **Fixed.** The marker is removed only by the commit (every shown, not-live sheet is void); Swift dismisses a sheet the engine stopped waiting for and zeroes the words on the main queue; the sheet waits 600 s | `staged_sheet.rs`, `rk_ops.rs`, `VaultServices.swift`, `AppModel.swift` | `a_users_cancel_voids_the_sheet_and_keeps_the_vault_open` |
+| SEC-I1 / VER-I1 the set-aside commits before the gate | **Documented** (§22.7 requires it before staging; what it removes returns with the next provider state) | catalogue §4, spec §22.10, `staged_sheet.rs` | — carried: a test with a peer-only revision present |
+| SEC-I2 / VER-I2 a post-commit I/O failure reported a live key as void | **Fixed:** a present journal commit marker is never void. **Carried:** VER-I2(b) / SEC-O2 exact marker (store the new `auth_salt_rk`) | `staged_sheet.rs` | — |
+| SEC-I3 / VER-I5 no persistent banner; the background task cannot cover the upload | **Fixed:** banner from `remote_update_status`; plan text corrected. **Carried:** per-device unpublished count | `AppModel.swift`, `Views.swift`, plan | — |
+| SEC-I4 / VER-O2 `ROTATION_PENDING` departs from §22.7's "never blocks a revocation"; wrong cross-reference | **Marked provisional, owner decision requested** (refuse vs fold); reference corrected to §11.3 step 6 | spec §22.15, `errors.rs` | — |
+| SEC-I5 / VER-I6 the Mac never shows `rk_sheet_void` | **Deferred, stated** in the plan (the marker is harmless; the Mac UI comes with Phase G) | plan | — |
+| VER-I3 missing tests | **Fixed in part:** `ROTATION_PENDING` before any prompt (queue and presence counts), the positive allowlist with the three new ops, capture refusal. **Carried:** lock during staging, `revoke_device` → `ROTATION_PENDING`, `remove_vault` presence denied, preview `unknown`, FFI `rotate_recovery_key`, Swift sheet tests | `staged_sheet.rs`, `catalogue.rs` | — |
+| VER-I4 catalogue contradictions | **Fixed:** §1 lock waits only for a commit, §3 seal crossing on the phone, §4 title | catalogue | — |
+| VER-O4 / SEC-O1 double `endBackgroundTask`, word-buffer race, Security screen popping mid-operation | **Fixed** | `SecurityViews.swift`, `VaultServices.swift`, `Views.swift` | — |
+| VER-O1, VER-O3, VER-O5, SEC-O3, SEC-O4 | **Logged for the final audit** | — | — |
 

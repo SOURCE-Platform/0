@@ -101,7 +101,7 @@ fn the_op_allowlist_holds_nothing_mac_only() {
 /// VER-I1: a dropped entry would silently disable pairing or sync).
 #[test]
 fn the_op_allowlist_holds_the_phone_ops() {
-    for op in ["join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort", "peer_sync_begin", "peer_sync_step", "peer_sync_receive", "provider_sync", "provider_publish", "rotate_recovery_key", "revoke_device"] {
+    for op in ["join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort", "peer_sync_begin", "peer_sync_step", "peer_sync_receive", "provider_sync", "provider_publish", "rotate_recovery_key", "revoke_device", "dismiss_rk_sheet_notice", "remove_vault_preview", "remove_vault"] {
         assert!(IOS_OPS.contains(&op), "{op} is a phone op");
     }
 }

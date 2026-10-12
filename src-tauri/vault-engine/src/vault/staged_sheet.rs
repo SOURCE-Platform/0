@@ -2,16 +2,20 @@
 //! §22.10; plan F.2d step 5): the rotation is fully staged with the store
 //! out of the core and no mutex held; then the sheet; then — with the core
 //! mutex held, so a lock waits for it — only the commit. A lock during the
-//! staging or the sheet discards the staging, and nothing is committed.
+//! staging or the sheet discards the staged rotation. (The §22.7 set-aside
+//! that precedes every rotation commits at staging, as §22.7 requires, and
+//! survives a cancel: what it removes returns with the next provider state;
+//! chunk-2 reviews SEC-I1 / VER-I1.) The sheet is never shown while the
+//! screen is captured (`CAPTURE_UNSAFE`; reviews SEC-B3 / VER-B2).
 //!
 //! **Which sheet counts.** A marker naming the next key generation is
-//! written before the sheet is shown and removed once the commit lands. If
-//! the app dies or the vault locks after the sheet appeared, the marker
-//! outlives a rotation that never committed: `get_state` reports
-//! `rk_sheet_void` ("the key on that sheet does not work; your earlier
-//! one still does") until the user dismisses it. A marker whose generation
-//! the vault reached is a sheet that went live, and is dropped silently.
-//! The user's own cancel promised nothing and leaves no marker.
+//! written before the sheet is shown and removed only once the commit
+//! lands. Any sheet that was shown and did not go live — a cancel, a
+//! timeout, a lock, a killed app — leaves it: `get_state` reports
+//! `rk_sheet_void` ("the key on that sheet does not work; your earlier one
+//! still does") until the user dismisses it (reviews SEC-B4 / VER-B1). A
+//! marker whose generation the vault reached, or a rotation still rolling
+//! forward (its journal commit marker present), is not void.
 
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -31,9 +35,9 @@ pub enum Outcome<'a, T> {
     /// Committed; the core mutex is still held and the caller installs
     /// the new store and key.
     Committed(MutexGuard<'a, VaultCore>, T),
-    /// Nothing committed; the old vault is back in the core (unless a lock
-    /// landed meanwhile).
-    Cancelled,
+    /// Nothing committed (`PANEL_CANCELLED`, or `CAPTURE_UNSAFE`); the old
+    /// vault is back in the core (unless a lock landed meanwhile).
+    Cancelled(ErrorCode),
     Failed(ErrorCode),
 }
 
@@ -56,19 +60,21 @@ pub fn rotate_with_sheet<'a, T>(
         (store, vk, dir, next)
     };
     let mut held: Option<MutexGuard<'a, VaultCore>> = None;
+    let mut refused = ErrorCode::PanelCancelled;
     let result = {
         let mut gate = || -> bool {
             if lock_core(core).state != VaultState::Authorizing {
                 return false; // locked while staging: no sheet was shown
             }
+            if !deps.capture.suppressed("recovery_sheet") {
+                refused = ErrorCode::CaptureUnsafe; // never shown while recorded
+                return false;
+            }
             if write_atomic(&dir.join(MARKER), next.to_string().as_bytes()).is_err() {
                 return false;
             }
             if !show_sheet(deps, sheet) {
-                if lock_core(core).state == VaultState::Authorizing {
-                    let _ = std::fs::remove_file(dir.join(MARKER)); // the user's own cancel
-                }
-                return false;
+                return false; // shown, not live: the marker stays (void)
             }
             let c = lock_core(core);
             if c.state != VaultState::Authorizing {
@@ -90,7 +96,7 @@ pub fn rotate_with_sheet<'a, T>(
                 c.store = VaultStore::open(&dir).ok();
                 c.vk = Some(vk);
             }
-            Outcome::Cancelled
+            Outcome::Cancelled(refused)
         }
         Err(e) => Outcome::Failed(e),
     }
@@ -106,7 +112,10 @@ pub fn void(dir: &Path, vk_generation: u32) -> bool {
         let _ = std::fs::remove_file(dir.join(MARKER));
         return false;
     }
-    true
+    // A committed rotation not yet rolled forward (an I/O failure after
+    // its commit marker): the next open makes it live (reviews SEC-I2 /
+    // VER-I2).
+    !dir.join(crate::storage::rotation_journal::COMMIT_MARKER).exists()
 }
 
 /// The user saw the "that sheet is void" notice.

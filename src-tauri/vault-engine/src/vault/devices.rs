@@ -187,7 +187,7 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
             }
             out
         }
-        super::staged_sheet::Outcome::Cancelled => super::rk_ops::finish_pub(core, deps, Err(ErrorCode::PanelCancelled)),
+        super::staged_sheet::Outcome::Cancelled(code) => super::rk_ops::finish_pub(core, deps, Err(code)),
         super::staged_sheet::Outcome::Failed(ErrorCode::BadState) => OpOutcome::err(ErrorCode::BadState),
         super::staged_sheet::Outcome::Failed(e) => {
             let events = lock_core(core).lock(super::LockReason::Fatal);

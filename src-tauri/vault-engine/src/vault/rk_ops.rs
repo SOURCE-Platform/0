@@ -27,6 +27,9 @@ use crate::storage::store::RECOVERY_WRAP_NAME;
 use crate::storage::VaultStore;
 
 const PANEL_TIMEOUT: Duration = Duration::from_secs(120);
+/// Writing down 24 words takes longer than a password entry (review
+/// SEC-B4 of F.2d chunk 2).
+const SHEET_TIMEOUT: Duration = Duration::from_secs(600);
 
 /// The Recovery Key window content for `rk` (words + §11.7 checkpoint).
 pub fn make_sheet(
@@ -61,7 +64,7 @@ pub fn stored_handle(store: &VaultStore) -> Option<String> {
 /// Show the sheet with the capture-suppression bracket around it.
 pub fn show_sheet(deps: &Deps, sheet: &RecoverySheet) -> bool {
     deps.events.emit(ev_panel(true, Some(RK_SHEET_TITLE)));
-    let outcome = deps.panel.show_recovery_key(sheet, PANEL_TIMEOUT);
+    let outcome = deps.panel.show_recovery_key(sheet, SHEET_TIMEOUT);
     deps.events.emit(ev_panel(false, None));
     matches!(outcome, PanelOutcome::Acknowledged)
 }
@@ -211,7 +214,7 @@ pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Val
             drop(c);
             finish(core, deps, Ok(()))
         }
-        super::staged_sheet::Outcome::Cancelled => finish(core, deps, Err(ErrorCode::PanelCancelled)),
+        super::staged_sheet::Outcome::Cancelled(code) => finish(core, deps, Err(code)),
         super::staged_sheet::Outcome::Failed(ErrorCode::BadState) => OpOutcome::err(ErrorCode::BadState),
         super::staged_sheet::Outcome::Failed(_) => {
             // Journal guarantees old-or-new on disk; drop to LOCKED so the

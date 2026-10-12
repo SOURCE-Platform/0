@@ -1,8 +1,8 @@
 //! Spec v0.5 §22.10 (plan F.2d step 5): a rotation behind a new Recovery
 //! Key sheet is fully staged before the sheet appears; then only the
-//! commit follows. A lock while the sheet is up commits nothing and the
-//! vault says plainly that the sheet's key is void; the user's own cancel
-//! promises nothing; an acknowledged sheet goes live. Synthetic data only.
+//! commit follows. A lock or a cancel while the sheet is up commits
+//! nothing, and the vault says plainly that the sheet's key is void; an
+//! acknowledged sheet goes live. Synthetic data only.
 
 mod vault_fx;
 
@@ -54,7 +54,7 @@ fn staged_before_the_sheet_and_a_lock_during_it_voids_the_sheet() {
 }
 
 #[test]
-fn a_users_cancel_promises_nothing_and_keeps_the_vault_open() {
+fn a_users_cancel_voids_the_sheet_and_keeps_the_vault_open() {
     let _g = serial();
     let fx = fx();
     setup_and_unlock(&fx);
@@ -62,7 +62,8 @@ fn a_users_cancel_promises_nothing_and_keeps_the_vault_open() {
     *fx.panel.refuse_sheet.lock().unwrap() = true;
     assert_eq!(err_code(&rotate(&fx)), "PANEL_CANCELLED");
     assert_eq!(generation(&fx), before);
-    assert!(state(&fx).get("rk_sheet_void").is_none(), "no notice");
+    // Shown and not live: the notice says so (chunk-2 reviews SEC-B4 / VER-B1).
+    assert_eq!(state(&fx)["rk_sheet_void"], true);
     assert_eq!(fx.op(json!({"op": "list_items"}))["ok"], true, "the vault is open as before");
     add_login(&fx);
     fx.remove_dir();
@@ -82,8 +83,27 @@ fn an_acknowledged_sheet_goes_live() {
     add_login(&fx);
     // Unpublished, it waits: a second rotation would skip a generation the
     // provider never accepts (§11.4), so it is refused before any prompt.
+    let asked = fx.la.calls.load(std::sync::atomic::Ordering::SeqCst);
     assert_eq!(err_code(&rotate(&fx)), "ROTATION_PENDING");
     assert_eq!(generation(&fx), before + 1);
+    assert_eq!(fx.panel.queue.lock().unwrap().len(), 1, "no password was asked for");
+    assert_eq!(fx.la.calls.load(std::sync::atomic::Ordering::SeqCst), asked, "no presence prompt");
     fx.panel.queue.lock().unwrap().clear();
+    fx.remove_dir();
+}
+
+/// Never shown while the screen is recorded or mirrored (§22.10; chunk-2
+/// reviews SEC-B3 / VER-B2): refused before any marker, nothing committed.
+#[test]
+fn the_sheet_is_never_shown_while_the_screen_is_captured() {
+    let _g = serial();
+    let mut fx = fx();
+    setup_and_unlock(&fx);
+    let (before, shown) = (generation(&fx), fx.panel.sheets.lock().unwrap().len());
+    fx.set_capture(Arc::new(Capture { suppressed: false, calls: std::sync::atomic::AtomicUsize::new(0) }));
+    assert_eq!(err_code(&rotate(&fx)), "CAPTURE_UNSAFE");
+    assert_eq!(fx.panel.sheets.lock().unwrap().len(), shown, "no sheet was shown");
+    assert_eq!(generation(&fx), before);
+    assert!(state(&fx).get("rk_sheet_void").is_none(), "no sheet, so no notice");
     fx.remove_dir();
 }

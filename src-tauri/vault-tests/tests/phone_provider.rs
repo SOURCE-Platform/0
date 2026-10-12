@@ -143,7 +143,8 @@ fn a_provider_confirmed_state_lifts_the_removal_lock() {
     std::fs::write(b.dir.join("removal.json"), br#"{"published":false,"at":1}"#).unwrap();
     let e = open(&cloud, &b.dir);
     assert!(call(e, r#"{"op":"get_state"}"#).get("removed").is_some());
-    let synced = call(e, r#"{"op":"provider_sync"}"#);
+    // The op the app sends at unlock and on "Sync now" (review SEC-B2).
+    let synced = call(e, r#"{"op":"provider_publish","interactive":true}"#);
     assert_eq!(synced["ok"], true, "{synced}");
     assert!(call(e, r#"{"op":"get_state"}"#).get("removed").is_none(), "lifted: the provider says this device is active");
     unsafe { ov0_engine_close(e) };

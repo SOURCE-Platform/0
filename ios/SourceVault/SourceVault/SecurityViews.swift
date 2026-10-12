@@ -1,8 +1,11 @@
 // Security on the iPhone (spec v0.5 §22.10, plan F.2d step 5): replace the
-// Recovery Key, remove a device, and the Recovery Key sheet itself. Each
-// change publishes first (§22.7), runs inside a background task, and
-// publishes again; the engine stages the rotation before the sheet, so the
-// sheet is followed only by the commit.
+// Recovery Key, remove a device, and the Recovery Key sheet itself. A
+// Recovery Key change publishes first (§22.7); a device removal does not —
+// an ordinary publication would make the removed device's own deliveries
+// provider-confirmed and slip them past the cutoff (chunk-2 review
+// SEC-B1). Each runs inside a background task, which covers the commit;
+// the upload afterwards needs the vault open, and the banner stays until
+// it lands. The engine stages the rotation before the sheet.
 
 import SwiftUI
 import UIKit
@@ -27,18 +30,18 @@ extension AppModel {
     }
 
     /// A rotating op (`rotate_recovery_key`, `revoke_device`): publish
-    /// first, the op, then publish the change — inside a background task
-    /// so leaving the app does not cut the commit or the upload short.
+    /// first (not before a removal), the op, then publish the change.
     @MainActor
     func runSecurityChange(_ request: [String: Any], done: @escaping (String?) -> Void) {
         guard let engine else { return done(Self.describe("BAD_STATE")) }
         var task = UIBackgroundTaskIdentifier.invalid
-        task = UIApplication.shared.beginBackgroundTask(withName: "vault-security-change") {
-            UIApplication.shared.endBackgroundTask(task)
-        }
+        let end = { if task != .invalid { UIApplication.shared.endBackgroundTask(task); task = .invalid } }
+        task = UIApplication.shared.beginBackgroundTask(withName: "vault-security-change") { end() }
         Task { @MainActor in
-            defer { UIApplication.shared.endBackgroundTask(task) }
-            _ = await engine.callAsync(["op": "provider_publish", "interactive": false])
+            defer { end() }
+            if request["op"] as? String != "revoke_device" {
+                _ = await engine.callAsync(["op": "provider_publish", "interactive": false])
+            }
             let answer = await engine.callAsync(request)
             if answer["ok"] as? Bool == true {
                 let published = await engine.callAsync(["op": "provider_publish", "interactive": false])
@@ -143,6 +146,8 @@ struct RecoveryKeyView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.userDidTakeScreenshotNotification)) { _ in screenshot = true }
         .onDisappear { if !answered { request.cancel() } }
         .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
+        // A presented cover sits above the app's own shield (review SEC-B3).
+        .overlay { CaptureShield() }
     }
 
     private func answer(_ ok: Bool) {

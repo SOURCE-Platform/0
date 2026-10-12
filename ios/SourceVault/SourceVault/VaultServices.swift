@@ -74,6 +74,9 @@ final class VaultServices: @unchecked Sendable {
     /// Main-queue hooks set by the app model.
     var onEntry: (EntryRequest) -> Void = { $0.cancel() }
     var onSheet: (SheetRequest) -> Void = { $0.cancel() }
+    /// The engine stopped waiting (timeout): the sheet must leave the
+    /// screen — its key is void (chunk-2 reviews SEC-B4 / VER-B1).
+    var onSheetEnded: (SheetRequest) -> Void = { _ in }
     var onEvent: ([String: Any]) -> Void = { _ in }
     /// Kept current from `UIScreen.capturedDidChangeNotification` so the
     /// engine's thread never has to wait on the main queue.
@@ -122,8 +125,14 @@ final class VaultServices: @unchecked Sendable {
         let request = SheetRequest(words: Data(bytes: words, count: len), checkpoint: text(checkpoint), recovery: text(recovery), reason: text(reason))
         DispatchQueue.main.async { self.onSheet(request) }
         let waited = request.done.wait(timeout: .now() + .milliseconds(Int(min(timeoutMs, 600_000))))
-        request.words.resetBytes(in: 0..<request.words.count)
-        return waited == .success && request.acknowledged ? 0 : 1
+        let ok = waited == .success && request.acknowledged
+        // Dismissed and zeroed on the main queue, where the view reads the
+        // words (no cross-thread race, review SEC-O1).
+        DispatchQueue.main.async {
+            self.onSheetEnded(request)
+            request.words.resetBytes(in: 0..<request.words.count)
+        }
+        return ok ? 0 : 1
     }
 
     func presence(reason: String) -> Bool {

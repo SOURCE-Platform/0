@@ -151,7 +151,14 @@ pub fn run(inner: &Inner, frame: &Value) -> OpOutcome {
     let transport = EngineTransport { inner, origin: origin.clone(), answered: AtomicBool::new(false) };
     let flows = Flows { helper: &EngineHelper(inner), transport: &transport };
     let sync = |f: &Flows<'_>| if interactive { f.run_sync_by_user() } else { f.run_sync() };
-    let result = if op == "provider_sync" {
+    // A removed phone authors nothing (§22.9), so its publish is the sync
+    // — the provider-confirmed state that may lift the lock (chunk-2
+    // review SEC-B2).
+    let removed = {
+        let c = lock_core(&inner.core);
+        c.phone && removal::active(true, &c.vault_dir).is_some()
+    };
+    let result = if op == "provider_sync" || removed {
         sync(&flows)
     } else {
         // "Sync now" always checks the provider (§22.7): with nothing of

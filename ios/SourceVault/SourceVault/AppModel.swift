@@ -22,6 +22,9 @@ final class AppModel: ObservableObject {
     /// §22.10: a Recovery Key sheet was shown for a change that never
     /// took effect; the earlier key still works.
     @Published var sheetVoid = false
+    /// §22.10: a security change made here still waits to reach the
+    /// backup; the banner stays until it does (review SEC-I3).
+    @Published var securityPending = false
     @Published var message: String?
     /// §22.9: the Mac removed this iPhone (`published`: among its
     /// provider-committed entries); nil while still a vault device.
@@ -41,6 +44,10 @@ final class AppModel: ObservableObject {
     init() {
         services.onEntry = { [weak self] request in self?.entry = request }
         services.onSheet = { [weak self] request in self?.sheet = request }
+        services.onSheetEnded = { [weak self] request in
+            if self?.sheet?.id == request.id { self?.sheet = nil }
+            self?.refresh()
+        }
         services.onEvent = { [weak self] event in self?.handle(event) }
         NotificationCenter.default.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil, queue: .main) { [weak self] _ in
             self?.lock()
@@ -100,6 +107,12 @@ final class AppModel: ObservableObject {
             self?.removed = (answer["removed"] as? [String: Any]).map { $0["published"] as? Bool ?? false }
             self?.accessLost = answer["access_lost"] as? Bool == true
             self?.sheetVoid = answer["rk_sheet_void"] as? Bool == true
+            if answer["vault_open"] as? Bool == true {
+                self?.engine?.call(["op": "remote_update_status"]) { status in
+                    let ops = status["ops"] as? [String] ?? []
+                    self?.securityPending = status["pending"] as? Bool == true && ops.contains { ["revocation", "rk_replacement", "mp_change"].contains($0) }
+                }
+            }
             if answer["vault_open"] as? Bool == true { self?.loadItems() }
         }
     }
