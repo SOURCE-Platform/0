@@ -33,10 +33,10 @@ export const APP_LABELS: Record<AgentApp, string> = {
 
 /** One accent per app so a row is identifiable before reading it. */
 export const APP_ACCENTS: Record<AgentApp, string> = {
-  codex: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
-  "claude-code": "bg-orange-500/15 text-orange-300 border-orange-500/30",
-  factory: "bg-sky-500/15 text-sky-300 border-sky-500/30",
-  opencode: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  codex: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-500/30",
+  "claude-code": "bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/30",
+  factory: "bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-500/30",
+  opencode: "bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-500/30",
 };
 
 /** "4m ago", "3h ago", "2d ago" — enough to judge what is current. */

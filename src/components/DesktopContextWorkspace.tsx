@@ -21,11 +21,11 @@ export default function DesktopContextWorkspace({ displayId }: { displayId: numb
         </div>
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className={`grid gap-5 ${controller.selectedSlice ? "2xl:grid-cols-[minmax(0,1fr)_400px]" : ""}`}>
         <div className="space-y-4">
           <DeviceContextTimelineSection controller={controller} />
         </div>
-        <BlockDetailPanel controller={controller} />
+        {controller.selectedSlice ? <BlockDetailPanel controller={controller} /> : <p className="text-xs text-muted-foreground">Select a block to see its details or copy a transcript.</p>}
       </div>
     </div>
   );

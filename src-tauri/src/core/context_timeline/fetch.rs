@@ -5,14 +5,20 @@ async fn infer_app_context(
 ) -> Result<InferredAppContext, Box<dyn std::error::Error + Send + Sync>> {
     let snapshot = sqlx::query_as::<_, WindowSnapshotRow>(
         r#"
-        SELECT id, session_id, timestamp, frontmost_app_name, frontmost_bundle_id, visible_windows_json, confidence, source
+        SELECT id, session_id, timestamp, frontmost_app_name, frontmost_bundle_id, visible_windows_json, last_seen_at, confidence, source
         FROM window_snapshots
         WHERE timestamp <= ?
+          AND (last_seen_at IS NULL AND timestamp >= ? OR last_seen_at >= ?)
+          AND (? IS NULL OR session_id IS ?)
         ORDER BY timestamp DESC
         LIMIT 1
         "#,
     )
     .bind(timestamp)
+    .bind(timestamp.saturating_sub(5_000))
+    .bind(timestamp.saturating_sub(5_000))
+    .bind(session_id)
+    .bind(session_id)
     .fetch_optional(db.pool())
     .await?;
 
@@ -130,14 +136,17 @@ async fn get_window_snapshots(
 ) -> Result<Vec<WindowSnapshotRow>, Box<dyn std::error::Error + Send + Sync>> {
     let rows = sqlx::query_as::<_, WindowSnapshotRow>(
         r#"
-        SELECT id, session_id, timestamp, frontmost_app_name, frontmost_bundle_id, visible_windows_json, confidence, source
+        SELECT id, session_id, timestamp, frontmost_app_name, frontmost_bundle_id, visible_windows_json, last_seen_at, confidence, source
         FROM window_snapshots
-        WHERE timestamp >= ? AND timestamp <= ?
+        WHERE timestamp BETWEEN ? AND ?
+           OR (timestamp < ? AND last_seen_at >= ?)
         ORDER BY timestamp ASC
         "#,
     )
-    .bind(start_timestamp)
+    .bind(start_timestamp.saturating_sub(5_000))
     .bind(end_timestamp)
+    .bind(start_timestamp.saturating_sub(5_000))
+    .bind(start_timestamp.saturating_sub(5_000))
     .fetch_all(db.pool())
     .await?;
     Ok(rows)

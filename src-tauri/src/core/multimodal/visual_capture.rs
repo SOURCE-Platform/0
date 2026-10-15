@@ -1,12 +1,10 @@
 use super::constants::VISUAL_CAPTURE_INTERVAL_MS;
 use super::indexing::reindex_visual_state_spans;
 use super::media_io::{
-    capture_camera_frame, load_png_as_frame, run_mediapipe_scene_inference,
-    save_visual_evidence_frame, MediaPipePoseOutput,
+    capture_camera_frame, load_png_as_frame, run_mediapipe_scene_inference, MediaPipePoseOutput,
 };
 use super::visual_detections::{
     classify_motion, classify_visual_trigger_reason, insert_detector_rows,
-    should_retain_visual_evidence,
 };
 use super::visual_loop_state::VisualLoopState;
 use crate::core::database::Database;
@@ -21,7 +19,7 @@ use uuid::Uuid;
 
 pub(super) async fn run_visual_loop(
     db: Arc<Database>,
-    storage: Arc<RecordingStorage>,
+    _storage: Arc<RecordingStorage>,
     generation_ref: Arc<AtomicU64>,
     generation: u64,
     session_id: String,
@@ -31,14 +29,6 @@ pub(super) async fn run_visual_loop(
     video_index: i32,
 ) {
     let mut loop_state = VisualLoopState::default();
-    let session_uuid = match Uuid::parse_str(&session_id) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("visual loop could not parse session id: {error}");
-            return;
-        }
-    };
-
     while generation_ref.load(Ordering::SeqCst) == generation {
         let started_at = chrono::Utc::now().timestamp_millis();
         let temp_dir = std::env::temp_dir().join("source_visual_samples");
@@ -125,15 +115,6 @@ pub(super) async fn run_visual_loop(
         let pose = &scene.pose;
         let (motion_label, motion_confidence) = classify_motion(&motion);
         let trigger_reason = classify_visual_trigger_reason(&loop_state, &pose, &motion);
-        let retain_evidence = should_retain_visual_evidence(&loop_state, &trigger_reason, &pose);
-        let evidence_path = if retain_evidence {
-            save_visual_evidence_frame(&storage, session_uuid, &frame)
-                .await
-                .ok()
-        } else {
-            None
-        };
-
         let frame_id = Uuid::new_v4().to_string();
         let scene_id = Uuid::new_v4().to_string();
         let timestamp = frame.timestamp;
@@ -151,8 +132,8 @@ pub(super) async fn run_visual_loop(
         .bind(&source_id)
         .bind(frame.width as i64)
         .bind(frame.height as i64)
-        .bind(evidence_path.clone())
-        .bind(if evidence_path.is_some() { 1 } else { 0 })
+        .bind(Option::<String>::None)
+        .bind(0)
         .bind(trigger_reason.clone())
         .bind(motion.changed_percentage as f64)
         .bind(motion.changed_percentage as f64)
@@ -248,10 +229,6 @@ pub(super) async fn run_visual_loop(
         }
         loop_state.previous_presence = Some(pose.presence_label.clone());
         loop_state.previous_posture = Some(pose.posture_label.clone());
-        if retain_evidence {
-            loop_state.last_audit_evidence_at = Some(timestamp);
-        }
-
         let _ = fs::remove_file(&temp_path);
         sleep(Duration::from_millis(VISUAL_CAPTURE_INTERVAL_MS as u64)).await;
     }

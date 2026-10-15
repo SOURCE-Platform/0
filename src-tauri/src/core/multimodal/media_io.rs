@@ -1,5 +1,4 @@
 use crate::core::gaze::FaceFeatureSampleDto;
-use crate::core::storage::RecordingStorage;
 use crate::models::capture::{PixelFormat, RawFrame};
 use serde::Deserialize;
 use std::fs;
@@ -254,58 +253,10 @@ pub(crate) async fn run_mediapipe_face_features(
         .map_err(|e| format!("Failed to parse MediaPipe face helper output: {e}"))
 }
 
-pub(super) async fn save_visual_evidence_frame(
-    storage: &RecordingStorage,
-    session_id: Uuid,
-    frame: &RawFrame,
-) -> Result<String, String> {
-    let dir = storage
-        .get_session_dir(&session_id)
-        .join("vision")
-        .join("frames");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create vision evidence dir: {e}"))?;
-    let path = dir.join(format!("{}.png", frame.timestamp));
-    save_raw_frame_png(frame, &path)?;
-    Ok(path.to_string_lossy().to_string())
-}
-
-pub(super) async fn save_audio_evidence_chunk(
-    storage: &RecordingStorage,
-    session_id: Uuid,
-    temp_path: &Path,
-) -> Result<String, String> {
-    let dir = storage
-        .get_session_dir(&session_id)
-        .join("audio")
-        .join("chunks");
-    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create audio evidence dir: {e}"))?;
-    let target = dir.join(
-        temp_path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("chunk.wav"),
-    );
-    fs::copy(temp_path, &target).map_err(|e| format!("Failed to persist audio evidence: {e}"))?;
+pub(super) async fn save_audio_evidence_chunk(temp_path: &Path) -> Result<String, String> {
+    // Speech processing needs its own short-lived copy while sound analysis
+    // may still be reading the capture file. Keep both outside recordings.
+    let target = temp_path.with_file_name(format!("speech-{}.wav", Uuid::new_v4()));
+    fs::copy(temp_path, &target).map_err(|e| format!("Failed to copy transcription input: {e}"))?;
     Ok(target.to_string_lossy().to_string())
-}
-
-fn save_raw_frame_png(frame: &RawFrame, path: &Path) -> Result<(), String> {
-    let rgba = match frame.format {
-        PixelFormat::RGBA8 => frame.data.clone(),
-        PixelFormat::BGRA8 => {
-            let mut converted = Vec::with_capacity(frame.data.len());
-            for chunk in frame.data.chunks_exact(4) {
-                converted.push(chunk[2]);
-                converted.push(chunk[1]);
-                converted.push(chunk[0]);
-                converted.push(chunk[3]);
-            }
-            converted
-        }
-    };
-    let image = image::ImageBuffer::<image::Rgba<u8>, _>::from_raw(frame.width, frame.height, rgba)
-        .ok_or_else(|| "Failed to build RGBA image buffer.".to_string())?;
-    image
-        .save(path)
-        .map_err(|e| format!("Failed to save evidence frame: {e}"))
 }

@@ -1,80 +1,45 @@
 import { Moon, Sun, Monitor } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { SettingsPanel, SettingRow } from "@/components/ui/page";
 import { Switch } from "@/components/ui/switch";
 import { SettingsController } from "@/components/settings/useSettingsController";
 
 export function GeneralSettingsSection({ controller }: { controller: SettingsController }) {
   const { config } = controller;
   if (!config) return null;
-
-  const themeOptions = [
-    { value: "light", label: "Light", icon: <Sun className="h-4 w-4" /> },
-    { value: "dark", label: "Dark", icon: <Moon className="h-4 w-4" /> },
-    { value: "system", label: "System", icon: <Monitor className="h-4 w-4" /> },
+  const themes = [
+    { value: "light", label: "Light", Icon: Sun },
+    { value: "dark", label: "Dark", Icon: Moon },
+    { value: "system", label: "System", Icon: Monitor },
   ] as const;
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Application Behavior</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="auto-start" className="text-base">
-                Launch on system startup
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Open SOURCE automatically when the computer boots.
-              </p>
-            </div>
-            <Switch
-              id="auto-start"
-              checked={config.auto_start}
-              onCheckedChange={(checked) => controller.updateConfig({ auto_start: checked })}
-            />
+      <SettingsPanel title="Appearance">
+        <div className="setting-row flex-wrap">
+          <span className="text-sm font-medium">Theme</span>
+          <div className="flex gap-1 rounded-lg border p-1" role="group" aria-label="Theme">
+            {themes.map(({ value, label, Icon }) => (
+              <Button key={value} size="sm" variant={controller.theme === value ? "secondary" : "ghost"}
+                aria-pressed={controller.theme === value} onClick={() => controller.setTheme(value)}>
+                <Icon className="h-4 w-4" />{label}
+              </Button>
+            ))}
           </div>
-
-          <div className="space-y-3">
-            <Label className="text-base">Theme</Label>
-            <div className="flex w-fit overflow-hidden rounded-lg border">
-              {themeOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  onClick={() => controller.setTheme(option.value)}
-                  className={`flex items-center gap-2 px-4 py-2 text-sm ${
-                    controller.theme === option.value
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {option.icon}
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="show-descriptions" className="text-base">
-                Show descriptions
-              </Label>
-              <p className="text-sm text-muted-foreground">
-                Keep explanatory text visible throughout the app.
-              </p>
-            </div>
-            <Switch
-              id="show-descriptions"
-              checked={controller.showDescriptions}
-              onCheckedChange={controller.setShowDescriptions}
-            />
-          </div>
-        </CardContent>
-      </Card>
+        </div>
+        <SettingRow title="Show descriptions" htmlFor="show-descriptions" description="Keep helpful explanations visible throughout the app.">
+          <Switch id="show-descriptions" checked={controller.showDescriptions} onCheckedChange={controller.setShowDescriptions} />
+        </SettingRow>
+      </SettingsPanel>
+      <SettingsPanel title="Startup">
+        <SettingRow title="Launch at login" htmlFor="auto-start" description="Open SOURCE automatically when you sign in to this Mac.">
+          <Switch id="auto-start" checked={config.auto_start} onCheckedChange={(auto_start) => controller.updateConfig({ auto_start })} />
+        </SettingRow>
+      </SettingsPanel>
+      <div className="flex flex-wrap items-center justify-between gap-4 px-1 pt-3">
+        <p className="text-xs text-muted-foreground">Reset returns all settings to their defaults.</p>
+        <Button variant="outline" size="sm" onClick={controller.resetToDefaults} disabled={controller.saving}>Reset to defaults</Button>
+      </div>
     </div>
   );
 }

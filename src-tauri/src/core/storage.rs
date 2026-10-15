@@ -105,26 +105,6 @@ impl RecordingStorage {
         Ok(frame_path)
     }
 
-    /// Save an OCR source frame to disk without creating a frames-table row.
-    pub async fn save_ocr_frame(
-        &self,
-        session_id: Uuid,
-        frame: &RawFrame,
-    ) -> StorageResult<PathBuf> {
-        let filename = format!("{}.png", frame.timestamp);
-        let frame_path = self
-            .get_session_path(&session_id)
-            .join("ocr_frames")
-            .join(&filename);
-
-        if let Some(parent) = frame_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        save_frame_as_png(frame, &frame_path)?;
-        Ok(frame_path)
-    }
-
     /// Delete OCR source frames left behind by a previous run. Each frame is
     /// removed once read, but frames still queued when SOURCE quit were never
     /// read. Call before the OCR processor starts, while none are in flight.

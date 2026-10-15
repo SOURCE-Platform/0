@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useEffect, useRef, useState } from "react";
 import { AgentPromptBox } from "./AgentPromptBox";
 import { useAgentSessionDetail } from "./useAgentSessionDetail";
@@ -21,20 +22,20 @@ export function AgentSessionDetail({ session, held, onBack }: AgentSessionDetail
   return (
     <div className="flex flex-col gap-4">
       <header className="flex items-start gap-3">
-        <button
+        <Button variant="outline" size="sm"
           onClick={onBack}
           className="cursor-pointer rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-card/60"
         >
           ← All sessions
-        </button>
+        </Button>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-md border px-2 py-1 text-[11px] leading-none ${APP_ACCENTS[session.app]}`}>
               {APP_LABELS[session.app]}
             </span>
-            <h2 className="truncate text-lg font-semibold text-foreground">{session.title}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{session.title}</h2>
             {held && (
-              <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] leading-none text-sky-200">
+              <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[11px] leading-none text-sky-700 dark:text-sky-200">
                 Held by SOURCE
               </span>
             )}
@@ -46,7 +47,7 @@ export function AgentSessionDetail({ session, held, onBack }: AgentSessionDetail
       </header>
 
       {loadError && (
-        <p className="rounded-xl border border-red-500/30 bg-red-950/15 px-4 py-3 text-sm text-red-200">{loadError}</p>
+        <p className="rounded-xl border border-red-500/30 bg-red-950/15 px-4 py-3 text-sm text-destructive">{loadError}</p>
       )}
 
       <div className="flex flex-col gap-2">
@@ -72,7 +73,7 @@ function MessageRow({ message }: { message: AgentMessage }) {
     return <p className="pl-1 text-[11px] text-muted-foreground">Used {message.text}</p>;
   }
   const isUser = message.role === "user";
-  const label = message.role === "peer" ? "Another session" : isUser ? "You" : "Claude";
+  const label = message.role === "peer" ? "Another session" : isUser ? "You" : "Agent";
   return (
     <div
       className={`group rounded-xl border px-4 py-3 ${
@@ -83,7 +84,7 @@ function MessageRow({ message }: { message: AgentMessage }) {
         <span className="text-[11px] text-muted-foreground">{label}</span>
         <CopyButton text={message.text} />
       </div>
-      <p className="max-w-[75ch] whitespace-pre-wrap text-sm leading-6 text-foreground">{message.text}</p>
+      <p className="max-w-[60ch] break-words whitespace-pre-wrap text-sm leading-6 text-foreground">{message.text}</p>
     </div>
   );
 }
@@ -98,7 +99,7 @@ function CopyButton({ text }: { text: string }) {
           setTimeout(() => setCopied(false), 1500);
         });
       }}
-      className="cursor-pointer rounded-md px-2 py-0.5 text-[11px] text-muted-foreground opacity-0 transition-opacity hover:bg-card/80 group-hover:opacity-100"
+      className="cursor-pointer rounded-md px-2 py-0.5 text-[11px] text-muted-foreground opacity-60 transition-opacity hover:bg-card/80 hover:opacity-100 focus-visible:opacity-100 group-hover:opacity-100"
     >
       {copied ? "Copied" : "Copy"}
     </button>

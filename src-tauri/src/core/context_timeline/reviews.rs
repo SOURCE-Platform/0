@@ -10,6 +10,7 @@ pub async fn get_app_usage_overview(
     let ocr_rows = get_ocr_rows(db, start_timestamp, end_timestamp).await?;
 
     let mut items: HashMap<String, AppUsageOverviewItemDto> = HashMap::new();
+    let session_ends = session_end_lookup(&sessions);
     let focus_rail = build_focus_rail(&snapshots, &sessions, end_timestamp);
     for slice in &focus_rail.slices {
         let app_name = slice
@@ -27,16 +28,23 @@ pub async fn get_app_usage_overview(
                 ocr_hit_count: 0,
                 recent_segment_count: 0,
             });
-        entry.focused_time_ms += slice.end_timestamp - slice.start_timestamp;
+        entry.focused_time_ms += (slice.end_timestamp.min(end_timestamp)
+            - slice.start_timestamp.max(start_timestamp))
+            .max(0);
         entry.recent_segment_count += 1;
     }
 
     for (index, snapshot) in snapshots.iter().enumerate() {
         let visible = parse_visible_windows(snapshot)?;
-        let span = snapshots
-            .get(index + 1)
-            .map(|next| (next.timestamp - snapshot.timestamp).max(1))
-            .unwrap_or(DEFAULT_SNAPSHOT_SPAN_MS);
+        let span = snapshot_span_end(
+            snapshot,
+            snapshots.get(index + 1).map(|next| next.timestamp),
+            &session_ends,
+            end_timestamp,
+        )
+        .min(end_timestamp)
+        - snapshot.timestamp.max(start_timestamp);
+        let span = span.max(0);
         for window in visible {
             let entry = items
                 .entry(window.app_name.clone())

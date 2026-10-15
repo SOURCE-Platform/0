@@ -9,9 +9,10 @@ pub async fn get_context_inspector(
     let frames = get_frame_rows(db, timestamp - 60_000, timestamp + 60_000).await?;
     let events = get_context_events(db, timestamp - 120_000, timestamp + 120_000).await?;
 
-    let snapshot = snapshots
-        .iter()
-        .min_by_key(|row| (row.timestamp - timestamp).abs());
+    let snapshot = snapshots.iter().rev().find(|row| {
+        row.timestamp <= timestamp
+            && row.last_seen_at.unwrap_or(row.timestamp) + 5_000 >= timestamp
+    });
 
     let focused_app = snapshot.and_then(|row| row.frontmost_app_name.clone());
     let focused_bundle_id = snapshot.and_then(|row| row.frontmost_bundle_id.clone());

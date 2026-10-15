@@ -25,9 +25,6 @@ function applyTheme(root: HTMLElement, resolvedTheme: "dark" | "light") {
   root.classList.remove("light", "dark")
   root.classList.add(resolvedTheme)
   root.style.colorScheme = resolvedTheme
-  void getCurrentWindow().setTheme(resolvedTheme).catch(() => {
-    // Browser previews do not expose a native Tauri window.
-  })
 }
 
 export function ThemeProvider({
@@ -51,6 +48,9 @@ export function ThemeProvider({
 
   useEffect(() => {
     const root = window.document.documentElement
+    // null restores OS tracking; forcing a resolved color here makes System
+    // inherit the last explicit choice instead of following macOS.
+    void getCurrentWindow().setTheme(theme === "system" ? null : theme).catch(() => {})
 
     if (theme === "system") {
       const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"

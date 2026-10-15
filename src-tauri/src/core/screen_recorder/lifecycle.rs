@@ -21,7 +21,9 @@ impl ScreenRecorder {
 
         if !screen_capture_permission_granted() {
             request_screen_capture_permission();
-            return Err(CaptureError::PermissionDenied(SCREEN_PERMISSION_MISSING.to_string()));
+            return Err(CaptureError::PermissionDenied(
+                SCREEN_PERMISSION_MISSING.to_string(),
+            ));
         }
 
         if self.state.read().await.is_some() {

@@ -1,22 +1,10 @@
 use super::{AgentPiiEntityDto, BoundingBox, BBOX_POSITION_TOLERANCE};
 use regex::Regex;
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
-pub(super) fn detect_pii_entities(text: &str, bbox: Option<BoundingBox>) -> Vec<AgentPiiEntityDto> {
-    detect_pii_spans(text)
-        .into_iter()
-        .map(|(entity_type, matched)| AgentPiiEntityDto {
-            entity_type,
-            redacted_preview: redact_match(&matched),
-            confidence: 0.72,
-            context_text: text.to_string(),
-            bounding_box: bbox.clone(),
-        })
-        .collect()
-}
-
-fn detect_pii_spans(text: &str) -> Vec<(String, String)> {
-    let patterns = vec![
+static PII_PATTERNS: LazyLock<[(&str, Regex); 4]> = LazyLock::new(|| {
+    [
         (
             "email",
             Regex::new(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b").unwrap(),
@@ -34,12 +22,27 @@ fn detect_pii_spans(text: &str) -> Vec<(String, String)> {
             "credit_card",
             Regex::new(r"\b(?:\d[ -]*?){13,19}\b").unwrap(),
         ),
-    ];
+    ]
+});
 
+pub(super) fn detect_pii_entities(text: &str, bbox: Option<BoundingBox>) -> Vec<AgentPiiEntityDto> {
+    detect_pii_spans(text)
+        .into_iter()
+        .map(|(entity_type, matched)| AgentPiiEntityDto {
+            entity_type,
+            redacted_preview: redact_match(&matched),
+            confidence: 0.72,
+            context_text: text.to_string(),
+            bounding_box: bbox.clone(),
+        })
+        .collect()
+}
+
+fn detect_pii_spans(text: &str) -> Vec<(String, String)> {
     let mut matches = Vec::new();
-    for (entity_type, regex) in patterns {
+    for (entity_type, regex) in PII_PATTERNS.iter() {
         for capture in regex.find_iter(text) {
-            matches.push((entity_type.to_string(), capture.as_str().to_string()));
+            matches.push(((*entity_type).to_string(), capture.as_str().to_string()));
         }
     }
     matches

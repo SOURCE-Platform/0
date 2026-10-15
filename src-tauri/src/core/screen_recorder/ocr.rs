@@ -1,6 +1,6 @@
 use super::{
     CaptureError, CaptureResult, ScreenRecorder, OCR_APP_SWITCH_POLL_MS,
-    OCR_LARGE_SCENE_CHANGE_THRESHOLD,
+    OCR_LARGE_SCENE_CHANGE_THRESHOLD, OCR_MIN_CAPTURE_INTERVAL_MS,
 };
 use crate::core::motion_detector::MotionResult;
 use crate::core::ocr_storage::CapturedApp;
@@ -44,6 +44,19 @@ impl ScreenRecorder {
             return Ok(());
         }
 
+        // Keep pending triggers until the minimum OCR interval has passed.
+        // Scene changes can otherwise launch OCR on nearly every frame.
+        if self
+            .state
+            .read()
+            .await
+            .as_ref()
+            .and_then(|state| state.last_ocr_capture_at)
+            .is_some_and(|last| frame.timestamp - last < OCR_MIN_CAPTURE_INTERVAL_MS)
+        {
+            return Ok(());
+        }
+
         let trigger_outcome = self.ocr_trigger_signals.consume_due(frame.timestamp).await;
         let (session_id, display_id, trigger_reason) = {
             let mut state = self.state.write().await;
@@ -75,12 +88,6 @@ impl ScreenRecorder {
             (state.session_id, Some(state.display_id), reason.to_string())
         };
 
-        let frame_path = self
-            .storage
-            .save_ocr_frame(session_id, frame)
-            .await
-            .map_err(|e| CaptureError::CaptureFailed(format!("Failed to save OCR frame: {}", e)))?;
-
         let motion_regions = if motion.has_motion && !motion.bounding_boxes.is_empty() {
             motion
                 .bounding_boxes
@@ -94,7 +101,7 @@ impl ScreenRecorder {
         processor
             .enqueue_frame(
                 session_id,
-                frame_path,
+                frame.clone(),
                 frame.timestamp,
                 display_id,
                 trigger_reason,

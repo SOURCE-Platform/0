@@ -1,3 +1,4 @@
+import { PageHeader } from "@/components/ui/page";
 import { useState } from "react";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { type UserProfile, MOCK_PROFILES } from "./ID.data";
@@ -126,12 +127,12 @@ export default function ID() {
   const user = MOCK_PROFILES[0];
   if (!user) {
     return (
-      <div className="mx-auto w-full max-w-2xl rounded-lg border bg-card p-8 text-center">
-        <h2 className="text-xl font-medium tracking-tight">No identity profiles yet</h2>
-        <p className="mx-auto mt-2 max-w-[52ch] text-sm leading-6 text-muted-foreground">
-          Your documents, accounts, and relationships will appear here once
-          added. Nothing demo or placeholder lives in this view.
-        </p>
+      <div className="w-full max-w-3xl space-y-6">
+        <PageHeader title="Profile" />
+        <div className="ui-panel">
+          <h2 className="text-sm font-medium">No profile added yet</h2>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">Your profile isn’t set up yet.</p>
+        </div>
       </div>
     );
   }

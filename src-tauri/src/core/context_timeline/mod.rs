@@ -18,15 +18,16 @@ use std::sync::Arc;
 use uuid::Uuid;
 
 const DEFAULT_BUCKET_MS: i64 = 30_000;
-const DEFAULT_SNAPSHOT_SPAN_MS: i64 = 5_000;
 pub const DEFAULT_VISIBLE_WINDOW_MS: i64 = 15 * 60 * 1000;
 
 include!("types.rs");
 include!("waveform_types.rs");
 include!("schema.rs");
+include!("snapshot_storage.rs");
 include!("storage.rs");
 include!("pii.rs");
 include!("timeline.rs");
+include!("timeline_overview.rs");
 include!("inspector.rs");
 include!("detail.rs");
 include!("detail_payloads_context.rs");

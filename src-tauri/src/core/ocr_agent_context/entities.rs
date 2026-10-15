@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 pub(super) fn build_context_entities(
     session_id: &str,
+    window_start: i64,
     scenes: &[AgentSceneSnapshotDto],
     spans: &[AgentTextSpanDto],
 ) -> Vec<AgentContextEntityDto> {
@@ -64,7 +65,7 @@ pub(super) fn build_context_entities(
         };
 
         AgentContextEntityDto {
-            entity_id: format!("entity-{}-{}", session_id, index + 1),
+            entity_id: format!("entity-{}-{}-{}", session_id, window_start, index + 1),
             session_id: session_id.to_string(),
             entity_type: classify_entity_type(first.frontmost_app_name.as_deref(), first.window_title.as_deref()).to_string(),
             frontmost_app_name: first.frontmost_app_name.clone(),

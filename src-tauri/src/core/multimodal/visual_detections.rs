@@ -1,7 +1,6 @@
 use super::constants::{
-    EVIDENCE_AUDIT_INTERVAL_MS, MOTION_HIGH_THRESHOLD, MOTION_MODEL_NAME, MOTION_MODEL_VERSION,
-    MOTION_MOVING_THRESHOLD, OBJECT_MODEL_NAME, OBJECT_MODEL_VERSION, VISION_MODEL_NAME,
-    VISION_MODEL_VERSION, VISUAL_MIN_POSTURE_CONFIDENCE,
+    MOTION_HIGH_THRESHOLD, MOTION_MODEL_NAME, MOTION_MODEL_VERSION, MOTION_MOVING_THRESHOLD,
+    OBJECT_MODEL_NAME, OBJECT_MODEL_VERSION, VISION_MODEL_NAME, VISION_MODEL_VERSION,
 };
 use super::media_io::{MediaPipeGazeOutput, MediaPipePoseOutput};
 use super::visual_loop_state::VisualLoopState;
@@ -52,26 +51,6 @@ pub(super) fn classify_visual_trigger_reason(
         return "object_change".to_string();
     }
     "periodic_sample".to_string()
-}
-
-pub(super) fn should_retain_visual_evidence(
-    state: &VisualLoopState,
-    trigger_reason: &str,
-    pose: &MediaPipePoseOutput,
-) -> bool {
-    if matches!(
-        trigger_reason,
-        "person_entered" | "person_left" | "posture_change" | "motion_spike" | "manual_marker"
-    ) {
-        return true;
-    }
-    if pose.posture_confidence < VISUAL_MIN_POSTURE_CONFIDENCE {
-        return true;
-    }
-    state
-        .last_audit_evidence_at
-        .map(|last| chrono::Utc::now().timestamp_millis() - last >= EVIDENCE_AUDIT_INTERVAL_MS)
-        .unwrap_or(true)
 }
 
 pub(super) async fn insert_detector_rows(

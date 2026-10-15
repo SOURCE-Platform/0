@@ -1,6 +1,9 @@
-use sqlx::sqlite::{SqliteConnection, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteConnection, SqliteJournalMode, SqlitePool, SqlitePoolOptions,
+};
 use sqlx::{migrate::MigrateDatabase, Sqlite};
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Debug, Clone)]
 pub struct Database {
@@ -24,9 +27,12 @@ impl Database {
         }
 
         // Create connection pool
+        // VACUUM INTO creates a fresh database in DELETE mode. Always restore
+        // WAL on startup so capture writes do not block timeline reads.
+        let options = SqliteConnectOptions::from_str(&db_url)?.journal_mode(SqliteJournalMode::Wal);
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&db_url)
+            .connect_with(options)
             .await?;
 
         let db = Self { pool };

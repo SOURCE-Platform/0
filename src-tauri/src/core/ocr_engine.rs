@@ -1,13 +1,11 @@
 // OCR (Optical Character Recognition) engine using Tesseract
 
-use crate::models::capture::RawFrame;
 use crate::core::ocr_tsv::lines_from_tsv;
+use crate::models::capture::{PixelFormat, RawFrame};
 use crate::models::ocr::{BoundingBox, OcrResult, TextBlock};
 use image::{GrayImage, RgbaImage};
-use std::path::PathBuf;
 use tesseract::Tesseract;
 use thiserror::Error;
-use uuid::Uuid;
 
 pub use crate::core::ocr_engine_config::OcrConfig;
 
@@ -31,6 +29,27 @@ pub enum OcrError {
 
     #[error("Image error: {0}")]
     Image(#[from] image::ImageError),
+}
+
+#[cfg(test)]
+mod frame_conversion_tests {
+    use super::*;
+
+    #[test]
+    fn macos_bgra_pixels_are_converted_before_ocr() {
+        let engine = OcrEngine {
+            config: OcrConfig::default(),
+        };
+        let frame = RawFrame {
+            timestamp: 0,
+            width: 1,
+            height: 1,
+            data: vec![10, 20, 30, 255],
+            format: PixelFormat::BGRA8,
+        };
+        let image = engine.frame_to_image(&frame).unwrap();
+        assert_eq!(image.get_pixel(0, 0).0, [30, 20, 10, 255]);
+    }
 }
 
 type Result<T> = std::result::Result<T, OcrError>;
@@ -81,11 +100,9 @@ impl OcrEngine {
             image::imageops::grayscale(&image)
         };
 
-        // Save to temporary file (Tesseract works best with files)
-        let temp_path = self.save_temp_image(&processed)?;
-
-        // Run OCR
-        let text_blocks = self.run_ocr(&temp_path)?;
+        // Tesseract accepts a grayscale buffer directly. No screenshot needs
+        // to be written to disk while OCR is in progress.
+        let text_blocks = self.run_ocr(&processed)?;
 
         // Filter by confidence
         let filtered_blocks: Vec<TextBlock> = text_blocks
@@ -95,16 +112,11 @@ impl OcrEngine {
 
         let processing_time = start_time.elapsed();
 
-        // Clean up temp file
-        let _ = std::fs::remove_file(&temp_path);
-
-        let mut result = OcrResult::new(
+        let result = OcrResult::new(
             chrono::Utc::now().timestamp_millis(),
             filtered_blocks,
             processing_time.as_millis() as u64,
         );
-        result.frame_path = Some(temp_path);
-
         Ok(result)
     }
 
@@ -129,8 +141,13 @@ impl OcrEngine {
 
     /// Convert a RawFrame to an RgbaImage
     fn frame_to_image(&self, frame: &RawFrame) -> Result<RgbaImage> {
-        RgbaImage::from_raw(frame.width, frame.height, frame.data.clone())
-            .ok_or(OcrError::ImageConversion)
+        let mut pixels = frame.data.clone();
+        if frame.format == PixelFormat::BGRA8 {
+            for pixel in pixels.chunks_exact_mut(4) {
+                pixel.swap(0, 2);
+            }
+        }
+        RgbaImage::from_raw(frame.width, frame.height, pixels).ok_or(OcrError::ImageConversion)
     }
 
     /// Preprocess image for better OCR accuracy
@@ -157,18 +174,8 @@ impl OcrEngine {
         output
     }
 
-    /// Save image to temporary file
-    fn save_temp_image(&self, img: &GrayImage) -> Result<PathBuf> {
-        let temp_dir = std::env::temp_dir();
-        let temp_path = temp_dir.join(format!("ocr_{}.png", Uuid::new_v4()));
-
-        img.save(&temp_path)?;
-
-        Ok(temp_path)
-    }
-
-    /// Run Tesseract OCR on an image file
-    fn run_ocr(&self, image_path: &PathBuf) -> Result<Vec<TextBlock>> {
+    /// Run Tesseract OCR directly on the preprocessed grayscale pixels.
+    fn run_ocr(&self, image: &GrayImage) -> Result<Vec<TextBlock>> {
         let languages = self.config.languages.join("+");
 
         let mut tesseract = Tesseract::new(None, Some(&languages))
@@ -179,7 +186,13 @@ impl OcrEngine {
             .map_err(|e| OcrError::Processing(e.to_string()))?
             .set_variable("user_defined_dpi", &self.config.dpi.to_string())
             .map_err(|e| OcrError::Processing(e.to_string()))?
-            .set_image(image_path.to_str().unwrap())
+            .set_frame(
+                image.as_raw(),
+                image.width() as i32,
+                image.height() as i32,
+                1,
+                image.width() as i32,
+            )
             .map_err(|e| OcrError::Processing(e.to_string()))?
             .recognize()
             .map_err(|e| OcrError::Processing(e.to_string()))?;

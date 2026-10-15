@@ -41,7 +41,7 @@ export function DeviceContextTimelineSection({
 
   return (
     <section className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3 px-1">
+      <div className="flex flex-wrap items-center gap-3">
         <Button variant="outline" size="sm" onClick={() => controller.setDayStart(addDays(controller.dayStart, -1).getTime())}>
           Previous day
         </Button>
@@ -74,7 +74,8 @@ export function DeviceContextTimelineSection({
         </div>
       </div>
 
-      {controller.loading || !controller.timeline ? (
+      {/* Keep the surface mounted during range refreshes so zoom never flashes a loader. */}
+      {!controller.timeline ? (
         <div className="rounded-2xl border border-border/70 bg-muted/25 py-20 text-center text-sm text-muted-foreground">
           Loading live device timeline...
         </div>
@@ -82,7 +83,7 @@ export function DeviceContextTimelineSection({
         <TooltipProvider>
           <div
             ref={controller.timelineSurfaceRef}
-            className={`bg-transparent px-1 py-4 ${
+            className={`bg-transparent py-4 ${
               controller.isPanning ? "cursor-grabbing select-none" : "cursor-default"
             }`}
           >

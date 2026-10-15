@@ -279,10 +279,10 @@ struct WindowSnapshotRow {
     frontmost_app_name: Option<String>,
     frontmost_bundle_id: Option<String>,
     visible_windows_json: String,
+    last_seen_at: Option<i64>,
     confidence: f64,
     source: String,
 }
-
 #[derive(Debug, Clone, FromRow)]
 struct KeyboardEventSummaryRow {
     timestamp: i64,

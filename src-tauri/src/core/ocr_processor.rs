@@ -4,10 +4,9 @@ use crate::core::ocr_engine::{OcrEngine, OcrError};
 pub use crate::core::ocr_processor_types::OcrProcessorConfig;
 use crate::core::ocr_processor_types::{OcrJob, OcrMetrics};
 use crate::core::ocr_storage::{CapturedApp, OcrStorage, ProcessedOcrResult};
-use crate::models::capture::{PixelFormat, RawFrame};
+use crate::models::capture::RawFrame;
 use crate::models::ocr::{BoundingBox, OcrResult};
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -78,10 +77,6 @@ impl OcrProcessor {
 
                 // Process batch
                 for job in jobs {
-                    // Screenshots exist only to be read. Drop each one once its
-                    // text is stored (or reading failed): kept, 4K frames
-                    // piled up at ~1.4 GB an hour of use.
-                    let frame_path = job.frame_path.clone();
                     match Self::process_job(&ocr_engine, job).await {
                         Ok(result) => {
                             // Update metrics
@@ -102,7 +97,6 @@ impl OcrProcessor {
                             eprintln!("OCR processing error: {}", e);
                         }
                     }
-                    let _ = tokio::fs::remove_file(&frame_path).await;
                 }
 
                 // Small delay between batches
@@ -117,17 +111,15 @@ impl OcrProcessor {
     pub async fn enqueue_frame(
         &self,
         session_id: Uuid,
-        frame_path: PathBuf,
+        frame: RawFrame,
         timestamp: i64,
         display_id: Option<u32>,
         trigger_reason: String,
         motion_regions: Vec<BoundingBox>,
         frontmost_app: Option<CapturedApp>,
     ) -> Result<(), OcrError> {
-        // A frame that won't be read is discarded here, like one that was.
         let skip_static = self.config.skip_static_frames && motion_regions.is_empty();
         if !self.config.enabled || skip_static {
-            let _ = tokio::fs::remove_file(&frame_path).await;
             return Ok(());
         }
 
@@ -135,15 +127,13 @@ impl OcrProcessor {
 
         // Check queue size limit
         if queue.len() >= self.config.max_queue_size {
-            // Drop oldest job, and its screenshot with it
-            if let Some(dropped) = queue.pop_front() {
-                let _ = tokio::fs::remove_file(&dropped.frame_path).await;
-            }
+            // Fresh scene context is more useful than a stale queued frame.
+            queue.pop_front();
         }
 
         queue.push_back(OcrJob {
             session_id,
-            frame_path,
+            frame,
             timestamp,
             display_id,
             trigger_reason,
@@ -165,8 +155,7 @@ impl OcrProcessor {
         ocr_engine: &Arc<OcrEngine>,
         job: OcrJob,
     ) -> Result<ProcessedOcrResult, OcrError> {
-        // Load frame from disk
-        let frame = Self::load_frame(&job.frame_path)?;
+        let frame = job.frame;
 
         // Decide whether to OCR full frame or just motion regions
         let ocr_result =
@@ -188,28 +177,13 @@ impl OcrProcessor {
         Ok(ProcessedOcrResult {
             session_id: job.session_id,
             timestamp: job.timestamp,
-            frame_path: Some(job.frame_path),
+            frame_path: None,
             display_id: job.display_id,
             frame_width: frame.width,
             frame_height: frame.height,
             trigger_reason: job.trigger_reason,
             frontmost_app: job.frontmost_app,
             ocr_result,
-        })
-    }
-
-    /// Load frame from disk
-    fn load_frame(path: &PathBuf) -> Result<RawFrame, OcrError> {
-        let img = image::open(path)
-            .map_err(|e| OcrError::Processing(format!("Failed to load image: {}", e)))?;
-        let rgba = img.to_rgba8();
-
-        Ok(RawFrame {
-            timestamp: 0, // Not used in OCR
-            width: rgba.width(),
-            height: rgba.height(),
-            data: rgba.into_raw(),
-            format: PixelFormat::RGBA8,
         })
     }
 

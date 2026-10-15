@@ -1,6 +1,11 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./styles/theme.css";
+@import "./styles/app-layout.css";
+@import "./styles/ui-foundations.css";
+@import "./styles/scrollbars.css";
+@import "./styles/app-scroll-region.css";
 
 html, body, #root {
   height: 100%;
@@ -28,17 +33,12 @@ textarea:disabled {
 
 /* Top-left logo gradient — background-image on the container avoids all z-index issues */
 .app-container {
-  background-color: white;
-  background-image: linear-gradient(135deg, #E2DED7 0%, white 50%);
+  background-color: var(--app-canvas);
+  background-image: linear-gradient(135deg, var(--app-glow) 0%, var(--app-canvas) 50%);
   background-size: 208px 208px;
   background-repeat: no-repeat;
   background-position: top left;
 }
-.dark .app-container {
-  background-color: #171412;
-  background-image: linear-gradient(135deg, #252118 0%, #171412 50%);
-}
-
 /* Slider thumb slide animation — targets the outer positioned wrapper span
    that Radix renders around the thumb (props.style doesn't reach this element) */
 [data-slot="slider"][data-animating] > span:has([role="slider"]) {
@@ -52,189 +52,12 @@ textarea:disabled {
 @custom-variant dark (&:is(.dark *));
 
 @layer base {
-  :root {
-    --background: #ffffff;
-    --foreground: #1c1917;
-    --card: #ffffff;
-    --card-foreground: #1c1917;
-    --popover: #ffffff;
-    --popover-foreground: #1c1917;
-    --primary: #1c1917;
-    --primary-foreground: #fafaf9;
-    --secondary: #f5f5f4;
-    --secondary-foreground: #1c1917;
-    --muted: #f5f5f4;
-    --muted-foreground: #78716c;
-    --accent: #f5f5f4;
-    --accent-foreground: #1c1917;
-    --destructive: #ef4444;
-    --destructive-foreground: #fafaf9;
-    --border: #e7e5e4;
-    --input: #e7e5e4;
-    --ring: #a8a29e;
-    --radius: 0.625rem;
-  }
-
-  .dark {
-    --background: #171412;
-    --foreground: #fafaf9;
-    --card: #1e1a17;
-    --card-foreground: #fafaf9;
-    --popover: #1e1a17;
-    --popover-foreground: #fafaf9;
-    --primary: #fafaf9;
-    --primary-foreground: #1e1a17;
-    --secondary: #292421;
-    --secondary-foreground: #fafaf9;
-    --muted: #292421;
-    --muted-foreground: #a8a29e;
-    --accent: #292421;
-    --accent-foreground: #fafaf9;
-    --destructive: #ef4444;
-    --destructive-foreground: #fafaf9;
-    --border: rgba(255,255,255,0.10);
-    --input: rgba(255,255,255,0.15);
-    --ring: #a8a29e;
-  }
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground font-light;
-  }
-}
-
-@theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  * { @apply border-border outline-ring/50; }
+  body { @apply bg-background text-foreground font-light; }
 }
 
 body {
   font-feature-settings: "rlig" 1, "calt" 1;
-}
-
-::-webkit-scrollbar {
-  width: 12px;
-  height: 12px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 10px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  min-height: 40px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.6);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.4);
-  border-radius: 10px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-  min-height: 40px;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.6);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-
-/* Main app scroller: thin thumb floating centered in its lane (equal
-   transparent gutters on both sides), nudged off the window edge. It
-   rests as a faint ghost so it can always be found, and lights up while
-   the pointer is inside the scrollable region. Hovering the fixed
-   sidebar or header leaves it dim. */
-.app-scroll-region {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
-  border-right: 4px solid transparent;
-}
-
-.app-scroll-region::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-.app-scroll-region::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.app-scroll-region::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.18);
-  border-radius: 10px;
-  border: 3px solid transparent;
-  background-clip: content-box;
-  min-height: 40px;
-}
-
-.app-scroll-region:hover {
-  scrollbar-color: rgba(0, 0, 0, 0.4) transparent;
-}
-
-.app-scroll-region:hover::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.4);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-
-.app-scroll-region:hover::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 0, 0, 0.6);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-
-.dark .app-scroll-region {
-  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-}
-
-.dark .app-scroll-region::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.18);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-
-.dark .app-scroll-region:hover {
-  scrollbar-color: rgba(255, 255, 255, 0.4) transparent;
-}
-
-.dark .app-scroll-region:hover::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.4);
-  border: 3px solid transparent;
-  background-clip: content-box;
-}
-
-.dark .app-scroll-region:hover::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.6);
-  border: 3px solid transparent;
-  background-clip: content-box;
 }
 
 @keyframes tab-underline-exit {
@@ -245,114 +68,4 @@ body {
 @keyframes tab-underline-enter {
   from { transform: scaleX(0); }
   to   { transform: scaleX(1); }
-}
-
-@theme inline {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
-
-:root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.147 0.004 49.25);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.147 0.004 49.25);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.147 0.004 49.25);
-  --primary: oklch(0.216 0.006 56.043);
-  --primary-foreground: oklch(0.985 0.001 106.423);
-  --secondary: oklch(0.97 0.001 106.424);
-  --secondary-foreground: oklch(0.216 0.006 56.043);
-  --muted: oklch(0.97 0.001 106.424);
-  --muted-foreground: oklch(0.553 0.013 58.071);
-  --accent: oklch(0.97 0.001 106.424);
-  --accent-foreground: oklch(0.216 0.006 56.043);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.923 0.003 48.717);
-  --input: oklch(0.923 0.003 48.717);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0.001 106.423);
-  --sidebar-foreground: oklch(0.147 0.004 49.25);
-  --sidebar-primary: oklch(0.216 0.006 56.043);
-  --sidebar-primary-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-accent: oklch(0.97 0.001 106.424);
-  --sidebar-accent-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-border: oklch(0.923 0.003 48.717);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
-}
-
-.dark {
-  --background: oklch(0.147 0.004 49.25);
-  --foreground: oklch(0.985 0.001 106.423);
-  --card: oklch(0.216 0.006 56.043);
-  --card-foreground: oklch(0.985 0.001 106.423);
-  --popover: oklch(0.216 0.006 56.043);
-  --popover-foreground: oklch(0.985 0.001 106.423);
-  --primary: oklch(0.985 0.001 106.423);
-  --primary-foreground: oklch(0.216 0.006 56.043);
-  --secondary: oklch(0.268 0.007 34.298);
-  --secondary-foreground: oklch(0.985 0.001 106.423);
-  --muted: oklch(0.268 0.007 34.298);
-  --muted-foreground: oklch(0.709 0.01 56.259);
-  --accent: oklch(0.268 0.007 34.298);
-  --accent-foreground: oklch(0.985 0.001 106.423);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.709 0.01 56.259);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.216 0.006 56.043);
-  --sidebar-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-primary: oklch(0.985 0.001 106.423);
-  --sidebar-primary-foreground: oklch(0.216 0.006 56.043);
-  --sidebar-accent: oklch(0.268 0.007 34.298);
-  --sidebar-accent-foreground: oklch(0.985 0.001 106.423);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.709 0.01 56.259);
 }

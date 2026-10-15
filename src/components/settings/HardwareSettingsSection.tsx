@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { SettingsPanel } from "@/components/ui/page";
 import { Label } from "@/components/ui/label";
 
 interface HostHardwareInfo {
@@ -30,12 +31,7 @@ export function HardwareSettingsSection() {
   }, []);
 
   return (
-    <section className="rounded-lg border border-border/60 bg-muted/15 p-3">
-      <Label className="text-sm">This Mac</Label>
-      <p className="mt-1 max-w-[52ch] text-xs leading-5 text-muted-foreground">
-        The computer SOURCE is running on. Home hardware inventory
-        will live here later.
-      </p>
+    <SettingsPanel title="This Mac" description="The computer running SOURCE and processing your captures locally.">
       <div className="mt-3 divide-y divide-border/50">
         {error ? (
           <p className="py-2 text-sm text-destructive">{error}</p>
@@ -51,6 +47,6 @@ export function HardwareSettingsSection() {
           </>
         )}
       </div>
-    </section>
+    </SettingsPanel>
   );
 }

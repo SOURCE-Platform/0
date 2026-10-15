@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   getLabeledTicks,
   getSnappedTicks,
@@ -11,6 +12,16 @@ interface TimelineRulerProps {
 }
 
 export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerProps) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [trackWidth, setTrackWidth] = useState(0);
+  useLayoutEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const observer = new ResizeObserver(([entry]) => setTrackWidth(entry.contentRect.width));
+    setTrackWidth(track.clientWidth);
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, []);
   const range = Math.max(1, endTimestamp - startTimestamp);
   const tickMs = getTimelineTickMs(range);
   // Gridlines stay shared with the lane grids below; labels are a
@@ -24,7 +35,7 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
           line up exactly with lane subdivisions. */}
       <div className="grid h-full gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
         <div className="hidden md:block" />
-        <div className="relative h-full w-full border border-b-0 border-border/70 bg-background/60">
+        <div ref={trackRef} className="relative h-full w-full border border-b-0 border-border/70 bg-background/60">
           {gridTicks.map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;
             return (
@@ -39,8 +50,8 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
               hugging either edge so times never print on top of each other. */}
           {labeledTicks
             .filter((timestamp) => {
-              const pct = ((timestamp - startTimestamp) / range) * 100;
-              return pct >= 6 && pct <= 92;
+              const position = ((timestamp - startTimestamp) / range) * trackWidth;
+              return position >= 72 && position <= trackWidth - 136;
             })
             .map((timestamp) => {
             const left = ((timestamp - startTimestamp) / range) * 100;

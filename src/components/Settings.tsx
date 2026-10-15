@@ -1,7 +1,7 @@
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page";
 import ConsentManager from "@/components/ConsentManager";
 import { CaptureSettingsSection } from "@/components/settings/CaptureSettingsSection";
 import { DeleteCaptureDialog } from "@/components/settings/DeleteCaptureDialog";
@@ -46,16 +46,11 @@ export default function Settings() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Settings</h1>
-        {controller.showDescriptions ? (
-          <p className="text-muted-foreground">
-            Configure real capture channels, demo mode, PII review behavior, and validation controls.
-          </p>
-        ) : null}
-      </div>
+    <div className="settings-page space-y-6">
+      <PageHeader title="Settings" description={controller.showDescriptions ? "Choose what SOURCE captures and how it runs on your devices." : undefined}
+        action={<span role="status" className="text-xs text-muted-foreground">{controller.saving ? "Saving…" : "Changes save automatically"}</span>} />
 
+      <div className="settings-nav">
       <AnimatedTabNav
         tabs={[
           { value: "general", label: "General" },
@@ -70,6 +65,8 @@ export default function Settings() {
         onValueChange={(value) => controller.setTab(value as SettingsTab)}
       />
 
+      </div>
+      <div className="settings-body" data-section={controller.tab}>
       {controller.tab === "general" ? <GeneralSettingsSection controller={controller} /> : null}
       {controller.tab === "capture" ? <CaptureSettingsSection controller={controller} /> : null}
       {controller.tab === "privacy" ? (
@@ -83,24 +80,7 @@ export default function Settings() {
       {controller.tab === "dictation" ? <DictationSettingsSection /> : null}
       {controller.tab === "mobile" ? <MobileSettingsSection controller={controller} /> : null}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Reset</CardTitle>
-          <CardDescription>
-            Changes save automatically. Reset returns every setting to its default.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <button
-            type="button"
-            onClick={controller.resetToDefaults}
-            disabled={controller.saving}
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
-          >
-            Reset to defaults
-          </button>
-        </CardContent>
-      </Card>
+      </div>
 
       <DeleteCaptureDialog controller={controller} />
     </div>

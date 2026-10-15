@@ -25,6 +25,7 @@ mod snapshot_cost_tests {
             frontmost_app_name: app.map(str::to_string),
             frontmost_bundle_id: app.map(|name| format!("com.example.{}", name.len())),
             visible_windows_json: serde_json::to_string(windows).expect("serialize windows"),
+            last_seen_at: Some(timestamp),
             confidence: 0.85,
             source: "os_monitor".to_string(),
         }
@@ -58,6 +59,41 @@ mod snapshot_cost_tests {
         row.session_id = None;
         row.source = "line\nbreak".to_string();
         assert_eq!(window_snapshot_storage_bytes(&row), serialized_reference(&row));
+    }
+
+    #[test]
+    fn unchanged_snapshot_span_ends_at_its_last_observation() {
+        let mut row = snapshot("steady", 1_000, Some("Example"), &[]);
+        row.last_seen_at = Some(1_801_000);
+        let end = snapshot_span_end(&row, None, &HashMap::new(), 5_000_000);
+        assert_eq!(end, 1_806_000);
+    }
+
+    #[tokio::test]
+    async fn unchanged_apps_start_a_new_span_after_a_capture_gap() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        let db = Arc::new(Database { pool });
+        init_schema(&db).await.unwrap();
+        let apps = [window("Example", 1)];
+        for timestamp in [1_000, 6_000, 60_000] {
+            insert_window_snapshot(
+                &db, Some("session"), timestamp, Some("Example"),
+                Some("com.example.1"), &apps, "test", 0.9,
+            )
+            .await
+            .unwrap();
+        }
+        let spans: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT timestamp, last_seen_at FROM window_snapshots ORDER BY timestamp",
+        )
+        .fetch_all(db.pool())
+        .await
+        .unwrap();
+        assert_eq!(spans, vec![(1_000, 6_000), (60_000, 60_000)]);
     }
 
     #[test]

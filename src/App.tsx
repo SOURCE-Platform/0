@@ -9,19 +9,10 @@ import AgentsPage from "@/components/agents/AgentsPage";
 import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibrationOverlayPage";
 import { ThemeProvider } from "./components/theme-provider";
 import { UIPrefsProvider } from "./components/ui-prefs-provider";
-import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
+import { AppHeader, type AppView } from "@/components/AppHeader";
+import { AppScrollRegion } from "@/components/AppScrollRegion";
 import { VaultPage } from "@/components/vault/VaultPage";
 import { OBSERVER_APP_TOAST_EVENT, ObserverAppToastDetail } from "@/lib/app-config-events";
-
-type View = "settings" | "timeline" | "id" | "agents" | "vault";
-
-const TABS = [
-  { value: "timeline",  label: "Timeline" },
-  { value: "id",        label: "ID" },
-  { value: "agents",    label: "Agents" },
-  { value: "vault",     label: "Vault" },
-  { value: "settings",  label: "Settings" },
-];
 
 interface AppToast extends ObserverAppToastDetail {
   id: number;
@@ -68,8 +59,8 @@ function App() {
   const nativeTitleBarHeight =
     isTauri() && navigator.userAgent.includes("Mac") ? 28 : 0;
   const contentTop = nativeTitleBarHeight + 56;
-  const [activeTab, setActiveTab] = useState<View>("timeline");
-  const [displayedView, setDisplayedView] = useState<View>("timeline");
+  const [activeTab, setActiveTab] = useState<AppView>("timeline");
+  const [displayedView, setDisplayedView] = useState<AppView>("timeline");
   const [fading, setFading] = useState(false);
   const [toasts, setToasts] = useState<AppToast[]>([]);
   const fadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -134,7 +125,7 @@ function App() {
     };
   }, []);
 
-  function handleTabClick(view: View) {
+  function handleTabClick(view: AppView) {
     if (view === activeTab) return;
     setActiveTab(view);
     if (fadeTimer.current) clearTimeout(fadeTimer.current);
@@ -186,40 +177,10 @@ function App() {
             ))}
           </div>
 
-          {/* Header */}
-          <div
-            className="fixed inset-x-0 z-50 flex h-14 items-center gap-6 bg-transparent px-6"
-            style={{ top: nativeTitleBarHeight }}
-          >
-            <svg width="24" height="24" viewBox="0 0 28 28" className="fill-white shrink-0">
-              <circle cx="14" cy="14" r="14"/>
-            </svg>
-            <AnimatedTabNav
-              tabs={TABS}
-              value={activeTab}
-              onValueChange={(v) => handleTabClick(v as View)}
-            />
-          </div>
+          <AppHeader top={nativeTitleBarHeight} view={activeTab} onNavigate={handleTabClick} />
 
-          {/* Left sidebar — same width as header height (w-14 = 56px) */}
-          <div
-            className="fixed bottom-0 left-0 z-40 flex w-14 flex-col items-start justify-end pb-[18px] pl-6"
-            style={{ top: contentTop }}
-          >
-            <div className="w-6 h-6 rounded-full bg-neutral-600 flex items-center justify-center overflow-hidden shrink-0">
-              <span className="text-[9px] font-medium text-white leading-none select-none">A</span>
-            </div>
-          </div>
-
-          <main
-            className="app-scroll-region ml-14 mr-0 overflow-y-auto transition-opacity duration-200"
-            style={{
-              height: `calc(100% - ${contentTop}px)`,
-              marginTop: contentTop,
-              opacity: fading ? 0 : 1,
-            }}
-          >
-            <div className="w-full px-2 py-4 xl:px-3">
+          <AppScrollRegion contentTop={contentTop} fading={fading}>
+            <div className={`app-page-content py-4 ${displayedView === "vault" ? "" : "app-ui"}`}>
               <ViewErrorBoundary>
                 {displayedView === "timeline"  && <TimelinePage />}
                 {displayedView === "id"        && <ID />}
@@ -228,7 +189,7 @@ function App() {
                 {displayedView === "settings"  && <Settings />}
               </ViewErrorBoundary>
             </div>
-          </main>
+          </AppScrollRegion>
         </div>
         )}
       </UIPrefsProvider>

@@ -102,7 +102,7 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
     let channels = vec![
         ("system", config.capture_channels.system, "SELECT MAX(timestamp) FROM context_events WHERE channel = 'system'", "SELECT COUNT(*) FROM context_events WHERE channel = 'system' AND timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("focus", config.capture_channels.focus, "SELECT MAX(timestamp) FROM context_events WHERE channel = 'focus'", "SELECT COUNT(*) FROM context_events WHERE channel = 'focus' AND timestamp >= strftime('%s','now') * 1000 - 3600000"),
-        ("visible_windows", config.capture_channels.visible_windows, "SELECT MAX(timestamp) FROM window_snapshots", "SELECT COUNT(*) FROM window_snapshots WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
+        ("visible_windows", config.capture_channels.visible_windows, "SELECT (SELECT COALESCE(last_seen_at, timestamp) FROM window_snapshots ORDER BY timestamp DESC LIMIT 1)", "SELECT COUNT(*) FROM window_snapshots WHERE timestamp >= strftime('%s','now') * 1000 - 3600000 OR last_seen_at >= strftime('%s','now') * 1000 - 3600000"),
         ("keyboard", config.capture_channels.keyboard, "SELECT MAX(timestamp) FROM keyboard_events", "SELECT COUNT(*) FROM keyboard_events WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("mouse", config.capture_channels.mouse, "SELECT MAX(timestamp) FROM mouse_events", "SELECT COUNT(*) FROM mouse_events WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),
         ("ocr", config.capture_channels.ocr, "SELECT MAX(timestamp) FROM ocr_results", "SELECT COUNT(*) FROM ocr_results WHERE timestamp >= strftime('%s','now') * 1000 - 3600000"),

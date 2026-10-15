@@ -1,0 +1,44 @@
+:root {
+  --scrollbar-thumb-rgb: 0 0 0;
+}
+
+.dark {
+  --scrollbar-thumb-rgb: 255 255 255;
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--scrollbar-thumb-rgb) / 0.08);
+  border: 3px solid transparent;
+  border-radius: 10px;
+  background-clip: content-box;
+  min-height: 40px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  background-color: rgb(var(--scrollbar-thumb-rgb) / 0.16);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--scrollbar-thumb-rgb) / 0.22);
+}
+
+/* Keep native fallback styling from overriding WebKit's precise 3px thumb. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--scrollbar-thumb-rgb) / 0.08) transparent;
+  }
+
+  *:hover {
+    scrollbar-color: rgb(var(--scrollbar-thumb-rgb) / 0.16) transparent;
+  }
+}

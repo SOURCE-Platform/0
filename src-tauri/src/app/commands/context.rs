@@ -1,6 +1,6 @@
 use crate::app::state::AppState;
 use crate::core::context_timeline::{
-    self, AppUsageOverviewDto, ContextInspectorDto, ContextSliceDetailDto,
+    self, AppUsageOverviewDto, ContextInspectorDto, ContextSlice, ContextSliceDetailDto,
     ContextTimelineData as DesktopContextTimelineData, OcrReviewItemDto, PiiEntityDto,
 };
 use tauri::State;
@@ -11,7 +11,7 @@ pub async fn get_context_timeline(
     end_timestamp: i64,
     state: State<'_, AppState>,
 ) -> Result<DesktopContextTimelineData, String> {
-    context_timeline::build_context_timeline(&state.db, start_timestamp, end_timestamp)
+    context_timeline::build_context_timeline_overview(&state.db, start_timestamp, end_timestamp)
         .await
         .map_err(|e| format!("Failed to build context timeline: {}", e))
 }
@@ -28,21 +28,12 @@ pub async fn get_context_inspector(
 
 #[tauri::command]
 pub async fn get_context_slice_detail(
-    slice_id: String,
-    rail_id: String,
-    start_timestamp: i64,
-    end_timestamp: i64,
+    slice: ContextSlice,
     state: State<'_, AppState>,
 ) -> Result<ContextSliceDetailDto, String> {
-    context_timeline::get_context_slice_detail(
-        &state.db,
-        &slice_id,
-        &rail_id,
-        start_timestamp,
-        end_timestamp,
-    )
-    .await
-    .map_err(|e| format!("Failed to build context slice detail: {}", e))
+    context_timeline::get_context_slice_detail(&state.db, slice)
+        .await
+        .map_err(|e| format!("Failed to build context slice detail: {}", e))
 }
 
 #[tauri::command]

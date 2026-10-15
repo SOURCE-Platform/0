@@ -96,12 +96,14 @@ fn snapshot_span_end(
         .as_ref()
         .and_then(|session_id| session_ends.get(session_id).copied());
 
-    match (next_timestamp, session_end) {
+    let observed_end = snapshot.last_seen_at.unwrap_or(snapshot.timestamp) + 5_000;
+    let inferred_end = match (next_timestamp, session_end) {
         (Some(next), Some(end)) => next.min(end),
         (Some(next), None) => next,
         (None, Some(end)) => end,
         (None, None) => fallback_end_timestamp,
-    }
+    };
+    inferred_end.min(observed_end).min(fallback_end_timestamp)
 }
 
 fn event_row_to_slice(row: &ContextEventRow) -> ContextSlice {

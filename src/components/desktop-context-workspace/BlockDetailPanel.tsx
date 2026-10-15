@@ -3,6 +3,7 @@ import { Check, Copy, Layers3, PanelRightOpen, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ContainedScrollArea } from "@/components/ui/contained-scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { EvidenceImage } from "@/components/desktop-context-workspace/EvidenceImage";
 import { OcrReconstructionView } from "@/components/desktop-context-workspace/OcrReconstructionView";
@@ -49,11 +50,11 @@ export function BlockDetailPanel({
   }
 
   return (
-    <Card className="h-fit border-border/70 xl:sticky xl:top-20">
+    <Card className="h-fit border-border/70 2xl:sticky 2xl:top-4">
       <CardHeader>
         <div className="flex items-center gap-2">
           <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
-          <CardTitle>Block Detail</CardTitle>
+          <CardTitle>Block details</CardTitle>
           {controller.selectedSlice ? (
             <Button
               type="button"
@@ -87,26 +88,7 @@ export function BlockDetailPanel({
                 </p>
               </div>
 
-              <div className="grid min-w-60 flex-[2] grid-cols-2 gap-3">
-                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">
-                    {formatBytes(controller.sliceDetail.storageBytes)}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
-                  </p>
-                </div>
-                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
-                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">
-                    {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Source-backed storage accounting for this block.
-                  </p>
-                </div>
-              </div>
+
             </div>
 
             <Tabs value={controller.detailTab} onValueChange={controller.setDetailTab}>
@@ -130,9 +112,10 @@ export function BlockDetailPanel({
                       {controller.sliceDetail.slice.tags.includes("final") ? "Final transcript" : "Live transcript"}
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
                         className="ml-auto h-7 cursor-pointer gap-1.5 px-2 text-xs normal-case tracking-normal"
+                        disabled={!transcriptText}
                         onClick={() => void handleCopyTranscript()}
                         aria-label="Copy transcript"
                       >
@@ -141,12 +124,14 @@ export function BlockDetailPanel({
                         ) : (
                           <Copy className="h-3.5 w-3.5" />
                         )}
-                        {transcriptCopied ? "Copied" : "Copy"}
+                        {transcriptCopied ? "Copied" : "Copy text"}
                       </Button>
                     </div>
-                    <p className="max-w-[60ch] whitespace-pre-wrap text-base leading-7 text-foreground">
+                    <ContainedScrollArea label="Transcript text">
+                    <p className="max-w-[60ch] whitespace-pre-wrap text-sm leading-6 text-foreground">
                       {controller.sliceDetail.slice.ocrPreview?.trim() || "Listening for words…"}
                     </p>
+                    </ContainedScrollArea>
                   </div>
                 </TabsContent>
               ) : null}
@@ -178,6 +163,28 @@ export function BlockDetailPanel({
               ) : null}
 
               <TabsContent value="metadata" className="space-y-4 pt-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Storage</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {controller.loadingDetail && controller.sliceDetail.storageBytes === 0
+                      ? "Loading..."
+                      : formatBytes(controller.sliceDetail.storageBytes)}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {controller.sliceDetail.storageExact ? "Exact bytes tied to this block." : "Estimated bytes tied to this span."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border/70 bg-muted/20 px-3 py-3">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">Rows / Files</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">
+                    {controller.sliceDetail.rowCount} rows • {controller.sliceDetail.fileCount} files
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Source-backed storage accounting for this block.
+                  </p>
+                </div>
+              </div>
                 <div className="space-y-3">
                   {!isAudioBlock ? (
                     <MetadataRow label="Focused app" value={controller.sliceDetail.focusedApp ?? "Unknown"} />

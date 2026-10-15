@@ -3,7 +3,7 @@ use super::constants::{
     VISUAL_CAPTURE_INTERVAL_MS, VISUAL_EXIT_POSTURE_CONFIDENCE, VISUAL_MIN_POSTURE_CONFIDENCE,
     VISUAL_SPAN_MAX_GAP_MS,
 };
-use super::queries::{get_asr_segments, get_audio_chunks, get_visual_scene_snapshots};
+use super::queries::get_visual_scene_snapshots;
 use super::types::{AudioSpanSeed, VisualSceneSnapshotDto, VisualSpanSeed};
 use crate::core::database::Database;
 use serde_json::json;
@@ -72,33 +72,74 @@ pub(super) async fn reindex_audio_state_spans(
     db: &Arc<Database>,
     session_id: &str,
     source_id: &str,
+    timestamp: i64,
 ) -> Result<(), String> {
-    let chunks = get_audio_chunks(db, 0, i64::MAX, Some(source_id.to_string()))
-        .await
-        .map_err(|e| format!("Failed to load audio chunks for reindex: {e}"))?
-        .into_iter()
-        .filter(|chunk| chunk.session_id == session_id)
-        .collect::<Vec<_>>();
-    let asr_segments = get_asr_segments(db, 0, i64::MAX, Some(source_id.to_string()))
-        .await
-        .map_err(|e| format!("Failed to load ASR segments for reindex: {e}"))?
-        .into_iter()
-        .filter(|segment| segment.session_id == session_id)
-        .collect::<Vec<_>>();
+    // Rebuild just the five-minute slice touched by the new chunk. Loading
+    // every waveform in a long session on each two-second chunk exhausted CPU.
+    const BUCKET_MS: i64 = 300_000;
+    let bucket_start = timestamp.div_euclid(BUCKET_MS) * BUCKET_MS;
+    let bucket_end = bucket_start + BUCKET_MS;
+    let chunks = sqlx::query_as::<_, (String, i64, i64, f64, i64)>(
+        "SELECT audio_chunk_id, start_timestamp, end_timestamp, vad_score, speech_detected
+         FROM audio_chunks INDEXED BY idx_audio_chunks_time
+         WHERE start_timestamp >= ? AND start_timestamp < ? AND session_id = ? AND source_id = ?
+         ORDER BY start_timestamp",
+    )
+    .bind(bucket_start)
+    .bind(bucket_end)
+    .bind(session_id)
+    .bind(source_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| format!("Failed to load recent audio chunks: {e}"))?;
+    let asr_segments = sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT asr_segment_id, start_timestamp, end_timestamp
+         FROM asr_segments INDEXED BY idx_asr_segments_time
+         WHERE start_timestamp < ? AND end_timestamp >= ? AND session_id = ? AND source_id = ?",
+    )
+    .bind(bucket_end)
+    .bind(bucket_start)
+    .bind(session_id)
+    .bind(source_id)
+    .fetch_all(db.pool())
+    .await
+    .map_err(|e| format!("Failed to load recent ASR segments: {e}"))?;
 
-    sqlx::query("DELETE FROM audio_state_spans WHERE session_id = ? AND source_id = ?")
-        .bind(session_id)
-        .bind(source_id)
-        .execute(db.pool())
-        .await
-        .map_err(|e| format!("Failed to clear audio spans: {e}"))?;
+    // A span from an older app build can cross this bucket boundary. Keep
+    // its earlier time range and replace only the recent part below.
+    sqlx::query(
+        "UPDATE audio_state_spans SET last_seen_at = ?, duration_ms = MAX(0, ? - first_seen_at), updated_at = ?
+         WHERE session_id = ? AND source_id = ? AND first_seen_at < ? AND last_seen_at >= ?",
+    )
+    .bind(bucket_start)
+    .bind(bucket_start)
+    .bind(chrono::Utc::now().timestamp_millis())
+    .bind(session_id)
+    .bind(source_id)
+    .bind(bucket_start)
+    .bind(bucket_start)
+    .execute(db.pool())
+    .await
+    .map_err(|e| format!("Failed to preserve earlier audio span: {e}"))?;
+    sqlx::query(
+        "DELETE FROM audio_state_spans WHERE session_id = ? AND source_id = ?
+         AND first_seen_at >= ? AND first_seen_at < ?",
+    )
+    .bind(session_id)
+    .bind(source_id)
+    .bind(bucket_start)
+    .bind(bucket_end)
+    .execute(db.pool())
+    .await
+    .map_err(|e| format!("Failed to clear audio spans: {e}"))?;
 
     let mut seeds: Vec<AudioSpanSeed> = Vec::new();
     let mut current: Option<AudioSpanSeed> = None;
 
-    for chunk in chunks {
-        let label = if chunk.speech_detected {
-            if chunk.vad_score >= 0.25 {
+    for (audio_chunk_id, start_timestamp, end_timestamp, vad_score, speech_detected) in chunks {
+        let vad_score = vad_score as f32;
+        let label = if speech_detected != 0 {
+            if vad_score >= 0.25 {
                 "speaking"
             } else {
                 "intermittent_speech"
@@ -108,26 +149,23 @@ pub(super) async fn reindex_audio_state_spans(
         };
         let supporting_asr_segment_ids = asr_segments
             .iter()
-            .filter(|segment| {
-                segment.start_timestamp <= chunk.end_timestamp
-                    && segment.end_timestamp >= chunk.start_timestamp
-            })
-            .map(|segment| segment.asr_segment_id.clone())
+            .filter(|segment| segment.1 <= end_timestamp && segment.2 >= start_timestamp)
+            .map(|segment| segment.0.clone())
             .collect::<Vec<_>>();
 
         match current.as_mut() {
             Some(active)
                 if active.label == label
-                    && chunk.start_timestamp - active.last_seen_at <= AUDIO_SPAN_MAX_GAP_MS =>
+                    && start_timestamp - active.last_seen_at <= AUDIO_SPAN_MAX_GAP_MS =>
             {
-                active.last_seen_at = chunk.end_timestamp;
+                active.last_seen_at = end_timestamp;
                 active
                     .supporting_audio_chunk_ids
-                    .push(chunk.audio_chunk_id.clone());
+                    .push(audio_chunk_id.clone());
                 active
                     .supporting_asr_segment_ids
                     .extend(supporting_asr_segment_ids.clone());
-                active.confidences.push(chunk.vad_score);
+                active.confidences.push(vad_score);
             }
             _ => {
                 if let Some(active) = current.take() {
@@ -137,11 +175,11 @@ pub(super) async fn reindex_audio_state_spans(
                 }
                 current = Some(AudioSpanSeed {
                     label: label.to_string(),
-                    first_seen_at: chunk.start_timestamp,
-                    last_seen_at: chunk.end_timestamp,
-                    supporting_audio_chunk_ids: vec![chunk.audio_chunk_id.clone()],
+                    first_seen_at: start_timestamp,
+                    last_seen_at: end_timestamp,
+                    supporting_audio_chunk_ids: vec![audio_chunk_id.clone()],
                     supporting_asr_segment_ids,
-                    confidences: vec![chunk.vad_score],
+                    confidences: vec![vad_score],
                 });
             }
         }

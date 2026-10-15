@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button";
 import { useState, type KeyboardEvent } from "react";
 import type { TurnStatus } from "./useAgentSessionDetail";
 
@@ -38,16 +39,17 @@ export function AgentPromptBox({ status, onSend }: AgentPromptBoxProps) {
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
           rows={2}
+          aria-label="Message to agent"
           placeholder="Send a prompt to this conversation…"
           className="min-h-[44px] flex-1 resize-y rounded-lg border border-border/60 bg-background/60 px-3 py-2 text-sm text-foreground outline-none focus:border-foreground/40"
         />
-        <button
+        <Button
           onClick={() => void submit()}
           disabled={!text.trim() || sending}
-          className="cursor-pointer rounded-lg border border-foreground/30 bg-foreground/10 px-4 py-2 text-sm text-foreground transition-colors hover:bg-foreground/20 disabled:cursor-default disabled:opacity-40"
+
         >
           {sending ? "Sending…" : "Send"}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -57,9 +59,9 @@ function StatusLine({ status }: { status: TurnStatus }) {
   if (status.state === "idle") return null;
   const tone =
     status.state === "error"
-      ? "text-red-300"
+      ? "text-destructive"
       : status.state === "done"
-        ? "text-green-300"
+        ? "text-emerald-700 dark:text-emerald-300"
         : "text-muted-foreground";
   const text =
     status.state === "sending"
@@ -70,7 +72,7 @@ function StatusLine({ status }: { status: TurnStatus }) {
           ? status.brief
           : status.message;
   return (
-    <p className={`mb-2 max-w-[70ch] text-xs leading-5 ${tone}`}>
+    <p className={`mb-2 max-w-[60ch] text-xs leading-5 ${tone}`}>
       {text}
       {status.state === "done" && status.handedBack && (
         <span className="text-muted-foreground"> · Handed back to the Claude app</span>

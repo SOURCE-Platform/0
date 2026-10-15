@@ -11,9 +11,10 @@ fn build_ocr_rail(
     let slices = ocr_scenes
         .iter()
         .map(|scene| {
-            let snapshot = snapshots
-                .iter()
-                .min_by_key(|snap| (snap.timestamp - scene.timestamp).abs());
+            let snapshot = snapshots.iter().rev().find(|snap| {
+                snap.timestamp <= scene.timestamp
+                    && snap.last_seen_at.unwrap_or(snap.timestamp) + 5_000 >= scene.timestamp
+            });
             let visible_windows = snapshot
                 .map(parse_visible_windows)
                 .transpose()

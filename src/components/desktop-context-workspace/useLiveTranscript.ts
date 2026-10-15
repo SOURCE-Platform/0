@@ -1,4 +1,5 @@
 import { Dispatch, SetStateAction, useEffect } from "react";
+import { mergeOverviewDetail, mergeOverviewSlice } from "./timelineSelection";
 import { invoke } from "@tauri-apps/api/core";
 import {
   AsrSegment,
@@ -52,7 +53,7 @@ function applySlice(
     }
     return latest;
   });
-  setSliceDetail((current) => current ? {
+  setSliceDetail((current) => current && current.slice.id === latest.id && current.slice.rail === latest.rail ? {
     ...current,
     slice: latest,
     occurredAt: latest.startTimestamp,
@@ -74,11 +75,15 @@ export function useLiveTranscript({
   useEffect(() => {
     if (!timeline || !selectedSlice) return;
     const latest = findSlice(timeline.rails, selectedSlice.rail, selectedSlice.id);
-    if (latest) applySlice(latest, setSelectedSlice, setSliceDetail);
+    if (latest) {
+      setSelectedSlice((current) => current ? mergeOverviewSlice(current, latest) : current);
+      setSliceDetail((current) => mergeOverviewDetail(current, latest));
+    }
   }, [timeline, selectedSlice?.id, selectedSlice?.rail]);
 
   useEffect(() => {
-    if (!selectedSlice?.tags.includes("asr")) return;
+    if (!selectedSlice || !["audio_dictation", "audio_mobile"].includes(selectedSlice.rail)) return;
+    if (selectedSlice.tags.includes("final")) return;
     let stopped = false;
     let pending = false;
     const refresh = async () => {
@@ -110,7 +115,7 @@ export function useLiveTranscript({
       stopped = true;
       window.clearInterval(interval);
     };
-  }, [selectedSlice?.id, selectedSlice?.rail]);
+  }, [selectedSlice?.id, selectedSlice?.rail, selectedSlice?.tags.includes("final")]);
 }
 
 export function immediateSliceDetail(slice: ContextSlice): ContextSliceDetail {

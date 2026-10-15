@@ -1,0 +1,14 @@
+.app-container {
+  --app-page-gutter: 1.5rem;
+}
+
+.app-header {
+  padding-inline: var(--app-page-gutter);
+}
+
+.app-page-content {
+  /* Match the header edges using the window width, so the scrollbar's
+     reserved space does not add a second gutter on the right. */
+  width: calc(100vw - 2 * var(--app-page-gutter));
+  margin-left: var(--app-page-gutter);
+}

@@ -30,7 +30,7 @@ pub(super) enum AudioCaptureSource {
 
 pub(super) async fn run_audio_loop(
     db: Arc<Database>,
-    storage: Arc<RecordingStorage>,
+    _storage: Arc<RecordingStorage>,
     generation_ref: Arc<AtomicU64>,
     generation: u64,
     session_id: String,
@@ -38,13 +38,6 @@ pub(super) async fn run_audio_loop(
     capture_source: AudioCaptureSource,
     analysis_options: AudioAnalysisOptions,
 ) {
-    let session_uuid = match Uuid::parse_str(&session_id) {
-        Ok(value) => value,
-        Err(error) => {
-            eprintln!("audio loop could not parse session id: {error}");
-            return;
-        }
-    };
     let mut previous_speech_detected = false;
     let transcripts = TranscriptAccumulator::new(db.clone(), session_id.clone(), source_id.clone());
     cleanup_stale_audio_inputs(&db).await;
@@ -118,9 +111,7 @@ pub(super) async fn run_audio_loop(
         }
         let retain_evidence = speech_permit.is_some();
         let retained_path = if retain_evidence {
-            save_audio_evidence_chunk(&storage, session_uuid, &temp_path)
-                .await
-                .ok()
+            save_audio_evidence_chunk(&temp_path).await.ok()
         } else {
             None
         };
@@ -193,7 +184,7 @@ pub(super) async fn run_audio_loop(
                 true
             });
 
-        let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
+        let _ = reindex_audio_state_spans(&db, &session_id, &source_id, capture_started).await;
         previous_speech_detected = analysis.speech_detected;
 
         if !sound_task_started {

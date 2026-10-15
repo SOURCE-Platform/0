@@ -53,18 +53,19 @@ export function useSettingsController() {
   }, []);
 
   useEffect(() => {
-    if (!captureStatus?.isActive) return;
+    if (!captureStatus?.isActive || tab !== "capture") return;
     // Refresh live status only. Reloading config here could overwrite a
     // switch flipped in the last moment, before its autosave landed.
     const interval = window.setInterval(() => {
       void load(true, false);
     }, 5000);
     return () => window.clearInterval(interval);
-  }, [captureStatus?.isActive]);
+  }, [captureStatus?.isActive, tab]);
 
   useEffect(() => {
     if (tab !== "storage") return;
     void loadChannelPreview(previewChannel);
+    void invoke<CaptureDataOverview>("get_capture_data_overview").then(setDataOverview).catch(() => {});
   }, [tab, previewChannel]);
 
   const selectedDisplayName = useMemo(
@@ -93,9 +94,9 @@ export function useSettingsController() {
           invoke<DesktopCaptureStatus>("get_desktop_capture_status").catch(
             () => null as DesktopCaptureStatus | null,
           ),
-          invoke<CaptureDataOverview>("get_capture_data_overview").catch(
+          tab === "storage" ? invoke<CaptureDataOverview>("get_capture_data_overview").catch(
             () => null as CaptureDataOverview | null,
-          ),
+          ) : Promise.resolve(null),
         ]);
 
       if (includeConfig) {
@@ -107,7 +108,7 @@ export function useSettingsController() {
       setAudioInputSources(loadedAudioInputSources);
       setChannelStatuses(loadedChannelStatuses);
       setCaptureStatus(loadedCaptureStatus);
-      setDataOverview(loadedDataOverview);
+      if (loadedDataOverview) setDataOverview(loadedDataOverview);
 
       const storedDisplayId = localStorage.getItem(DISPLAY_KEY);
       const matchingDisplay = storedDisplayId

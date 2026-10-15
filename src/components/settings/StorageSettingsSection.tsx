@@ -1,7 +1,8 @@
-import { FolderOpen, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Disclosure } from "@/components/ui/page";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { StorageOverviewCard } from "@/components/settings/StorageOverviewCard";
@@ -14,32 +15,18 @@ export function StorageSettingsSection({ controller }: { controller: SettingsCon
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Storage Location</CardTitle>
-          <CardDescription className="max-w-[60ch]">
-            This is where SOURCE is currently writing local capture data.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Input value={config.storage_path} readOnly />
-          <Button type="button" variant="outline" className="gap-2" onClick={() => controller.handleRevealPath("configured_storage")}>
-            <FolderOpen className="h-4 w-4" />
-            Open in Finder
-          </Button>
-        </CardContent>
-      </Card>
-
       <StorageOverviewCard controller={controller} />
       <ChannelDataFootprintCard controller={controller} />
-      <RawCapturePreviewCard controller={controller} />
+      <Disclosure title="Inspect stored data" description="Preview recent database rows for each capture channel.">
+        <RawCapturePreviewCard controller={controller} />
+      </Disclosure>
       <RetentionCard controller={controller} />
       <DeleteAllDataCard controller={controller} />
 
       {!dataOverview?.notes.length ? null : (
         <Card>
           <CardHeader>
-            <CardTitle>What to Expect Today</CardTitle>
+            <CardTitle>Storage notes</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {dataOverview.notes.map((note) => (
@@ -58,18 +45,18 @@ function ChannelDataFootprintCard({ controller }: { controller: SettingsControll
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Channel Data Footprint</CardTitle>
+        <CardTitle>Data by source</CardTitle>
         <CardDescription className="max-w-[60ch]">
-          Review what each capture channel has stored so far and clear one channel at a time when needed.
+          Stored records and file sizes for each capture source.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         {(controller.dataOverview?.channels ?? []).map((channel) => (
-          <div key={channel.channel} className="rounded-xl border border-border/70 px-4 py-4">
+          <div key={channel.channel} className="border-b border-border py-3 first:pt-0 last:border-0 last:pb-0">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-2">
-                <div className="text-base font-medium text-foreground">{channel.label}</div>
-                <div className="space-y-1 text-xs text-muted-foreground">
+                <div className="text-sm font-medium text-foreground">{channel.label}</div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <div>Storage: {channel.storageKind}</div>
                   <div>Rows stored: {channel.rowCount.toLocaleString()}</div>
                   <div>Last sample: {formatTimestamp(channel.lastEventTime)}</div>
@@ -85,7 +72,7 @@ function ChannelDataFootprintCard({ controller }: { controller: SettingsControll
                 disabled={controller.captureStatus?.isActive || controller.deletingKey !== null}
               >
                 <Trash2 className="h-4 w-4" />
-                {controller.deletingKey === channel.channel ? "Deleting..." : "Delete channel data"}
+                {controller.deletingKey === channel.channel ? "Deleting..." : "Clear data"}
               </Button>
             </div>
           </div>
@@ -97,15 +84,9 @@ function ChannelDataFootprintCard({ controller }: { controller: SettingsControll
 
 function RawCapturePreviewCard({ controller }: { controller: SettingsController }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Raw Capture Preview</CardTitle>
-        <CardDescription className="max-w-[60ch]">
-          Inspect the actual rows SOURCE is storing so you can see the raw captured structure, not just summary metrics.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="inline-flex w-full overflow-hidden rounded-lg border border-border md:w-auto">
+    <div>
+      <div className="space-y-4">
+        <div className="flex w-full flex-wrap rounded-lg border border-border md:w-auto">
           {(controller.dataOverview?.channels ?? []).map((channel) => {
             const selected = controller.previewChannel === channel.channel;
             return (
@@ -115,8 +96,8 @@ function RawCapturePreviewCard({ controller }: { controller: SettingsController 
                 onClick={() => controller.setPreviewChannel(channel.channel)}
                 className={`px-3 py-2 text-sm transition-colors ${
                   selected
-                    ? "bg-white/8 text-foreground ring-1 ring-white/18"
-                    : "bg-muted/18 text-muted-foreground hover:bg-muted/28 hover:text-foreground"
+                    ? "bg-accent text-foreground"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
                 }`}
               >
                 {channel.label}
@@ -168,8 +149,8 @@ function RawCapturePreviewCard({ controller }: { controller: SettingsController 
             </p>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -182,14 +163,16 @@ function RetentionCard({ controller }: { controller: SettingsController }) {
       <CardHeader>
         <CardTitle>Retention</CardTitle>
         <CardDescription className="max-w-[60ch]">
-          How long different capture artifacts are kept.
+          Days to keep each type of capture data.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-4 md:grid-cols-2">
         {Object.entries(config.retention_days).map(([key, value]) => (
-          <div key={key} className="space-y-2">
-            <Label className="text-base capitalize">{key.split("_").join(" ")}</Label>
+          <div key={key} className="flex items-center justify-between gap-4 rounded-lg bg-muted/20 px-3 py-2">
+            <Label className="text-sm capitalize">{key.split("_").join(" ")}</Label>
             <Input
+              className="w-24"
+              aria-label={`${key.split("_").join(" ")} retention in days`}
               type="number"
               min="1"
               value={value}

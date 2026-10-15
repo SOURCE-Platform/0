@@ -14,7 +14,7 @@ pub(super) async fn infer_app_context(
         r#"
         SELECT id, timestamp, frontmost_app_name, frontmost_bundle_id
         FROM window_snapshots
-        WHERE timestamp <= ? AND timestamp >= ?
+        WHERE timestamp <= ? AND COALESCE(last_seen_at, timestamp) >= ?
         ORDER BY timestamp DESC
         LIMIT 1
         "#,

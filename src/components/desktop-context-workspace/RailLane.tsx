@@ -119,7 +119,9 @@ export function RailLane({
                 trackWidth > 0 && (anchor / 100) * trackWidth + tipHalfPx > trackWidth;
               const tipOverflowsLeft =
                 trackWidth > 0 && (anchor / 100) * trackWidth - tipHalfPx < 0;
-              const storageLabel = `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
+              const storageLabel = !slice.storageExact && slice.storageBytes === 0
+                ? "Storage details load on click"
+                : `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
               const isSelected = selectedSliceId === slice.id && selectedRailId === rail.id;
               const sourceLabel = getAudioSourceLabel(slice);

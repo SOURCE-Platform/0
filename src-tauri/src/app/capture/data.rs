@@ -19,7 +19,7 @@ struct CaptureChannelMeta {
 const CAPTURE_CHANNELS: [CaptureChannelMeta; 9] = [
     CaptureChannelMeta { channel: "system", label: "OS / session events", storage_kind: "database", count_query: "SELECT COUNT(*) FROM context_events WHERE channel = 'system'", last_query: "SELECT MAX(timestamp) FROM context_events WHERE channel = 'system'" },
     CaptureChannelMeta { channel: "focus", label: "Focus and running apps", storage_kind: "database", count_query: "SELECT COUNT(*) FROM context_events WHERE channel = 'focus'", last_query: "SELECT MAX(timestamp) FROM context_events WHERE channel = 'focus'" },
-    CaptureChannelMeta { channel: "visible_windows", label: "Visible windows snapshots", storage_kind: "database", count_query: "SELECT COUNT(*) FROM window_snapshots", last_query: "SELECT MAX(timestamp) FROM window_snapshots" },
+    CaptureChannelMeta { channel: "visible_windows", label: "Running app changes", storage_kind: "database", count_query: "SELECT COUNT(*) FROM window_snapshots", last_query: "SELECT (SELECT COALESCE(last_seen_at, timestamp) FROM window_snapshots ORDER BY timestamp DESC LIMIT 1)" },
     CaptureChannelMeta { channel: "keyboard", label: "Keyboard activity", storage_kind: "database", count_query: "SELECT COUNT(*) FROM keyboard_events", last_query: "SELECT MAX(timestamp) FROM keyboard_events" },
     CaptureChannelMeta { channel: "mouse", label: "Mouse activity", storage_kind: "database", count_query: "SELECT COUNT(*) FROM mouse_events", last_query: "SELECT MAX(timestamp) FROM mouse_events" },
     CaptureChannelMeta { channel: "ocr", label: "OCR text capture", storage_kind: "database", count_query: "SELECT COUNT(*) FROM ocr_results", last_query: "SELECT MAX(timestamp) FROM ocr_results" },

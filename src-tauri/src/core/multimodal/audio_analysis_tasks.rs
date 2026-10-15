@@ -92,7 +92,7 @@ pub(super) fn spawn_speech_analysis_task(
                 .await;
             }
         }
-        let _ = reindex_audio_state_spans(&db, &session_id, &source_id).await;
+        let _ = reindex_audio_state_spans(&db, &session_id, &source_id, start_timestamp).await;
         remove_audio_input(&db, &audio_chunk_id, &audio_path).await;
     });
 }

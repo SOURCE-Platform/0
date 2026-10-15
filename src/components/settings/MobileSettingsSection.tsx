@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { MobileConnectionDetails } from "./MobileConnectionDetails";
+import { Disclosure } from "@/components/ui/page";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -134,15 +138,15 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
         <CardHeader>
           <CardTitle>Source Mobile {phoneConnected ? "· phone connected" : ""}</CardTitle>
           <CardDescription>
-            Your iPhone connects itself. Approve it once here, then audio is sent over HTTPS on your LAN and transcribed on this Mac.
+            Pair your iPhone to send audio and access your agent conversations over your local network.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-6">
             <div className="space-y-1">
-              <Label htmlFor="mobile-enabled" className="text-base">Enable mobile server</Label>
+              <Label htmlFor="mobile-enabled" className="text-sm font-medium">Enable mobile server</Label>
               <p className="text-sm text-muted-foreground">
-                Advertise _source-mobile._tcp over Bonjour{port ? ` on port ${port}` : ""}.
+                Let paired devices find and connect to this Mac{port ? ` on port ${port}` : ""}.
               </p>
             </div>
             <Switch
@@ -152,45 +156,8 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="mobile-agent-prompts" className="text-base">
-                Let the phone send prompts to coding agents
-              </Label>
-              <p className="max-w-[60ch] text-sm text-muted-foreground">
-                Your paired phone can already see your agent sessions. Turn this on to also let it
-                send prompts into them, which can change files on this Mac. Takes effect right away.
-              </p>
-            </div>
-            <Switch
-              id="mobile-agent-prompts"
-              checked={config.mobile_agent_prompts_enabled ?? false}
-              onCheckedChange={(checked) => void setPhonePrompts(checked)}
-            />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <Label htmlFor="agent-prompts-keep-bypass" className="text-base">
-                Keep Bypass permissions for prompts from the phone
-              </Label>
-              <p className="max-w-[60ch] text-sm text-muted-foreground">
-                The phone can't show Claude's permission requests, so by default anything that needs
-                your approval is refused for prompts sent from it. Turn this on to let a conversation set to
-                Bypass permissions on this Mac keep that mode: Claude then runs commands and changes
-                files without asking, for anyone using your paired phone. Also applies to prompts
-                sent from SOURCE's Agents tab. Other conversations are unaffected.
-              </p>
-            </div>
-            <Switch
-              id="agent-prompts-keep-bypass"
-              checked={config.agent_prompts_keep_bypass ?? false}
-              onCheckedChange={(checked) => void setKeepBypass(checked)}
-            />
-          </div>
-
           <div className="space-y-3">
-            <Label className="text-base">Pair a phone</Label>
+            <Label className="text-sm font-medium">Pair a phone</Label>
             <p className="text-sm text-muted-foreground">
               Open Source Mobile on your iPhone, tap Connect, and point it at this code.
             </p>
@@ -204,25 +171,25 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
                 <p className="text-xs text-muted-foreground">
                   Expires in 5 minutes. Anyone who scans it can pair, so don't screenshot or share it.
                 </p>
-                <button
+                <Button
                   type="button"
                   onClick={() => {
                     setQr(null);
                     void invoke("mobile_clear_pairing_qr").catch(() => {});
                   }}
-                  className="rounded-md border px-3 py-1 text-sm hover:bg-accent"
+                  variant="outline" size="sm"
                 >
                   Hide code
-                </button>
+                </Button>
               </div>
             ) : (
-              <button
+              <Button
                 type="button"
                 onClick={showQr}
-                className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                size="sm"
               >
                 Show pairing code
-              </button>
+              </Button>
             )}
             {justPaired ? (
               <p className="text-sm text-emerald-600 dark:text-emerald-400">{justPaired} paired.</p>
@@ -232,7 +199,7 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
 
           {requests.length > 0 ? (
             <div className="space-y-2">
-              <Label className="text-base">Waiting for approval</Label>
+              <Label className="text-sm font-medium">Waiting for approval</Label>
               <p className="text-sm text-muted-foreground">
                 This phone couldn't use the camera, so check the code matches instead.
               </p>
@@ -250,20 +217,20 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
                     </div>
                     <div className="font-mono text-3xl tracking-[0.3em]">{request.sas}</div>
                     <div className="flex items-center gap-2">
-                      <button
+                      <Button
                         type="button"
                         onClick={() => resolveRequest(request.requestId, true)}
-                        className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                        size="sm"
                       >
                         Allow
-                      </button>
-                      <button
+                      </Button>
+                      <Button
                         type="button"
                         onClick={() => resolveRequest(request.requestId, false)}
-                        className="rounded-md border px-4 py-2 text-sm hover:bg-accent"
+                        variant="outline" size="sm"
                       >
                         Deny
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 ))}
@@ -272,17 +239,7 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
           ) : null}
 
           <div className="space-y-2">
-            <Label className="text-base">TLS fingerprint</Label>
-            <p className="break-all font-mono text-xs text-muted-foreground">
-              {fingerprint || "Starting…"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              The iPhone pins this SHA-256 when you approve it, and warns if it changes.
-            </p>
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-base">Paired devices</Label>
+            <Label className="text-sm font-medium">Paired devices</Label>
             {devices.length === 0 ? (
               <p className="text-sm text-muted-foreground">No phones paired yet.</p>
             ) : (
@@ -295,13 +252,13 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
                         Last seen {new Date(device.lastSeenAt).toLocaleString()}
                       </div>
                     </div>
-                    <button
+                    <Button
                       type="button"
                       onClick={() => unpair(device.deviceId)}
-                      className="rounded-md border px-3 py-1 text-sm hover:bg-accent"
+                      variant="outline" size="sm"
                     >
                       Unpair
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -309,8 +266,8 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="mobile-retention" className="text-base">Clip retention (days, 0 = forever)</Label>
-            <input
+            <Label htmlFor="mobile-retention" className="text-sm font-medium">Clip retention (days, 0 = forever)</Label>
+            <Input
               id="mobile-retention"
               type="number"
               min={0}
@@ -319,9 +276,51 @@ export function MobileSettingsSection({ controller }: { controller: SettingsCont
               onChange={(event) =>
                 controller.updateConfig({ mobile_clip_retention_days: Number(event.target.value) })
               }
-              className="w-32 rounded-md border border-input bg-background px-3 py-1 text-sm"
+              className="w-24"
             />
           </div>
+          <Disclosure title="Agent permissions" description="Control whether your phone can send prompts and use Bypass permissions.">
+            <div className="space-y-6">
+          <div className="flex items-center justify-between gap-6">
+            <div className="space-y-1">
+              <Label htmlFor="mobile-agent-prompts" className="text-sm font-medium">
+                Let the phone send prompts to coding agents
+              </Label>
+              <p className="max-w-[60ch] text-sm text-muted-foreground">
+                Your paired phone can already see your agent sessions. Turn this on to also let it
+                send prompts into them, which can change files on this Mac. Takes effect right away.
+              </p>
+            </div>
+            <Switch
+              id="mobile-agent-prompts"
+              checked={config.mobile_agent_prompts_enabled ?? false}
+              onCheckedChange={(checked) => void setPhonePrompts(checked)}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-6">
+            <div className="space-y-1">
+              <Label htmlFor="agent-prompts-keep-bypass" className="text-sm font-medium">
+                Keep Bypass permissions for prompts from the phone
+              </Label>
+              <p className="max-w-[60ch] text-sm text-muted-foreground">
+                The phone can't show Claude's permission requests, so by default anything that needs
+                your approval is refused for prompts sent from it. Turn this on to let a conversation set to
+                Bypass permissions on this Mac keep that mode: Claude then runs commands and changes
+                files without asking, for anyone using your paired phone. Also applies to prompts
+                sent from SOURCE's Agents tab. Other conversations are unaffected.
+              </p>
+            </div>
+            <Switch
+              id="agent-prompts-keep-bypass"
+              checked={config.agent_prompts_keep_bypass ?? false}
+              onCheckedChange={(checked) => void setKeepBypass(checked)}
+            />
+          </div>
+
+            </div>
+          </Disclosure>
+          <MobileConnectionDetails fingerprint={fingerprint} />
         </CardContent>
       </Card>
     </div>

@@ -25,7 +25,7 @@ impl Default for Config {
             video_codec: "h264".to_string(),
             video_quality: "Medium".to_string(),
             hardware_acceleration: true,
-            target_fps: 15,
+            target_fps: 2,
             website_blacklist: Vec::new(),
             app_blacklist: Vec::new(),
             selected_audio_input_id: None,

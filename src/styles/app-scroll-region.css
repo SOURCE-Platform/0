@@ -1,0 +1,50 @@
+.app-scroll-shell {
+  --app-scrollbar-alpha: 0.08;
+}
+
+.app-scroll-shell:hover {
+  --app-scrollbar-alpha: 0.16;
+}
+
+.app-scroll-region {
+  scrollbar-width: none;
+  /* Alpha masks fade the content into the actual angled app background.
+     The fade grows with scroll distance so the unscrolled page stays clear. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 var(--scroll-fade-height, 0px));
+  mask-image: linear-gradient(to bottom, transparent, #000 var(--scroll-fade-height, 0px));
+}
+
+.app-scroll-shell::-webkit-scrollbar,
+.app-scroll-region::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.app-scroll-track {
+  display: flex;
+  width: 11px;
+  padding: 3px 4px;
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.app-scroll-track:hover,
+.app-scroll-track:active {
+  --app-scrollbar-alpha: 0.22;
+}
+
+.app-scroll-track:active {
+  cursor: grabbing;
+}
+
+.app-scroll-thumb {
+  flex: 1;
+  border-radius: 10px;
+  background-color: rgb(var(--scrollbar-thumb-rgb) / var(--app-scrollbar-alpha));
+  transition: background-color 120ms linear;
+}
+
+.contained-scroll-viewport { scrollbar-width: none; }
+.contained-scroll-viewport::-webkit-scrollbar { display: none; width: 0; height: 0; }

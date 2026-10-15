@@ -1,7 +1,7 @@
 use crate::core::ocr_storage::CapturedApp;
+use crate::models::capture::RawFrame;
 use crate::models::ocr::BoundingBox;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,9 +18,10 @@ impl Default for OcrProcessorConfig {
         Self {
             enabled: true,
             interval_seconds: 60,
-            batch_size: 5,
+            batch_size: 1,
             skip_static_frames: true,
-            max_queue_size: 100,
+            // Keep only the latest pending scene while OCR is busy.
+            max_queue_size: 1,
         }
     }
 }
@@ -28,7 +29,7 @@ impl Default for OcrProcessorConfig {
 #[derive(Debug, Clone)]
 pub struct OcrJob {
     pub session_id: Uuid,
-    pub frame_path: PathBuf,
+    pub frame: RawFrame,
     pub timestamp: i64,
     pub display_id: Option<u32>,
     pub trigger_reason: String,

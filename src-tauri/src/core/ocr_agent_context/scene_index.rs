@@ -14,7 +14,7 @@ pub async fn reindex_processed_result(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let scene = build_scene_snapshot(db, result, raw_row_ids).await?;
     upsert_scene_snapshot(db, &scene).await?;
-    rebuild_session_spans_and_entities(db, &result.session_id.to_string()).await
+    rebuild_session_spans_and_entities(db, &result.session_id.to_string(), result.timestamp).await
 }
 
 pub async fn delete_derived_for_session(

@@ -12,20 +12,21 @@ export function PrivacySettingsSection({ controller }: { controller: SettingsCon
   return (
     <Card>
       <CardHeader>
-        <CardTitle>PII Detection</CardTitle>
+        <CardTitle>Personal data detection</CardTitle>
         <CardDescription>
-          Detect-only is the default. Review surfaces exist so you can inspect what SOURCE identified before any future automation is added.
+          Identify personal information in captured text and choose which categories to flag.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <Label className="text-base">Enable PII detection</Label>
+            <Label className="text-sm font-medium">Enable personal data detection</Label>
             <p className="text-sm text-muted-foreground">
               Keep personal-data detection active in review flows.
             </p>
           </div>
           <Switch
+            aria-label="Enable personal data detection"
             checked={config.pii_settings.enabled}
             onCheckedChange={(enabled) =>
               controller.updateConfig({
@@ -40,12 +41,13 @@ export function PrivacySettingsSection({ controller }: { controller: SettingsCon
 
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <Label className="text-base">Detect only</Label>
+            <Label className="text-sm font-medium">Detect only</Label>
             <p className="text-sm text-muted-foreground">
-              Do not auto-redact or auto-drop content yet.
+              Flag personal information without changing or removing the captured text.
             </p>
           </div>
           <Switch
+            aria-label="Detect only"
             checked={config.pii_settings.detect_only}
             onCheckedChange={(detect_only) =>
               controller.updateConfig({
@@ -59,7 +61,7 @@ export function PrivacySettingsSection({ controller }: { controller: SettingsCon
         </div>
 
         <div className="space-y-3">
-          <Label className="text-base">Entity categories</Label>
+          <Label className="text-sm font-medium">Entity categories</Label>
           <div className="grid gap-3 md:grid-cols-2">
             {PII_CATEGORIES.map((category) => (
               <div
@@ -68,6 +70,7 @@ export function PrivacySettingsSection({ controller }: { controller: SettingsCon
               >
                 <span className="text-sm">{category.label}</span>
                 <Switch
+                  aria-label={category.label}
                   checked={config.pii_settings.enabled_categories.includes(category.value)}
                   onCheckedChange={(enabled) => controller.updatePiiCategory(category.value, enabled)}
                 />
@@ -77,8 +80,10 @@ export function PrivacySettingsSection({ controller }: { controller: SettingsCon
         </div>
 
         <div className="space-y-2">
-          <Label className="text-base">Review confidence threshold</Label>
+          <Label className="text-sm font-medium">Review confidence threshold</Label>
           <Input
+            aria-label="Review confidence threshold"
+            className="max-w-32"
             type="number"
             min="0"
             max="1"

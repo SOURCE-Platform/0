@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { endOfDay, startOfDay } from "date-fns";
+import { bufferedTimelineRange, timelineCoversRange } from "./timelineRange";
 import {
-  AppUsageOverview,
   ChannelStatus,
   ContextSlice,
   ContextSliceDetail,
@@ -13,7 +13,7 @@ import {
   TimelineRail,
 } from "@/types/contextTimeline";
 
-/** Whole-day aggregates refresh at most this often while polling. */
+/** Channel health and the visible block overview refresh on this cadence. */
 const SLOW_REFRESH_MS = 30_000;
 import { useTimelineInteraction } from "@/components/desktop-context-workspace/useTimelineInteraction";
 import {
@@ -32,7 +32,6 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   const [status, setStatus] = useState<DesktopCaptureStatus | null>(null);
   const [channelStatuses, setChannelStatuses] = useState<ChannelStatus[]>([]);
   const [timeline, setTimeline] = useState<ContextTimelineData | null>(null);
-  const [appUsage, setAppUsage] = useState<AppUsageOverview | null>(null);
   const [ocrItems, setOcrItems] = useState<OcrReviewItem[]>([]);
   const [piiItems, setPiiItems] = useState<PiiEntity[]>([]);
   const [selectedSlice, setSelectedSlice] = useState<ContextSlice | null>(null);
@@ -52,10 +51,11 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   const [windowEndTimestamp, setWindowEndTimestamp] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const dateRangeRef = useRef<{ start: number; end: number }>({ start: dayStart, end: Date.now() });
-  // One refresh at a time. The poll fires every 2 s; when a round took longer
-  // than that, rounds overlapped until every database connection was taken and
-  // requests failed with "pool timed out while waiting for an open connection".
-  const loadInFlightRef = useRef(false);
+  const timelineCacheRef = useRef<ContextTimelineData | null>(null);
+  const timelineLoadedAtRef = useRef(0);
+  const loadInFlightCountRef = useRef(0);
+  const loadGenerationRef = useRef(0);
+  const detailGenerationRef = useRef(0);
   const slowRefreshAtRef = useRef(0);
 
   const isToday = useMemo(() => startOfDay(new Date()).getTime() === dayStart, [dayStart]);
@@ -89,47 +89,52 @@ export function useDesktopContextWorkspace(displayId: number | null) {
         });
       });
     }
-    appUsage?.items.forEach((item) => {
-      const appName = item.appName?.trim();
-      if (appName) names.add(appName);
-    });
     return Array.from(names).sort();
-  }, [timeline, appUsage]);
+  }, [timeline]);
 
-  async function loadWorkspace(silent = false) {
-    if (silent && loadInFlightRef.current) return;
-    loadInFlightRef.current = true;
-    if (!silent) setLoading(true);
-    const currentRange = dateRangeRef.current;
-    // Channel counts and app usage scan the whole day and barely change between
-    // polls, so they refresh on a slower cadence than the timeline itself.
+  async function loadWorkspace(
+    silent = false,
+    range = { start: effectiveWindowStart, end: effectiveWindowEnd },
+    reuseCached = false,
+  ) {
+    if (silent && loadInFlightCountRef.current > 0) return;
+    const generation = ++loadGenerationRef.current;
     const now = Date.now();
+    if (reuseCached && now - timelineLoadedAtRef.current < SLOW_REFRESH_MS
+      && timelineCoversRange(timelineCacheRef.current, range)) {
+      setLoading(false);
+      return;
+    }
+    loadInFlightCountRef.current += 1;
+    if (!timelineCacheRef.current) setLoading(true);
     const refreshSlow = !silent || now - slowRefreshAtRef.current >= SLOW_REFRESH_MS;
+    const fetchRange = bufferedTimelineRange(range, {
+      start: dateRangeRef.current.start,
+      end: isToday ? now : dateRangeRef.current.end,
+    });
     try {
-      const [captureStatus, timelineData, channels, appOverview] = await Promise.all([
+      const [captureStatus, timelineData, channels] = await Promise.all([
         invoke<DesktopCaptureStatus>("get_desktop_capture_status"),
         invoke<ContextTimelineData>("get_context_timeline", {
-          startTimestamp: currentRange.start,
-          endTimestamp: currentRange.end,
+          startTimestamp: fetchRange.start,
+          endTimestamp: fetchRange.end,
         }),
         refreshSlow ? invoke<ChannelStatus[]>("get_channel_statuses") : Promise.resolve(null),
-        refreshSlow
-          ? invoke<AppUsageOverview>("get_app_usage_overview", {
-              startTimestamp: currentRange.start,
-              endTimestamp: currentRange.end,
-            })
-          : Promise.resolve(null),
       ]);
+      if (generation !== loadGenerationRef.current) return;
       setStatus(captureStatus);
+      timelineCacheRef.current = timelineData;
+      timelineLoadedAtRef.current = Date.now();
       setTimeline(timelineData);
       if (channels) setChannelStatuses(channels);
-      if (appOverview) setAppUsage(appOverview);
       if (refreshSlow) slowRefreshAtRef.current = now;
     } catch (error) {
-      setActionError(`Failed to load device context timeline: ${error}`);
+      if (generation === loadGenerationRef.current) {
+        setActionError(`Failed to load device context timeline: ${error}`);
+      }
     } finally {
-      loadInFlightRef.current = false;
-      if (!silent) setLoading(false);
+      loadInFlightCountRef.current -= 1;
+      if (generation === loadGenerationRef.current) setLoading(false);
     }
   }
 
@@ -160,8 +165,11 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   }
 
   useEffect(() => {
-    void loadWorkspace();
-  }, [dateRange.start]);
+    const timer = window.setTimeout(() => void loadWorkspace(false, {
+      start: effectiveWindowStart, end: effectiveWindowEnd,
+    }, true), 200);
+    return () => window.clearTimeout(timer);
+  }, [dateRange.start, windowDurationMs, windowEndTimestamp, isLiveFollowing]);
 
   useEffect(() => {
     setWindowEndTimestamp(isToday ? Date.now() : dateRange.end);
@@ -169,24 +177,24 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   }, [dateRange.start, isToday]);
 
   useEffect(() => {
-    void loadReviewData();
-  }, [dateRange.start, appFilter, piiTypeFilter]);
-
-  useEffect(() => {
     if (!isToday) return;
     const interval = setInterval(() => {
       setNowMs(Date.now());
-    }, 1000);
+    }, SLOW_REFRESH_MS);
     return () => clearInterval(interval);
   }, [isToday]);
 
   useEffect(() => {
-    if (!isToday) return;
+    if (!isToday || !isLiveFollowing || !status?.isActive) return;
     const interval = setInterval(() => {
-      void loadWorkspace(true);
-    }, status?.isActive ? 2000 : 10000);
+      const end = Date.now();
+      void loadWorkspace(true, {
+        start: Math.max(dayStart, end - windowDurationMs),
+        end,
+      });
+    }, SLOW_REFRESH_MS);
     return () => clearInterval(interval);
-  }, [status?.isActive, isToday, dateRange.start]);
+  }, [status?.isActive, isToday, isLiveFollowing, dayStart, windowDurationMs]);
 
   useLiveTranscript({ timeline, selectedSlice, setSelectedSlice, setSliceDetail });
 
@@ -230,9 +238,9 @@ export function useDesktopContextWorkspace(displayId: number | null) {
   }
 
   async function handleSelectSlice(slice: ContextSlice) {
+    const generation = ++detailGenerationRef.current;
     setSelectedSlice(slice);
-    // Show the transcript instantly from the timeline slice, then fill in
-    // the full detail (raw payloads, enriched metadata) in the background.
+    // Keep the selected block visible while its stored content loads.
     setSliceDetail(immediateSliceDetail(slice));
     setLoadingDetail(true);
     setActionError(null);
@@ -245,21 +253,22 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     );
     try {
       const details = await invoke<ContextSliceDetail>("get_context_slice_detail", {
-        sliceId: slice.id,
-        railId: slice.rail,
-        startTimestamp: dateRange.start,
-        endTimestamp: dateRange.end,
+        slice,
       });
-      setSliceDetail(details);
+      if (generation === detailGenerationRef.current) setSliceDetail(details);
     } catch (error) {
-      setActionError(`Failed to load block detail: ${error}`);
+      if (generation === detailGenerationRef.current) {
+        setActionError(`Failed to load block detail: ${error}`);
+      }
     } finally {
-      setLoadingDetail(false);
+      if (generation === detailGenerationRef.current) setLoadingDetail(false);
     }
   }
 
   function clearSelectedSlice() {
+    detailGenerationRef.current += 1;
     setSelectedSlice(null);
+    setSliceDetail(null);
   }
 
   function shiftWindow(direction: -1 | 1) {
@@ -280,7 +289,6 @@ export function useDesktopContextWorkspace(displayId: number | null) {
     status,
     channelStatuses,
     timeline,
-    appUsage,
     ocrItems,
     piiItems,
     selectedSlice,

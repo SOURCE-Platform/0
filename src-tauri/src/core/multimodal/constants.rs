@@ -10,7 +10,6 @@ pub(super) const VISUAL_MIN_POSTURE_CONFIDENCE: f32 = 0.75;
 pub(super) const VISUAL_EXIT_POSTURE_CONFIDENCE: f32 = 0.55;
 pub(super) const AUDIO_MIN_SPEECH_CONFIDENCE: f32 = 0.55;
 pub(super) const AUDIO_SILENCE_HANGOVER_MS: i64 = 1_500;
-pub(super) const EVIDENCE_AUDIT_INTERVAL_MS: i64 = 60_000;
 // The built-in MacBook microphone often reports normal speech below the
 // original thresholds, especially when used in clamshell mode.
 pub(super) const VAD_RMS_SPEECH_THRESHOLD: f32 = 0.003;

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +17,8 @@ interface AnimatedTabNavProps {
 export function AnimatedTabNav({ tabs, value, onValueChange, className }: AnimatedTabNavProps) {
   const [tabAnim, setTabAnim] = useState<{ from: string; to: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   function handleClick(newValue: string) {
     if (newValue === value) return;
@@ -58,15 +60,24 @@ export function AnimatedTabNav({ tabs, value, onValueChange, className }: Animat
   }
 
   return (
-    <nav className={cn("flex items-center gap-5", className)} role="tablist">
-      {tabs.map(tab => (
+    <nav className={cn("flex items-center gap-5", className)} role="tablist" aria-label="Views">
+      {tabs.map((tab, index) => (
         <button
           key={tab.value}
           role="tab"
           aria-selected={value === tab.value}
+          tabIndex={value === tab.value || (!tabs.some((item) => item.value === value) && index === 0) ? 0 : -1}
+          onKeyDown={(event) => {
+            const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+            if (!offset && event.key !== "Home" && event.key !== "End") return;
+            event.preventDefault();
+            const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (index + offset + tabs.length) % tabs.length;
+            handleClick(tabs[next].value);
+            event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[next]?.focus();
+          }}
           onClick={() => handleClick(tab.value)}
           className={cn(
-            "relative cursor-pointer text-sm font-normal transition-colors focus-visible:outline-none",
+            "relative cursor-pointer text-sm font-normal transition-colors rounded-sm focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring",
             value === tab.value
               ? "text-foreground"
               : "text-foreground/60 hover:text-foreground"

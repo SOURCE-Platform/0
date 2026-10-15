@@ -9,10 +9,17 @@ use super::{
 use crate::core::database::Database;
 use std::sync::Arc;
 
+const REINDEX_WINDOW_MS: i64 = 5 * 60 * 1000;
+
 pub(super) async fn rebuild_session_spans_and_entities(
     db: &Arc<Database>,
     session_id: &str,
+    timestamp: i64,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // A new OCR scene changes only its five-minute window. Rebuilding the
+    // entire capture session on every frame grew quadratically over a day.
+    let window_start = timestamp.div_euclid(REINDEX_WINDOW_MS) * REINDEX_WINDOW_MS;
+    let window_end = window_start + REINDEX_WINDOW_MS;
     let scenes = sqlx::query_as::<_, SceneSnapshotRow>(
         r#"
         SELECT scene_id, session_id, timestamp, display_id, frontmost_app_name, frontmost_bundle_id,
@@ -20,31 +27,37 @@ pub(super) async fn rebuild_session_spans_and_entities(
                avg_confidence, block_count, text_blocks_json, pii_entities_json, linked_context_json,
                raw_source_json
         FROM ocr_scene_snapshots
-        WHERE session_id = ?
+        WHERE session_id = ? AND timestamp >= ? AND timestamp < ?
         ORDER BY timestamp ASC
         "#,
     )
     .bind(session_id)
+    .bind(window_start)
+    .bind(window_end)
     .fetch_all(db.pool())
     .await?
     .into_iter()
     .map(scene_row_to_dto)
     .collect::<Result<Vec<_>, _>>()?;
 
-    sqlx::query("DELETE FROM ocr_text_spans WHERE session_id = ?")
+    sqlx::query("DELETE FROM ocr_text_spans WHERE session_id = ? AND first_seen_at >= ? AND first_seen_at < ?")
         .bind(session_id)
+        .bind(window_start)
+        .bind(window_end)
         .execute(db.pool())
         .await?;
-    sqlx::query("DELETE FROM ocr_context_entities WHERE session_id = ?")
+    sqlx::query("DELETE FROM ocr_context_entities WHERE session_id = ? AND first_seen_at >= ? AND first_seen_at < ?")
         .bind(session_id)
+        .bind(window_start)
+        .bind(window_end)
         .execute(db.pool())
         .await?;
 
-    let spans = build_text_spans(session_id, &scenes);
+    let spans = build_text_spans(session_id, window_start, &scenes);
     for span in &spans {
         insert_text_span(db, span).await?;
     }
-    for entity in &build_context_entities(session_id, &scenes, &spans) {
+    for entity in &build_context_entities(session_id, window_start, &scenes, &spans) {
         insert_context_entity(db, entity).await?;
     }
 
@@ -53,6 +66,7 @@ pub(super) async fn rebuild_session_spans_and_entities(
 
 pub(super) fn build_text_spans(
     session_id: &str,
+    window_start: i64,
     scenes: &[AgentSceneSnapshotDto],
 ) -> Vec<AgentTextSpanDto> {
     let mut spans: Vec<MutableTextSpan> = Vec::new();
@@ -124,7 +138,7 @@ pub(super) fn build_text_spans(
         .into_iter()
         .enumerate()
         .map(|(index, span)| AgentTextSpanDto {
-            text_span_id: format!("span-{}-{}", session_id, index + 1),
+            text_span_id: format!("span-{}-{}-{}", session_id, window_start, index + 1),
             session_id: session_id.to_string(),
             canonical_text: span.canonical_text,
             normalized_text: span.normalized_text,

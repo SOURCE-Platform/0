@@ -20,6 +20,7 @@ mod ocr;
 mod tests;
 
 const OCR_APP_SWITCH_POLL_MS: i64 = 250;
+const OCR_MIN_CAPTURE_INTERVAL_MS: i64 = 15_000;
 const OCR_LARGE_SCENE_CHANGE_THRESHOLD: f32 = 0.35;
 
 #[async_trait]
@@ -101,7 +102,9 @@ pub struct RecordingConfig {
 impl Default for RecordingConfig {
     fn default() -> Self {
         Self {
-            target_fps: 10,
+            // Video evidence is disabled; OCR needs timely scene checks, not
+            // ten full-display captures and motion comparisons each second.
+            target_fps: 2,
             buffer_size: 60,
             no_motion_threshold: 20,
             motion_detection_threshold: 0.05,

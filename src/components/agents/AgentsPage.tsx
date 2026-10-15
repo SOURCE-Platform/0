@@ -1,3 +1,5 @@
+import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page";
 import { useMemo, useState } from "react";
 import { AgentSessionDetail } from "./AgentSessionDetail";
 import { AgentSessionRow } from "./AgentSessionRow";
@@ -17,6 +19,7 @@ export default function AgentsPage() {
   const { sessions, problems, held, error, loading } = useAgentSessions();
   const [filter, setFilter] = useState<Filter>("all");
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const [limit, setLimit] = useState(80);
   const [showArchived, setShowArchived] = useState(false);
 
   const counts = useMemo(() => {
@@ -43,7 +46,7 @@ export default function AgentsPage() {
 
   if (open) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-4 py-2">
+      <div className="w-full max-w-6xl space-y-6">
         <AgentSessionDetail
           key={openKey}
           session={open}
@@ -55,41 +58,32 @@ export default function AgentsPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-2">
-      <header className="mb-5">
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Agents</h1>
-        <p className="mt-2 max-w-[60ch] text-sm leading-6 text-muted-foreground">
-          Every coding-agent conversation on this Mac, newest first. Running sessions
-          are marked with a green dot.
-          {liveCount > 0 && ` ${liveCount} running now.`}
-        </p>
-      </header>
+    <div className="w-full max-w-6xl space-y-6">
+      <PageHeader title="Agents" description="Your conversations across Codex, Claude Code, Factory, and OpenCode."
+        action={liveCount > 0 ? <span className="flex items-center gap-2 text-xs text-muted-foreground"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />{liveCount} running</span> : undefined} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         {FILTERS.map((value) => (
-          <button
+          <Button
+            size="sm"
+            variant={filter === value ? "secondary" : "ghost"}
+            aria-pressed={filter === value}
             key={value}
-            onClick={() => setFilter(value)}
-            className={`cursor-pointer rounded-lg border px-3 py-1.5 text-xs transition-colors ${
-              filter === value
-                ? "border-foreground/40 bg-foreground/10 text-foreground"
-                : "border-border/60 text-muted-foreground hover:bg-card/60"
-            }`}
+            onClick={() => { setFilter(value); setLimit(80); }}
+
           >
             {value === "all" ? "All" : APP_LABELS[value]}
             <span className="ml-2 text-[11px] text-muted-foreground">{counts[value] ?? 0}</span>
-          </button>
+          </Button>
         ))}
-        <button
-          onClick={() => setShowArchived((current) => !current)}
-          className="ml-auto cursor-pointer rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-card/60"
-        >
+        <Button size="sm" variant="ghost" aria-pressed={showArchived}
+          onClick={() => { setShowArchived((current) => !current); setLimit(80); }} className="ml-auto text-muted-foreground">
           {showArchived ? "Hide archived" : "Show archived"}
-        </button>
+        </Button>
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-950/15 px-4 py-3 text-sm text-red-200">
+        <div className="rounded-xl border border-red-500/30 bg-red-950/15 px-4 py-3 text-sm text-destructive">
           Could not read agent sessions: {error}
         </div>
       )}
@@ -99,7 +93,7 @@ export default function AgentsPage() {
       {problems.map((problem) => (
         <div
           key={problem.app}
-          className="mb-2 rounded-xl border border-amber-500/30 bg-amber-950/15 px-4 py-3 text-sm text-amber-100"
+          className="mb-2 rounded-xl border border-amber-500/30 bg-amber-950/15 px-4 py-3 text-sm text-amber-800 dark:text-amber-200"
         >
           {APP_LABELS[problem.app]} sessions could not be read: {problem.message}
         </div>
@@ -117,8 +111,8 @@ export default function AgentsPage() {
         </p>
       )}
 
-      <div className="flex flex-col gap-2">
-        {visible.map((session) => (
+      <div className={visible.length ? "agent-list" : undefined}>
+        {visible.slice(0, limit).map((session) => (
           <AgentSessionRow
             key={`${session.app}:${session.id}`}
             session={session}
@@ -127,6 +121,10 @@ export default function AgentsPage() {
           />
         ))}
       </div>
+      {visible.length > limit && <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">Showing {limit} of {visible.length} conversations</p>
+        <Button variant="outline" size="sm" onClick={() => setLimit((current) => current + 80)}>Show more</Button>
+      </div>}
     </div>
   );
 }

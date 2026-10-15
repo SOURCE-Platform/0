@@ -77,6 +77,7 @@ function MicrophoneControls({
           </p>
         </div>
         <Switch
+          aria-label="Record microphone"
           checked={config.audio_microphone_enabled}
           onCheckedChange={controller.updateAudioMicrophoneEnabled}
         />
@@ -91,7 +92,7 @@ function MicrophoneControls({
             onValueChange={controller.selectAudioInput}
             disabled={!config.audio_microphone_enabled}
           >
-            <SelectTrigger className="h-auto min-h-10">
+            <SelectTrigger aria-label="Microphone input" className="h-auto min-h-10">
               <SelectValue placeholder="Choose a microphone" />
             </SelectTrigger>
             <SelectContent>
@@ -178,6 +179,7 @@ function DesktopAudioControls({ controller }: { controller: SettingsController }
           source="desktop"
         />
         <Switch
+          aria-label="Record desktop audio"
           checked={config.audio_desktop_enabled}
           onCheckedChange={controller.updateAudioDesktopEnabled}
         />
@@ -244,7 +246,7 @@ function AnalysisToggle({
         <Label className="text-sm">{label}</Label>
         <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
+      <Switch aria-label={label} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
   );
 }

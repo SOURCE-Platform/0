@@ -16,7 +16,10 @@ fn build_focus_rail(
         let span_end = snapshot_span_end(snapshot, next_timestamp, &session_ends, end_timestamp);
 
         match current.as_mut() {
-            Some(active) if active.app_name.as_ref() == Some(&app_name) => {
+            Some(active)
+                if active.app_name.as_ref() == Some(&app_name)
+                    && snapshot.timestamp <= active.end_timestamp + 5_000 =>
+            {
                 active.end_timestamp = span_end;
                 active.storage_bytes += window_snapshot_storage_bytes(snapshot);
                 active.row_count += 1;
@@ -46,7 +49,7 @@ fn build_focus_rail(
                     app_name: Some(app_name),
                     window_title: None,
                     interaction_state: None,
-                    reasons: vec!["Derived from periodic frontmost-app snapshots.".to_string()],
+                    reasons: vec!["Derived from frontmost-app changes observed during capture.".to_string()],
                     visible_windows: Vec::new(),
                     ocr_preview: None,
                     pii_count: 0,
@@ -107,17 +110,14 @@ fn build_visible_windows_rail(
                 &session_ends,
                 end_timestamp,
             );
-            let frontmost = snapshot
-                .frontmost_app_name
-                .clone()
-                .unwrap_or_else(|| "Unknown".to_string());
+            let frontmost = snapshot.frontmost_app_name.clone().unwrap_or_else(|| "Unknown".to_string());
             ContextSlice {
                 id: format!("visible-{}", snapshot.id),
                 rail: "visible_windows".to_string(),
                 slice_kind: "span".to_string(),
                 start_timestamp: snapshot.timestamp,
                 end_timestamp: span_end,
-                title: format!("{} visible apps", windows.len()),
+                title: format!("{} running apps", windows.len()),
                 subtitle: Some(format!("Frontmost: {}", frontmost)),
                 source: snapshot.source.clone(),
                 confidence: snapshot.confidence as f32,
@@ -177,7 +177,10 @@ fn build_interaction_rail(
         let snap = snapshots
             .iter()
             .rev()
-            .find(|row| row.timestamp >= bucket_start && row.timestamp < bucket_end)
+            .find(|row| {
+                row.timestamp < bucket_end
+                    && row.last_seen_at.unwrap_or(row.timestamp) + 5_000 >= bucket_start
+            })
             .cloned();
 
         if kb.is_empty() && ms.is_empty() && ocr.is_empty() && snap.is_none() {
