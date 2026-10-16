@@ -32,6 +32,16 @@ use crate::sync::session::Transfer;
 
 /// The Mac this phone pairs with: the device that authorized its enroll
 /// entry, still active in the committed registry.
+/// The Mac this phone syncs with: the one the stored endpoint names (a Mac
+/// the phone added, F.2e design §7), else the authorizer of the phone's
+/// own entry — active either way.
+fn target_mac(reg: &RegistryState, me: &[u8; 16], endpoint: &serde_json::Value) -> Result<[u8; 16], ErrorCode> {
+    match endpoint.get("device_id").and_then(serde_json::Value::as_str).and_then(crate::crypto::hex::decode_array::<16>) {
+        Some(id) => reg.active_device(&id).map(|d| d.device_id).ok_or(ErrorCode::PeerNotPermitted),
+        None => paired_mac(reg, me),
+    }
+}
+
 fn paired_mac(reg: &RegistryState, me: &[u8; 16]) -> Result<[u8; 16], ErrorCode> {
     let mac = reg.entries.iter().find(|e| e.kind == EntryKind::Enroll && &e.device_id == me).and_then(|e| e.authorizer).ok_or(ErrorCode::PeerNotPermitted)?;
     reg.active_device(&mac).map(|d| d.device_id).ok_or(ErrorCode::PeerNotPermitted)
@@ -71,7 +81,7 @@ pub fn peer_sync_begin(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
         None => return OpOutcome::err(ErrorCode::BadState),
     };
     let out = with_env(&mut c, |env, slot| {
-        let mac = paired_mac(env.committed, &env.me.device_id())?;
+        let mac = target_mac(env.committed, &env.me.device_id(), &endpoint)?;
         let (exchange, request) = Exchange::begin(env, vault_id, mac)?;
         *slot = Some(exchange);
         Ok(json!({ "request": b64::encode(&request), "endpoint": endpoint }))

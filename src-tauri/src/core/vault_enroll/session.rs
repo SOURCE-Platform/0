@@ -260,7 +260,7 @@ pub(super) fn note_server_stopped() {
     let _ = current().lock().unwrap_or_else(|e| e.into_inner()).take();
 }
 
-pub(super) async fn call(frame: Value) -> Result<Value, String> {
+pub(crate) async fn call(frame: Value) -> Result<Value, String> {
     #[cfg(target_os = "macos")]
     {
         tauri::async_runtime::spawn_blocking(move || vault_client::request(frame))

@@ -64,6 +64,10 @@ pub struct Sessions {
     pub peer_in: Vec<(crate::peer::verify::Accepted, Transfer)>,
     /// A phone's enrollment in progress (§22.10, `join_ops`).
     pub join: Option<crate::enroll::join::JoinSession>,
+    /// F.2e: a Mac joining from an iPhone (`renroll_ops`), and an iPhone
+    /// adding a Mac (`authorize_ops`).
+    pub renroll: Option<super::renroll_ops::RenrollSession>,
+    pub authorize: Option<super::authorize_ops::AuthorizeSession>,
     /// The phone's peer exchange in progress (§22.8, `peer_sync_ops`).
     pub peer_client: Option<crate::peer::client::Exchange>,
     /// A Mac answer too large for one FFI frame, streamed in (SEC-I1).
@@ -84,6 +88,8 @@ impl Sessions {
         self.peer.clear(); // lock aborts a peer session (annex A.2.2)
         self.peer_in.clear();
         self.join = None; // and a pairing in progress
+        self.renroll = None; // and a join from an iPhone (its staging is swept)
+        self.authorize = None; // and an iPhone adding a Mac (nothing committed before the ACK)
         self.peer_client = None; // and a phone's peer exchange
         self.peer_answer = None;
     }
@@ -109,6 +115,12 @@ impl Sessions {
             return Some(t);
         }
         if let Some(t) = self.join.as_mut().and_then(|j| j.transfer.as_mut()).filter(|t| &t.id == id) {
+            return Some(t);
+        }
+        if let Some(t) = self.renroll.as_mut().and_then(|r| r.transfer.as_mut()).filter(|t| &t.id == id) {
+            return Some(t);
+        }
+        if let Some(t) = self.authorize.as_mut().and_then(|a| a.bundle.as_mut()).filter(|t| &t.id == id) {
             return Some(t);
         }
         if let Some(t) = self.peer_answer.as_mut().filter(|t| &t.id == id) {
@@ -139,36 +151,6 @@ impl VaultCore {
             VaultState::Unlocked | VaultState::Locked if self.provider.publish.is_some() => VaultState::BackingUp,
             s => s,
         }
-    }
-
-    /// The `get_state` answer (§1.5), one shape for every shell: the
-    /// reported state, whether the vault itself is open (BACKING_UP can
-    /// overlay a LOCKED vault, §13.2), and §22.14's `behind`.
-    pub fn state_answer(&self) -> Value {
-        let mut v = serde_json::json!({ "ok": true, "error": null, "state": self.reported_state().as_str(), "vault_open": self.vk.is_some() });
-        if self.behind {
-            v["behind"] = serde_json::json!(true);
-        }
-        // §22.9: this phone was removed by its Mac (locked; reads only).
-        if let Some(r) = crate::peer::client::removal::active(self.phone, &self.vault_dir) {
-            v["removed"] = serde_json::json!({ "published": r.published });
-        }
-        // §11.3.2 corroborated (the phone's provider path keeps the count).
-        let lost = self.phone && self.store.as_ref().is_some_and(|s| crate::storage::kv::get::<bool>(&s.conn, "phone_access_lost").ok().flatten() == Some(true));
-        if lost {
-            v["access_lost"] = serde_json::json!(true);
-        }
-        // §22.11: a fully staged publication waits (it may finish LOCKED).
-        if self.provider.publish.is_some() {
-            v["upload_waiting"] = serde_json::json!(true);
-        }
-        // §22.10: a Recovery Key sheet that was shown for a rotation that
-        // never committed (not while that rotation is still running).
-        let gen = self.header.as_ref().map(|h| h.vk_generation);
-        if self.state != crate::state::VaultState::Authorizing && gen.is_some_and(|g| super::staged_sheet::void(&self.vault_dir, g)) {
-            v["rk_sheet_void"] = serde_json::json!(true);
-        }
-        v
     }
 }
 

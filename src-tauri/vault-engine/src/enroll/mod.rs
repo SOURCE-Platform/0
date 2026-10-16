@@ -11,6 +11,7 @@
 //! or is cancelled leaves no registry trace (§5.2 "Cancellation").
 
 pub mod join;
+pub mod reverse;
 pub mod session;
 pub mod transcript;
 pub mod vectors;

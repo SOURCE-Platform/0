@@ -87,6 +87,13 @@ struct SecurityView: View {
                 }
             }
             if let note { Section { Text(note).foregroundStyle(.secondary) } }
+            if let engine = model.engine {
+                Section {
+                    NavigationLink("Add a Mac") { AddMacView(flow: AddMacFlow(engine: engine)) }
+                } footer: {
+                    Text("Replacing a lost Mac: remove the old one above first.")
+                }
+            }
             Section { RemoveVaultButton() }
         }
         .navigationTitle("Security")

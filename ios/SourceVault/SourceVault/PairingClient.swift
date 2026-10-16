@@ -32,6 +32,16 @@ final class PairingClient: NSObject, URLSessionTaskDelegate {
         return try await send(req)
     }
 
+    /// A raw body (F.2e: the bundle the iPhone sends to a joining Mac),
+    /// waiting up to `timeout` — the Mac answers after its panel.
+    func postData(_ path: String, _ body: Data, timeout: TimeInterval) async throws -> [String: Any] {
+        var req = URLRequest(url: base.appendingPathComponent(path), timeoutInterval: timeout)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        return try await send(req)
+    }
+
     /// The bundle route waits up to the 300 s session for the Mac's confirm.
     func get(_ path: String, timeout: TimeInterval) async throws -> [String: Any] {
         try await send(URLRequest(url: base.appendingPathComponent(path), timeoutInterval: timeout))

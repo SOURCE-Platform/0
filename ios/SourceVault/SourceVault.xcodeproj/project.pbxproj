@@ -14,6 +14,7 @@
 		1580B80EA1E51B7859A66578 /* rfc9180-p256-sha256-chacha20poly1305.json in Resources */ = {isa = PBXBuildFile; fileRef = 687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */; };
 		1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7C53B7D113D72746B717F0 /* PairingClient.swift */; };
 		2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FEA2D1E7608412D7A5842AF /* Bridge.swift */; };
+		37342EF963DDE64956F74200 /* AddMacFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D8FC5CE71D6D11D9FF7A318 /* AddMacFlow.swift */; };
 		38B424F52B8584030A6BC5C6 /* PairingViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D99DB8E35238A1EE22C1601 /* PairingViews.swift */; };
 		41F165CF57B764F848A162CB /* SecurityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF77D1EC6F4F1D7207E3FA5D /* SecurityViews.swift */; };
 		5020952636713E7A5A613A08 /* xv_enroll.json in Resources */ = {isa = PBXBuildFile; fileRef = ED53DEC71C02811674524B49 /* xv_enroll.json */; };
@@ -59,6 +60,7 @@
 		5978FB9BAE962487F1227C05 /* XVHPKETests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVHPKETests.swift; sourceTree = "<group>"; };
 		5AAD6AAC531EFD6C0C4B18C1 /* SourceVaultXV.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = SourceVaultXV.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		687B2E8B0E076B8858A2FECB /* rfc9180-p256-sha256-chacha20poly1305.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "rfc9180-p256-sha256-chacha20poly1305.json"; sourceTree = "<group>"; };
+		6D8FC5CE71D6D11D9FF7A318 /* AddMacFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddMacFlow.swift; sourceTree = "<group>"; };
 		81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SourceVault.entitlements; sourceTree = "<group>"; };
 		8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingFlow.swift; sourceTree = "<group>"; };
 		956B40F606AD3F7766C05E0B /* PeerClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerClient.swift; sourceTree = "<group>"; };
@@ -174,6 +176,7 @@
 		B70A90B0FC912CC0CF0F078E /* SourceVault */ = {
 			isa = PBXGroup;
 			children = (
+				6D8FC5CE71D6D11D9FF7A318 /* AddMacFlow.swift */,
 				2DFDE1D765033C8C76490273 /* AppModel.swift */,
 				E93147EB9D273DD62FF6FC76 /* Info.plist */,
 				FF7C53B7D113D72746B717F0 /* PairingClient.swift */,
@@ -383,6 +386,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				37342EF963DDE64956F74200 /* AddMacFlow.swift in Sources */,
 				B1438F27C53576568BB3A842 /* AppModel.swift in Sources */,
 				2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */,
 				1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */,

@@ -116,6 +116,20 @@ pub fn reset(store: &VaultStore) -> Result<(), ErrorCode> {
     raise(store)
 }
 
+/// A Mac that joined a vault from an iPhone (F.2e, design §5 step 6): a
+/// Keychain floor that already names this vault is kept, its `lost` and
+/// `unpublished` lists intact, and only ever raised — a Mac that lost its
+/// directory and rejoins must not forget a security change it had not
+/// published (review SEC-I3). Any other floor starts over.
+pub fn join(store: &VaultStore) -> Result<(), ErrorCode> {
+    let f = keychain::read_floor()?;
+    if f.vault_id.as_deref() == Some(hex::encode(store.header.vault_id.0).as_str()) {
+        raise(store)
+    } else {
+        reset(store)
+    }
+}
+
 /// After a verified provider exchange while behind: caught up once the
 /// accepted provider state reaches the floor's (same commitment at equal
 /// generation). Raises the local generation to the floor, then the floor.

@@ -9,14 +9,8 @@ import { TimelineRuler } from "@/components/desktop-context-workspace/TimelineRu
 import { useDesktopContextWorkspace } from "@/components/desktop-context-workspace/useDesktopContextWorkspace";
 import {
   safeFormatDate,
+  railEmptyMessage,
 } from "@/components/desktop-context-workspace/utils";
-
-// Audio-only focus: microphone + desktop audio and dictation are the active
-// data sources. Every other rail stays in the backend and comes back as its
-// source is onboarded — this filter is the only thing hiding them.
-function isAudioRail(railId: string): boolean {
-  return railId === "audio" || railId.startsWith("audio_");
-}
 
 export function DeviceContextTimelineSection({
   controller,
@@ -26,8 +20,7 @@ export function DeviceContextTimelineSection({
   const selectedRailId = controller.selectedSlice?.rail ?? null;
   const autoStartedRef = useRef(false);
 
-  // Always-on audio: capture starts with the workspace. Screen recording and
-  // OCR stay disabled during the audio-timeline phase.
+  // Capture starts with the workspace and respects the user's source settings.
   useEffect(() => {
     if (autoStartedRef.current) return;
     if (controller.loading || !controller.canStartCapture) return;
@@ -105,28 +98,9 @@ export function DeviceContextTimelineSection({
               />
               <div className="space-y-0">
                 {controller.timeline.rails
-                  .filter((rail) => isAudioRail(rail.id))
                   .map((rail) => (
                   <TimelineRailTree
-                    key={rail.id}
-                    rail={rail}
-                    depth={0}
-                    expandedRails={{}}
-                    onToggleRail={() => {}}
-                    windowStart={controller.effectiveWindowStart}
-                    windowEnd={controller.effectiveWindowEnd}
-                    selectedSliceId={controller.selectedSlice?.id ?? null}
-                    selectedRailId={selectedRailId}
-                    onSelect={controller.handleSelectSlice}
-                    onDeselect={controller.clearSelectedSlice}
-                    appFilter={controller.appFilter}
-                    interactionFilter={controller.interactionFilter}
-                  />
-                ))}
-                {controller.timeline.rails
-                  .filter((rail) => rail.id === "ocr")
-                  .map((rail) => (
-                  <TimelineRailTree
+                    emptyMessage={railEmptyMessage(rail.id, controller.channelStatuses)}
                     key={rail.id}
                     rail={rail}
                     depth={0}

@@ -5187,14 +5187,52 @@ The alternative the owner may prefer instead: **"Erase this device and
 recover"** — delete the local vault (explicit confirmation) and run the
 §12 scenario 3/4 total-loss recovery from the provider.
 
-### 22.13 Reverse enrollment (F2-D4) — reserved
+### 22.13 Reverse enrollment (F2-D4): the iPhone adds a replacement Mac
 
-The iPhone may authorize enrolling a replacement Mac. Its roles (who
-serves TLS and shows the QR, who assigns `device_id`, who shows the SAS,
-who signs, seals and publishes) are decided in a separate design review.
-Until that review closes, §5 is unchanged, the **EN** tests are not
-defined, and no implementation starts. Authorizing it requires the MP
-(§22.4).
+Design: `phase-f2e-design.md` revision 2 (its revision 1 was reviewed by
+the security and spec reviewers; revision 2 and this text are reviewed in
+the final review, owner decision 2026-10-16). Normative summary:
+
+- **Replacement only.** The iPhone adds a Mac only when no other Mac is
+  an active device and no Mac revocation still waits to publish
+  (`REPLACEMENT_ONLY`) — §12 scenario 1's order, so a revoked Mac's
+  deliveries are already under the §22.7 cutoff before any bundle exists.
+  It also needs: UNLOCKED, not behind, not removed, no rotation waiting
+  (`ROTATION_PENDING`), a verified provider exchange in the last 15
+  minutes (`NOT_FRESH`). A second simultaneous Mac stays out of scope
+  (§22.1).
+- **Roles.** The new Mac serves the ephemeral TLS listener and shows a
+  `v:3` QR `{host (private or link-local IP literal), port, fp, secret,
+  commit}`; its helper commits `SHA-256("ov0/renroll/commit/v1" ‖ nonce_n
+  ‖ sign_pub ‖ agree_pub ‖ name ‖ platform)` before any hello, and keeps
+  `nonce_n` and its keys until its reply. The iPhone assigns `device_id`,
+  signs the `enroll` entry, seals the envelope and publishes, after
+  presence and the master password (§22.4).
+- **Code.** Transcript `SHA-256("ov0/renroll/transcript/v1" ‖ fp ‖
+  authorizer_key ‖ secret ‖ nonce_e ‖ nonce_n ‖ authorizer_device_id ‖
+  new_device_id ‖ sign_pub ‖ agree_pub ‖ vault_id)`; the §5.2 SAS over it,
+  shown on the iPhone and in the Mac helper's own "Join a Vault" panel,
+  which also collects the vault's master password.
+- **The Mac's anchor and checks.** The SAS-confirmed transcript binds the
+  iPhone's signing key (`authorizer_key`) — a stated exception to §22.1's
+  anchoring. The bundle passes the §22.10 order against it; the VK comes
+  from the bundle's `password.wrap` (hash fixed by the signed index, KDF
+  block equal to the header's) opened with the panel's password, and the
+  checkpoint is verified under it — a vault whose password the user does
+  not know is never joined. A verified first materialization is a key the
+  device trusts (§22.4): its commitment is signed at join.
+- **Completion.** Routes `POST /v1/vault/renroll/{hello, bundle, done}`;
+  bundle and done carry `X-Ov0-Proof` = `HMAC-SHA256(secret,
+  "ov0/renroll/proof/v1" ‖ nonce_e)`. The bundle answer is the §5.2 ACK
+  and the Mac's `peer_endpoint` (A.4; token bound to the iPhone's id);
+  the iPhone verifies the ACK, appends the entry, records the pending
+  `Enrollment`, keeps the endpoint with the new Mac's id, and sends
+  `done`. Only `done` moves the Mac's staged attempt into its vault root;
+  the attempt lives in `renroll/` until then and is swept where no vault
+  exists. A lock ends the attempt on both sides.
+- **Floor.** The Mac keeps a Keychain floor that already names this
+  vault (never lowered); otherwise it starts one (§22.14).
+- **Tests.** RE-01…RE-12 (`phase-f2e-design.md` §10).
 
 ### 22.14 SY-13: an older restored store opens read-only (F2-D5 #5)
 

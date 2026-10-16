@@ -30,6 +30,7 @@ import {
 import { BackupStatusLine } from "./BackupStatusLine";
 import { DevicesPanel } from "./DevicesPanel";
 import { RecoverCard } from "./RecoverCard";
+import { JoinFromPhoneCard } from "./JoinFromPhoneCard";
 import { SetupCard } from "./SetupCard";
 import { ItemList } from "./ItemList";
 import { DeletedItems } from "./DeletedItems";
@@ -175,6 +176,7 @@ export function VaultPage() {
         {state === "uninitialized" && (
           <>
             <SetupCard busy={busy} onCreate={(handle) => run(() => vaultSetup(handle))} />
+            <JoinFromPhoneCard onDone={refreshState} />
             <RecoverCard onDone={refreshState} />
           </>
         )}

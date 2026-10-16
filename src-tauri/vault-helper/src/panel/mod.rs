@@ -114,7 +114,7 @@ pub struct HelperPanel {
 
 impl PanelRunner for HelperPanel {
     fn run(&self, req: PanelRequest, timeout: Duration) -> PanelOutcome {
-        if req == PanelRequest::EnrollConfirm {
+        if matches!(req, PanelRequest::EnrollConfirm | PanelRequest::JoinConfirm) {
             return PanelOutcome::Cancelled; // never without its code (VER-O9)
         }
         #[cfg(debug_assertions)]
@@ -213,7 +213,7 @@ fn scripted(req: &PanelRequest) -> Option<PanelOutcome> {
     let first = parts.next().unwrap_or("");
     let second = parts.next().unwrap_or("");
     match req {
-        PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::EnrollConfirm => {
+        PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::EnrollConfirm | PanelRequest::JoinConfirm => {
             Some(PanelOutcome::Submitted(secret(first)))
         }
         PanelRequest::MpChange => Some(PanelOutcome::SubmittedChange(secret(first), secret(second))),

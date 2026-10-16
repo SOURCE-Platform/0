@@ -1,6 +1,15 @@
 import { format } from "date-fns";
 import { ChannelStatus, ContextSlice, TimelineRail } from "@/types/contextTimeline";
 
+export function railEmptyMessage(railId: string, statuses: ChannelStatus[] = []): string {
+  const channel = railId === "vision" || railId === "attention" ? "camera_future" : railId;
+  const status = statuses.find((item) => item.channel === channel);
+  if (status?.health === "unavailable") return status.details;
+  if (railId === "evidence") return "No retained screen evidence in this time range.";
+  if (status && !status.enabled) return "Capture is off for this source.";
+  return "No captured activity in this time range.";
+}
+
 export const MIN_WINDOW_MS = 2 * 60 * 1000;
 
 export function safeFormatDate(
@@ -94,6 +103,8 @@ export function railTone(railId: string, interactionState?: string | null) {
   if (railId === "visible_windows") return "bg-cyan-500/80";
   if (railId === "ocr") return "bg-amber-500/85";
   if (railId === "attention") return "bg-indigo-500/85";
+  if (railId === "keyboard") return "bg-blue-500/85";
+  if (railId === "mouse") return "bg-cyan-500/85";
   if (railId === "vision") return "bg-rose-500/85";
   if (railId === "audio_dictation") return "bg-violet-500/85";
   if (railId === "audio_mobile") return "bg-sky-500/85";

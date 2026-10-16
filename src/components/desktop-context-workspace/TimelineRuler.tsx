@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
+import { TIMELINE_GRID_CLASS_NAME } from "./railLayout";
 import {
   getLabeledTicks,
   getSnappedTicks,
@@ -33,7 +34,7 @@ export function TimelineRuler({ startTimestamp, endTimestamp }: TimelineRulerPro
     <div className="relative h-10">
       {/* Same grid as the lanes below (label column + track) so ticks
           line up exactly with lane subdivisions. */}
-      <div className="grid h-full gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
+      <div className={`h-full ${TIMELINE_GRID_CLASS_NAME}`}>
         <div className="hidden md:block" />
         <div ref={trackRef} className="relative h-full w-full border border-b-0 border-border/70 bg-background/60">
           {gridTicks.map((timestamp) => {

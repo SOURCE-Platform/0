@@ -22,7 +22,7 @@ struct OcrOverviewRow {
 }
 
 /// The visible timeline needs block positions and labels, not stored text or
-/// the other rails' raw records. Detail is loaded separately on selection.
+/// any source's raw records. Detail is loaded separately on selection.
 pub async fn build_context_timeline_overview(
     db: &Arc<Database>,
     start_timestamp: i64,
@@ -138,6 +138,8 @@ pub async fn build_context_timeline_overview(
         "Select a block to load its captured text and details.",
         ocr_slices,
     ));
+    rails.extend(build_activity_overviews(db, start_timestamp, end_timestamp).await?);
+    rails.extend(build_desktop_overviews(db, start_timestamp, end_timestamp).await?);
     Ok(ContextTimelineData {
         start_timestamp,
         end_timestamp,

@@ -1,5 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
+import { layoutTimelineSlices } from "./sliceGeometry";
+import { getSliceLayout, TIMELINE_GRID_CLASS_NAME, TRACK_HEIGHT_PX } from "./railLayout";
 import {
   formatBytes,
   getSnappedTicks,
@@ -10,6 +12,7 @@ import {
 } from "@/components/desktop-context-workspace/utils";
 
 interface RailLaneProps {
+  emptyMessage?: string;
   rail: TimelineRail;
   depth: number;
   windowStart: number;
@@ -23,6 +26,7 @@ interface RailLaneProps {
 }
 
 export function RailLane({
+  emptyMessage = "No captured activity in this time range.",
   rail,
   depth,
   windowStart,
@@ -53,6 +57,7 @@ export function RailLane({
   const slices = rail.slices.filter((slice) =>
     sliceIsVisible(slice, windowStart, windowEnd, appFilter, interactionFilter, rail.id),
   );
+  const blocks = layoutTimelineSlices(slices, windowStart, windowEnd, trackWidth);
   const waveformSamples = (rail.waveform?.samples ?? []).filter(
     (sample) => sample.timestamp >= windowStart && sample.timestamp <= windowEnd,
   );
@@ -64,15 +69,15 @@ export function RailLane({
   const railPadding = depth * 16;
 
   return (
-    <div className="-mb-px grid gap-2 md:grid-cols-[8rem_minmax(0,1fr)]">
+    <div className={`-mb-px ${TIMELINE_GRID_CLASS_NAME}`}>
       <div
-        className="flex min-w-0 items-center py-1 pr-3"
+        className="flex min-w-0 items-center justify-end pr-4 text-right"
         style={{ paddingLeft: railPadding }}
       >
-        <span className="text-xs font-normal leading-5 text-muted-foreground">{rail.label}</span>
+        <span title={rail.label} className="truncate text-xs font-normal leading-4 text-muted-foreground">{rail.label}</span>
       </div>
 
-      <div ref={trackRef} className="relative h-16 overflow-x-clip border border-border/70 bg-background/65">
+      <div ref={trackRef} className="relative overflow-x-clip border border-border/70 bg-background/65" style={{ height: TRACK_HEIGHT_PX }}>
         <div
           className="relative h-full w-full"
           onClick={(event) => {
@@ -93,23 +98,12 @@ export function RailLane({
           {hasWaveform ? <ContinuousWaveform samples={waveformSamples} windowStart={windowStart} range={range} /> : null}
           {slices.length === 0 && !hasWaveform ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
-              {hasCapturedSlicesOutsideView
+              <span className="max-w-[60ch] truncate px-3 text-center" title={emptyMessage}>{hasCapturedSlicesOutsideView
                 ? "Captured blocks are outside this time view. Jump to Now to see them."
-                : "No slices for the current filters."}
+                : emptyMessage}</span>
             </div>
           ) : (
-            slices.map((slice) => {
-              const clippedStart = Math.max(slice.startTimestamp, windowStart);
-              const clippedEnd = Math.min(Math.max(slice.endTimestamp, slice.startTimestamp + 1), windowEnd);
-              const left = ((clippedStart - windowStart) / range) * 100;
-              const rawWidth = ((Math.max(clippedEnd, clippedStart + 1) - clippedStart) / range) * 100;
-              const fullWidth = slice.sliceKind === "event" ? Math.max(1.25, rawWidth) : Math.max(2.5, rawWidth);
-              // Minimum widths keep slivers clickable, but a block must never
-              // draw past the lane edge: clamp the stub inside the boundary
-              // and drop slices that sit entirely outside it.
-              const clampedLeft = Math.min(Math.max(left, 0), 100);
-              const width = Math.min(fullWidth, 100 - clampedLeft);
-              if (width <= 0) return null;
+            blocks.map(({ slice, left: clampedLeft, width }) => {
               const anchor = Math.min(92, Math.max(8, clampedLeft + width / 2));
               // Tooltips center over their block. Only when centering would
               // push past a lane edge does the tooltip pin that same edge
@@ -119,7 +113,9 @@ export function RailLane({
                 trackWidth > 0 && (anchor / 100) * trackWidth + tipHalfPx > trackWidth;
               const tipOverflowsLeft =
                 trackWidth > 0 && (anchor / 100) * trackWidth - tipHalfPx < 0;
-              const storageLabel = !slice.storageExact && slice.storageBytes === 0
+              const storageLabel = slice.tags.includes("activity_bucket")
+                ? `${slice.rowCount} captured events`
+                : !slice.storageExact && slice.storageBytes === 0
                 ? "Storage details load on click"
                 : `${formatBytes(slice.storageBytes)} ${slice.storageExact ? "Exact" : "Estimated"}`;
               const layout = getSliceLayout(rail, slice);
@@ -133,13 +129,14 @@ export function RailLane({
                 <div key={slice.id}>
                   <button
                     type="button"
+                    aria-label={slice.title}
                     onClick={() => onSelect(slice)}
                     onMouseEnter={() => setHoveredId(slice.id)}
                     onMouseLeave={() => setHoveredId((current) => (current === slice.id ? null : current))}
-                    className={`group absolute top-2 h-12 cursor-pointer overflow-hidden border text-left shadow-sm transition ${
+                    className={`group absolute min-w-0 cursor-pointer overflow-hidden border-0 p-0 text-left ring-1 ring-inset transition-[box-shadow] ${
                       isSelected
-                        ? "z-10 border-white/70 ring-1 ring-white/30"
-                        : "border-white/10 hover:border-white/35"
+                        ? "z-10 ring-white/70"
+                        : "ring-white/10 hover:ring-white/35"
                     } ${railTone(rail.id, slice.interactionState)}`}
                     style={{
                       left: `${clampedLeft}%`,
@@ -150,7 +147,7 @@ export function RailLane({
                     }}
                   >
                     {transcript && layout.showInlineTitle ? (
-                      <div className="line-clamp-4 px-1.5 pt-0.5 text-[10px] font-normal leading-[11px] text-white/90">
+                      <div className="truncate px-1.5 text-[10px] font-normal leading-4 text-white/90">
                         {transcript}
                       </div>
                     ) : null}
@@ -206,7 +203,7 @@ function ContinuousWaveform({
   const step = Math.max(1, Math.ceil(samples.length / maxPoints));
   const bars = samples.filter((_, index) => index % step === 0);
   return (
-    <div className="pointer-events-none absolute inset-x-1 inset-y-2 z-[1] overflow-hidden bg-emerald-400/[0.03]">
+    <div className="pointer-events-none absolute inset-x-1 inset-y-[3px] z-[1] overflow-hidden bg-emerald-400/[0.03]">
       <svg className="h-full w-full" preserveAspectRatio="none" viewBox="0 0 100 100">
         {bars.map((sample, index) => {
           const x = ((sample.timestamp - windowStart) / range) * 100;
@@ -226,47 +223,6 @@ function ContinuousWaveform({
       </svg>
     </div>
   );
-}
-
-function getSliceLayout(rail: TimelineRail, slice: ContextSlice) {
-  const confidence = Math.max(0.2, Math.min(1, slice.confidence));
-  const isEmotionSummary = rail.id === "audio_emotion_summary_lane";
-  const isEmotionDetail = rail.id.startsWith("audio_emotion_") && rail.id !== "audio_emotion_summary_lane";
-  const isAsrEvent = rail.id === "audio_speech" && slice.tags.includes("asr");
-
-  if (isAsrEvent) {
-    return { topPx: 20, heightPx: 22, opacity: Math.max(0.65, confidence), showInlineTitle: true, showInlineSubtitle: false };
-  }
-
-  if (isEmotionSummary) {
-    const polarity = slice.tags.includes("positive")
-      ? "positive"
-      : slice.tags.includes("negative")
-        ? "negative"
-        : slice.tags.includes("centered")
-          ? "centered"
-          : "uncertain";
-    if (polarity === "positive") {
-      const heightPx = Math.max(10, confidence * 20);
-      return { topPx: 28 - heightPx, heightPx, opacity: Math.max(0.6, confidence), showInlineTitle: false, showInlineSubtitle: false };
-    }
-    if (polarity === "negative") {
-      const heightPx = Math.max(10, confidence * 20);
-      return { topPx: 28, heightPx, opacity: Math.max(0.6, confidence), showInlineTitle: false, showInlineSubtitle: false };
-    }
-    if (slice.tags.includes("uncertain")) {
-      return { topPx: 24, heightPx: 10, opacity: 0.45, showInlineTitle: false, showInlineSubtitle: false };
-    }
-    const heightPx = Math.max(8, confidence * 14);
-    return { topPx: 28 - heightPx / 2, heightPx, opacity: Math.max(0.55, confidence), showInlineTitle: false, showInlineSubtitle: false };
-  }
-
-  if (isEmotionDetail) {
-    const heightPx = Math.max(10, confidence * 38);
-    return { topPx: 50 - heightPx, heightPx, opacity: Math.max(0.55, confidence), showInlineTitle: false, showInlineSubtitle: false };
-  }
-
-  return { topPx: 8, heightPx: 48, opacity: Math.max(0.55, confidence), showInlineTitle: true, showInlineSubtitle: true };
 }
 
 function getAudioSourceLabel(slice: ContextSlice): string | null {

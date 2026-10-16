@@ -120,7 +120,7 @@ export function useLiveTranscript({
 
 export function immediateSliceDetail(slice: ContextSlice): ContextSliceDetail {
   const railLabel = {
-    audio_dictation: "Right Option Dictation",
+    audio_dictation: "Dictation",
     audio_ambient_speech: "Ambient Audio",
     audio_sound_events: "Sound Events",
     audio_mobile: "Source Mobile",

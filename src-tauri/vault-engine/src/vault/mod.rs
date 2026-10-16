@@ -44,6 +44,9 @@ pub mod join_ops;
 pub mod recovery_ops;
 pub mod registry_status;
 pub mod remove_vault;
+pub mod renroll_commit;
+pub mod renroll_ops;
+pub mod authorize_ops;
 pub mod resolve;
 pub mod revoke_core;
 pub mod provider_ops;
@@ -56,6 +59,7 @@ pub mod sync_ops;
 pub mod secure_ui;
 pub mod setup;
 pub mod staged_sheet;
+mod state_answer;
 pub mod vk_commit;
 
 pub use secure_ui::{
@@ -174,6 +178,8 @@ impl VaultCore {
     }
 
     pub fn boot(vault_dir: PathBuf) -> VaultCore {
+        // F.2e: a join from an iPhone that never finished (no vault here).
+        renroll_ops::recover_at_boot(&vault_dir);
         let state = crate::state::detect_boot_state(&vault_dir);
         if state == VaultState::Uninitialized && vault_dir.join(recovery_flow::STAGING).exists() {
             // TR-08 / §13.3: an interrupted recovery restarts from scratch —

@@ -18,8 +18,9 @@ export function CaptureChannelRow({ channel, controller }: {
   const config = controller.config;
   if (!config) return null;
   const status = controller.channelStatuses.find((item) => item.channel === channel.key);
-  const enabled = config.capture_channels[channel.key];
-  const health = !enabled ? "off" : status?.health === "off" ? "idle" : status?.health ?? "warming_up";
+  const unavailable = status?.health === "unavailable";
+  const enabled = !unavailable && config.capture_channels[channel.key];
+  const health = unavailable ? "unavailable" : !enabled ? "off" : status?.health === "off" ? "idle" : status?.health ?? "warming_up";
   const id = `capture-${channel.key}`;
 
   return (
@@ -41,9 +42,9 @@ export function CaptureChannelRow({ channel, controller }: {
               {health.split("_").join(" ")}
             </Badge>
           </div>
-          <p className="text-sm leading-6 text-muted-foreground">{channel.description}</p>
+          <p className="text-sm leading-6 text-muted-foreground">{unavailable ? status.details : channel.description}</p>
         </div>
-        <Switch id={id} checked={enabled} disabled={controller.saving || (channel.key === "ocr" && !config.capture_channels.screen_frames)}
+        <Switch id={id} checked={enabled} disabled={unavailable || controller.saving || (channel.key === "ocr" && !config.capture_channels.screen_frames)}
           onCheckedChange={(value) => controller.updateChannel(channel.key, value)} />
       </div>
       {channel.key === "screen_frames" && status?.permissionState === "system_denied" && <div className="mt-3"><ScreenPermissionNotice /></div>}
@@ -57,7 +58,7 @@ export function CaptureChannelRow({ channel, controller }: {
           </div>}
           {channel.key === "audio_future" && <AudioCaptureControls controller={controller} />}
           {channel.key === "ocr" && <OcrCaptureControls controller={controller} />}
-          <Button variant="outline" size="sm" onClick={() => controller.enableOnlyChannel(channel.key)} disabled={controller.saving}>Solo test this channel</Button>
+          <Button variant="outline" size="sm" onClick={() => controller.enableOnlyChannel(channel.key)} disabled={controller.saving || status?.supportsSoloTest === false}>Solo test this channel</Button>
         </div>
       </Disclosure>
     </div>

@@ -9,6 +9,14 @@ fn permission_blocks_channel(permission_state: &str) -> bool {
     matches!(permission_state, "missing" | "system_denied")
 }
 
+fn unavailable_channel_reason(channel: &str) -> Option<&'static str> {
+    if cfg!(target_os = "macos") && matches!(channel, "keyboard" | "mouse") {
+        Some("Not available on macOS yet: this source's event listener is not implemented.")
+    } else {
+        None
+    }
+}
+
 pub fn enabled_channels_from_config(config: &Config) -> Vec<String> {
     let channels = &config.capture_channels;
     [
@@ -24,7 +32,7 @@ pub fn enabled_channels_from_config(config: &Config) -> Vec<String> {
         ("sensor_future", channels.sensor_future),
     ]
     .into_iter()
-    .filter(|(_, enabled)| *enabled)
+    .filter(|(channel, enabled)| *enabled && unavailable_channel_reason(channel).is_none())
     .map(|(name, _)| name.to_string())
     .collect()
 }
@@ -116,6 +124,15 @@ pub async fn build_channel_statuses(state: &AppState) -> Result<Vec<ChannelStatu
 
     let mut statuses = Vec::new();
     for (channel, enabled, last_query, count_query) in channels {
+        if let Some(reason) = unavailable_channel_reason(channel) {
+            statuses.push(ChannelStatusDto {
+                channel: channel.to_string(), enabled: false, health: "unavailable".to_string(),
+                permission_state: "not_applicable".to_string(), last_event_time: None,
+                sample_count: 0, throughput_per_minute: 0.0, last_error: None,
+                supports_solo_test: false, details: reason.to_string(),
+            });
+            continue;
+        }
         let permission_state =
             channel_permission_state_for_config(&state.consent_manager, channel, &config).await;
         if !enabled {

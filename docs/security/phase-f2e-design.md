@@ -182,6 +182,26 @@ CryptoKit-only Swift target) are carried to the final review.
 - Replacement only (no second simultaneous Mac).
 - The joined Mac is a full device (can authorize, rotate, revoke).
 
+## 11a. Built (2026-10-16) — differences from the text above
+
+- **The master password is asked on every joining Mac**, not only on a
+  Mac without Touch ID: the "Join a Vault" panel always collects it and
+  the VK always comes from `password.wrap`. Simpler, and it adds a check:
+  a rogue phone's vault would not open with the user's own password.
+- **A lock ends the attempt on both sides** (no LOCKED finish on the
+  iPhone): nothing is committed before the ACK, and the Mac discards
+  without `done`. The iPhone keeps the screen awake during the flow.
+- **The provider-activation publication** runs right after `done` while
+  the vault is open; otherwise at the next "Sync now" (the banner shows).
+- Files: `enroll/reverse.rs`, `vault/renroll_ops.rs`,
+  `vault/renroll_commit.rs`, `vault/authorize_ops.rs`,
+  `sync/materialize.rs` (`VkSource`), `vault/floor.rs` (`join`); Mac main
+  `core/vault_enroll/join.rs`, `app/commands/vault_join.rs`,
+  `JoinFromPhoneCard.tsx`; iPhone `AddMacFlow.swift`.
+- Tests: `vault-tests/tests/phone_adds_mac.rs` (RE-01, RE-03/RE-09 wrong
+  password, RE-06, RE-11 public host). The other RE rows are carried to
+  the final review.
+
 ## 12. Review of revision 1 (security + spec, 2026-10-16) — dispositions
 
 | Finding | Disposition in revision 2 |

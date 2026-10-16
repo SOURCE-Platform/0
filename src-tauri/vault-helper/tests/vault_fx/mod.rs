@@ -292,7 +292,8 @@ pub fn add_login(fx: &Fx) -> String {
 }
 
 pub fn setup_and_unlock(fx: &Fx) {
-    assert_eq!(setup_vault(fx, MP)["ok"], true);
+    let r = setup_vault(fx, MP);
+    assert_eq!(r["ok"], true, "{r}");
     assert_eq!(fx.state(), VaultState::Locked);
     assert_eq!(unlock(fx, MP)["ok"], true);
     assert_eq!(fx.state(), VaultState::Unlocked);

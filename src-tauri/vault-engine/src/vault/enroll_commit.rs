@@ -29,6 +29,20 @@ use super::enroll_ops::{require_unlocked, POLICY};
 
 pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorCode> {
     let mut c = lock_core(core);
+    let peer = c.enroll.as_ref().and_then(|s| s.peer.clone()).ok_or(ErrorCode::BadState)?;
+    let nonce_e = c.enroll.as_ref().map(|s| s.nonce_e).ok_or(ErrorCode::BadState)?;
+    let (bundle, entry, _) = bundle_for(&c, &peer, &nonce_e)?;
+    let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
+    session.entry = Some(entry);
+    session.stage = Stage::AwaitingAck;
+    Ok(bundle)
+}
+
+/// The signed `enroll` entry for `peer` (not yet appended), its envelope
+/// bound to `nonce_e`, and the §5.2 bundle — shared by forward enrollment
+/// and the iPhone adding a Mac (F.2e). Returns the bundle, the entry and
+/// the head it makes.
+pub(super) fn bundle_for(c: &VaultCore, peer: &Peer, nonce_e: &[u8; 16]) -> Result<(Value, crate::crypto::registry::RegistryEntry, [u8; 32]), ErrorCode> {
     let dir = c.vault_dir.clone();
     let vk = c
         .vk
@@ -39,28 +53,22 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
     let vault_id = store.header.vault_id.0;
     let vk_generation = store.header.vk_generation;
     let me = SeDevice::load(&dir)?;
-    let peer = c
-        .enroll
-        .as_ref()
-        .and_then(|s| s.peer.clone())
-        .ok_or(ErrorCode::BadState)?;
 
     // The enroll entry (signed, not yet appended) and the chain the phone
     // must verify.
     let state = log::read_state(&dir, &vault_id, &POLICY)?;
-    let entry = build::enroll(&state, &me, &PeerIdentity(&peer))?;
+    let entry = build::enroll(&state, &me, &PeerIdentity(peer))?;
     let head = crate::crypto::registry::entry_hash(&entry).map_err(|_| ErrorCode::Internal)?;
     let mut entries = state.entries.clone();
     entries.push(entry.clone());
 
     // The device's own envelope: the VK only (§2.2 v2).
-    let nonce_e = c.enroll.as_ref().map(|s| s.nonce_e).ok_or(ErrorCode::BadState)?;
     let payload = DeviceEnvelopePayload {
         vk: SecretBytes::new(*vk.expose()),
         wrapped_at: now_epoch(),
         vk_generation,
     };
-    let env = envelope::seal_envelope(&peer.agree_pub, &vault_id, &peer.device_id, &nonce_e, &payload)?;
+    let env = envelope::seal_envelope(&peer.agree_pub, &vault_id, &peer.device_id, nonce_e, &payload)?;
 
     // The vault itself, as a v0.4 state (index v2) signed by this Mac,
     // including the registry with the pending enroll entry.
@@ -95,10 +103,7 @@ pub(super) fn build_bundle(core: &Arc<Mutex<VaultCore>>) -> Result<Value, ErrorC
         // Signed, so the phone can verify the floor it takes (SEC-B2).
         provider_state: crate::sync::seen::body(&c.store.as_ref().ok_or(ErrorCode::BadState)?.conn)?.map(hex::encode),
     };
-    let session = c.enroll.as_mut().ok_or(ErrorCode::BadState)?;
-    session.entry = Some(entry);
-    session.stage = Stage::AwaitingAck;
-    serde_json::to_value(&bundle).map_err(|_| ErrorCode::Internal)
+    Ok((serde_json::to_value(&bundle).map_err(|_| ErrorCode::Internal)?, entry, head))
 }
 
 /// §5.2 ENROLL_ACK: the phone's signature over the registry head proves
@@ -179,7 +184,7 @@ fn finish_ack(core: &Arc<Mutex<VaultCore>>, sig: &[u8; 64]) -> Result<Value, Err
 
 /// The peer's public identity as `build::enroll` needs it. It never
 /// signs: only the authorizing Mac does.
-struct PeerIdentity<'a>(&'a Peer);
+pub(super) struct PeerIdentity<'a>(pub &'a Peer);
 
 impl DeviceIdentity for PeerIdentity<'_> {
     fn device_id(&self) -> [u8; 16] {

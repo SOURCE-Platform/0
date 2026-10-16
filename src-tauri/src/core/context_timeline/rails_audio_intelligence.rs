@@ -70,7 +70,7 @@ fn build_dictation_rail(asr_segments: &[AsrSegmentDto]) -> TimelineRailDto {
 
     TimelineRailDto::lane(
         "audio_dictation",
-        "Right Option Dictation",
+        "Dictation",
         "Speech deliberately initiated with the Right Option shortcut.",
         "Each block is one finalized dictation that was sent to the focused text field.",
         dictations,

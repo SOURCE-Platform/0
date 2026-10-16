@@ -2,10 +2,12 @@ import { ChevronDown, ChevronRight, CircleHelp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { RailLane } from "@/components/desktop-context-workspace/RailLane";
+import { TIMELINE_GRID_CLASS_NAME } from "./railLayout";
 import { getVisibleDescendantSliceCount } from "@/components/desktop-context-workspace/utils";
 import { ContextSlice, TimelineRail } from "@/types/contextTimeline";
 
 interface TimelineRailTreeProps {
+  emptyMessage?: string;
   rail: TimelineRail;
   depth: number;
   expandedRails: Record<string, boolean>;
@@ -21,6 +23,7 @@ interface TimelineRailTreeProps {
 }
 
 export function TimelineRailTree({
+  emptyMessage,
   rail,
   depth,
   expandedRails,
@@ -37,6 +40,7 @@ export function TimelineRailTree({
   if (rail.kind === "lane") {
     return (
       <RailLane
+        emptyMessage={emptyMessage}
         rail={rail}
         depth={depth}
         windowStart={windowStart}
@@ -56,9 +60,9 @@ export function TimelineRailTree({
 
   return (
     <div className="-mb-px space-y-0">
-      <div className="-mb-px grid gap-2 md:grid-cols-[10.5rem_minmax(0,1fr)]">
+      <div className={`-mb-px ${TIMELINE_GRID_CLASS_NAME}`}>
         <div
-          className="sticky left-0 z-10 flex items-center gap-2 bg-muted/10 py-1 backdrop-blur-sm"
+          className="sticky left-0 z-10 flex items-center justify-end gap-2 bg-muted/10 py-1 pr-4 text-right backdrop-blur-sm"
           style={{ paddingLeft: railPadding }}
         >
           <button
@@ -105,6 +109,7 @@ export function TimelineRailTree({
         <div className="space-y-0">
           {rail.children.map((child) => (
             <TimelineRailTree
+              emptyMessage={emptyMessage}
               key={child.id}
               rail={child}
               depth={depth + 1}

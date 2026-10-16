@@ -6,29 +6,11 @@
 @import "./styles/ui-foundations.css";
 @import "./styles/scrollbars.css";
 @import "./styles/app-scroll-region.css";
+@import "./styles/interaction-cursors.css";
 
 html, body, #root {
   height: 100%;
   overflow: hidden;
-}
-
-button:not(:disabled),
-[role="button"]:not([aria-disabled="true"]),
-a[href],
-input[type="button"]:not(:disabled),
-input[type="submit"]:not(:disabled),
-input[type="reset"]:not(:disabled),
-summary,
-select:not(:disabled),
-label[for] {
-  cursor: pointer;
-}
-
-button:disabled,
-input:disabled,
-select:disabled,
-textarea:disabled {
-  cursor: not-allowed;
 }
 
 /* Top-left logo gradient — background-image on the container avoids all z-index issues */

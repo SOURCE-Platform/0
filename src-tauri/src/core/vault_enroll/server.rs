@@ -59,6 +59,16 @@ pub fn render_qr(payload: &EnrollmentPayloadV2) -> Result<String, String> {
 /// Bind on an OS-chosen port and serve until the handle is shut down.
 /// Returns the port the QR must advertise.
 pub async fn start(cert_pem: Vec<u8>, key_pem: Vec<u8>) -> Result<(u16, EnrollHandle), String> {
+    let app = Router::new()
+        .route("/v1/vault/enroll/hello", post(hello))
+        .route("/v1/vault/enroll/bundle", get(bundle))
+        .route("/v1/vault/enroll/ack", post(ack));
+    start_router(cert_pem, key_pem, app, session::note_server_stopped).await
+}
+
+/// Serve `app` on a fresh ephemeral TLS listener (also the reverse flow's
+/// routes, F.2e); `on_stop` runs when the server stops for any reason.
+pub async fn start_router(cert_pem: Vec<u8>, key_pem: Vec<u8>, app: Router, on_stop: fn()) -> Result<(u16, EnrollHandle), String> {
     let tls = RustlsConfig::from_pem(cert_pem, key_pem)
         .await
         .map_err(|e| format!("enrollment TLS config: {e}"))?;
@@ -73,10 +83,6 @@ pub async fn start(cert_pem: Vec<u8>, key_pem: Vec<u8>) -> Result<(u16, EnrollHa
         .local_addr()
         .map_err(|e| format!("enrollment port: {e}"))?
         .port();
-    let app = Router::new()
-        .route("/v1/vault/enroll/hello", post(hello))
-        .route("/v1/vault/enroll/bundle", get(bundle))
-        .route("/v1/vault/enroll/ack", post(ack));
     let handle = EnrollHandle::new();
     let serve_handle = handle.clone();
     let serving = tokio::spawn(async move {
@@ -92,7 +98,7 @@ pub async fn start(cert_pem: Vec<u8>, key_pem: Vec<u8>) -> Result<(u16, EnrollHa
     // listening is exactly the failure this supervisor makes visible.
     tokio::spawn(async move {
         let _ = serving.await;
-        session::note_server_stopped();
+        on_stop();
     });
     Ok((port, handle))
 }

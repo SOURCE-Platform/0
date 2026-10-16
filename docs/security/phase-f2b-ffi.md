@@ -168,8 +168,16 @@ at every foreground. (LOCKED with a staged publication reports
 `backing_up`, §13.) No `BGProcessingTask`: §22.10's "or the next
 foreground" is the trigger.
 
-**Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, and
-enrollment authorization.
+**Adding a replacement Mac (F.2e, §22.13):** `authorize_begin {qr}` →
+`{hello, host, port, fp}` (the preconditions of §22.13 first);
+`authorize_reply {reply}` → `{sas}`; `authorize_confirm` → presence and
+the master password, then `{session, stream, size, proof}` — the bundle,
+read with `stream_read`; `authorize_finish {ack, peer_endpoint}` →
+`{registry_head, proof, device_id}`; `authorize_abort`. The Mac's
+`renroll_*` ops are not the phone's; a Mac helper refuses `authorize_*`.
+
+**Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, and forward
+enrollment authorization (a phone never adds a phone).
 
 **Provider flows (F.2d step 2, §11.1):**
 

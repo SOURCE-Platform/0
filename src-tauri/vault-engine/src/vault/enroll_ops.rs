@@ -86,6 +86,11 @@ pub fn enroll_proof(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
 /// relay cannot churn sessions (review SEC-B1, 0f5f21b).
 const BEGINS_PER_MINUTE: usize = 6;
 
+/// The same limit for reverse enrollment's `renroll_begin` (F.2e).
+pub(super) fn begin_allowed_pub() -> bool {
+    begin_allowed()
+}
+
 fn begin_allowed() -> bool {
     use std::collections::VecDeque;
     use std::time::{Duration, Instant};

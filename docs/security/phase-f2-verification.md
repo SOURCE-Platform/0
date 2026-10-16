@@ -1038,3 +1038,29 @@ Every finding was checked against the repository before it was accepted.
   recovery flows.
 - Every item marked "carried" in §11.1 and §12.1.
 
+## 14. F.2e — the iPhone adds a replacement Mac (no review during development)
+
+Owner decision 2026-10-16: reviews move to the end of development. This
+section lists what was built and what the final review must cover.
+
+| Area | Where | Tests |
+|---|---|---|
+| Protocol strings, QR v3, commitment, proof, local-host rule | `enroll/reverse.rs` | unit tests in the file |
+| Mac joiner: begin, hello, proof, "Join a Vault" panel (code + master password), bundle, complete, finish, abort, boot sweep | `vault/renroll_ops.rs`, `vault/renroll_commit.rs`, `vault/mod.rs`, panel kind `JoinConfirm` | `phone_adds_mac.rs` |
+| The VK from the password wrap at join | `sync/materialize.rs` (`VkSource::Password`) | RE-03/RE-09 wrong password |
+| iPhone authorizer: preconditions, reply checks, confirm, finish, endpoint bound to the Mac's id | `vault/authorize_ops.rs`, `vault/peer_sync_ops.rs` (`target_mac`) | RE-01, RE-06 |
+| Floor at join | `vault/floor.rs` (`join`) | — |
+| Mac main: routes and session; Vault tab card | `core/vault_enroll/join.rs`, `server.rs` (`start_router`), `app/commands/vault_join.rs`, `JoinFromPhoneCard.tsx` | builds |
+| iPhone: Security → Add a Mac | `AddMacFlow.swift`, `SecurityViews.swift`, `PairingClient.swift` (`postData`) | simulator build |
+| Spec §22.13, catalogue §4, `REPLACEMENT_ONLY` / `NOT_FRESH` | docs, `vault-proto` errors, `vaultErrors.ts` | — |
+
+**Carried to the final review (F.2e):** the RE rows not yet written
+(RE-02 swapped keys and commit, RE-04 bundle negatives, RE-05 secret
+tries and a second hello, RE-07 wrong MP on the iPhone, RE-08 a planted
+staging next to a vault, RE-10 a phone-recovered vault, RE-12), the floor
+at join, peer sync to the new Mac end to end, the Mac UI and server on a
+real network, the XV vectors for transcript/commit/proof/SAS, the §22
+amendments listed in design §9 beyond §22.13 (§22.1, §22.4, §22.8 and
+annex A.4, §22.14, §22.15 rows, §1.5, §13.2, §1.7, §2.9, §12 scenario 1),
+and the design §11a differences.
+

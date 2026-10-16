@@ -228,7 +228,11 @@ pub fn present(req: &PanelRequest, code: Option<&str>, abort: Arc<AtomicBool>) -
     unsafe {
         let content = NSView::initWithFrame(mtm.alloc::<NSView>(), rect);
         if let Some(code) = code {
-            let line = format!("Your iPhone must show {code}.\nPress OK only if the codes match; otherwise Cancel.");
+            let line = if *req == PanelRequest::JoinConfirm {
+                format!("Your iPhone must show {code}.\nContinue only if the codes match and your iPhone is next to you.")
+            } else {
+                format!("Your iPhone must show {code}.\nPress OK only if the codes match; otherwise Cancel.")
+            };
             let note = NSTextField::wrappingLabelWithString(&NSString::from_str(&line), mtm);
             note.setFrame(NSRect::new(NSPoint::new(20.0, height - 52.0), NSSize::new(340.0, 40.0)));
             content.addSubview(&note);
@@ -318,7 +322,7 @@ pub fn present(req: &PanelRequest, code: Option<&str>, abort: Arc<AtomicBool>) -
             let old = v.pop().unwrap_or_default();
             PanelOutcome::SubmittedChange(to_secret(old), to_secret(new))
         }
-        (PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::RkEntry | PanelRequest::EnrollConfirm, Some(v)) => {
+        (PanelRequest::MpCreate | PanelRequest::MpEntry | PanelRequest::MpAdopt | PanelRequest::RkEntry | PanelRequest::EnrollConfirm | PanelRequest::JoinConfirm, Some(v)) => {
             PanelOutcome::Submitted(to_secret(v.into_iter().next().unwrap_or_default()))
         }
     }

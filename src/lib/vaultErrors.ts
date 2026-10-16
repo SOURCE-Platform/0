@@ -63,6 +63,10 @@ export function vaultErrorMessage(code: string): string {
       return "Backup access lost — this Mac may have been removed, or your vault may have been recovered on another device. If you did not do this, treat it as a security incident.";
     case "MP_ADOPTION_REQUIRED":
       return "Another device changed your vault's security. Click “Back up now” and enter your master password to apply it.";
+    case "REPLACEMENT_ONLY":
+      return "Remove the old Mac on your iPhone first — an iPhone adds a Mac only to replace one.";
+    case "NOT_FRESH":
+      return "Your iPhone needs to sync with your backup first. Open SOURCE Vault and tap “Sync now”.";
     case "ROTATION_PENDING":
       return "Your last security change hasn't reached your backup yet. Click “Back up now”, then try again.";
     case "CONFLICT_PENDING":

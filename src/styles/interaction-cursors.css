@@ -1,0 +1,39 @@
+/* Unlayered so component utilities and browser defaults cannot reset controls
+   to an arrow. Semantic roles also cover controls rendered through portals. */
+:is(
+  button, a[href], summary, select, label[for],
+  input[type="button"], input[type="submit"], input[type="reset"],
+  input[type="checkbox"], input[type="radio"], input[type="range"], input[type="file"],
+  [role="button"], [role="tab"], [role="switch"], [role="checkbox"], [role="radio"],
+  [role="option"], [role="menuitem"], [role="menuitemradio"],
+  [role="menuitemcheckbox"], [role="combobox"], [role="slider"],
+  [data-slot="slider"], [data-slot="select-scroll-up-button"],
+  [data-slot="select-scroll-down-button"], [data-interactive="true"]
+):not(:disabled):not([aria-disabled="true"]):not([data-disabled]) {
+  cursor: pointer;
+}
+input[type="file"]::file-selector-button { cursor: inherit; }
+
+/* The label/icon beneath the pointer must agree with its control. */
+:is(button, a[href], summary, label[for], [role="button"], [role="tab"],
+  [role="switch"], [role="option"], [role="menuitem"], [role="menuitemradio"],
+  [role="menuitemcheckbox"], [role="combobox"], [role="slider"],
+  [data-interactive="true"], .cursor-pointer) :is(span, svg, path) {
+  cursor: inherit;
+}
+
+/* Text entry retains the text cursor, including inside clickable rows. */
+input:where(:not([type]), [type="text"], [type="search"], [type="email"],
+  [type="url"], [type="tel"], [type="password"], [type="number"]),
+textarea, [contenteditable="true"] {
+  cursor: text;
+}
+
+/* Last and explicit: disabled custom controls and their children cannot
+   inherit an enabled parent's hand cursor (notably slider tracks/thumbs). */
+:is(:disabled, [aria-disabled="true"], [data-disabled], [inert]) {
+  cursor: not-allowed !important;
+}
+:is(:disabled, [aria-disabled="true"], [data-disabled], [inert]) * {
+  cursor: not-allowed !important;
+}

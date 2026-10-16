@@ -89,6 +89,12 @@ pub enum ErrorCode {
     /// second one would skip a generation the provider never accepts
     /// (§11.3 step 6). Publish first (owner decision 2026-10-12).
     RotationPending,
+    /// F.2e (§22.13): an iPhone adds a Mac only as a replacement — no other
+    /// Mac active, and no Mac revocation still waiting to publish.
+    ReplacementOnly,
+    /// F.2e: no verified provider exchange in the last 15 minutes (§22.7);
+    /// a new device is never built from a stale state.
+    NotFresh,
     ProvenanceRefused,
     // Generic
     InvalidInput,
@@ -159,6 +165,8 @@ impl ErrorCode {
             ErrorCode::PeerStateUnconfirmed => "PEER_STATE_UNCONFIRMED",
             ErrorCode::MpAdoptionRequired => "MP_ADOPTION_REQUIRED",
             ErrorCode::RotationPending => "ROTATION_PENDING",
+            ErrorCode::ReplacementOnly => "REPLACEMENT_ONLY",
+            ErrorCode::NotFresh => "NOT_FRESH",
             ErrorCode::ProvenanceRefused => "PROVENANCE_REFUSED",
             ErrorCode::Internal => "INTERNAL",
         }

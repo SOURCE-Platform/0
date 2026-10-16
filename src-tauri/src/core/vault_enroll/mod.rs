@@ -9,6 +9,7 @@
 //! as soon as the flow ends, succeeds, fails or times out (§5: "the
 //! always-on mobile server is not enrollment attack surface").
 
+pub mod join;
 pub mod server;
 pub mod session;
 

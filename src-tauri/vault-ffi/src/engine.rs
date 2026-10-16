@@ -35,6 +35,9 @@ pub const IOS_OPS: &[&str] = &[
     // F.2d chunk 3: total-loss recovery onto the phone (the step-wise
     // `recovery_begin` / `recovery_complete` are the flows' alone).
     "provider_recover_start", "provider_recover_finish", "recovery_preview",
+    // F.2e (§22.13): adding a replacement Mac. The Mac's `renroll_*` ops
+    // are not the phone's.
+    "authorize_begin", "authorize_reply", "authorize_confirm", "authorize_finish", "authorize_abort",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).

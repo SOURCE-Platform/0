@@ -21,11 +21,19 @@ struct SliceQueryData {
 
 fn detail_rail_label(rail_id: &str) -> &str {
     match rail_id {
-        "audio_dictation" => "Right Option Dictation",
+        "audio_dictation" => "Dictation",
         "audio_ambient_speech" => "Ambient Audio",
         "audio_sound_events" => "Sound Events",
         "audio_mobile" => "Source Mobile",
         "ocr" => "OCR / Text",
+        "keyboard" => "Keyboard Activity",
+        "mouse" => "Mouse Activity",
+        "focus" => "Focus",
+        "visible_windows" => "Running Apps",
+        "system" => "System",
+        "vision" => "Vision / Scene",
+        "attention" => "Gaze / Attention",
+        "evidence" => "Screen Evidence",
         _ => "Timeline",
     }
 }
@@ -203,6 +211,9 @@ pub async fn get_context_slice_detail(
     db: &Arc<Database>,
     mut slice: ContextSlice,
 ) -> Result<ContextSliceDetailDto, Box<dyn std::error::Error + Send + Sync>> {
+    if slice.tags.iter().any(|tag| tag == "overview") {
+        return overview_slice_detail(db, slice).await;
+    }
     hydrate_selected_slice(db, &mut slice).await?;
     let data = load_slice_query_data(db, &slice).await?;
     let mut state = SliceDetailPayloadState::default();

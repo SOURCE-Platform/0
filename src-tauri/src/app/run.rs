@@ -161,7 +161,10 @@ pub fn run() {
             vault_backup_status,
             vault_backup_now,
             vault_recovery_start,
-            vault_recovery_finish
+            vault_recovery_finish,
+            vault_join_begin,
+            vault_join_status,
+            vault_join_cancel
         ])
         .on_window_event(|window, event| {
             // Standard tray behavior: closing the window hides it to the

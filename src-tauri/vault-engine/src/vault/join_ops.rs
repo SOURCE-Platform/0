@@ -219,6 +219,11 @@ pub(crate) fn discard(dir: &Path) {
 
 /// Annex A.4, checked before anything is kept: a 64-hex pin, a 32-byte
 /// base64url token, a port, at most 8 IP-literal hints.
+/// The same checks for the endpoint a Mac sends in the reverse ACK (F.2e).
+pub(super) fn peer_endpoint_checked(ep: &Value) -> Result<Value, ErrorCode> {
+    peer_endpoint(ep)
+}
+
 fn peer_endpoint(ep: &Value) -> Result<Value, ErrorCode> {
     let bad = || ErrorCode::FormatInvalid;
     let pin = ep.get("spki_sha256").and_then(Value::as_str).filter(|p| hex::decode_array::<32>(p).is_some()).ok_or_else(bad)?;

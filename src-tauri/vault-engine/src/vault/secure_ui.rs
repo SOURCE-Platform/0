@@ -30,6 +30,11 @@ pub enum PanelRequest {
     /// in this panel — never in the main app (owner decision 2026-10-03,
     /// review SEC-B3) — and the current MP.
     EnrollConfirm,
+    /// Joining a vault from an iPhone (F.2e, spec §22.13): the code the
+    /// iPhone must show and the vault's master password, which opens the
+    /// bundle's `password.wrap` — a vault whose password the user does not
+    /// know is never joined.
+    JoinConfirm,
 }
 
 impl PanelRequest {
@@ -43,6 +48,7 @@ impl PanelRequest {
             PanelRequest::MpChange => "Source Vault — Change Master Password",
             PanelRequest::RkEntry => "Source Vault — Enter Recovery Key",
             PanelRequest::EnrollConfirm => "Source Vault — Add Device",
+            PanelRequest::JoinConfirm => "Source Vault — Join a Vault",
             PanelRequest::MpAdopt => "Source Vault — Apply a Security Change",
         }
     }

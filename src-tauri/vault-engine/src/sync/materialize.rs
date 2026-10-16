@@ -60,9 +60,23 @@ fn bad() -> ErrorCode {
     ErrorCode::ManifestMismatch
 }
 
+/// Where the joining device takes the VK from: its own envelope (Face ID /
+/// Touch ID), or — a Mac joining from an iPhone (F.2e, §22.13) — the
+/// bundle's `password.wrap` opened with the master password typed in its
+/// "Join a Vault" panel (hash fixed by the signed index, KDF block equal
+/// to the header's). The checkpoint is verified under it either way.
+pub enum VkSource<'a> {
+    Envelope(OpenEnvelope<'a>),
+    Password(&'a [u8]),
+}
+
 /// Verify the bundle in the §22.10 order and build the vault in `dir`.
 /// Returns the store, the VK and the registry head to ACK.
 pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEnvelope<'_>) -> Result<(VaultStore, SecretBytes<32>, [u8; 32]), ErrorCode> {
+    materialize_keyed(dir, bundle, a, VkSource::Envelope(open_env))
+}
+
+pub fn materialize_keyed(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, key: VkSource<'_>) -> Result<(VaultStore, SecretBytes<32>, [u8; 32]), ErrorCode> {
     let vid = hex::decode_array::<16>(&bundle.vault_id).ok_or_else(bad)?;
     if vid != a.vault_id {
         return Err(ErrorCode::ProtocolViolation);
@@ -117,7 +131,10 @@ pub fn materialize(dir: &Path, bundle: &Bundle, a: &Anchor<'_>, open_env: OpenEn
     if env.device_id != hex::encode(a.me.device_id()) || env.enrollment_nonce != hex::encode(a.nonce_e) {
         return Err(ErrorCode::WrapCorrupt);
     }
-    let payload = open_env(&env)?;
+    let payload = match key {
+        VkSource::Envelope(open_env) => open_env(&env)?,
+        VkSource::Password(mp) => super::adopt_mp::open_with_mp(&super::adopt_mp::checked_wrap(&index, &blobs)?, &vid, mp)?,
+    };
     if payload.vk_generation != manifest.vk_generation {
         return Err(bad());
     }

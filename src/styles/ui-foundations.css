@@ -37,7 +37,6 @@
 }
 .app-ui button:disabled { cursor: not-allowed; }
 .app-ui [data-slot="tabs-list"] { max-width: 100%; overflow-x: auto; }
-.app-ui [data-slot="tabs-trigger"] { cursor: pointer; }
 
 @layer components {
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
@@ -54,9 +53,8 @@
 .ui-disclosure summary::-webkit-details-marker { display: none; }
 .ui-disclosure[open] > summary .disclosure-chevron { transform: rotate(180deg); }
 .disclosure-chevron { transition: transform 150ms ease; }
-.settings-page { width: 100%; max-width: 68rem; padding-bottom: 2rem; }
-.settings-body { max-width: 58rem; }
-.settings-body[data-section="capture"], .settings-body[data-section="storage"] { max-width: none; }
+.settings-page { width: 100%; max-width: 58rem; margin-inline: auto; padding-bottom: 2rem; }
+.settings-body { width: 100%; }
 .settings-nav { overflow-x: auto; padding: 4px 2px 12px; }
 .settings-nav > nav { width: max-content; }
 .settings-nav [role="tab"] { padding-block: 4px; }

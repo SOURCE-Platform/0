@@ -1,7 +1,6 @@
-import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
-import { PageHeader } from "@/components/ui/page";
+import { SettingsLayout } from "@/components/settings/SettingsLayout";
 import ConsentManager from "@/components/ConsentManager";
 import { CaptureSettingsSection } from "@/components/settings/CaptureSettingsSection";
 import { DeleteCaptureDialog } from "@/components/settings/DeleteCaptureDialog";
@@ -11,7 +10,6 @@ import { DictationSettingsSection } from "@/components/settings/DictationSetting
 import { MobileSettingsSection } from "@/components/settings/MobileSettingsSection";
 import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { StorageSettingsSection } from "@/components/settings/StorageSettingsSection";
-import { SettingsTab } from "@/components/settings/types";
 import { useSettingsController } from "@/components/settings/useSettingsController";
 
 export default function Settings() {
@@ -37,36 +35,9 @@ export default function Settings() {
     return () => unlisten?.();
   }, [controller.setTab]);
 
-  if (controller.loading || !controller.config) {
-    return (
-      <div className="flex min-h-[400px] items-center justify-center">
-        <p className="text-muted-foreground">Loading settings...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="settings-page space-y-6">
-      <PageHeader title="Settings" description={controller.showDescriptions ? "Choose what SOURCE captures and how it runs on your devices." : undefined}
-        action={<span role="status" className="text-xs text-muted-foreground">{controller.saving ? "Saving…" : "Changes save automatically"}</span>} />
-
-      <div className="settings-nav">
-      <AnimatedTabNav
-        tabs={[
-          { value: "general", label: "General" },
-          { value: "capture", label: "Capture" },
-          { value: "privacy", label: "Privacy" },
-          { value: "storage", label: "Storage" },
-          { value: "hardware", label: "Hardware" },
-          { value: "dictation", label: "Dictation" },
-          { value: "mobile", label: "Mobile" },
-        ]}
-        value={controller.tab}
-        onValueChange={(value) => controller.setTab(value as SettingsTab)}
-      />
-
-      </div>
-      <div className="settings-body" data-section={controller.tab}>
+    <SettingsLayout loading={controller.loading || !controller.config} saving={controller.saving}
+      showDescriptions={controller.showDescriptions} tab={controller.tab} onTabChange={controller.setTab}>
       {controller.tab === "general" ? <GeneralSettingsSection controller={controller} /> : null}
       {controller.tab === "capture" ? <CaptureSettingsSection controller={controller} /> : null}
       {controller.tab === "privacy" ? (
@@ -80,9 +51,7 @@ export default function Settings() {
       {controller.tab === "dictation" ? <DictationSettingsSection /> : null}
       {controller.tab === "mobile" ? <MobileSettingsSection controller={controller} /> : null}
 
-      </div>
-
       <DeleteCaptureDialog controller={controller} />
-    </div>
+    </SettingsLayout>
   );
 }
