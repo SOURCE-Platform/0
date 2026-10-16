@@ -5,6 +5,7 @@
 //! normalization. Shared by the helper, `vault-provider-core` and tests;
 //! moved out of `vault-helper` without behaviour change.
 
+pub mod approval;
 pub mod b64;
 pub mod backup;
 pub mod handle;

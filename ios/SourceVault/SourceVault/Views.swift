@@ -50,6 +50,9 @@ struct ContentView: View {
             }
         }
         .sheet(item: $model.entry) { SecureEntryView(request: $0) }
+        .sheet(isPresented: $model.showApprovals) {
+            if let center = model.approvals { ApprovalSheet(center: center) }
+        }
         .fullScreenCover(item: $model.sheet) { RecoveryKeyView(request: $0, onConfirmed: { model.sheetConfirmed() }) }
         .overlay { CaptureShield() }
     }

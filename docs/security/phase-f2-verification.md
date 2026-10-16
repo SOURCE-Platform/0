@@ -1064,3 +1064,23 @@ amendments listed in design §9 beyond §22.13 (§22.1, §22.4, §22.8 and
 annex A.4, §22.14, §22.15 rows, §1.5, §13.2, §1.7, §2.9, §12 scenario 1),
 and the design §11a differences.
 
+## 15. Phase G — iPhone remote approval (no review during development)
+
+| Area | Where | Tests |
+|---|---|---|
+| §6.5 approval TLV, prehash, strict decode, cancel, list | `vault-proto/src/approval.rs` | unit tests |
+| Peer ops `peer_approvals` (7) / `peer_approve` (8) | `vault-proto/src/peer/mod.rs`, `vault-engine/src/peer/ops.rs` | `remote_approval.rs` |
+| §6.6 checks, pending requests (helper memory), idempotent duplicate, replay after use | `vault-engine/src/approval.rs` | DA-01…DA-09 in `remote_approval.rs` |
+| Helper ops `approval_request` / `_status` / `_take`, `push_wake_request`; phone ops `approvals_fetch_*`, `approval_decide`, `approval_submit_step`, `push_register_request` | `vault/approval_ops.rs`, dispatch, `IOS_OPS` | `remote_approval.rs`, `push_relay.rs` |
+| Push relay (codes 32/33), `PushSender`, rate limit, `sign_push` | `vault-proto/src/request.rs`, `vault-provider-core/src/push.rs`, `service.rs`, `lib.rs`, `vault-engine/src/sync/sign.rs` | `push_relay.rs` |
+| Mac main wake sender | `core/vault_backup/push.rs` | builds |
+| iPhone: approval sheet at foreground, push registration | `ApprovalViews.swift`, `PushRegistration.swift`, `AppModel.swift`, `Views.swift`, `SourceVaultApp.swift` | simulator build |
+
+**Carried to the final review (Phase G):** DA-10 (offline phone →
+fallback; with Phase H's extension UI) and DA-11 (card fill presence,
+§6.4; Phase H's fill path); who raises `approval_request` and calls
+`wake_phones` (Phase H nm-host); the real APNs sender in `vault-provider`
+and the `aps-environment` entitlement (owner's paid Apple Developer
+account, Phase J); the wire annex text for ops 7/8; XV vectors for the
+§6.5 TLV; the Phase G gate demo (clamshell Mac + iPhone approval).
+

@@ -1995,6 +1995,14 @@ server learns message sizes and timing only.
   `ProviderRequest`; operation codes 32–47 are reserved for push). **Phase
   F implements no push relay and no APNs code**; the provider only reserves
   the module and route boundary. Phase G owns the relay and APNs behavior.
+  *(Phase G, built: `POST /v2/vaults/{vid}/push/token` (code 32, the
+  signer's own APNs token) and `POST /v2/vaults/{vid}/push/send` (code 33,
+  `{to, rid}`, an active device of the vault, ten per vault per minute),
+  both device-signed and built whole by the engine (`sign_push`; the
+  general signer refuses them). The sender is pluggable (`PushSender`); the
+  real APNs connection needs the owner's paid Apple Developer account and
+  its `.p8` key (Phase J). §7.1's challenges travel on the peer channel as
+  `peer_approvals` (7) and `peer_approve` (8): design `phase-g-design.md`.)*
 - **Push payload (entire):**
 
   ```json

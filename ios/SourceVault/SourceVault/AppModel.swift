@@ -36,6 +36,23 @@ final class AppModel: ObservableObject {
 
     /// Total-loss recovery onto this iPhone, while it runs (F.2d chunk 3).
     @Published var recovery: RecoveryFlow?
+    /// Phase G: requests from the Mac waiting for this iPhone's approval.
+    @Published var showApprovals = false
+    private(set) var approvals: ApprovalCenter?
+
+    /// At every foreground: anything waiting for approval opens the sheet
+    /// (a push only brings the app forward, §7.2).
+    @MainActor func checkApprovals() {
+        if approvals == nil, let engine {
+            approvals = ApprovalCenter(engine: engine)
+            if state != "uninitialized" { PushDelegate.register(engine: engine) }
+        }
+        guard let center = approvals, state != "uninitialized" else { return }
+        Task {
+            await center.check()
+            if !center.waiting.isEmpty { showApprovals = true }
+        }
+    }
     @Published var message: String?
     /// §22.9: the Mac removed this iPhone (`published`: among its
     /// provider-committed entries); nil while still a vault device.

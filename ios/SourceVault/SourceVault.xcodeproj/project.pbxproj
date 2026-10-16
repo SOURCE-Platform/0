@@ -20,6 +20,7 @@
 		5020952636713E7A5A613A08 /* xv_enroll.json in Resources */ = {isa = PBXBuildFile; fileRef = ED53DEC71C02811674524B49 /* xv_enroll.json */; };
 		554A742858D06C03F062FDF6 /* XVSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD69339BE5069168A88F2FC0 /* XVSupport.swift */; };
 		56B6748D6E76E25C5420794C /* RecoveryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7A7E3CB57E62F17C8A26B39 /* RecoveryViews.swift */; };
+		709C1897BB04F1F3BEC79A73 /* ApprovalViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3156C237BA25ADB6D52DE2F5 /* ApprovalViews.swift */; };
 		922B9C4BA779807CF8D87A67 /* XVPeerWire.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA560A983086C0AAAAD3C208 /* XVPeerWire.swift */; };
 		9354FF50CF37C9859B013DA9 /* xv_tlv.json in Resources */ = {isa = PBXBuildFile; fileRef = FBC9E93020CA4A057C1C93AC /* xv_tlv.json */; };
 		A43E2546ADA8B5A2EA3B81B3 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03CB648201BE774BB26FB803 /* EngineTests.swift */; };
@@ -32,6 +33,7 @@
 		C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */; };
 		CAA0810BB3B548A9596A1E4A /* PinTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D426D84805FA26C7D0742E /* PinTests.swift */; };
 		CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */; };
+		CE441C85ABA063AF5530B2BE /* PushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6024E14162E351694E03358 /* PushRegistration.swift */; };
 		D2AAB2D64CC7F2498B7A06E3 /* XVRegistryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076699CD72A148ACE43BBAB6 /* XVRegistryTests.swift */; };
 		EFDD18B45CFFCD46A79CD9D7 /* ProviderHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B5AD94E46478825F59B190 /* ProviderHTTP.swift */; };
 /* End PBXBuildFile section */
@@ -54,6 +56,7 @@
 		1B0D0E5FFAF9A2ADB134C658 /* xv_ecdsa.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_ecdsa.json; sourceTree = "<group>"; };
 		2D7D39091FD8822C619CEB5B /* SourceVaultApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceVaultApp.swift; sourceTree = "<group>"; };
 		2DFDE1D765033C8C76490273 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
+		3156C237BA25ADB6D52DE2F5 /* ApprovalViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApprovalViews.swift; sourceTree = "<group>"; };
 		3E0DB7DD1EC28519F1EA2D5C /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
 		47B5AD94E46478825F59B190 /* ProviderHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderHTTP.swift; sourceTree = "<group>"; };
 		48BCF2CB286287C8B75DD854 /* VaultServices.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VaultServices.swift; sourceTree = "<group>"; };
@@ -77,6 +80,7 @@
 		ED53DEC71C02811674524B49 /* xv_enroll.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_enroll.json; sourceTree = "<group>"; };
 		ED676F66CF9B707A26A99303 /* VaultFFI.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = VaultFFI.h; sourceTree = "<group>"; };
 		EDB9B13187B76B2D1E939FD5 /* XVPeerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = XVPeerTests.swift; sourceTree = "<group>"; };
+		F6024E14162E351694E03358 /* PushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRegistration.swift; sourceTree = "<group>"; };
 		F9E321C901440F3947D902C2 /* xv_peer.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_peer.json; sourceTree = "<group>"; };
 		FBC9E93020CA4A057C1C93AC /* xv_tlv.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = xv_tlv.json; sourceTree = "<group>"; };
 		FF7C53B7D113D72746B717F0 /* PairingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingClient.swift; sourceTree = "<group>"; };
@@ -178,6 +182,7 @@
 			children = (
 				6D8FC5CE71D6D11D9FF7A318 /* AddMacFlow.swift */,
 				2DFDE1D765033C8C76490273 /* AppModel.swift */,
+				3156C237BA25ADB6D52DE2F5 /* ApprovalViews.swift */,
 				E93147EB9D273DD62FF6FC76 /* Info.plist */,
 				FF7C53B7D113D72746B717F0 /* PairingClient.swift */,
 				8C040E9AFF10B6293DEE7782 /* PairingFlow.swift */,
@@ -185,6 +190,7 @@
 				956B40F606AD3F7766C05E0B /* PeerClient.swift */,
 				111B54DD33A7E739DF471B6D /* PeerSync.swift */,
 				47B5AD94E46478825F59B190 /* ProviderHTTP.swift */,
+				F6024E14162E351694E03358 /* PushRegistration.swift */,
 				B7A7E3CB57E62F17C8A26B39 /* RecoveryViews.swift */,
 				BF77D1EC6F4F1D7207E3FA5D /* SecurityViews.swift */,
 				81CDCE596EE376D36F9D1DCF /* SourceVault.entitlements */,
@@ -388,6 +394,7 @@
 			files = (
 				37342EF963DDE64956F74200 /* AddMacFlow.swift in Sources */,
 				B1438F27C53576568BB3A842 /* AppModel.swift in Sources */,
+				709C1897BB04F1F3BEC79A73 /* ApprovalViews.swift in Sources */,
 				2CD7B3697436733B73DF9E7E /* Bridge.swift in Sources */,
 				1AFAE0E4F0A738036CD1EBF5 /* PairingClient.swift in Sources */,
 				CB1DC34AD68DDE361B0A1855 /* PairingFlow.swift in Sources */,
@@ -395,6 +402,7 @@
 				A7F1C9101A08609477C0BCB1 /* PeerClient.swift in Sources */,
 				C6ACDEC5A74807A02BF0E26B /* PeerSync.swift in Sources */,
 				EFDD18B45CFFCD46A79CD9D7 /* ProviderHTTP.swift in Sources */,
+				CE441C85ABA063AF5530B2BE /* PushRegistration.swift in Sources */,
 				56B6748D6E76E25C5420794C /* RecoveryViews.swift in Sources */,
 				41F165CF57B764F848A162CB /* SecurityViews.swift in Sources */,
 				C973E88DA42147DE3000B309 /* SourceVaultApp.swift in Sources */,

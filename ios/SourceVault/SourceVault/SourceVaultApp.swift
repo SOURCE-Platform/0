@@ -6,6 +6,7 @@ import SwiftUI
 
 @main
 struct SourceVaultApp: App {
+    @UIApplicationDelegateAdaptor(PushDelegate.self) private var pushDelegate
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var phase
 
@@ -21,7 +22,7 @@ struct SourceVaultApp: App {
         .onChange(of: phase) { _, now in
             switch now {
             case .background: model.leaveForeground()
-            case .active: model.start(); model.refresh(); model.finishWaitingUpload()
+            case .active: model.start(); model.refresh(); model.finishWaitingUpload(); model.checkApprovals()
             default: break
             }
         }

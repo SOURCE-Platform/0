@@ -39,6 +39,8 @@ fn route(method: &str, path: &str) -> Option<Route> {
     let (op, blob) = match (method, tail) {
         ("GET", "state") => (Operation::StateGet, None),
         ("POST", "state") => (Operation::StateCommit, None),
+        ("POST", "push/token") => (Operation::PushRegister, None),
+        ("POST", "push/send") => (Operation::PushSend, None),
         (m, t) => {
             let sha = vault_proto::header::strict_hex::<32>(t.strip_prefix("blobs/")?)?;
             match m {
@@ -64,6 +66,8 @@ impl Provider {
                     Operation::StateGet => self.state_get(&inc),
                     Operation::BlobGet => self.blob_get(&inc, &blob.expect("routed")),
                     Operation::BlobPut => self.blob_put(&inc, &blob.expect("routed")),
+                    Operation::PushRegister => self.push_register(&inc),
+                    Operation::PushSend => self.push_send(&inc),
                 }
             }
         };

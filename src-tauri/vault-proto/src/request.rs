@@ -47,6 +47,11 @@ pub enum Operation {
     BlobGet,
     BlobPut,
     StateCommit,
+    /// Phase G (§7.2): a device registers its APNs token (code 32).
+    PushRegister,
+    /// Phase G (§7.2): a device asks to wake another device of the vault
+    /// with the fixed generic alert (code 33).
+    PushSend,
 }
 
 impl Operation {
@@ -56,6 +61,8 @@ impl Operation {
             Operation::BlobGet => 2,
             Operation::BlobPut => 3,
             Operation::StateCommit => 4,
+            Operation::PushRegister => 32,
+            Operation::PushSend => 33,
         }
     }
 
@@ -65,6 +72,8 @@ impl Operation {
             2 => Some(Operation::BlobGet),
             3 => Some(Operation::BlobPut),
             4 => Some(Operation::StateCommit),
+            32 => Some(Operation::PushRegister),
+            33 => Some(Operation::PushSend),
             _ => None,
         }
     }
@@ -82,6 +91,8 @@ impl Operation {
             (Operation::StateCommit, None) => Some(("POST", format!("/v2/vaults/{vid}/state"))),
             (Operation::BlobGet, Some(b)) => Some(("GET", format!("/v2/vaults/{vid}/blobs/{}", hex::encode(b)))),
             (Operation::BlobPut, Some(b)) => Some(("PUT", format!("/v2/vaults/{vid}/blobs/{}", hex::encode(b)))),
+            (Operation::PushRegister, None) => Some(("POST", format!("/v2/vaults/{vid}/push/token"))),
+            (Operation::PushSend, None) => Some(("POST", format!("/v2/vaults/{vid}/push/send"))),
             _ => None,
         }
     }

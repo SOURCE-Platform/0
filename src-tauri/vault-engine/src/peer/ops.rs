@@ -27,7 +27,7 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
     if gated {
         return status_only(ctx, acc, PeerStatus::BadState, now);
     }
-    let bodiless = matches!(op, PeerOp::Hello | PeerOp::Status);
+    let bodiless = matches!(op, PeerOp::Hello | PeerOp::Status | PeerOp::Approvals);
     if bodiless && body != vault_proto::peer::body::empty().as_slice() {
         return status_only(ctx, acc, PeerStatus::FormatInvalid, now);
     }
@@ -58,6 +58,9 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
                 Err(e) => Err(e),
             },
         },
+        // Phase G (§7.1, §6.6): approvals over this authenticated channel.
+        PeerOp::Approvals => Ok((PeerStatus::Ok, approvals(ctx, acc, now))),
+        PeerOp::Approve => Ok((PeerStatus::Ok, vec![approve(ctx, acc, body, now)])),
         PeerOp::State => match vault_proto::peer::exchange::StateReq::decode(body) {
             Ok(req) => match state(store, &req) {
                 Ok(Some(b)) => Ok((PeerStatus::Ok, b)),
@@ -71,6 +74,26 @@ pub fn serve(ctx: &Ctx, store: &mut VaultStore, vk: Option<&SecretBytes<32>>, ac
         Ok((st, b)) => capped(ctx, acc, now, sign(ctx, acc, st, b, now)),
         Err(_) => Err(Refusal::Unavailable),
     }
+}
+
+fn approvals(ctx: &Ctx, acc: &Accepted, now: u64) -> Vec<u8> {
+    use crate::registry::device::DeviceIdentity;
+    let list = crate::approval::challenges_for(ctx.me.device_id(), acc.req.sender_device_id, now);
+    vault_proto::approval::encode_list(&list).unwrap_or_else(|_| vault_proto::approval::encode_list(&[]).unwrap_or_default())
+}
+
+/// A signed approval or a cancel; the one-byte result (design §3).
+fn approve(ctx: &Ctx, acc: &Accepted, body: &[u8], now: u64) -> u8 {
+    use crate::registry::device::DeviceIdentity;
+    if let Some(id) = vault_proto::approval::decode_cancel(body) {
+        return crate::approval::cancel(id);
+    }
+    // The registry the channel's own sender check uses (`may_speak`): this
+    // Mac's chain, which includes the iPhones it enrolled itself.
+    let Ok(reg) = crate::registry::log::read_state(&ctx.dir, &ctx.vault_id, &crate::registry::chain::EpochPolicy::CheckpointAnchored) else {
+        return vault_proto::approval::result::NOT_AUTHORIZED;
+    };
+    crate::approval::approve(&reg, ctx.me.device_id(), acc.req.sender_device_id, body, now)
 }
 
 /// The exchange cap: an answer whose body would take the sender past

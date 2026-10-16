@@ -68,6 +68,8 @@ pub struct Sessions {
     /// adding a Mac (`authorize_ops`).
     pub renroll: Option<super::renroll_ops::RenrollSession>,
     pub authorize: Option<super::authorize_ops::AuthorizeSession>,
+    /// Phase G: the phone's approval exchange (`approval_ops`).
+    pub approval: Option<super::approval_ops::PhoneApproval>,
     /// The phone's peer exchange in progress (§22.8, `peer_sync_ops`).
     pub peer_client: Option<crate::peer::client::Exchange>,
     /// A Mac answer too large for one FFI frame, streamed in (SEC-I1).

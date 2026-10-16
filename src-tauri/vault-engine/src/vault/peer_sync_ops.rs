@@ -35,7 +35,7 @@ use crate::sync::session::Transfer;
 /// The Mac this phone syncs with: the one the stored endpoint names (a Mac
 /// the phone added, F.2e design §7), else the authorizer of the phone's
 /// own entry — active either way.
-fn target_mac(reg: &RegistryState, me: &[u8; 16], endpoint: &serde_json::Value) -> Result<[u8; 16], ErrorCode> {
+pub(super) fn target_mac(reg: &RegistryState, me: &[u8; 16], endpoint: &serde_json::Value) -> Result<[u8; 16], ErrorCode> {
     match endpoint.get("device_id").and_then(serde_json::Value::as_str).and_then(crate::crypto::hex::decode_array::<16>) {
         Some(id) => reg.active_device(&id).map(|d| d.device_id).ok_or(ErrorCode::PeerNotPermitted),
         None => paired_mac(reg, me),

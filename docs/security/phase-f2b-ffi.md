@@ -176,6 +176,15 @@ read with `stream_read`; `authorize_finish {ack, peer_endpoint}` →
 `{registry_head, proof, device_id}`; `authorize_abort`. The Mac's
 `renroll_*` ops are not the phone's; a Mac helper refuses `authorize_*`.
 
+**Remote approval (Phase G, §6.5–§7.2):** `approvals_fetch_begin` →
+`{request, endpoint}`; `approvals_fetch_step {response}` → the verified
+challenges naming this phone and its Mac; `approval_decide {request_id,
+approve}` → presence for an approval, then the signed §6.5 TLV (or an
+unsigned cancel) as a `peer_approve` request; `approval_submit_step
+{response}` → `{result}`; `push_register_request {token}` → the signed
+`push/token` request. LOCKED or UNLOCKED (the signing key signs, not the
+vault key); refused while removed.
+
 **Not allowed (`UNKNOWN_OP`):** vault creation, peer serving, and forward
 enrollment authorization (a phone never adds a phone).
 

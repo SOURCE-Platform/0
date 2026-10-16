@@ -33,6 +33,10 @@ pub enum PeerOp {
     RevsGet,
     RevsPut,
     Status,
+    /// Phase G (§7.1): the pending approval challenges for the requester.
+    Approvals,
+    /// Phase G (§6.6): a signed approval, or a cancel.
+    Approve,
     /// A code this build does not know: authenticated like any request,
     /// then answered with the signed status 4 (wire annex A.1).
     Unknown(u16),
@@ -47,6 +51,8 @@ impl PeerOp {
             PeerOp::RevsGet => 4,
             PeerOp::RevsPut => 5,
             PeerOp::Status => 6,
+            PeerOp::Approvals => 7,
+            PeerOp::Approve => 8,
             PeerOp::Unknown(c) => c,
         }
     }
@@ -59,6 +65,8 @@ impl PeerOp {
             4 => PeerOp::RevsGet,
             5 => PeerOp::RevsPut,
             6 => PeerOp::Status,
+            7 => PeerOp::Approvals,
+            8 => PeerOp::Approve,
             c => PeerOp::Unknown(u16::try_from(c).ok()?),
         })
     }

@@ -7,6 +7,7 @@
 //! Vault app supply those services. The §2.12 Apple bridge (CryptoKit and
 //! the Secure Enclave, `build.rs`) exists on both platforms.
 
+pub mod approval;
 pub mod backup;
 pub mod crypto;
 pub mod device;

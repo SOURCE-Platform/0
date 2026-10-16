@@ -13,6 +13,7 @@ pub mod fs;
 pub mod gc;
 pub mod locate;
 pub mod model;
+pub mod push;
 pub mod registry_rules;
 pub mod service;
 pub mod stores;
@@ -46,11 +47,21 @@ pub struct Provider {
     pub(crate) ops: Arc<dyn OpsStore>,
     read_nonces: auth::ReadNonces,
     locate_limits: locate::LocateLimits,
+    /// Phase G (§7.2): APNs, when configured (`with_push`).
+    pub(crate) push: Option<Arc<dyn push::PushSender>>,
+    pub(crate) push_limits: push::PushLimits,
 }
 
 impl Provider {
     pub fn new(cfg: Config, state: Arc<dyn StateStore>, blobs: Arc<dyn BlobStore>, ops: Arc<dyn OpsStore>) -> Provider {
-        Provider { cfg, state, blobs, ops, read_nonces: Default::default(), locate_limits: Default::default() }
+        Provider { cfg, state, blobs, ops, read_nonces: Default::default(), locate_limits: Default::default(), push: None, push_limits: Default::default() }
+    }
+
+    /// The push relay's sender (APNs in production; a recording sender in
+    /// tests). Without one, `push/send` answers `BACKUP_UNAVAILABLE`.
+    pub fn with_push(mut self, sender: Arc<dyn push::PushSender>) -> Provider {
+        self.push = Some(sender);
+        self
     }
 
     /// A provider over one `FsStores` tree.

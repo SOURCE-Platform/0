@@ -6,6 +6,7 @@
 //! UI on the `vault:backup` event. This process never sees plaintext or
 //! any key; the helper signs every request.
 
+pub mod push;
 pub mod transport;
 pub mod worker;
 

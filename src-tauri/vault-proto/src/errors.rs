@@ -92,6 +92,13 @@ pub enum ErrorCode {
     /// F.2e (§22.13): an iPhone adds a Mac only as a replacement — no other
     /// Mac active, and no Mac revocation still waiting to publish.
     ReplacementOnly,
+    /// Phase G §6.6: an approval whose nonce was already consumed.
+    ApprovalReplay,
+    /// Phase G §6.6: an approval after its challenge's `exp`.
+    ApprovalExpired,
+    /// Phase G §6.6: origin, action, reference or Mac differ from the
+    /// pending request — the phishing tripwire.
+    ApprovalMismatch,
     /// F.2e: no verified provider exchange in the last 15 minutes (§22.7);
     /// a new device is never built from a stale state.
     NotFresh,
@@ -166,6 +173,9 @@ impl ErrorCode {
             ErrorCode::MpAdoptionRequired => "MP_ADOPTION_REQUIRED",
             ErrorCode::RotationPending => "ROTATION_PENDING",
             ErrorCode::ReplacementOnly => "REPLACEMENT_ONLY",
+            ErrorCode::ApprovalReplay => "APPROVAL_REPLAY",
+            ErrorCode::ApprovalExpired => "APPROVAL_EXPIRED",
+            ErrorCode::ApprovalMismatch => "APPROVAL_MISMATCH",
             ErrorCode::NotFresh => "NOT_FRESH",
             ErrorCode::ProvenanceRefused => "PROVENANCE_REFUSED",
             ErrorCode::Internal => "INTERNAL",

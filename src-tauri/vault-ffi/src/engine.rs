@@ -38,6 +38,8 @@ pub const IOS_OPS: &[&str] = &[
     // F.2e (§22.13): adding a replacement Mac. The Mac's `renroll_*` ops
     // are not the phone's.
     "authorize_begin", "authorize_reply", "authorize_confirm", "authorize_finish", "authorize_abort",
+    // Phase G (§6.5, §7.1): approving a Mac's request.
+    "approvals_fetch_begin", "approvals_fetch_step", "approval_decide", "approval_submit_step", "push_register_request",
     // F.2b step 5: the phone's side of enrollment (§5, §22.10).
     "join_begin", "join_hello", "join_bundle_begin", "join_complete", "join_finish", "join_abort",
     // F.2c: the phone's peer exchange (§22.8).

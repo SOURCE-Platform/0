@@ -61,6 +61,8 @@ pub fn sign(
         },
         // Reads carry no body.
         Operation::StateGet | Operation::BlobGet if req.body_sha256 != vault_proto::request::body_hash(b"") => return refused,
+        // Push requests are built whole by `sign_push` only (Phase G).
+        Operation::PushRegister | Operation::PushSend => return refused,
         _ => {}
     }
     let mut n = [0u8; 16];
@@ -80,3 +82,22 @@ pub fn sign(
     let header = auth_header(&pr.encode(), &sig);
     Ok((pr, header))
 }
+
+/// Phase G (§7.2): a push request whose body this function builds itself
+/// — the device's own APNs token, or the device to wake and the approval
+/// request id — signed by this device. No caller digest is ever signed.
+pub fn sign_push(origin: &str, vault_id: [u8; 16], me: &dyn DeviceIdentity, body: &serde_json::Value, op: Operation, now: u64) -> Result<(ProviderRequest, String, Vec<u8>), ErrorCode> {
+    if !matches!(op, Operation::PushRegister | Operation::PushSend) {
+        return Err(ErrorCode::SigningRefused);
+    }
+    check_provider(origin)?;
+    let bytes = serde_json::to_vec(body).map_err(|_| ErrorCode::Internal)?;
+    let mut n = [0u8; 16];
+    getrandom::fill(&mut n).map_err(|_| ErrorCode::Internal)?;
+    let signer = SignerId::Device { device_id: me.device_id(), key_id: key_id(&me.sign_pub()) };
+    let pr = ProviderRequest::build(origin, vault_id, op, None, signer, vault_proto::request::body_hash(&bytes), None, now, n)?;
+    let sig = me.sign_prehash(&pr.prehash()).map_err(|_| ErrorCode::KeychainUnavailable)?;
+    let header = auth_header(&pr.encode(), &sig);
+    Ok((pr, header, bytes))
+}
+

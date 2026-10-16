@@ -135,6 +135,16 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "authorize_confirm" => super::authorize_ops::authorize_confirm(core, deps),
         "authorize_finish" => super::authorize_ops::authorize_finish(core, frame),
         "authorize_abort" => super::authorize_ops::authorize_abort(core),
+        // Phase G (§6.5, §6.6, §7.1): remote approval.
+        "approval_request" => super::approval_ops::approval_request(core, frame),
+        "approval_status" => super::approval_ops::approval_status(frame),
+        "approval_take" => super::approval_ops::approval_take(frame),
+        "approvals_fetch_begin" => super::approval_ops::approvals_fetch_begin(core),
+        "approvals_fetch_step" => super::approval_ops::approvals_fetch_step(core, frame),
+        "approval_decide" => super::approval_ops::approval_decide(core, frame, deps),
+        "approval_submit_step" => super::approval_ops::approval_submit_step(core, frame),
+        "push_register_request" => super::approval_ops::push_register_request(core, frame),
+        "push_wake_request" => super::approval_ops::push_wake_request(core, frame),
         "remove_vault_preview" => super::remove_vault::preview(core),
         "remove_vault" => super::remove_vault::remove(core, frame, deps),
         "dismiss_rk_sheet_notice" => {
