@@ -185,6 +185,7 @@ pub fn browser_authorize(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Dep
                 x.approval = Some(approval);
                 x.refs.retain(|s| *s == r);
             }
+            deps.events.emit(json!({ "event": "approval_pending", "request_id": hex::encode(approval) }));
             Ok(json!({ "approval_id": hex::encode(approval), "exp": exp }))
         }),
         _ => OpOutcome::err(ErrorCode::InvalidInput),

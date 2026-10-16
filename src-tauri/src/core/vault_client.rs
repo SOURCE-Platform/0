@@ -220,8 +220,23 @@ fn wire_after_connect(client: &Arc<VaultClient>) {
             return;
         };
         apply_capture_wiring(&event);
+        wake_for_approval(&event);
         emit_frontend(&event);
     });
+}
+
+/// Phase G/H (§7.2): a request waits for an iPhone approval — wake the
+/// vault's iPhones (best effort, off the event thread).
+fn wake_for_approval(event: &Value) {
+    if event.get("event").and_then(Value::as_str) != Some("approval_pending") {
+        return;
+    }
+    if let Some(id) = event.get("request_id").and_then(Value::as_str).map(String::from) {
+        std::thread::spawn(move || {
+            let woken = crate::core::vault_backup::push::wake_phones(&id);
+            eprintln!("vault: approval pending; woke {woken} iPhone(s)");
+        });
+    }
 }
 
 /// §14.2: while a helper panel is visible, bump the sensitive-surface

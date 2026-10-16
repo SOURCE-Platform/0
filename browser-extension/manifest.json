@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Source Vault",
+  "version": "0.1.0",
+  "description": "Fill and save passwords from your Source Vault. Every fill is approved on your Mac or iPhone.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtmkS1D/8E4i9tKeiCMKiPsUriHTKKAbgbwbB1YxtfdRRuIj4i2BSTACuUpYQroD6J4gxzeaODaVvksZf6k9DDIO6ynQaimeu8a2nk2a/hSGtF66fBU3HCcPKGN+pswW1ywHfSkoNScruaMr1bpBVt8wHwWX1qWdI98w41L6obypiUqMeaxYjI21NKgDpXERglEIe11tziCzbBszsAARb3QWsbyH9oxpSNJ/lQ5QOAAInZAu9bhBhcoyheSa4Wr6NQybPiOldJIiIPskYjYHoM/ws3DY2fzr2I2moWPv+ZKH5fqhjhigFzf85z/4prbUh/zFRUmeWp1Odnc+06iO0PQIDAQAB",
+  "permissions": ["nativeMessaging", "tabs", "storage"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "Source Vault" },
+  "content_scripts": [{ "matches": ["https://*/*", "http://*/*"], "js": ["content.js"], "run_at": "document_idle", "all_frames": true }]
+}

@@ -1084,3 +1084,19 @@ and the `aps-environment` entitlement (owner's paid Apple Developer
 account, Phase J); the wire annex text for ops 7/8; XV vectors for the
 §6.5 TLV; the Phase G gate demo (clamshell Mac + iPhone approval).
 
+## 16. Phase H — Chrome extension, part 1 (no review during development)
+
+Design and status: `phase-h-design.md`. Built: §9.4 canonicalization,
+§9.5 matching (fail closed until the PSL), the §9.3 browser ops with the
+one-shot fill and confirmed updates, the nm-host class restriction, the
+nm-host broker (layer 2), the MV3 extension, and the app's push for
+pending approvals. Tests: `vault-engine` browser unit tests;
+`vault-helper/tests/browser_fill.rs` (4); `nm_host` unit tests.
+
+**Carried to the final review (Phase H):** everything in
+`phase-h-design.md` "Not yet" — the PSL (owner decision), the NM-05/NM-06
+verdict and layer 3, the native host manifest install and nm-host signing
+and bundling, confusables, iframe rules, the save badge flow,
+`request_unlock`, the update audit view, BR-01…BR-19 on a synthetic site
+server, and the Phase H gate.
+

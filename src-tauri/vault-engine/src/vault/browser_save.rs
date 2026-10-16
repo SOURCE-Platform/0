@@ -119,6 +119,7 @@ pub fn browser_save_update(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &D
         Some("iphone") => run(|| {
             let rid = crate::storage::revisions::uuid_bytes(&r).ok_or(ErrorCode::InvalidInput)?;
             let (id, exp) = crate::approval::request(&page.text(), vault_proto::approval::Action::UpdatePassword, Some(rid), now_epoch())?;
+            deps.events.emit(json!({ "event": "approval_pending", "request_id": hex::encode(id) }));
             Ok(json!({ "approval_id": hex::encode(id), "exp": exp }))
         }),
         _ => OpOutcome::err(ErrorCode::InvalidInput),
