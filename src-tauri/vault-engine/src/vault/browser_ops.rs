@@ -146,13 +146,15 @@ fn consume(id: &[u8; 16], r: &str) -> Result<(), ErrorCode> {
     Ok(())
 }
 
-fn the_fill(store: &crate::storage::VaultStore, vk: &crate::crypto::secret::SecretBytes<32>, r: &str) -> Result<Value, ErrorCode> {
+/// The fill and the origin it was approved for: the extension delivers it
+/// only to a tab still showing exactly that origin.
+fn the_fill(store: &crate::storage::VaultStore, vk: &crate::crypto::secret::SecretBytes<32>, r: &str, origin: &str) -> Result<Value, ErrorCode> {
     let tip = store.read_tip(vk, r)?;
     if tip.kind_tag != records::KIND_LOGIN {
         return Err(ErrorCode::InvalidInput);
     }
     let rec: LoginRecord = serde_json::from_slice(&tip.plaintext).map_err(|_| ErrorCode::RecordCorrupt)?;
-    Ok(json!({ "fill": { "username": rec.username, "password": rec.password }, "expires_in": 30 }))
+    Ok(json!({ "fill": { "username": rec.username, "password": rec.password }, "origin": origin, "expires_in": 30 }))
 }
 
 pub fn browser_authorize(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
@@ -175,7 +177,7 @@ pub fn browser_authorize(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Dep
             }
             finish_authorized!(core, deps, move |store: &mut crate::storage::VaultStore, vk: &crate::crypto::secret::SecretBytes<32>| {
                 consume(&id, &r)?;
-                the_fill(store, vk, &r)
+                the_fill(store, vk, &r, &origin)
             })
         }
         Some("iphone") => run(|| {
@@ -196,7 +198,7 @@ pub fn browser_authorize(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Dep
 pub fn browser_fill(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     run(|| {
         let id = frame.get("request_id").and_then(Value::as_str).and_then(hex::decode_array::<16>).ok_or(ErrorCode::InvalidInput)?;
-        let (_, approval) = check(&id, None, now_epoch())?;
+        let (origin, approval) = check(&id, None, now_epoch())?;
         let approval = approval.ok_or(ErrorCode::BadState)?;
         match crate::approval::status(approval, now_epoch()) {
             Some("approved") => {}
@@ -211,7 +213,7 @@ pub fn browser_fill(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
         let r = fills().iter().find(|x| x.id == id).and_then(|x| x.refs.first().cloned()).ok_or(ErrorCode::NotFound)?;
         crate::approval::take(approval)?;
         consume(&id, &r)?;
-        the_fill(c.store.as_ref().ok_or(ErrorCode::BadState)?, c.vk.as_ref().ok_or(ErrorCode::BadState)?, &r)
+        the_fill(c.store.as_ref().ok_or(ErrorCode::BadState)?, c.vk.as_ref().ok_or(ErrorCode::BadState)?, &r, &origin)
     })
 }
 
