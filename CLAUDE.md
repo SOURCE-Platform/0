@@ -139,6 +139,12 @@ Targets macOS, Windows, and Linux. Platform-specific code should be isolated in 
 
 ## Credential-Vault Review Workflow
 
+**Owner decision 2026-10-16 (current):** no reviews during development.
+Build with targeted tests, record known gaps as "carried to the final
+review", and run the loop below **once**, over all designs and code, at the
+end of development — before the first real credential. The steps below
+describe that final review.
+
 Substantial credential-vault work (spec revisions, design documents,
 implementation milestones) follows a bounded review loop using the project
 subagents in `.claude/agents/`:
