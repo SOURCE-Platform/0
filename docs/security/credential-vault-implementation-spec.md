@@ -2266,6 +2266,9 @@ browser session, connects to the helper socket as client class
 
 - Rust: `psl` crate with a **pinned, vendored** PSL snapshot
   (`public_suffix_list.dat` committed, versioned, updated deliberately).
+  *(Owner decision 2026-10-16: no `psl` crate — the official list is
+  vendored at `vault-engine/src/browser/public_suffix_list.dat` and read by
+  `browser/psl.rs`, the list's own algorithm, no new dependency.)*
 - Extension: `tldts` with its bundled list; the vendored PSL snapshot
   date is recorded in both builds; shared test vectors (§16.4) pin
   boundary behavior (`github.io`, `co.uk`, `appspot.com` …) so the two
@@ -2484,6 +2487,9 @@ Vault may be described as a complete Dashlane replacement.
   elsewhere.
 
 Neither choice is made here. Recording the decision is §19 gate row 28.
+
+**Owner decision 2026-10-16: Choice A — include `secure_note@1` in v1.**
+Every Choice A requirement above applies to Phase I.
 
 ---
 

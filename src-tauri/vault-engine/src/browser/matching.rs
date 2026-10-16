@@ -9,13 +9,16 @@
 //! - a punycode page host → only the exact host it was saved for;
 //! - everything else (other hosts, opaque origins, IP tricks) → refused.
 //!
-//! **Until the vendored Public Suffix List lands (§9.7)**, `match:"domain"`
-//! is honoured only below a stored host that has at least three labels
-//! (`login.example.com` covers `a.login.example.com`); a two-label stored
-//! host (`example.com`, but also `github.io`, `co.uk`) gets the hint, never
-//! a fill — a public suffix can then never cover strangers' sites.
+//! **Domain mode (§9.5, §9.7):** `match:"domain"` covers every host with
+//! the same registrable domain as the stored host, as the vendored Public
+//! Suffix List decides (`psl.rs`): `github.com` covers `gist.github.com`;
+//! `alice.github.io` never covers `bob.github.io`; a stored host that is
+//! itself a public suffix (or whose suffix is punycode) covers nothing
+//! beyond itself. In exact mode, a page on the same registrable domain gets
+//! the "similar item" hint.
 
 use super::origin::{canonical, Origin};
+use super::psl::registrable;
 use crate::storage::records::UrlEntryWire;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,11 +54,12 @@ pub fn decide(page: &Origin, entry: &UrlEntryWire) -> Verdict {
     if page.is_punycode() {
         return Verdict::Refused;
     }
-    if page.host.ends_with(&format!(".{}", saved.host)) {
-        let deep_enough = saved.host.split('.').count() >= 3;
-        return if entry.match_mode == "domain" && deep_enough { Verdict::Eligible } else { Verdict::Similar };
+    match (registrable(&page.host), registrable(&saved.host)) {
+        (Some(p), Some(s)) if p == s => {
+            if entry.match_mode == "domain" { Verdict::Eligible } else { Verdict::Similar }
+        }
+        _ => Verdict::Refused,
     }
-    Verdict::Refused
 }
 
 /// The best verdict over a record's entries.
@@ -86,7 +90,10 @@ mod tests {
     fn the_policy_table() {
         assert_eq!(v("https://github.com", e("github.com", "exact", false)), Verdict::Eligible);
         assert_eq!(v("https://gist.github.com", e("github.com", "exact", false)), Verdict::Similar);
-        assert_eq!(v("https://gist.github.com", e("github.com", "domain", false)), Verdict::Similar, "two labels: no fill before the PSL");
+        assert_eq!(v("https://gist.github.com", e("github.com", "domain", false)), Verdict::Eligible, "same registrable domain");
+        assert_eq!(v("https://github.com", e("login.github.com", "domain", false)), Verdict::Eligible, "a sibling, same registrable domain");
+        assert_eq!(v("https://github.com", e("login.github.com", "exact", false)), Verdict::Similar);
+        assert_eq!(v("https://bob.github.io", e("github.io", "domain", false)), Verdict::Refused, "a public suffix covers nobody");
         assert_eq!(v("https://a.login.example.com", e("login.example.com", "domain", false)), Verdict::Eligible);
         assert_eq!(v("https://evilgithub.com", e("github.com", "domain", false)), Verdict::Refused);
         assert_eq!(v("https://github.com.evil.test", e("github.com", "domain", false)), Verdict::Refused);
