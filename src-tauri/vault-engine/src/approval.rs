@@ -134,6 +134,12 @@ pub fn status(request_id: [u8; 16], now: u64) -> Option<&'static str> {
     })
 }
 
+/// The request `id` is exactly this origin, action and credential (the
+/// caller using a release checks it was for what it is about to do).
+pub fn bound(id: [u8; 16], origin: &str, action: Action, credential_ref: Option<[u8; 16]>) -> bool {
+    pending().iter().any(|r| r.id == id && r.origin == origin && r.action == action && r.credential_ref == credential_ref)
+}
+
 /// Use a release exactly once (the fill goes out, Phase H).
 pub fn take(request_id: [u8; 16]) -> Result<(), ErrorCode> {
     let mut p = pending();

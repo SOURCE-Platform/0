@@ -100,7 +100,10 @@ fn read_hello(stream: &mut UnixStream, ctx: &ConnCtx) -> Option<(ClientClass, Va
 
 /// Ops an `nm-host` connection may send (§1.5 nm-host table, plus the
 /// state read every client class has).
-const NM_HOST_OPS: [&str; 5] = ["get_state", "fill_candidates", "fill_authorize", "save_new", "save_update"];
+const NM_HOST_OPS: [&str; 8] = [
+    "get_state", "browser_hello", "browser_candidates", "browser_authorize", "browser_fill", "browser_save_new", "browser_save_update",
+    "browser_save_update_finish",
+];
 
 fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
     let Ok(read_side) = stream.try_clone() else {
@@ -117,6 +120,9 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             _ if class == ClientClass::NmHost && !NM_HOST_OPS.contains(&op) => {
                 crate::errors::ErrorCode::UnknownOp.frame()
             }
+            // Phase H: website fills and saves go out only through the
+            // browser broker, never to the main app.
+            _ if class != ClientClass::NmHost && op.starts_with("browser_") => crate::errors::ErrorCode::UnknownOp.frame(),
             // The phone's side of enrollment is SOURCE Vault's alone (FFI
             // catalogue §4): a Mac joining a vault is F2-D4, not built, and
             // `join_abort` would wipe a vault directory (review VER-I5).

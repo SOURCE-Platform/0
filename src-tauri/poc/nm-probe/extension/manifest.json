@@ -1,0 +1,9 @@
+{
+  "manifest_version": 3,
+  "name": "Source Vault NM probe (prototype)",
+  "version": "0.0.1",
+  "description": "Phase H NM-05/NM-06 prototype: connects to the native host once.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2D02WnxfTWdpYCSh+T7j7OBye5e7cSQX+olMTXybCK4eBciBL7Zqp/ReIF3EySp4Ht1mnQmOel+dpPvLCi23PhTFi7q2pd1XThPsruMUXgXGXsicCBNfP7eyMDkIEYB0Hlm/VqJHuik9q4mNpM6a8tQ6QfrQfnalvtkXyAubWpJHmZCY8VNMeFjeAEFLTSepnP2BI2mblnFvfBqhoDSoxMh/zmkwren1YJnx4BmvjpIlu0kzmRWiIEt+WC9K4JbRBK+iwEi3s5zjXVh8snd0z2bb6QS30+iKAiGrbQJi0vMmWMub47jH4rGOtTCbSux6QcjDPLP+yn0AZUPKTEu2bQIDAQAB",
+  "permissions": ["nativeMessaging"],
+  "background": { "service_worker": "worker.js" }
+}

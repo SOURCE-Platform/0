@@ -48,6 +48,8 @@ pub mod renroll_commit;
 pub mod renroll_ops;
 pub mod authorize_ops;
 pub mod approval_ops;
+pub mod browser_ops;
+pub mod browser_save;
 pub mod resolve;
 pub mod revoke_core;
 pub mod provider_ops;

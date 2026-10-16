@@ -135,6 +135,14 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "authorize_confirm" => super::authorize_ops::authorize_confirm(core, deps),
         "authorize_finish" => super::authorize_ops::authorize_finish(core, frame),
         "authorize_abort" => super::authorize_ops::authorize_abort(core),
+        // Phase H (§9.3): the browser ops nm-host relays.
+        "browser_hello" => super::browser_ops::browser_hello(core),
+        "browser_candidates" => super::browser_ops::browser_candidates(core, frame),
+        "browser_authorize" => super::browser_ops::browser_authorize(core, frame, deps),
+        "browser_fill" => super::browser_ops::browser_fill(core, frame),
+        "browser_save_new" => super::browser_save::browser_save_new(core, frame, deps),
+        "browser_save_update" => super::browser_save::browser_save_update(core, frame, deps),
+        "browser_save_update_finish" => super::browser_save::browser_save_update_finish(core, frame),
         // Phase G (§6.5, §6.6, §7.1): remote approval.
         "approval_request" => super::approval_ops::approval_request(core, frame),
         "approval_status" => super::approval_ops::approval_status(frame),

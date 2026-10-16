@@ -9,6 +9,7 @@
 
 pub mod approval;
 pub mod backup;
+pub mod browser;
 pub mod crypto;
 pub mod device;
 pub mod enroll;
