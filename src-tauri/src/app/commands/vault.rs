@@ -209,7 +209,7 @@ pub async fn vault_add_note(title: String, body: String) -> Result<Value, String
     call(json!({"op": "add_item", "kind": "secure_note", "title": title, "body": body})).await
 }
 
-/// Edit one whitelisted field (title/username/password/host). The helper
+/// Edit one whitelisted field (title/username/password/host, or a note's body). The helper
 /// enforces the same whitelist; the double gate is deliberate.
 #[tauri::command]
 pub async fn vault_update_item(
@@ -217,7 +217,7 @@ pub async fn vault_update_item(
     field: String,
     value: String,
 ) -> Result<Value, String> {
-    if !matches!(field.as_str(), "title" | "username" | "password" | "host") {
+    if !matches!(field.as_str(), "title" | "username" | "password" | "host" | "body") {
         return Err("INVALID_INPUT".to_string());
     }
     call(json!({"op": "update_item", "ref": reference, field: value})).await

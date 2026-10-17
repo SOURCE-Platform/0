@@ -190,6 +190,10 @@ fn a_secure_note_added_by_hand() {
     assert_eq!(items[0]["kind"], "secure_note");
     assert!(!items.to_string().contains("line 1"), "the body is not metadata");
     assert_eq!(fx.op(json!({"op": "reveal", "ref": r["ref"]}))["secret"]["body"], "line 1\nline 2");
+    let edited = fx.op(json!({"op": "update_item", "ref": r["ref"], "body": "line 3"}));
+    assert_eq!(edited["ok"], true, "{edited}");
+    assert_eq!(fx.op(json!({"op": "reveal", "ref": r["ref"]}))["secret"]["body"], "line 3");
+    assert_eq!(fx.op(json!({"op": "list_items"}))["items"][0]["title"], "Synthetic note", "the title is kept");
     let big = "x".repeat(64 * 1024 + 1);
     assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": "Big", "body": big}))["error"], "INVALID_INPUT");
     assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": " ", "body": "x"}))["error"], "INVALID_INPUT");

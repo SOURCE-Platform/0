@@ -47,8 +47,9 @@ every fixture comes from `scripts/gen-dashlane-fixtures.py` (fixed seed,
 
 - The import holds the vault for its whole run (16.5 s at 10^5 rows); a
   Lock request waits for it.
-- Editing a note's body (add and reveal exist; `update_item` accepts a
-  note, the UI does not offer it yet).
+- An edit screen: neither app has one for any item type yet (logins
+  included). `update_item` edits a note (tested) and the Mac command
+  accepts `body`.
 - The Mac import card and note form were type-checked and built, not yet
   clicked through in the running app; the iPhone changes were built for
   the simulator, not run.
