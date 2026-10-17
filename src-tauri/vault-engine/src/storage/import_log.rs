@@ -48,18 +48,37 @@ pub fn recompute(
     Ok(())
 }
 
+/// The fingerprint alone (duplicate checks, §10.3).
+pub fn fingerprint(vk: &SecretBytes<32>, h: &Header, identity: &[u8]) -> Result<[u8; 32], ErrorCode> {
+    use hmac::{Hmac, KeyInit, Mac};
+    let key = hkdf::import_fp_key(vk, &h.import_fp_salt.0).map_err(|_| ErrorCode::Internal)?;
+    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key.expose())
+        .map_err(|_| ErrorCode::Internal)?;
+    mac.update(identity);
+    Ok(mac.finalize().into_bytes().into())
+}
+
+/// Every stored fingerprint (the import's duplicate set starts here).
+pub fn all(conn: &rusqlite::Connection) -> Result<Vec<[u8; 32]>, ErrorCode> {
+    let mut stmt = conn.prepare("SELECT fingerprint FROM import_log").map_err(|_| ErrorCode::DbCorrupt)?;
+    let rows = stmt.query_map([], |r| r.get::<_, Vec<u8>>(0)).map_err(|_| ErrorCode::DbCorrupt)?;
+    rows.map(|r| r.ok().and_then(|v| v.try_into().ok()).ok_or(ErrorCode::DbCorrupt)).collect()
+}
+
+/// Record one imported identity, as `seal_identity` returned it (§10.3).
+pub fn insert(conn: &rusqlite::Connection, fp: &[u8; 32], ct: &[u8]) -> Result<(), ErrorCode> {
+    conn.execute("INSERT OR IGNORE INTO import_log (fingerprint, identity_ct) VALUES (?1, ?2)", params![fp.as_slice(), ct])
+        .map_err(|_| ErrorCode::DbCorrupt)?;
+    Ok(())
+}
+
 /// `(fingerprint, identity_ct)` for one normalized identity (§10.3).
 pub fn seal_identity(
     vk: &SecretBytes<32>,
     h: &Header,
     identity: &[u8],
 ) -> Result<([u8; 32], Vec<u8>), ErrorCode> {
-    use hmac::{Hmac, KeyInit, Mac};
-    let key = hkdf::import_fp_key(vk, &h.import_fp_salt.0).map_err(|_| ErrorCode::Internal)?;
-    let mut mac = <Hmac<sha2::Sha256> as KeyInit>::new_from_slice(key.expose())
-        .map_err(|_| ErrorCode::Internal)?;
-    mac.update(identity);
-    let fp: [u8; 32] = mac.finalize().into_bytes().into();
+    let fp = fingerprint(vk, h, identity)?;
     let sealed = record::seal_meta_unbound(
         vk, &h.vault_id.0, &h.meta_salt.0, &IMPORT_RECORD_ID, IMPORT_IDENTITY_TAG, identity,
     )

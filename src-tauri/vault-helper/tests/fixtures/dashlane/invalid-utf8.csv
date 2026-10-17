@@ -1,0 +1,4 @@
+username,username2,username3,title,password,note,url,category,otpSecret
+user4@example.test,,,Site 4,fixture-87b8d17b,,https://site4.example.test/login,,
+badÿ@example.test,,,Bad,fixture-bad,,https://bad.example.test,,
+user5@example.test,,,Site 5,fixture-0d9604ae,,https://site5.example.test/login,,

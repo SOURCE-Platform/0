@@ -28,6 +28,10 @@ p256 = { version = "0.14", features = ["ecdsa"] }
 unicode-normalization = "0.1"
 getrandom = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
+# Phase I: Dashlane ZIP members (deflate). Already in Cargo.lock and
+# exempted in supply-chain/config.toml; adds flate2, miniz_oxide,
+# crc32fast, adler2, simd-adler32 to the helper graph.
+flate2 = "1.1"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

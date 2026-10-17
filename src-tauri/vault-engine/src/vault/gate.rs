@@ -138,6 +138,7 @@ fn extract_secret(kind_tag: u8, plaintext: &Value) -> Result<Value, ErrorCode> {
                 .ok_or(ErrorCode::RecordCorrupt)?;
             Ok(json!({"password": password}))
         }
+        records::KIND_NOTE => Ok(json!({ "body": plaintext.get("body").cloned().unwrap_or(Value::Null) })),
         records::KIND_CARD => Ok(json!({
             "number": plaintext.get("number").cloned().unwrap_or(Value::Null),
             "expiry": plaintext.get("expiry").cloned().unwrap_or(Value::Null),

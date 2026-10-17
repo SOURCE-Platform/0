@@ -57,7 +57,7 @@ const FLOOR_OPS: &[&str] = &[
 
 /// §22.14: every op that authors a revision or changes authority.
 const AUTHORING: &[&str] = &[
-    "add_item", "update_item", "delete_item", "restore_revision", "resolve_conflict", "backup_prepare", "change_master_password",
+    "add_item", "import_dashlane", "update_item", "delete_item", "restore_revision", "resolve_conflict", "backup_prepare", "change_master_password",
     "rotate_recovery_key", "setup_retry_handle", "revoke_device", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
 ];
 
@@ -91,6 +91,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "setup_retry_handle" => retry_handle::setup_retry_handle(core, frame, deps),
         "list_items" => items::list_items(core),
         "add_item" => items::add_item(core, frame, deps),
+        "import_dashlane" => super::import_ops::import_dashlane(core, frame, deps),
         "update_item" => items::update_item(core, frame, deps),
         "delete_item" => items::delete_item(core, frame, deps),
         "reveal" => gate::reveal(core, frame, deps),

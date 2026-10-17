@@ -18,6 +18,7 @@ pub mod import_log;
 pub mod kv;
 pub mod manifest;
 pub mod merge;
+pub mod note_record;
 pub mod records;
 pub mod rev_state;
 pub mod revision_rows;
@@ -29,6 +30,7 @@ pub mod rotation_journal;
 pub mod set_aside;
 pub mod store;
 pub mod store_list;
+pub mod store_batch;
 pub mod store_records;
 
 pub use store::VaultStore;

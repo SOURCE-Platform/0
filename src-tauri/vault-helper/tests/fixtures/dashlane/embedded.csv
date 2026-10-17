@@ -1,0 +1,4 @@
+username,username2,username3,title,password,note,url,category,otpSecret
+quote@example.test,,,"Comma, Inc.","fixture-""q"",1","line one
+line two",https://comma.example.test,,
+user3@example.test,,,Site 3,fixture-86bfc778,,https://site3.example.test/login,,

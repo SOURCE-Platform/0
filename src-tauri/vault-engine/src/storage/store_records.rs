@@ -41,7 +41,7 @@ pub struct NewRevision<'a> {
 
 impl VaultStore {
     /// Seal and assemble a revision authored by this device.
-    fn author(&self, vk: &SecretBytes<32>, n: NewRevision<'_>) -> Result<RevisionRow, ErrorCode> {
+    pub(super) fn author(&self, vk: &SecretBytes<32>, n: NewRevision<'_>) -> Result<RevisionRow, ErrorCode> {
         let rid = revisions::uuid_bytes(n.record_id).ok_or(ErrorCode::InvalidInput)?;
         let author = self.author_device()?;
         let mut parents = n.parents;

@@ -10,11 +10,14 @@ use crate::errors::ErrorCode;
 
 pub const KIND_LOGIN: u8 = 1;
 pub const KIND_CARD: u8 = 2;
+/// §10.8 Choice A (owner decision 2026-10-16): `secure_note@1`.
+pub const KIND_NOTE: u8 = 3;
 
 pub fn kind_name(kind_tag: u8) -> &'static str {
     match kind_tag {
         KIND_LOGIN => "login",
         KIND_CARD => "card",
+        KIND_NOTE => "secure_note",
         _ => "unknown",
     }
 }
@@ -23,6 +26,7 @@ pub fn kind_tag(name: &str) -> Option<u8> {
     match name {
         "login" => Some(KIND_LOGIN),
         "card" => Some(KIND_CARD),
+        "secure_note" => Some(KIND_NOTE),
         _ => None,
     }
 }
@@ -214,22 +218,7 @@ pub fn validate_card(rec: &mut CardRecord) -> Result<bool, ErrorCode> {
     if !expiry_ok {
         return Err(ErrorCode::InvalidInput);
     }
-    Ok(!luhn_ok(&rec.number))
-}
-
-fn luhn_ok(digits: &str) -> bool {
-    let mut sum = 0u32;
-    for (i, c) in digits.chars().rev().enumerate() {
-        let mut d = c.to_digit(10).unwrap_or(0);
-        if i % 2 == 1 {
-            d *= 2;
-            if d > 9 {
-                d -= 9;
-            }
-        }
-        sum += d;
-    }
-    sum % 10 == 0
+    Ok(!super::note_record::luhn_ok(&rec.number))
 }
 
 /// Metadata JSON sealed into `meta_ct` (§3.4: title/username/hosts are

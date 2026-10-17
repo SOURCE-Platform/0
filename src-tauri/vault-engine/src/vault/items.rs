@@ -154,6 +154,7 @@ pub(super) fn build_record(
     match kind_tag {
         records::KIND_LOGIN => build_login(fields, old),
         records::KIND_CARD => build_card(fields, old),
+        records::KIND_NOTE => build_note(fields, old),
         _ => Err(ErrorCode::InvalidInput),
     }
 }
@@ -287,3 +288,21 @@ fn build_card(
     let warnings = if luhn_warning { vec!["luhn"] } else { vec![] };
     Ok((plaintext, meta.to_string(), warnings))
 }
+
+/// §10.8 Choice A: a note's title is its only metadata; the body stays in
+/// the record ciphertext.
+fn build_note(fields: &Value, old: Option<&Value>) -> Result<(String, String, Vec<&'static str>), ErrorCode> {
+    use crate::storage::note_record::{validate_note, SecureNoteRecord};
+    let now = now_epoch();
+    let mut rec = SecureNoteRecord {
+        schema: String::new(),
+        title: as_str(field(fields, old, "title")).ok_or(ErrorCode::InvalidInput)?.to_string(),
+        body: as_str(field(fields, old, "body")).unwrap_or_default().to_string(),
+        created_at: old.and_then(|o| o.get("created_at")).and_then(Value::as_u64).unwrap_or(now),
+        updated_at: now,
+    };
+    validate_note(&mut rec)?;
+    let meta = records::meta_json(records::KIND_NOTE, &rec.title, "", &[]);
+    Ok((serde_json::to_string(&rec).map_err(|_| ErrorCode::Internal)?, meta.to_string(), vec![]))
+}
+

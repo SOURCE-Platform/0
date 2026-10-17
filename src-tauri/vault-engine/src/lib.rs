@@ -13,6 +13,7 @@ pub mod browser;
 pub mod crypto;
 pub mod device;
 pub mod enroll;
+pub mod import;
 pub mod errors;
 pub mod keychain;
 pub mod peer;
