@@ -15,7 +15,6 @@ mod ingest;
 mod pair_requests;
 mod pairing;
 pub(crate) mod qr;
-mod routes_vault;
 pub(crate) mod routes_vault_peer;
 pub(crate) mod peer_tokens;
 mod routes_clips;

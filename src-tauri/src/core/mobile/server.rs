@@ -87,8 +87,6 @@ pub async fn serve_mobile(
                 .layer(DefaultBodyLimit::max(super::routes_clips::MAX_CLIP_BYTES)),
         )
         .route("/v1/clips/status", get(super::routes_clips::clip_status))
-        // The vault's only route here: read-only registry status (§4.7).
-        .route("/v1/vault/registry", get(super::routes_vault::registry_status))
         .route(
             "/v1/vault/peer",
             post(super::routes_vault_peer::peer)
