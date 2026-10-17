@@ -19,3 +19,16 @@ chrome.runtime.onMessage.addListener((msg) => {
   set(password, msg.fill.password);
   msg.fill = null; // gone from this frame's memory
 });
+
+// §9.8 save: on a form submit with a filled password field (top frame
+// only), hand {username, password} to the background worker's memory.
+// The user just typed these into the page; nothing is stored or logged.
+if (window === window.top) {
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    const password = form.querySelector && form.querySelector('input[type="password"]');
+    if (!password || !password.value) return;
+    const user = form.querySelector('input[type="email"], input[autocomplete="username"], input[type="text"]');
+    chrome.runtime.sendMessage({ type: "captured", username: user ? user.value : "", password: password.value });
+  }, true);
+}

@@ -28,6 +28,34 @@ async function deliver(requestId, answer) {
   return true;
 }
 
+// §9.8: a submitted login per tab, in this worker's memory only (never
+// chrome.storage), offered for saving once the page has moved on. It is
+// dropped after two minutes, when saved, or when the tab closes.
+const captured = new Map();
+const KEEP_MS = 120000;
+
+function pendingFor(tabId) {
+  const c = captured.get(tabId);
+  if (c && Date.now() - c.at > KEEP_MS) {
+    captured.delete(tabId);
+    return null;
+  }
+  return c && c.navigated ? c : null;
+}
+
+chrome.tabs.onUpdated.addListener((tabId, change) => {
+  const c = captured.get(tabId);
+  if (!c) return;
+  if (change.url) c.navigated = true; // the success heuristic: the page moved on
+  if (change.status === "complete" && c.navigated) chrome.action.setBadgeText({ tabId, text: "+" });
+});
+chrome.tabs.onRemoved.addListener((tabId) => captured.delete(tabId));
+
+function dropCaptured(tabId) {
+  captured.delete(tabId);
+  chrome.action.setBadgeText({ tabId, text: "" });
+}
+
 async function activeTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -35,6 +63,13 @@ async function activeTab() {
 
 // The popup asks; the background answers with metadata only.
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg.type === "captured") {
+    // From a content script: only a tab's top frame, http(s) only.
+    if (!sender.tab || sender.frameId !== 0 || !/^https?:/.test(sender.url || "")) return false;
+    const url = sender.url;
+    captured.set(sender.tab.id, { origin: new URL(url).origin, url, username: msg.username, password: msg.password, at: Date.now(), navigated: false });
+    return false;
+  }
   (async () => {
     const tab = await activeTab();
     if (!tab || !tab.url) return reply({ ok: false, error: "NO_TAB" });
@@ -57,8 +92,34 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
       }
       case "request_unlock":
         return reply(await native({ op: "request_unlock" }));
-      case "save":
-        return reply(await native({ op: "save_new", origin, tab_url: tab.url, username: msg.username, password: msg.password }));
+      case "pending_save": {
+        // The popup sees where and who — never the password.
+        const c = pendingFor(tab.id);
+        return reply(c ? { ok: true, origin: c.origin, username: c.username } : { ok: false });
+      }
+      case "save_pending": {
+        // Origin and URL as they were when the form was submitted.
+        const c = pendingFor(tab.id);
+        if (!c) return reply({ ok: false, error: "NOTHING_TO_SAVE" });
+        const r = await native({ op: "save_new", origin: c.origin, tab_url: c.url, username: c.username, password: c.password });
+        if (r.ok && !r.needs_update) dropCaptured(tab.id);
+        return reply(r.needs_update ? { ok: true, needs_update: r.needs_update } : { ok: r.ok, error: r.error });
+      }
+      case "update_pending": {
+        // Never applied on the extension's say-so: Touch ID or the iPhone.
+        const c = pendingFor(tab.id);
+        if (!c) return reply({ ok: false, error: "NOTHING_TO_SAVE" });
+        const r = await native({ op: "save_update", ref: msg.ref, origin: c.origin, tab_url: c.url, password: c.password, method: msg.method });
+        if (r.ok && !r.approval_id) dropCaptured(tab.id);
+        return reply(r);
+      }
+      case "update_after_iphone": {
+        const c = pendingFor(tab.id);
+        if (!c) return reply({ ok: false, error: "NOTHING_TO_SAVE" });
+        const r = await native({ op: "save_update_finish", ref: msg.ref, origin: c.origin, tab_url: c.url, password: c.password, approval_id: msg.approval_id });
+        if (r.ok && !r.pending) dropCaptured(tab.id);
+        return reply(r);
+      }
       default:
         return reply({ ok: false, error: "UNKNOWN" });
     }

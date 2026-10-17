@@ -24,7 +24,55 @@ function waitForIphone(requestId) {
   }, 1500);
 }
 
+// §9.8: a login just submitted on this tab, offered for saving. The popup
+// shows the site and username only; the password stays in the worker.
+async function offerSave() {
+  const p = await ask({ type: "pending_save" });
+  if (!p.ok) return;
+  const box = document.createElement("div");
+  box.className = "account";
+  const text = document.createElement("div");
+  text.textContent = `Save the login for ${p.username || "this account"} on ${p.origin}?`;
+  const row = document.createElement("div");
+  row.className = "row";
+  const button = (label, onclick) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.onclick = onclick;
+    return b;
+  };
+  const done = (t) => { text.textContent = t; row.replaceChildren(); };
+  const update = (ref) => {
+    text.textContent = "A login for this account is already saved. Update its password?";
+    row.replaceChildren(
+      button("Update with Touch ID", async () => {
+        const r = await ask({ type: "update_pending", ref, method: "local" });
+        done(r.ok ? "Password updated." : "Not updated.");
+      }),
+      button("Approve on iPhone", async () => {
+        const r = await ask({ type: "update_pending", ref, method: "iphone" });
+        if (!r.approval_id) return done("Your iPhone isn't available — use Touch ID.");
+        done("Approve on your iPhone…");
+        const timer = setInterval(async () => {
+          const f = await ask({ type: "update_after_iphone", ref, approval_id: r.approval_id });
+          if (f.ok && f.pending) return;
+          clearInterval(timer);
+          done(f.ok ? "Password updated." : "Not updated.");
+        }, 1500);
+      }),
+    );
+  };
+  row.append(button("Save", async () => {
+    const r = await ask({ type: "save_pending" });
+    if (r.needs_update) return update(r.needs_update);
+    done(r.ok ? "Saved to Source Vault." : r.error === "BAD_STATE" ? "Unlock your vault in SOURCE first." : "Not saved.");
+  }));
+  box.append(text, row);
+  list.before(box);
+}
+
 (async () => {
+  await offerSave();
   const c = await ask({ type: "candidates" });
   if (!c.ok) return say(c.error === "VAULT_UNAVAILABLE" ? "Open SOURCE on your Mac to use the vault." : "Not available here.");
   if (c.locked) {
