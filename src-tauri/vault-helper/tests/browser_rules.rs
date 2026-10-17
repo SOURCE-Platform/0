@@ -113,9 +113,10 @@ fn br_16_17_updates_need_a_trusted_confirmation() {
         f.as_object_mut().unwrap().extend(json!({"op": "browser_save_update", "ref": r, "password": "synthetic-new", "method": method}).as_object().unwrap().clone());
         fx.op(f)
     };
-    let held = update("iphone");
-    assert!(held["approval_id"].is_string(), "{held}");
-    assert_eq!(password(&fx, &r), "synthetic-old", "BR-16: held pending, record unchanged");
+    // No iPhone in this vault: the iPhone path is refused (VER-O3) and the
+    // record stays as it was; held-pending is BR-16 in the paired test.
+    assert_eq!(update("iphone")["error"], "DEVICE_NOT_AUTHORIZED");
+    assert_eq!(password(&fx, &r), "synthetic-old");
     assert_eq!(update("local")["ok"], true);
     let reason = LAST_REASON.lock().unwrap().clone();
     assert_eq!(password(&fx, &r), "synthetic-new", "BR-17: applied");
@@ -139,6 +140,7 @@ fn br_18_19_iphone_update_approvals_are_bound_and_one_shot() {
     };
     let a = mac.op(page(json!({"op": "browser_save_update", "ref": item, "password": "synthetic-new", "method": "iphone"})));
     let id = a["approval_id"].as_str().unwrap().to_string();
+    assert_ne!(password(&mac, &item), "synthetic-new", "BR-16: held pending, record unchanged");
     let begun = phone.op(json!({"op": "approvals_fetch_begin"}));
     let answer = relay(&mac, &b64::decode(begun["request"].as_str().unwrap()).unwrap()).unwrap();
     phone.op(json!({"op": "approvals_fetch_step", "response": b64::encode(&answer)}));

@@ -13,9 +13,13 @@ import Foundation
 enum DeviceFloor {
     /// "iPhone14,4" on a device; the simulated model in the Simulator.
     static var modelIdentifier: String {
+        #if targetEnvironment(simulator)
+        // Only the Simulator may name its model this way (final review
+        // VER-O11): on a device the variable is never trusted.
         if let simulated = ProcessInfo.processInfo.environment["SIMULATOR_MODEL_IDENTIFIER"] {
             return simulated
         }
+        #endif
         var info = utsname()
         uname(&info)
         return withUnsafeBytes(of: &info.machine) { raw in

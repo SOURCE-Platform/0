@@ -70,6 +70,9 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     captured.set(sender.tab.id, { origin: new URL(url).origin, url, username: msg.username, password: msg.password, at: Date.now(), navigated: false });
     return false;
   }
+  // Everything below is the popup's: a page's content script (sender.tab
+  // set) may only hand over a submitted login (final review VER-O10).
+  if (sender.tab) return false;
   (async () => {
     const tab = await activeTab();
     if (!tab || !tab.url) return reply({ ok: false, error: "NO_TAB" });

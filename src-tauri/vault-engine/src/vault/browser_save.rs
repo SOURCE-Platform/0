@@ -66,7 +66,15 @@ pub fn browser_save_new(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps
     match prepared {
         Err(e) => OpOutcome::err(e),
         Ok(Err(r)) => OpOutcome::ok(json!({ "needs_update": r })),
-        Ok(Ok(item)) => super::items::add_item(core, &item, deps),
+        // §9.9 (final review VER-O1): the prompt names the account and site.
+        Ok(Ok(item)) => {
+            let reason = format!(
+                "Source Vault: save a login for {} on {}?",
+                item["username"].as_str().unwrap_or(""),
+                item["urls"][0]["host"].as_str().unwrap_or("")
+            );
+            super::items::add_item_because(core, &item, deps, &reason)
+        }
     }
 }
 
@@ -117,6 +125,9 @@ pub fn browser_save_update(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &D
             finish_authorized!(core, deps, move |store: &mut VaultStore, vk: &SecretBytes<32>| apply(store, vk, &r, &password))
         }
         Some("iphone") => run(|| {
+            if !super::browser_ops::has_iphone(core) {
+                return Err(ErrorCode::DeviceNotAuthorized); // VER-O3
+            }
             let rid = crate::storage::revisions::uuid_bytes(&r).ok_or(ErrorCode::InvalidInput)?;
             let (id, exp) = crate::approval::request(&page.text(), vault_proto::approval::Action::UpdatePassword, Some(rid), now_epoch())?;
             deps.events.emit(json!({ "event": "approval_pending", "request_id": hex::encode(id) }));

@@ -40,13 +40,30 @@ pub fn open_export(path: &str, vault_dir: &Path) -> Result<File, ErrorCode> {
     if !meta.is_file() || meta.len() > MAX_FILE {
         return Err(ErrorCode::InvalidInput);
     }
-    let (Ok(real), Ok(vault)) = (p.canonicalize(), vault_dir.canonicalize()) else {
+    let (Some(real), Ok(vault)) = (open_path(&f), vault_dir.canonicalize()) else {
         return Err(ErrorCode::InvalidInput);
     };
     if real.starts_with(&vault) {
         return Err(ErrorCode::InvalidInput);
     }
     Ok(f)
+}
+
+/// The path of the file this handle has open (`F_GETPATH`), so the
+/// vault-directory check is about the opened file, not a name that may
+/// since point elsewhere (final review VER-O8).
+fn open_path(f: &File) -> Option<std::path::PathBuf> {
+    use std::os::unix::io::AsRawFd;
+    let mut buf = vec![0u8; libc::PATH_MAX as usize];
+    // SAFETY: a live fd and a buffer of PATH_MAX bytes, as F_GETPATH requires.
+    let rc = unsafe { libc::fcntl(f.as_raw_fd(), libc::F_GETPATH, buf.as_mut_ptr()) };
+    if rc == -1 {
+        return None;
+    }
+    let len = buf.iter().position(|&b| b == 0)?;
+    buf.truncate(len);
+    use std::os::unix::ffi::OsStringExt;
+    Some(std::path::PathBuf::from(std::ffi::OsString::from_vec(buf)))
 }
 
 pub fn import_dashlane(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {

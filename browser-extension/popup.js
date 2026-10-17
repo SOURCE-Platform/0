@@ -89,7 +89,7 @@ async function offerSave() {
   if (c.warning === "lookalike") {
     const w = document.createElement("div");
     w.className = "warn";
-    w.textContent = "Careful: this site's address looks like one of your saved sites but is a different address. Nothing will be filled here.";
+    w.textContent = "Careful: this site's address looks like one of your saved sites but is a different address. Check the address bar before you fill anything.";
     list.before(w);
   }
   if (!c.accounts.length) return say(c.similar ? "A similar login exists for a related site — open SOURCE to check it." : "No saved login for this site.");

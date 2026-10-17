@@ -51,6 +51,12 @@ fn fields_of(frame: &Value) -> Option<Value> {
 /// display-class releases; the add form's own capture duties are §14.2
 /// main-side).
 pub fn add_item(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
+    add_item_because(core, frame, deps, "Source Vault: add item")
+}
+
+/// `add_item` with the presence prompt's text chosen by the caller (a
+/// browser save names the account and the site, §9.9).
+pub(super) fn add_item_because(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, reason: &str) -> OpOutcome {
     let Some(kind_tag) = frame
         .get("kind")
         .and_then(Value::as_str)
@@ -64,7 +70,7 @@ pub fn add_item(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpO
     if records::reject_forbidden_fields(&fields).is_err() {
         return OpOutcome::err(ErrorCode::InvalidInput);
     }
-    if let Err(o) = presence_gate(core, deps, "Source Vault: add item") {
+    if let Err(o) = presence_gate(core, deps, reason) {
         return o;
     }
     finish_authorized!(core, deps, move |store: &mut VaultStore,

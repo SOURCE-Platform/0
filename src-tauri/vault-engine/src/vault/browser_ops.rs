@@ -102,6 +102,15 @@ pub fn browser_request_unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOu
     OpOutcome::ok(json!({ "vault_state": state }))
 }
 
+/// Does this vault have an active iPhone that could approve?
+pub(super) fn has_iphone(core: &Arc<Mutex<VaultCore>>) -> bool {
+    let c = lock_core(core);
+    let Some(h) = c.header.as_ref() else { return false };
+    let policy = crate::registry::chain::EpochPolicy::CheckpointAnchored;
+    crate::registry::log::read_state(&c.vault_dir, &h.vault_id.0, &policy)
+        .is_ok_and(|reg| reg.devices.iter().any(|d| !d.revoked && d.platform == crate::registry::device::PLATFORM_IOS))
+}
+
 pub fn browser_candidates(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     run(|| {
         let page = page(frame)?;
@@ -206,6 +215,11 @@ pub fn browser_authorize(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Dep
             })
         }
         Some("iphone") => run(|| {
+            // §7.2 copy rule (final review VER-O3): no "approve on your
+            // iPhone" when this vault has no active iPhone to ask.
+            if !has_iphone(core) {
+                return Err(ErrorCode::DeviceNotAuthorized);
+            }
             let rid = crate::storage::revisions::uuid_bytes(&r).ok_or(ErrorCode::InvalidInput)?;
             let (approval, exp) = crate::approval::request(&origin, vault_proto::approval::Action::FillPassword, Some(rid), now_epoch())?;
             if let Some(x) = fills().iter_mut().find(|x| x.id == id) {

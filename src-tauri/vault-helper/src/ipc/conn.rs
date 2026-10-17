@@ -130,7 +130,7 @@ fn serve(stream: &mut UnixStream, class: ClientClass, ctx: &Arc<ConnCtx>) {
             // browser broker, never to the main app.
             _ if class != ClientClass::NmHost && op.starts_with("browser_") => crate::errors::ErrorCode::UnknownOp.frame(),
             // The phone's side of enrollment is SOURCE Vault's alone (FFI
-            // catalogue §4): a Mac joining a vault is F2-D4, not built, and
+            // catalogue §4): a Mac joins through `renroll_*` (F.2e), and
             // `join_abort` would wipe a vault directory (review VER-I5).
             // Likewise the requester side of peer sync (§22.8 Direction: the
             // iPhone requests, the Mac serves).

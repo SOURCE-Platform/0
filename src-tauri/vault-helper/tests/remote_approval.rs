@@ -104,6 +104,15 @@ fn da02_to_08_only_the_exact_fresh_approval_passes() {
     // DA-02: signed by another device (the Mac's own key).
     let by_mac = c.signed(&device(&mac).sign_prehash(&c.prehash().unwrap()).unwrap()).unwrap();
     assert_eq!(check(&mac, &phone, &by_mac, now), result::SIGNATURE);
+    // DA-02 as §16 words it (final review VER-I6): an approval naming a
+    // device that is not this phone — enrolled but not an iPhone, or not
+    // enrolled at all — is NOT_AUTHORIZED before any signature check.
+    for claimed in [device(&mac).device_id(), [0x5a; 16]] {
+        let mut as_other = c.clone();
+        as_other.iphone_device_id = claimed;
+        let signed = as_other.signed(&device(&mac).sign_prehash(&as_other.prehash().unwrap()).unwrap()).unwrap();
+        assert_eq!(check(&mac, &phone, &signed, now), result::NOT_AUTHORIZED);
+    }
     // DA-03: an approval naming another Mac.
     let mut other = c.clone();
     other.mac_device_id = [9; 16];

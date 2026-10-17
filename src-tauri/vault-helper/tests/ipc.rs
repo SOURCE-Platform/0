@@ -170,6 +170,15 @@ fn same_class_second_hello_replaces_first() {
     for app_op in ["list_items", "reveal", "resolve_conflict", "lock", "setup_vault"] {
         assert_eq!(op(&mut nm, app_op)["error"], "UNKNOWN_OP", "{app_op}");
     }
+    // And the reverse (final review VER-I7): fills and saves never go to the
+    // main app — every browser op is unknown to the app class.
+    let (mut app, _) = raw_hello(&dir.join("helper.sock"), "app");
+    for browser_op in [
+        "browser_hello", "browser_candidates", "browser_authorize", "browser_fill", "browser_save_new", "browser_save_update",
+        "browser_save_update_finish", "browser_request_unlock",
+    ] {
+        assert_eq!(op(&mut app, browser_op)["error"], "UNKNOWN_OP", "{browser_op}");
+    }
 
     shutdown.store(true, Ordering::SeqCst);
     assert_eq!(handle.join().unwrap(), 0);

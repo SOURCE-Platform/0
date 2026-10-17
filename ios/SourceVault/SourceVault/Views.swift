@@ -211,7 +211,9 @@ struct ItemView: View {
             if item.kind == "login" { LabeledContent("Username", value: item.username) }
             if let password {
                 if item.kind == "secure_note" {
-                    Text(password).privacySensitive().textSelection(.enabled)
+                    // Not selectable: a note body never reaches the pasteboard
+                    // from here (final review SPEC-O9).
+                    Text(password).privacySensitive()
                 } else {
                     LabeledContent(item.kind == "card" ? "Card" : "Password", value: password).privacySensitive()
                 }
