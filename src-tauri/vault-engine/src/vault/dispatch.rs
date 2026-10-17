@@ -138,6 +138,7 @@ fn route(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps, op: &str) -> 
         "authorize_abort" => super::authorize_ops::authorize_abort(core),
         // Phase H (§9.3): the browser ops nm-host relays.
         "browser_hello" => super::browser_ops::browser_hello(core),
+        "browser_request_unlock" => super::browser_ops::browser_request_unlock(core, deps),
         "browser_candidates" => super::browser_ops::browser_candidates(core, frame),
         "browser_authorize" => super::browser_ops::browser_authorize(core, frame, deps),
         "browser_fill" => super::browser_ops::browser_fill(core, frame),

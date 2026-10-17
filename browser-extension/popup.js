@@ -27,7 +27,17 @@ function waitForIphone(requestId) {
 (async () => {
   const c = await ask({ type: "candidates" });
   if (!c.ok) return say(c.error === "VAULT_UNAVAILABLE" ? "Open SOURCE on your Mac to use the vault." : "Not available here.");
-  if (c.locked) return say("Your vault is locked. Unlock it in SOURCE.");
+  if (c.locked) {
+    say("Your vault is locked.");
+    const open = document.createElement("button");
+    open.textContent = "Unlock in SOURCE";
+    open.onclick = async () => {
+      await ask({ type: "request_unlock" });
+      say("Unlock in the SOURCE window, then open this again.");
+    };
+    list.append(open);
+    return;
+  }
   if (c.warning === "lookalike") {
     const w = document.createElement("div");
     w.className = "warn";

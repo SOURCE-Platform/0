@@ -106,8 +106,8 @@ fn read_hello(stream: &mut UnixStream, ctx: &ConnCtx) -> Option<(ClientClass, Va
 
 /// Ops an `nm-host` connection may send (§1.5 nm-host table, plus the
 /// state read every client class has).
-const NM_HOST_OPS: [&str; 8] = [
-    "get_state", "browser_hello", "browser_candidates", "browser_authorize", "browser_fill", "browser_save_new", "browser_save_update",
+const NM_HOST_OPS: [&str; 9] = [
+    "get_state", "browser_hello", "browser_request_unlock", "browser_candidates", "browser_authorize", "browser_fill", "browser_save_new", "browser_save_update",
     "browser_save_update_finish",
 ];
 

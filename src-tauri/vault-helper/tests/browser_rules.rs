@@ -155,3 +155,20 @@ fn br_18_19_iphone_update_approvals_are_bound_and_one_shot() {
     mac.remove_dir();
     phone.remove_dir();
 }
+
+/// §9.3 `request_unlock`: a locked vault asks the app to come forward,
+/// at most once per 10 s; an open vault asks nothing.
+#[test]
+fn request_unlock_asks_the_app_once_in_a_while() {
+    let _g = serial();
+    let fx = vault();
+    let asked = |fx: &Fx| fx.events_named("unlock_requested").len();
+    assert_eq!(fx.op(json!({"op": "browser_request_unlock"}))["vault_state"], "unlocked");
+    assert_eq!(asked(&fx), 0);
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    for _ in 0..3 {
+        assert_eq!(fx.op(json!({"op": "browser_request_unlock"}))["vault_state"], "locked");
+    }
+    assert_eq!(asked(&fx), 1, "one request per 10 s");
+    fx.remove_dir();
+}

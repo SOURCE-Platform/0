@@ -35,6 +35,7 @@ pub fn caller_allowed(args: &[String]) -> bool {
 fn route(op: &str) -> Option<(&'static str, &'static [&'static str])> {
     Some(match op {
         "hello" => ("browser_hello", &["proto", "session_echo"]),
+        "request_unlock" => ("browser_request_unlock", &[]),
         "get_candidates" => ("browser_candidates", &["origin", "tab_url"]),
         "authorize" => ("browser_authorize", &["request_id", "ref", "method"]),
         "fill" => ("browser_fill", &["request_id"]),

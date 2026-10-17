@@ -227,6 +227,7 @@ fn wire_after_connect(client: &Arc<VaultClient>) {
         };
         apply_capture_wiring(&event);
         wake_for_approval(&event);
+        open_for_unlock(&event);
         emit_frontend(&event);
     });
 }
@@ -242,6 +243,18 @@ fn wake_for_approval(event: &Value) {
             let woken = crate::core::vault_backup::push::wake_phones(&id);
             eprintln!("vault: approval pending; woke {woken} iPhone(s)");
         });
+    }
+}
+
+/// §9.3 `request_unlock`: the browser popup asked to unlock — bring the
+/// window forward on the Vault tab; the user unlocks there.
+fn open_for_unlock(event: &Value) {
+    if event.get("event").and_then(Value::as_str) != Some("unlock_requested") {
+        return;
+    }
+    if let Some(app) = manager().app.get() {
+        crate::app::tray::show_main_window(app);
+        let _ = app.emit("vault-open", ());
     }
 }
 

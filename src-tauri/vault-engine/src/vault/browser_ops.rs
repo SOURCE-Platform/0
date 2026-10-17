@@ -42,6 +42,10 @@ struct Fill {
 
 static FILLS: Mutex<Vec<Fill>> = Mutex::new(Vec::new());
 static QUERIES: Mutex<Vec<u64>> = Mutex::new(Vec::new());
+/// When the extension last asked SOURCE to come forward (§9.3).
+static UNLOCK_ASKED: Mutex<u64> = Mutex::new(0);
+/// At most one "come forward" per 10 s: a page cannot keep stealing focus.
+const UNLOCK_EVERY: u64 = 10;
 
 fn fills() -> std::sync::MutexGuard<'static, Vec<Fill>> {
     FILLS.lock().unwrap_or_else(|e| e.into_inner())
@@ -72,11 +76,29 @@ fn allow_query(now: u64) -> bool {
 }
 
 pub fn browser_hello(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
-    let state = match lock_core(core).state {
+    OpOutcome::ok(json!({ "vault_state": hello_state(lock_core(core).state) }))
+}
+
+fn hello_state(state: VaultState) -> &'static str {
+    match state {
         VaultState::Uninitialized => "uninitialized",
         VaultState::Unlocked | VaultState::Authorizing | VaultState::Syncing | VaultState::BackingUp => "unlocked",
         _ => "locked",
-    };
+    }
+}
+
+/// §9.3 `request_unlock`: the vault is locked and the user clicked
+/// "Unlock" in the popup. The helper asks the app to come forward on its
+/// Vault tab (`unlock_requested`); unlocking itself happens there, never
+/// in the browser. Answers the current state.
+pub fn browser_request_unlock(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> OpOutcome {
+    let state = hello_state(lock_core(core).state);
+    let now = now_epoch();
+    let mut last = UNLOCK_ASKED.lock().unwrap_or_else(|e| e.into_inner());
+    if state == "locked" && now.saturating_sub(*last) >= UNLOCK_EVERY {
+        *last = now;
+        deps.events.emit(json!({ "event": "unlock_requested" }));
+    }
     OpOutcome::ok(json!({ "vault_state": state }))
 }
 
@@ -225,4 +247,5 @@ pub fn browser_fill(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
 pub fn reset() {
     fills().clear();
     QUERIES.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    *UNLOCK_ASKED.lock().unwrap_or_else(|e| e.into_inner()) = 0;
 }

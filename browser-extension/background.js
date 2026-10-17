@@ -55,6 +55,8 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
         if (f.ok && f.fill) return reply({ ok: await deliver(msg.request_id, f) });
         return reply(f);
       }
+      case "request_unlock":
+        return reply(await native({ op: "request_unlock" }));
       case "save":
         return reply(await native({ op: "save_new", origin, tab_url: tab.url, username: msg.username, password: msg.password }));
       default:

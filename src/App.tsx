@@ -116,8 +116,16 @@ function App() {
       unlistenSettings = stop;
     });
 
+    // The browser extension asked to unlock (spec §9.3 request_unlock):
+    // the window comes forward; show the Vault tab, where unlocking happens.
+    let unlistenVault: (() => void) | undefined;
+    listen("vault-open", () => handleTabClick("vault")).then((stop) => {
+      unlistenVault = stop;
+    });
+
     return () => {
       window.removeEventListener(OBSERVER_APP_TOAST_EVENT, handleAppToast as EventListener);
+      unlistenVault?.();
       unlistenSettings?.();
       unlistenAudioInput?.();
       toastTimerIds.current.forEach((timerId) => clearTimeout(timerId));
