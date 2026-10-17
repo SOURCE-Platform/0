@@ -35,12 +35,14 @@ import { SetupCard } from "./SetupCard";
 import { ItemList } from "./ItemList";
 import { DeletedItems } from "./DeletedItems";
 import { AddLoginForm } from "./AddLoginForm";
+import { ImportDashlaneCard } from "./ImportDashlaneCard";
+import { AddNoteForm } from "./AddNoteForm";
 
 export function VaultPage() {
   const [state, setState] = useState<VaultState>("unknown");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | "login" | "note">(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const refreshState = useCallback(async () => {
@@ -246,14 +248,28 @@ export function VaultPage() {
                   sleep, or screen lock.
                 </div>
               )}
-              <button
-                onClick={() => setAdding((a) => !a)}
-                className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-white/5"
-              >
-                <Plus className="h-4 w-4" /> Add login
-              </button>
+              <div className="flex gap-2">
+                {(["login", "note"] as const).map((kind) => (
+                  <button
+                    key={kind}
+                    onClick={() => setAdding((a) => (a === kind ? false : kind))}
+                    className="flex cursor-pointer items-center gap-2 rounded-xl border border-border/70 px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-white/5"
+                  >
+                    <Plus className="h-4 w-4" /> Add {kind}
+                  </button>
+                ))}
+              </div>
             </div>
-            {adding && (
+            {adding === "note" && (
+              <AddNoteForm
+                onDone={() => {
+                  setAdding(false);
+                  setRefreshKey((k) => k + 1);
+                }}
+                onError={(message) => setError(message)}
+              />
+            )}
+            {adding === "login" && (
               <AddLoginForm
                 onDone={() => {
                   setAdding(false);
@@ -263,6 +279,7 @@ export function VaultPage() {
               />
             )}
             <ItemList refreshKey={refreshKey} onError={(m) => setError(m)} />
+            <ImportDashlaneCard onImported={() => setRefreshKey((k) => k + 1)} onError={(m) => setError(m)} />
             <DeletedItems
               refreshKey={refreshKey}
               onRestored={() => setRefreshKey((k) => k + 1)}

@@ -80,7 +80,7 @@ struct ItemListView: View {
             NavigationLink(destination: ItemView(item: item)) {
                 VStack(alignment: .leading) {
                     Text(item.title)
-                    Text(item.username).font(.caption).foregroundStyle(.secondary)
+                    Text(item.subtitle).font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
@@ -189,6 +189,16 @@ struct RemovedView: View {
     }
 }
 
+extension ItemSummary {
+    var subtitle: String {
+        switch kind {
+        case "secure_note": return "Secure note"
+        case "card": return "Payment card"
+        default: return username
+        }
+    }
+}
+
 struct ItemView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.scenePhase) private var phase
@@ -198,18 +208,23 @@ struct ItemView: View {
 
     var body: some View {
         Form {
-            LabeledContent("Username", value: item.username)
+            if item.kind == "login" { LabeledContent("Username", value: item.username) }
             if let password {
-                LabeledContent("Password", value: password).privacySensitive()
+                if item.kind == "secure_note" {
+                    Text(password).privacySensitive().textSelection(.enabled)
+                } else {
+                    LabeledContent(item.kind == "card" ? "Card" : "Password", value: password).privacySensitive()
+                }
             } else {
-                Button("Show password") {
+                Button(item.kind == "secure_note" ? "Show note" : item.kind == "card" ? "Show card" : "Show password") {
                     problem = nil
                     model.reveal(item.id) { answer in
                         // The engine's reveal answer: `{ref, kind, secret}` — a
                         // login's `{password}`, a card's `{number, expiry,
-                        // cardholder}` (review VER-O3).
+                        // cardholder}` (review VER-O3), a note's `{body}`.
                         let secret = answer["secret"] as? [String: Any]
                         password = secret?["password"] as? String
+                            ?? secret?["body"] as? String
                             ?? [secret?["number"], secret?["expiry"], secret?["cardholder"]].compactMap { $0 as? String }.joined(separator: " · ").nilIfEmpty
                         if password == nil { problem = AppModel.describe(answer["error"] as? String ?? "REFUSED") }
                     }

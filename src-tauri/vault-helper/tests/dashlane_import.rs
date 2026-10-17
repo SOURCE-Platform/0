@@ -176,3 +176,24 @@ fn a_hundred_thousand_rows_stream_in() {
     let _ = std::fs::remove_file(&path);
     fx.remove_dir();
 }
+
+/// §10.8 Choice A: a note added by hand — title-only metadata, body on
+/// reveal, oversize refused, never a website candidate.
+#[test]
+fn a_secure_note_added_by_hand() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let r = fx.op(json!({"op": "add_item", "kind": "secure_note", "title": "Synthetic note", "body": "line 1\nline 2"}));
+    assert_eq!(r["ok"], true, "{r}");
+    let items = fx.op(json!({"op": "list_items"}))["items"].clone();
+    assert_eq!(items[0]["kind"], "secure_note");
+    assert!(!items.to_string().contains("line 1"), "the body is not metadata");
+    assert_eq!(fx.op(json!({"op": "reveal", "ref": r["ref"]}))["secret"]["body"], "line 1\nline 2");
+    let big = "x".repeat(64 * 1024 + 1);
+    assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": "Big", "body": big}))["error"], "INVALID_INPUT");
+    assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": " ", "body": "x"}))["error"], "INVALID_INPUT");
+    let c = fx.op(json!({"op": "browser_candidates", "origin": "https://example.test", "tab_url": "https://example.test/"}));
+    assert_eq!(c["accounts"], json!([]), "{c}");
+    fx.remove_dir();
+}

@@ -10,6 +10,8 @@ struct ItemSummary: Identifiable {
     let id: String
     let title: String
     let username: String
+    /// `login`, `card` or `secure_note` (Phase I, §10.8 Choice A).
+    var kind = "login"
 }
 
 final class AppModel: ObservableObject {
@@ -222,7 +224,7 @@ final class AppModel: ObservableObject {
     func loadItems() {
         engine?.call(["op": "list_items"]) { [weak self] answer in
             let list = answer["items"] as? [[String: Any]] ?? []
-            self?.items = list.map { ItemSummary(id: $0["ref"] as? String ?? "", title: $0["title"] as? String ?? "", username: $0["username"] as? String ?? "") }
+            self?.items = list.map { ItemSummary(id: $0["ref"] as? String ?? "", title: $0["title"] as? String ?? "", username: $0["username"] as? String ?? "", kind: $0["kind"] as? String ?? "login") }
         }
     }
 

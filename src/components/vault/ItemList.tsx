@@ -110,14 +110,18 @@ export function ItemList({
               )}
             </div>
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {item.username ?? "—"} · {item.hosts.join(", ") || "no host"}
+              {item.kind === "secure_note"
+                ? "Secure note"
+                : item.kind === "card"
+                  ? "Payment card"
+                  : `${item.username ?? "—"} · ${item.hosts.join(", ") || "no host"}`}
             </div>
             {revealed[item.ref] && (
               <div className="mt-2 rounded-lg border border-green-500/30 bg-green-950/20 px-3 py-2">
                 {Object.entries(revealed[item.ref]).map(([field, value]) => (
                   <div key={field} className="flex gap-2 text-xs">
                     <span className="w-20 shrink-0 text-muted-foreground">{field}</span>
-                    <span className="select-all break-all font-mono text-green-100">
+                    <span className="select-all whitespace-pre-wrap break-all font-mono text-green-100">
                       {value}
                     </span>
                   </div>

@@ -58,7 +58,7 @@ pub(super) async fn yield_activation(app: tauri::AppHandle) {
 }
 
 /// An op that presents the helper's secure panel.
-async fn call_with_panel(app: tauri::AppHandle, frame: Value) -> Result<Value, String> {
+pub(super) async fn call_with_panel(app: tauri::AppHandle, frame: Value) -> Result<Value, String> {
     yield_activation(app).await;
     call(frame).await
 }
@@ -200,6 +200,13 @@ pub async fn vault_add_login(
         "password": password,
     }))
     .await
+}
+
+/// Add one secure note (§10.8 Choice A): the body crosses once,
+/// main→helper, and lives only in the record ciphertext.
+#[tauri::command]
+pub async fn vault_add_note(title: String, body: String) -> Result<Value, String> {
+    call(json!({"op": "add_item", "kind": "secure_note", "title": title, "body": body})).await
 }
 
 /// Edit one whitelisted field (title/username/password/host). The helper

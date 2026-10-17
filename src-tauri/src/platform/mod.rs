@@ -5,6 +5,7 @@ pub mod capture;
 pub mod input;
 pub mod os_monitor;
 pub mod power;
+pub mod trash;
 
 #[cfg(target_os = "macos")]
 mod macos;

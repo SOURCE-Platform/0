@@ -17,6 +17,7 @@ pub mod system_search;
 pub mod timeline;
 pub mod vault;
 pub mod vault_backup;
+pub mod vault_import;
 pub mod vault_join;
 
 pub use agent_bridge::*;
@@ -38,4 +39,5 @@ pub use system_search::*;
 pub use timeline::*;
 pub use vault::*;
 pub use vault_backup::*;
+pub use vault_import::*;
 pub use vault_join::*;
