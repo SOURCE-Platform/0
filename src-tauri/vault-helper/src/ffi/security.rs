@@ -7,6 +7,7 @@
 //! this file is on the §17.4 focused-review list.
 
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
+use core_foundation::data::CFData;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
@@ -55,6 +56,9 @@ extern "C" {
     ) -> OSStatus;
     /// kSecGuestAttributePid — attribute key selecting a guest by pid.
     static kSecGuestAttributePid: core_foundation::string::CFStringRef;
+    /// kSecGuestAttributeAudit — selects a guest by its audit token (pid
+    /// *and* pid version), so an exec after connect cannot stand in.
+    static kSecGuestAttributeAudit: core_foundation::string::CFStringRef;
 }
 
 /// Owned SecRequirement; released on drop.
@@ -80,6 +84,37 @@ pub fn requirement_from_string(text: &str) -> Result<SecRequirement, OSStatus> {
         Ok(SecRequirement(req))
     } else {
         Err(status)
+    }
+}
+
+/// Map a peer's audit token (`LOCAL_PEERTOKEN`) to its dynamic SecCode and
+/// check it against `requirement` (final review SEC-I1). Unlike a bare
+/// pid, the token pins the pid version: a process that connects and then
+/// execs a signed binary — or a pid reused after exit — no longer matches.
+pub fn check_audit_token_against_requirement(
+    token: &[u8; 32],
+    requirement: &SecRequirement,
+) -> Result<(), OSStatus> {
+    // SAFETY: a framework-owned constant, borrowed without retaining.
+    let key = unsafe { CFString::wrap_under_get_rule(kSecGuestAttributeAudit) };
+    let value = CFData::from_buffer(token);
+    let attrs = CFDictionary::from_CFType_pairs(&[(key, value)]);
+    let mut guest: SecCodeRef = std::ptr::null_mut();
+    // SAFETY: as in `check_pid_against_requirement`, with the documented
+    // audit-token key (a CFData of an `audit_token_t`).
+    let status = unsafe {
+        SecCodeCopyGuestWithAttributes(std::ptr::null_mut(), attrs.as_concrete_TypeRef(), SEC_CS_DEFAULT_FLAGS, &mut guest)
+    };
+    if status != ERR_SEC_SUCCESS || guest.is_null() {
+        return Err(status);
+    }
+    // SAFETY: live objects; we own `guest` (Copy rule) and release it.
+    let check = unsafe { SecCodeCheckValidityWithErrors(guest, SEC_CS_DEFAULT_FLAGS, requirement.0, std::ptr::null()) };
+    unsafe { CFRelease(guest as CFTypeRef) };
+    if check == ERR_SEC_SUCCESS {
+        Ok(())
+    } else {
+        Err(check)
     }
 }
 

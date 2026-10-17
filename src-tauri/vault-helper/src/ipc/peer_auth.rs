@@ -145,14 +145,35 @@ fn peer_pid(stream: &UnixStream) -> Result<i32, AuthError> {
     Ok(pid)
 }
 
+/// The peer's audit token via getsockopt(LOCAL_PEERTOKEN). LOCAL_PEERTOKEN
+/// is 0x006 on Darwin (sys/un.h); an `audit_token_t` is 8 × u32.
+fn peer_audit_token(stream: &UnixStream) -> Result<[u8; 32], AuthError> {
+    const LOCAL_PEERTOKEN: libc::c_int = 0x006;
+    const SOL_LOCAL: libc::c_int = 0;
+    let mut token = [0u8; 32];
+    let mut len = token.len() as libc::socklen_t;
+    // SAFETY: valid fd; `token`/`len` are valid out-parameters of the size
+    // the option writes.
+    let rc = unsafe {
+        libc::getsockopt(stream.as_raw_fd(), SOL_LOCAL, LOCAL_PEERTOKEN, token.as_mut_ptr() as *mut libc::c_void, &mut len)
+    };
+    if rc != 0 || len as usize != token.len() {
+        return Err(AuthError::PidLookup(io::Error::last_os_error()));
+    }
+    Ok(token)
+}
+
+/// §1.4: same UID, then the peer's code identity — resolved by its audit
+/// token, not its pid (final review SEC-I1: a connect-then-exec of a signed
+/// binary passed a pid check; it does not pass this one).
 fn verify(stream: &UnixStream, requirement_text: &str) -> Result<(), AuthError> {
     if !peer_uid_matches(stream)? {
         return Err(AuthError::EuidMismatch);
     }
-    let pid = peer_pid(stream)?;
+    let token = peer_audit_token(stream)?;
     let requirement =
         sec::requirement_from_string(requirement_text).map_err(AuthError::RequirementInvalid)?;
-    sec::check_pid_against_requirement(pid, &requirement).map_err(AuthError::CodeInvalid)
+    sec::check_audit_token_against_requirement(&token, &requirement).map_err(AuthError::CodeInvalid)
 }
 
 /// Helper side: authenticate an accepted client connection (spec §1.4
@@ -218,6 +239,9 @@ mod tests {
         let (a, _b) = UnixStream::pair().unwrap();
         assert!(peer_uid_matches(&a).unwrap());
         assert_eq!(peer_pid(&a).unwrap(), std::process::id() as i32);
+        // audit_token_t.val[5] is the pid.
+        let t = peer_audit_token(&a).unwrap();
+        assert_eq!(u32::from_ne_bytes(t[20..24].try_into().unwrap()), std::process::id());
     }
 
     #[test]
