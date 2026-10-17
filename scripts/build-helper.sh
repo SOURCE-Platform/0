@@ -18,6 +18,12 @@
 # OV0_VAULT_DEV_TEAM_OU is exported for the cargo build so the peer-auth
 # designated requirements pin that OU (debug builds only; release refuses).
 #
+# Phase H: the same build signs the Chrome native-messaging broker
+# (`source-vault-nm-host`, identifier com.racker.zero.nm-host) into
+# <profile>/vault-nm-host/. Debug builds compile in the unpacked
+# development extension's pinned id (browser-extension/DEV_EXTENSION_ID);
+# release builds never accept it.
+#
 # Usage: scripts/build-helper.sh [debug|release]
 set -euo pipefail
 
@@ -26,6 +32,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SRC_TAURI="$ROOT/src-tauri"
 PROD_TEAM_OU="9RGW34CMA2"
 HELPER_ID="com.racker.zero.vault-helper"
+NM_ID="com.racker.zero.nm-host"
 
 case "$PROFILE" in
     debug)   CARGO_PROFILE_ARGS=() ;;
@@ -91,6 +98,11 @@ if [ "$PROFILE" = "release" ]; then
     export RUSTFLAGS="${RUSTFLAGS:-} -C panic=abort -C debug=0"
 fi
 
+if [ "$PROFILE" = "debug" ]; then
+    SOURCE_NM_DEV_EXTENSION_ID="$(tr -d '[:space:]' < "$ROOT/browser-extension/DEV_EXTENSION_ID")"
+    export SOURCE_NM_DEV_EXTENSION_ID
+fi
+
 echo "==> building source-vault-helper ($PROFILE, OU $TEAM_OU)"
 (cd "$SRC_TAURI" && cargo build -p source-vault-helper ${CARGO_PROFILE_ARGS[@]+"${CARGO_PROFILE_ARGS[@]}"})
 
@@ -122,12 +134,27 @@ if codesign -d --entitlements :- "$BUNDLE" 2>/dev/null | grep -q "<key>"; then
     exit 4
 fi
 
+NM_DIR="$BUNDLE_DIR/vault-nm-host"
+NM_BIN="$NM_DIR/source-vault-nm-host"
+rm -rf "$NM_DIR"
+mkdir -p "$NM_DIR"
+cp "$SRC_TAURI/target/$PROFILE/source-vault-nm-host" "$NM_BIN"
+echo "==> signing $NM_BIN"
+codesign "${SIGN_ARGS[@]}" --identifier "$NM_ID" "$NM_BIN"
+NM_DR="anchor apple generic and certificate leaf[subject.OU] = \"$TEAM_OU\" and identifier \"$NM_ID\""
+codesign --verify --strict "-R=$NM_DR" "$NM_BIN"
+if codesign -d --entitlements :- "$NM_BIN" 2>/dev/null | grep -q "<key>"; then
+    echo "error: nm-host must carry no entitlements" >&2
+    exit 4
+fi
+
 mkdir -p "$BUNDLE_DIR"
 cat > "$BUNDLE_DIR/build.env" <<EOF
 TEAM_OU="$TEAM_OU"
 IDENTITY="$IDENTITY"
 PROFILE="$PROFILE"
 BUNDLE="$BUNDLE"
+NM_BIN="$NM_BIN"
 EOF
 
 echo "OK: $BUNDLE"

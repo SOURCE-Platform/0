@@ -105,6 +105,12 @@ fn ensure_connected() -> Result<Arc<VaultClient>, String> {
         .map_err(|e| format!("HELPER_UNAVAILABLE ({e})"))?;
     let client = Arc::new(client);
     wire_after_connect(&client);
+    // §9.2: register the browser broker with Chrome (Phase H).
+    match crate::core::vault_nm_manifest::install() {
+        Ok(true) => eprintln!("vault: registered the Chrome native host"),
+        Ok(false) => {}
+        Err(e) => eprintln!("vault: Chrome native host not registered: {e}"),
+    }
     *slot = Some(Arc::clone(&client));
     Ok(client)
 }

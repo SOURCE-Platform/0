@@ -178,6 +178,14 @@ pub fn verify_helper_bundle(path: &std::path::Path) -> Result<(), AuthError> {
     sec::check_path_against_requirement(path, &requirement).map_err(AuthError::CodeInvalid)
 }
 
+/// The app checks the broker binary before registering it with Chrome
+/// (Phase H): it must be signed as `com.racker.zero.nm-host`.
+pub fn verify_nm_host_binary(path: &std::path::Path) -> Result<(), AuthError> {
+    let requirement = sec::requirement_from_string(&class_requirement_string(crate::ops::ClientClass::NmHost))
+        .map_err(AuthError::RequirementInvalid)?;
+    sec::check_path_against_requirement(path, &requirement).map_err(AuthError::CodeInvalid)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -19,14 +19,19 @@ only.
 | App: push for approvals | `src/core/vault_client.rs` (`wake_for_approval`) | on the helper's `approval_pending` event, `wake_phones` |
 | §9.5 confusables (BR-05/06) | `vault-engine/src/browser/confusable.rs` | the helper sees ASCII hosts only, so the skeleton uses the ASCII-to-ASCII entries of `confusables.txt` (`rn`→`m`, `vv`→`w`, `cl`→`d`, `0`→`o`, `1`/`|`→`l`); a skeleton collision with a *different* stored registrable domain, or an unsaved punycode page, adds `warning:"lookalike"` to the candidates answer and the popup shows the banner; nothing fills |
 | BR tests | `vault-helper/tests/browser_rules.rs` (one test per rule, named `br_…`), `browser-extension/test/fill-rules.test.mjs` (`node --test browser-extension/test/`) | BR-01…07, 09…14, 16…19 helper-side; BR-08 against the real `content.js`/`background.js` with stubbed Chrome objects: only the asking tab's top frame (`frameId: 0`), only while its own origin is the approved one. **BR-15 does not apply:** the extension makes no matching or PSL decision — it reports `new URL(tab.url).origin` and the helper canonicalizes, cross-checks (BR-11) and decides |
+| Broker signing and registration (§9.2) | `scripts/build-helper.sh`, `src-tauri/src/core/vault_nm_manifest.rs` | the helper build also signs `source-vault-nm-host` as `com.racker.zero.nm-host` (hardened runtime, no entitlements, DR verified) into `helper-bundle/<profile>/vault-nm-host/`; debug builds compile in the dev extension id. The app, once connected to the helper, checks the broker's signature and writes Chrome's `com.racker.zero.vault.json` (one allowed origin; only if Chrome's folder exists; only when changed). Release builds write nothing until the store id is set |
+| Client class bound to signature | `vault-helper/src/ipc/conn.rs`, `peer_auth.rs` | the `hello`'s class must match the peer's signing identifier (app ↔ `com.racker.zero`, nm-host ↔ `com.racker.zero.nm-host`): the app can never receive fills as the broker, nor the broker reach app ops; `tests/ipc.rs`, gate row 7b |
 | NM-05/NM-06 prototype | `src-tauri/poc/nm-probe/` | a probe host that logs Chrome's argv and the parent chain with a `SecCode`-by-pid check against the §9.2 requirement, and a probe extension. **Not yet run:** Chrome 155 ignores `--load-extension`; it needs the unpacked extension loaded by hand in a throwaway profile |
 
 ## Not yet (carried to the final review unless noted)
 
 - **NM-05/NM-06 verdict**, then layer 3 (parent code identity) in nm-host.
-- The native host manifest install by the app (§9.2 paths for Chrome,
-  Chromium, Edge, Arc, Brave), signing nm-host as `com.racker.zero.nm-host`
-  and bundling it in SOURCE.app.
+- Release packaging: copying the signed broker into
+  `SOURCE.app/Contents/Library/vault-nm-host/` (with the helper bundle,
+  which release packaging does not embed yet either) and the store
+  extension id — owner infrastructure (Developer ID, Chrome Web Store).
+- Chromium, Edge, Arc and Brave registration (each needs its own
+  reviewed layer-3 requirement row).
 - A login form inside an iframe is not filled at all (only the top
   frame is); the save badge flow after navigation (§9.8),
   `request_unlock`, the audit view of update decisions.

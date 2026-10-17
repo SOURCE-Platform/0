@@ -44,6 +44,8 @@ pub mod session_manager_helpers;
 pub mod vault_backup;
 #[cfg(target_os = "macos")]
 pub mod vault_client;
+#[cfg(target_os = "macos")]
+pub mod vault_nm_manifest;
 pub mod vault_enroll;
 pub mod vault_dir;
 pub mod session_manager_types;
