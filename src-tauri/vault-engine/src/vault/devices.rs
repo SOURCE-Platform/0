@@ -103,6 +103,9 @@ pub fn revoke_device(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -
     if super::rk_ops::rotation_waiting(core) {
         return OpOutcome::err(ErrorCode::RotationPending);
     }
+    if let Some(refused) = super::rk_ops::damaged_records(core, deps) {
+        return refused; // final review Q1: named, before any prompt
+    }
     if let Err(e) = super::rk_ops::authorize_pub(core, deps, "Source Vault: remove a device") {
         return super::rk_ops::finish_pub(core, deps, Err(e));
     }

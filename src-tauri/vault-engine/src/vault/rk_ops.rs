@@ -166,10 +166,34 @@ fn finish(core: &Arc<Mutex<VaultCore>>, deps: &Deps, result: Result<(), ErrorCod
 /// password.wrap) → new RK shown + acknowledged → VK rotation with both
 /// wraps rebuilt. `suspected_theft` makes it security-driven (§11.3.2,
 /// §12 scenario 7: persistent warning, priority retry).
+/// Before any prompt of a key change (owner decision 2026-10-17, final
+/// review Q1): every record must still open. Otherwise the change stops
+/// with `RECORD_CORRUPT` and `damaged: [refs]`; the app names the items and
+/// offers to restore each from its history (or delete it) first.
+pub(super) fn damaged_records(core: &Arc<Mutex<VaultCore>>, deps: &Deps) -> Option<OpOutcome> {
+    let c = lock_core(core);
+    let (store, vk) = (c.store.as_ref()?, c.vk.as_ref()?);
+    match crate::storage::rotation::unreadable(&store.conn, &store.header, vk) {
+        Ok(refs) if refs.is_empty() => None,
+        Ok(refs) => {
+            // The app's error path carries only the code; the names ride
+            // an event to the Vault screen.
+            deps.events.emit(serde_json::json!({ "event": "damaged_records", "refs": refs }));
+            let mut o = OpOutcome::err(ErrorCode::RecordCorrupt);
+            o.response["damaged"] = serde_json::json!(refs);
+            Some(o)
+        }
+        Err(e) => Some(OpOutcome::err(e)),
+    }
+}
+
 pub fn rotate_recovery_key(core: &Arc<Mutex<VaultCore>>, frame: &serde_json::Value, deps: &Deps) -> OpOutcome {
     let security_driven = frame.get("suspected_theft").and_then(serde_json::Value::as_bool).unwrap_or(false);
     if rotation_waiting(core) {
         return OpOutcome::err(ErrorCode::RotationPending);
+    }
+    if let Some(refused) = damaged_records(core, deps) {
+        return refused;
     }
     if let Err(e) = authorize(core, deps, "Source Vault: replace your Recovery Key") {
         return finish(core, deps, Err(e));

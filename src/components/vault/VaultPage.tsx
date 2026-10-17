@@ -37,6 +37,7 @@ import { DeletedItems } from "./DeletedItems";
 import { AddLoginForm } from "./AddLoginForm";
 import { ImportDashlaneCard } from "./ImportDashlaneCard";
 import { AddNoteForm } from "./AddNoteForm";
+import { DamagedItemsNotice } from "./DamagedItemsNotice";
 
 export function VaultPage() {
   const [state, setState] = useState<VaultState>("unknown");
@@ -166,6 +167,10 @@ export function VaultPage() {
           <p className="max-w-[60ch] text-sm leading-6 text-red-100">{error}</p>
         </div>
       )}
+
+      <div className="mt-4">
+        <DamagedItemsNotice />
+      </div>
 
       <div className="mt-6">
         {state === "helper-unavailable" && (

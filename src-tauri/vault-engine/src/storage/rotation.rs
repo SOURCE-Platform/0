@@ -191,6 +191,28 @@ pub fn rotate_gated(
 
 /// Re-seal every revision and every import fingerprint inside one
 /// transaction of the staged DB. Returns the new manifest object list.
+/// The records with a revision that no longer opens under `vk` (record or
+/// metadata). Owner decision 2026-10-17 (final review Q1): a key change
+/// never sets such a record aside; it stops before any prompt and names
+/// them, so the user restores or deletes them first.
+pub fn unreadable(conn: &Connection, h: &Header, vk: &SecretBytes<32>) -> Result<Vec<String>, ErrorCode> {
+    let mut out: Vec<String> = Vec::new();
+    for row in revision_rows::all_rows(conn)? {
+        let Some(rid) = revisions::uuid_bytes(&row.record_id) else {
+            out.push(row.record_id.clone());
+            continue;
+        };
+        let bind = row.bind()?;
+        let vid = &h.vault_id.0;
+        let body = record::open_record(vk, vid, &rid, &bind, row.schema_version, row.vk_generation, &RecordCiphertext { nonce: row.nonce, ct: row.ct.clone() });
+        let meta = record::open_meta(vk, vid, &h.meta_salt.0, &rid, &bind, super::store::META_FIELD_TAG, &RecordCiphertext { nonce: row.meta_nonce, ct: row.meta_ct.clone() });
+        if (body.is_err() || meta.is_err()) && !out.contains(&row.record_id) {
+            out.push(row.record_id.clone());
+        }
+    }
+    Ok(out)
+}
+
 pub(super) fn reseal_db(
     conn: &mut Connection,
     h: &Header,

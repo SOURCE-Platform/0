@@ -176,3 +176,28 @@ fn forgotten_mp_reset_after_rk_unlock() {
     assert_eq!(unlock(&fx, MP_NEW)["ok"], true);
     assert_no_secrets(&fx, &[r], &[MP, MP_NEW]);
 }
+
+/// Owner decision 2026-10-17 (final review Q1, SPEC-B4): a record that no
+/// longer opens stops a key change before any prompt, named in the answer;
+/// nothing is set aside.
+#[test]
+fn a_damaged_record_stops_a_key_change_and_is_named() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let r = add_login(&fx);
+    {
+        let c = fx.core.lock().unwrap();
+        let store = c.store.as_ref().unwrap();
+        store.conn.execute("UPDATE record_revs SET ct = zeroblob(64) WHERE record_id = ?1", rusqlite::params![r]).unwrap();
+    }
+    let calls = fx.la.calls.load(std::sync::atomic::Ordering::SeqCst);
+    for frame in [json!({"op": "rotate_recovery_key"}), json!({"op": "revoke_device", "device_id": "00".repeat(16)})] {
+        let refused = fx.op(frame.clone());
+        assert_eq!(refused["error"], "RECORD_CORRUPT", "{frame}: {refused}");
+        assert_eq!(refused["damaged"], json!([r]), "the item is named");
+        assert_eq!(fx.events_named("damaged_records").last().unwrap()["refs"], json!([r]), "and told to the app");
+    }
+    assert_eq!(fx.la.calls.load(std::sync::atomic::Ordering::SeqCst), calls, "no prompt before the refusal");
+    fx.remove_dir();
+}

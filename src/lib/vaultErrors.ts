@@ -34,6 +34,8 @@ export function vaultErrorMessage(code: string): string {
       return "This unlock method is damaged — use another.";
     case "FORMAT_TOO_NEW":
       return "This data was written by a newer version of Source — update the app.";
+    case "RECORD_CORRUPT":
+      return "A saved item is damaged, so this was stopped. See the note above for which one.";
     case "DB_CORRUPT":
       return "The vault database is damaged. Restore from a backup.";
     case "RECOVERY_KEY_INVALID":
