@@ -28,6 +28,12 @@ function waitForIphone(requestId) {
   const c = await ask({ type: "candidates" });
   if (!c.ok) return say(c.error === "VAULT_UNAVAILABLE" ? "Open SOURCE on your Mac to use the vault." : "Not available here.");
   if (c.locked) return say("Your vault is locked. Unlock it in SOURCE.");
+  if (c.warning === "lookalike") {
+    const w = document.createElement("div");
+    w.className = "warn";
+    w.textContent = "Careful: this site's address looks like one of your saved sites but is a different address. Nothing will be filled here.";
+    list.before(w);
+  }
   if (!c.accounts.length) return say(c.similar ? "A similar login exists for a related site — open SOURCE to check it." : "No saved login for this site.");
   for (const a of c.accounts) {
     const box = document.createElement("div");

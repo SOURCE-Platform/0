@@ -92,7 +92,7 @@ pub fn browser_candidates(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutc
             return Ok(json!({ "locked": true }));
         }
         let (store, vk) = (c.store.as_ref().ok_or(ErrorCode::BadState)?, c.vk.as_ref().ok_or(ErrorCode::BadState)?);
-        let (mut accounts, mut similar, mut refs) = (Vec::new(), 0, Vec::new());
+        let (mut accounts, mut similar, mut refs, mut lookalike) = (Vec::new(), 0, Vec::new(), false);
         for item in store.list_records(vk)? {
             let (Some(r), Some("login")) = (item["ref"].as_str(), item["kind"].as_str()) else { continue };
             if item.get("conflicted").is_some() || item.get("corrupt").is_some() {
@@ -106,15 +106,18 @@ pub fn browser_candidates(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutc
                     refs.push(r.to_string());
                 }
                 Verdict::Similar => similar += 1,
-                Verdict::Refused => {}
+                Verdict::Refused => lookalike |= crate::browser::confusable::lookalike(&page, &rec.urls),
             }
         }
+        // §9.5: a punycode page nobody saved, or a skeleton collision with
+        // a different stored host → refused, with the look-alike banner.
+        let warning = (lookalike || (page.is_punycode() && accounts.is_empty())).then_some("lookalike");
         let mut id = [0u8; 16];
         getrandom::fill(&mut id).map_err(|_| ErrorCode::Internal)?;
         let mut f = fills();
         f.retain(|x| now.saturating_sub(x.created) < TTL * 5);
         f.push(Fill { id, origin: page.text(), refs, created: now, consumed: false, approval: None });
-        Ok(json!({ "request_id": hex::encode(id), "origin": page.text(), "accounts": accounts, "similar": similar }))
+        Ok(json!({ "request_id": hex::encode(id), "origin": page.text(), "accounts": accounts, "similar": similar, "warning": warning }))
     })
 }
 

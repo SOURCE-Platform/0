@@ -89,8 +89,12 @@ pub struct La {
     pub calls: AtomicUsize,
 }
 
+/// The last presence prompt's text (what the OS sheet would show).
+pub static LAST_REASON: Mutex<String> = Mutex::new(String::new());
+
 impl PresenceChecker for La {
-    fn check(&self, _reason: &str) -> bool {
+    fn check(&self, reason: &str) -> bool {
+        *LAST_REASON.lock().unwrap_or_else(|e| e.into_inner()) = reason.to_string();
         self.calls.fetch_add(1, Ordering::SeqCst);
         self.allow
     }
