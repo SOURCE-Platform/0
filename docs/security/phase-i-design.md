@@ -54,3 +54,11 @@ every fixture comes from `scripts/gen-dashlane-fixtures.py` (fixed seed,
   the simulator, not run.
 - CR/IM/CS test-catalogue rows and the §8 record-type table for
   `secure_note@1`.
+
+## Also closed during this phase
+
+- **§19 row 30 — the A15 floor is enforced at runtime** on iPhone
+  (`ios/SourceVault/SourceVault/DeviceFloor.swift`): a model identifier
+  below the `iPhone14,x` family (or not an iPhone at all) shows "This
+  iPhone isn't supported" and the vault never opens. `DeviceFloorTests`
+  passed on the simulator 2026-10-17; not yet tried on an older device.

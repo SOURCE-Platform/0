@@ -12,14 +12,22 @@ struct SourceVaultApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(model)
-                .onAppear { model.start() }
-                // §22.10: the app-switcher snapshot shows nothing (review
-                // SEC-B4) — covered as soon as the app stops being active.
-                .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
+            if !DeviceFloor.isSupported {
+                // §19 row 30: below the measured A15 floor the vault never opens.
+                ContentUnavailableView("This iPhone isn't supported",
+                    systemImage: "iphone.slash",
+                    description: Text("SOURCE Vault needs an iPhone 13 or newer (A15 chip or later). Older models were not tested and cannot be used for the vault."))
+            } else {
+                ContentView()
+                    .environmentObject(model)
+                    .onAppear { model.start() }
+                    // §22.10: the app-switcher snapshot shows nothing (review
+                    // SEC-B4) — covered as soon as the app stops being active.
+                    .overlay { if phase != .active { Color(.systemBackground).ignoresSafeArea() } }
+            }
         }
         .onChange(of: phase) { _, now in
+            guard DeviceFloor.isSupported else { return }
             switch now {
             case .background: model.leaveForeground()
             case .active: model.start(); model.refresh(); model.finishWaitingUpload(); model.checkApprovals()
