@@ -54,6 +54,18 @@ pub fn client_requirement_string() -> String {
     )
 }
 
+/// The requirement for one client class (v0.6 hardening, Phase H): the
+/// `hello` names a class, and the peer's signature must carry that
+/// class's identifier — the app can never speak as the browser broker
+/// (and receive fills), nor the broker as the app.
+pub fn class_requirement_string(class: crate::ops::ClientClass) -> String {
+    let id = match class {
+        crate::ops::ClientClass::App => APP_BUNDLE_ID,
+        crate::ops::ClientClass::NmHost => NM_HOST_BUNDLE_ID,
+    };
+    format!("anchor apple generic and certificate leaf[subject.OU] = \"{}\" and identifier \"{}\"", team_ou(), id)
+}
+
 /// Designated requirement the *helper process* must satisfy from the
 /// client's point of view (spec §1.4 item 4).
 pub fn helper_requirement_string() -> String {
@@ -143,9 +155,14 @@ fn verify(stream: &UnixStream, requirement_text: &str) -> Result<(), AuthError> 
     sec::check_pid_against_requirement(pid, &requirement).map_err(AuthError::CodeInvalid)
 }
 
-/// Helper side: authenticate an accepted client connection (spec §1.4 item 3).
-pub fn verify_client(stream: &UnixStream) -> Result<(), AuthError> {
-    verify(stream, &client_requirement_string())
+/// Helper side: authenticate an accepted client connection (spec §1.4
+/// item 3) — before the `hello` (`None`: either client identity), then
+/// again for the class the `hello` claimed.
+pub fn verify_client(stream: &UnixStream, class: Option<crate::ops::ClientClass>) -> Result<(), AuthError> {
+    match class {
+        None => verify(stream, &client_requirement_string()),
+        Some(c) => verify(stream, &class_requirement_string(c)),
+    }
 }
 
 /// Client side: authenticate the helper after connect (spec §1.4 item 4).
@@ -174,6 +191,10 @@ mod tests {
         assert!(client.contains(NM_HOST_BUNDLE_ID));
         let helper = helper_requirement_string();
         assert!(helper.contains(HELPER_BUNDLE_ID));
+        let app = class_requirement_string(crate::ops::ClientClass::App);
+        assert!(app.contains(&format!("identifier \"{APP_BUNDLE_ID}\"")) && !app.contains(NM_HOST_BUNDLE_ID));
+        let nm = class_requirement_string(crate::ops::ClientClass::NmHost);
+        assert!(nm.contains(NM_HOST_BUNDLE_ID) && !nm.contains(&format!("identifier \"{APP_BUNDLE_ID}\"")));
         // The helper DR must never widen to "any process".
         assert!(!helper.contains("identifier *"));
     }
@@ -198,7 +219,7 @@ mod tests {
         // unit-level analog of the Phase A gate's unsigned-clone rejection;
         // the full signed matrix lives in scripts/phase-a-gate.sh.
         let (a, _b) = UnixStream::pair().unwrap();
-        let result = verify_client(&a);
+        let result = verify_client(&a, None);
         assert!(matches!(result, Err(AuthError::CodeInvalid(_))));
     }
 

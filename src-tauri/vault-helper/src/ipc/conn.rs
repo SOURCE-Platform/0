@@ -42,11 +42,13 @@ pub struct ConnCtx {
     pub core: Arc<Mutex<VaultCore>>,
     pub inbound: SyncSender<Inbound>,
     pub panel_cancel: Arc<AtomicBool>,
-    pub verifier: Arc<dyn Fn(&UnixStream) -> Result<(), AuthError> + Send + Sync>,
+    /// Peer authentication: `None` before the `hello`, then the class it
+    /// claimed (the signature must carry that class's identifier).
+    pub verifier: Arc<dyn Fn(&UnixStream, Option<ClientClass>) -> Result<(), AuthError> + Send + Sync>,
 }
 
 pub fn handle_connection(mut stream: UnixStream, ctx: Arc<ConnCtx>) {
-    if let Err(e) = (ctx.verifier)(&stream) {
+    if let Err(e) = (ctx.verifier)(&stream, None) {
         crate::hlog!("vault-helper: peer authentication failed: {e}");
         return;
     }
@@ -54,6 +56,10 @@ pub fn handle_connection(mut stream: UnixStream, ctx: Arc<ConnCtx>) {
         crate::hlog!("vault-helper: first frame was not a valid hello; closing");
         return;
     };
+    if let Err(e) = (ctx.verifier)(&stream, Some(class)) {
+        crate::hlog!("vault-helper: peer is not signed as the class it claimed: {e}");
+        return;
+    }
     let conn_id = ctx.hub.register(class, &stream);
     if framing::write_frame(&mut stream, &hello_ok).is_err() {
         ctx.hub.unregister(class, conn_id);

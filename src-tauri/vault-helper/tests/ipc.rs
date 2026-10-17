@@ -38,7 +38,7 @@ fn config(dir: &std::path::Path, idle_secs: u64) -> ServerConfig {
 }
 
 fn start(cfg: ServerConfig, shutdown: Arc<AtomicBool>) -> std::thread::JoinHandle<i32> {
-    let server = Server::with_verifier(cfg, shutdown, Arc::new(|_| Ok(()))).unwrap();
+    let server = Server::with_verifier(cfg, shutdown, Arc::new(|_, _| Ok(()))).unwrap();
     std::thread::spawn(move || server.run())
 }
 
@@ -240,4 +240,37 @@ fn shutdown_drains_within_grace_even_with_client_attached() {
     assert_eq!(handle.join().unwrap(), 0);
     // grace is 500ms in this config; well under the 5s production value
     assert!(requested.elapsed() < Duration::from_secs(3));
+}
+
+/// A peer whose signature does not carry the identifier of the class its
+/// `hello` claimed is dropped before any answer (the app can never speak
+/// as the browser broker, nor the broker as the app).
+#[test]
+fn a_claimed_class_must_match_the_signature() {
+    use vault_helper::ipc::peer_auth::AuthError;
+    use vault_helper::ops::ClientClass;
+    let dir = test_dir("class");
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let log = Arc::clone(&seen);
+    // This "peer" is signed as the app only.
+    let verifier = Arc::new(move |_: &UnixStream, class: Option<ClientClass>| {
+        log.lock().unwrap().push(class);
+        match class {
+            Some(ClientClass::NmHost) => Err(AuthError::EuidMismatch),
+            _ => Ok(()),
+        }
+    });
+    let server = Server::with_verifier(config(&dir, 3600), Arc::clone(&shutdown), verifier).unwrap();
+    let handle = std::thread::spawn(move || server.run());
+    wait_for_socket(&dir.join("helper.sock"));
+    let mut s = UnixStream::connect(dir.join("helper.sock")).unwrap();
+    framing::write_frame(&mut s, &json!({"op": "hello", "proto": 1, "client": "nm-host"})).unwrap();
+    assert!(framing::read_frame(&mut s).is_err(), "closed without a hello_ok");
+    let (_s2, hello) = raw_hello(&dir.join("helper.sock"), "app");
+    assert_eq!(hello["op"], "hello_ok");
+    assert_eq!(*seen.lock().unwrap(), [None, Some(ClientClass::NmHost), None, Some(ClientClass::App)]);
+    shutdown.store(true, Ordering::SeqCst);
+    drop(_s2);
+    assert_eq!(handle.join().unwrap(), 0);
 }

@@ -141,6 +141,11 @@ OUT=$("$T/clone-adhoc" "$SOCK1" expect-reject-client app 2>&1); RC=$?
 OUT=$("$T/clone-wrongid" "$SOCK1" expect-reject-client app 2>&1); RC=$?
 [ $RC -eq 0 ] && record "peer-auth rejects wrong-identifier client (same team)" PASS "$OUT" \
               || fail "peer-auth rejects wrong-identifier client (same team)" "$OUT"
+
+# --- 7b. a client signed as the app may not claim the browser broker's class
+OUT=$("$T/legit" "$SOCK1" expect-reject-client nm-host 2>&1); RC=$?
+[ $RC -eq 0 ] && record "peer-auth rejects an app-signed client claiming nm-host" PASS "$OUT" \
+              || fail "peer-auth rejects an app-signed client claiming nm-host" "$OUT"
 kill "$HELPER_PID" 2>/dev/null; wait "$HELPER_PID" 2>/dev/null
 
 # --- 8. ad-hoc helper clone rejected by client (reverse check) ---------------

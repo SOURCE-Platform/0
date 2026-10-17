@@ -32,7 +32,7 @@ use crate::{IDLE_EXIT_SECS, SHUTDOWN_GRACE_SECS};
 
 /// Injected so tests can exercise the full connection path without code
 /// signing; production binaries always pass `peer_auth::verify_client`.
-pub type Verifier = Arc<dyn Fn(&UnixStream) -> Result<(), AuthError> + Send + Sync>;
+pub type Verifier = Arc<dyn Fn(&UnixStream, Option<crate::ops::ClientClass>) -> Result<(), AuthError> + Send + Sync>;
 
 #[derive(Clone)]
 pub struct ServerConfig {

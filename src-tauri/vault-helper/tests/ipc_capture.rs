@@ -60,7 +60,7 @@ fn reveal_capture_check_is_answered_on_the_requesting_connection() {
         shutdown_grace: Duration::from_millis(500),
     };
     let shutdown = Arc::new(AtomicBool::new(false));
-    let server = Server::with_verifier(cfg, Arc::clone(&shutdown), Arc::new(|_| Ok(()))).unwrap();
+    let server = Server::with_verifier(cfg, Arc::clone(&shutdown), Arc::new(|_, _| Ok(()))).unwrap();
     let handle = std::thread::spawn(move || server.run());
     for _ in 0..100 {
         if socket.exists() {

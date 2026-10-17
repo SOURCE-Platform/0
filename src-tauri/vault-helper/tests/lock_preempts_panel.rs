@@ -115,7 +115,7 @@ fn scenario() {
         shutdown_grace: Duration::from_millis(500),
     };
     let server =
-        Server::with_verifier(cfg, Arc::new(AtomicBool::new(false)), Arc::new(|_| Ok(()))).unwrap();
+        Server::with_verifier(cfg, Arc::new(AtomicBool::new(false)), Arc::new(|_, _| Ok(()))).unwrap();
     std::thread::spawn(move || server.run());
     for _ in 0..100 {
         if socket.exists() {
