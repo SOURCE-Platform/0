@@ -32,6 +32,8 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # exempted in supply-chain/config.toml; adds flate2, miniz_oxide,
 # crc32fast, adler2, simd-adler32 to the helper graph.
 flate2 = "1.1"
+# The member CRC check (final review SPEC-I6 #5); already in the graph via flate2.
+crc32fast = "1.4"
 
 [dev-dependencies]
 serde_json = { version = "1", features = ["preserve_order"] }

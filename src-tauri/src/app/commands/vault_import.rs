@@ -35,9 +35,10 @@ pub async fn vault_import_dashlane(app: tauri::AppHandle) -> Result<Value, Strin
         return Ok(json!({"ok": true, "cancelled": true}));
     };
     let resp = call_with_panel(app, json!({"op": "import_dashlane", "path": path.to_string_lossy()})).await?;
-    if resp["ok"] == true {
-        *LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()) = Some(path);
-    }
+    // §10.6: the export may be moved to the Trash only when everything in
+    // it came in (final review SPEC-I5); otherwise it may be the only copy.
+    let complete = resp["ok"] == true && resp["report"]["keep_export"] == false;
+    *LAST_EXPORT.lock().unwrap_or_else(|e| e.into_inner()) = complete.then_some(path);
     Ok(resp)
 }
 

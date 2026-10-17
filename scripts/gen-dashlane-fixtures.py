@@ -93,6 +93,25 @@ def main():
         z.writestr("ids.csv", "type,number\npassport,fixture-id\n")
     write("mixed.zip", buf.getvalue())
 
+    # A row over 256 KiB whose quoted field holds newlines: only it is
+    # skipped; the rows after it import (final review VER-B2).
+    write("oversized-quoted.csv", CRED_HEADER + "\n"
+          + f'big@example.test,,,Big,fixture-big,"{"q" * (256 * 1024)}\nstill inside\nx",https://big.example.test,,\n'
+          + cred(rng, 11) + "\n" + cred(rng, 12) + "\n")
+
+    # A ZIP whose credentials member is damaged (one stored byte flipped,
+    # so its CRC-32 no longer matches); the payments member is intact.
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for name, text in [("credentials.csv", "\n".join([CRED_HEADER, cred(rng, 13), cred(rng, 14)]) + "\n"),
+                           ("payments.csv", PAY_HEADER + "\nCard,4111111111111111,05/2031,Fixture Holder,123,Testville\n")]:
+            info = zipfile.ZipInfo(name, date_time=(2026, 10, 16, 0, 0, 0))
+            zf.writestr(info, text)
+    data = bytearray(buf.getvalue())
+    at = data.index(b"user13@") + 2
+    data[at] ^= 0x20
+    write("damaged.zip", bytes(data))
+
 
 if __name__ == "__main__":
     main()

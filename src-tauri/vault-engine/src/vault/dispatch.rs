@@ -59,6 +59,8 @@ const FLOOR_OPS: &[&str] = &[
 const AUTHORING: &[&str] = &[
     "add_item", "import_dashlane", "update_item", "delete_item", "restore_revision", "resolve_conflict", "backup_prepare", "change_master_password",
     "rotate_recovery_key", "setup_retry_handle", "revoke_device", "begin_enrollment", "enroll_hello", "enroll_confirm", "enroll_ack",
+    // §22.14 `save_new`/`save_update` (final review VER-B1): browser saves author too.
+    "browser_save_new", "browser_save_update", "browser_save_update_finish",
 ];
 
 /// §22.14: while behind, a verified provider exchange may catch the store

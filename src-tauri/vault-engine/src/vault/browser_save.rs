@@ -142,6 +142,8 @@ pub fn browser_save_update_finish(core: &Arc<Mutex<VaultCore>>, frame: &Value) -
         match crate::approval::status(approval, now_epoch()) {
             Some("approved") => {}
             Some("pending") => return Ok(json!({ "pending": true })),
+            Some("taken") => return Err(ErrorCode::ApprovalReplay), // §16.4 BR-19
+            Some("expired") => return Err(ErrorCode::ApprovalExpired),
             _ => return Err(ErrorCode::PresenceDenied),
         }
         crate::approval::take(approval)?;

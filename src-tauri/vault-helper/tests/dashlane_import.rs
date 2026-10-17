@@ -48,6 +48,7 @@ fn the_mixed_zip_imports_every_type_once() {
     assert_eq!(counts(&r), (7, 0, 0), "{r}");
     assert_eq!(r["cvv_discarded"], 3);
     assert_eq!(r["skipped_unsupported"]["member ids.csv"], 1, "{r}");
+    assert_eq!(r["keep_export"], true, "an unsupported member keeps the delete offer away");
     assert_eq!(kinds(&fx), ["card", "card", "card", "login", "login", "secure_note", "secure_note"]);
     // A note's body stays in the ciphertext; reveal opens it.
     let items = fx.op(json!({"op": "list_items"}))["items"].as_array().unwrap().clone();
@@ -197,7 +198,29 @@ fn a_secure_note_added_by_hand() {
     let big = "x".repeat(64 * 1024 + 1);
     assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": "Big", "body": big}))["error"], "INVALID_INPUT");
     assert_eq!(fx.op(json!({"op": "add_item", "kind": "secure_note", "title": " ", "body": "x"}))["error"], "INVALID_INPUT");
+    let login = fx.op(json!({"op": "add_item", "kind": "login", "title": "Synthetic note", "username": "u@example.test", "password": "synthetic-p", "hosts": ["example.test"]}));
     let c = fx.op(json!({"op": "browser_candidates", "origin": "https://example.test", "tab_url": "https://example.test/"}));
-    assert_eq!(c["accounts"], json!([]), "{c}");
+    assert_eq!(c["accounts"].as_array().map(|a| a.iter().map(|x| x["ref"].clone()).collect::<Vec<_>>()), Some(vec![login["ref"].clone()]), "only the login, never the note: {c}");
+    fx.remove_dir();
+}
+
+/// Final review VER-B2 / SPEC-I5: a damaged member is refused whole and
+/// reported; an oversized quoted row skips only itself; a clean import
+/// lets the app offer to delete the export, anything left out does not.
+#[test]
+fn damage_and_oversize_are_reported_and_keep_the_export() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    let r = import(&fx, &fixture("damaged.zip"));
+    assert_eq!(counts(&r), (1, 0, 0), "only the intact payments member: {r}");
+    assert_eq!(r["skipped_unsupported"]["damaged credentials.csv"], 1, "{r}");
+    assert_eq!(r["keep_export"], true);
+    let r = import(&fx, &fixture("oversized-quoted.csv"));
+    assert_eq!(counts(&r), (2, 0, 1), "{r}");
+    assert_eq!(r["skipped_rows"][0]["row"], 2);
+    assert_eq!(r["keep_export"], true);
+    let r = import(&fx, &fixture("valid-minimal.csv"));
+    assert_eq!((counts(&r), r["keep_export"].as_bool()), ((2, 0, 0), Some(false)), "{r}");
     fx.remove_dir();
 }

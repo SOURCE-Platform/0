@@ -13,6 +13,10 @@ export interface ImportReport {
   skipped_rows: { file: string; row: number; why: string }[];
   rows_truncated: boolean;
   duration_ms: number;
+  /** Something in the export did not come in: never offer to delete it. */
+  keep_export: boolean;
+  /** Set when the import stopped part-way (the error code). */
+  stopped?: string;
 }
 
 /** Pick an export and import it; `null` when the picker was closed. */
@@ -30,6 +34,7 @@ export async function vaultTrashExport(): Promise<boolean> {
 /** The report as plain text, for "Copy report". */
 export function reportText(r: ImportReport): string {
   const lines = [
+    ...(r.stopped ? [`The import stopped early (${r.stopped}); the items below did come in.`] : []),
     `Imported: ${r.imported}`,
     `Already in the vault (kept as is): ${r.duplicates}`,
     `Skipped, unreadable rows: ${r.skipped_malformed}`,

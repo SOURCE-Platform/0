@@ -56,6 +56,15 @@ impl Dialect {
         })
     }
 
+    /// A secret value exactly as exported: passwords and note bodies keep
+    /// their spaces (final review VER-I5).
+    fn raw<'a>(&self, row: &'a [String], names: &[&str]) -> Option<&'a str> {
+        names.iter().find_map(|n| {
+            let i = self.cols.iter().position(|c| c == n)?;
+            row.get(i).map(String::as_str).filter(|s| !s.is_empty())
+        })
+    }
+
     pub fn map(&self, row: &[String]) -> Mapped {
         if row.len() != self.cols.len() {
             return Mapped::Skip("column count mismatch");
@@ -73,7 +82,7 @@ impl Dialect {
     }
 
     fn login(&self, row: &[String]) -> Mapped {
-        let Some(password) = self.get(row, &["password"]) else { return Mapped::Skip("no password") };
+        let Some(password) = self.raw(row, &["password"]) else { return Mapped::Skip("no password") };
         let username = self.get(row, &["username", "login", "username2", "username3"]).unwrap_or("");
         let host = self.get(row, &["url", "website"]).and_then(host_of);
         let title = self.get(row, &["title", "name"]).map(String::from).or_else(|| host.clone()).unwrap_or_else(|| "Imported login".into());
@@ -107,7 +116,7 @@ impl Dialect {
 
     fn note(&self, row: &[String]) -> Mapped {
         let Some(title) = self.get(row, &["title", "name"]) else { return Mapped::Skip("no title") };
-        Mapped::Item(json!({ "kind": "secure_note", "title": title, "body": self.get(row, &["note", "content", "text"]).unwrap_or("") }))
+        Mapped::Item(json!({ "kind": "secure_note", "title": title, "body": self.raw(row, &["note", "content", "text"]).unwrap_or("") }))
     }
 
     /// The row's CVV column, if the export had one (for the report only).
@@ -154,6 +163,8 @@ mod tests {
         assert_eq!(d.kind, Kind::Login);
         let Mapped::Item(v) = d.map(&s(&["alice@example.test", "Example", "fixture-pw-1", "", "https://login.example.test/x", "", ""])) else { panic!() };
         assert_eq!(v["urls"][0]["host"], "login.example.test");
+        let Mapped::Item(v) = d.map(&s(&["a", "T", " fixture spaced ", "", "", "", ""])) else { panic!() };
+        assert_eq!(v["password"], " fixture spaced ", "a password keeps its spaces");
         assert!(!d.has_otp(&s(&["a", "b", "c", "", "", "", ""])));
         assert!(d.has_otp(&s(&["a", "b", "c", "", "", "", "JBSWY3DPEHPK3PXP"])));
         let c = Dialect::detect(&s(&["name", "card_number", "expiration", "cardholder", "cvv"])).unwrap();

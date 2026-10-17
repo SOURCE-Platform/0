@@ -150,7 +150,7 @@ fn br_18_19_iphone_update_approvals_are_bound_and_one_shot() {
     let wrong_site = mac.op(json!({"op": "browser_save_update_finish", "origin": "https://evil.test", "tab_url": "https://evil.test/", "ref": item, "password": "synthetic-new", "approval_id": id}));
     assert_eq!(wrong_site["error"], "APPROVAL_MISMATCH", "BR-18: another site");
     assert_eq!(finish(&item)["ok"], true);
-    assert_ne!(finish(&item)["ok"], true, "BR-19: a replayed approval applies nothing");
+    assert_eq!(finish(&item)["error"], "APPROVAL_REPLAY", "BR-19: a replayed approval applies nothing");
     assert_eq!(password(&mac, &item), "synthetic-new");
     mac.remove_dir();
     phone.remove_dir();
@@ -170,5 +170,28 @@ fn request_unlock_asks_the_app_once_in_a_while() {
         assert_eq!(fx.op(json!({"op": "browser_request_unlock"}))["vault_state"], "locked");
     }
     assert_eq!(asked(&fx), 1, "one request per 10 s");
+    fx.remove_dir();
+}
+
+/// §22.14 (final review VER-B1): a store behind the floor takes no browser
+/// save — the extension's saves are refused like every other write.
+#[test]
+fn browser_saves_are_refused_while_behind() {
+    let _g = serial();
+    let fx = vault();
+    let r = login(&fx, "shop.example.test", "exact", false);
+    fx.core.lock().unwrap().behind = true;
+    let page = json!({"origin": "https://shop.example.test", "tab_url": "https://shop.example.test/a"});
+    for extra in [
+        json!({"op": "browser_save_new", "username": "new@example.test", "password": "synthetic-n"}),
+        json!({"op": "browser_save_update", "ref": r, "password": "synthetic-u", "method": "local"}),
+        json!({"op": "browser_save_update_finish", "ref": r, "password": "synthetic-u", "approval_id": "00000000000000000000000000000000"}),
+    ] {
+        let mut f = page.clone();
+        f.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        assert_eq!(fx.op(f)["error"], "VAULT_BEHIND");
+    }
+    fx.core.lock().unwrap().behind = false;
+    assert_eq!(password(&fx, &r), "synthetic-old");
     fx.remove_dir();
 }

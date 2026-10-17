@@ -62,7 +62,14 @@ pub fn import_dashlane(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps)
     finish_authorized!(core, deps, move |store: &mut VaultStore, vk: &SecretBytes<32>| {
         let started = std::time::Instant::now();
         let mut run = Run::new(store, vk)?;
-        run.file(&file)?;
-        Ok(serde_json::json!({ "report": run.report.to_json(started.elapsed().as_millis()) }))
+        // A failure mid-way keeps the batches already committed; the answer
+        // still carries what came in (final review SPEC-I6 #4).
+        let outcome = run.file(&file);
+        let mut report = run.report.to_json(started.elapsed().as_millis());
+        if let Err(e) = outcome {
+            report["stopped"] = serde_json::json!(e.as_str());
+            report["keep_export"] = serde_json::json!(true);
+        }
+        Ok(serde_json::json!({ "report": report }))
     })
 }

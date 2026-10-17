@@ -104,5 +104,6 @@ mod tests {
         assert_eq!(v("https://xn--gthub-cta.com", e("github.com", "domain", false)), Verdict::Refused);
         assert_eq!(v("https://xn--gthub-cta.com", e("xn--gthub-cta.com", "exact", false)), Verdict::Eligible);
         assert_eq!(v("https://alice.github.io", e("bob.github.io", "domain", false)), Verdict::Refused);
+        assert_eq!(v("https://45.33.1.5", e("192.168.1.5", "domain", false)), Verdict::Refused, "IPs share no domain");
     }
 }

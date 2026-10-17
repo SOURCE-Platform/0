@@ -69,23 +69,38 @@ export function ImportDashlaneCard({ onImported, onError }: { onImported: () => 
           <div className="rounded-xl border border-amber-300/40 bg-amber-950/10 p-4">
             <p className="max-w-[65ch] text-sm leading-6 text-amber-100">
               The export file is not encrypted. Anyone or any app that can read your files on
-              this Mac can read every password in it. It may also already be copied to iCloud
-              (Desktop, Documents or Downloads) or to backups such as Time Machine — delete it
-              there too, and empty the Trash. Even then, Source cannot promise the file is gone
-              for good: the Mac's storage can keep old copies that no app can reliably erase.
+              this Mac can read every password in it, so don't open it in a text editor or
+              spreadsheet. It may also already be copied to iCloud (Desktop, Documents or
+              Downloads) or to backups such as Time Machine.
             </p>
-            {trashed === "yes" ? (
-              <p className="mt-3 text-sm text-green-300">Moved to the Trash. Remember to empty the Trash.</p>
+            {report.keep_export ? (
+              <p className="mt-3 max-w-[65ch] text-sm leading-6 text-amber-100">
+                <strong>Keep the export for now.</strong> Some of it did not come in (see the
+                report above — for example skipped rows, one-time-code secrets, or parts of the
+                export this version can't read). Move those items into the vault by hand first;
+                the file may be your only copy of them.
+              </p>
             ) : (
-              <button
-                onClick={trash}
-                className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs text-amber-200 hover:bg-white/5"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Move the export to the Trash
-              </button>
-            )}
-            {trashed === "failed" && (
-              <p className="mt-2 text-sm text-red-300">Could not move it. Delete the file in Finder.</p>
+              <>
+                <p className="mt-3 max-w-[65ch] text-sm leading-6 text-amber-100">
+                  Everything came in. Delete the export here and in any cloud or backup copy, and
+                  empty the Trash. Even then, Source cannot promise the file is gone for good: the
+                  Mac's storage can keep old copies that no app can reliably erase.
+                </p>
+                {trashed === "yes" ? (
+                  <p className="mt-3 text-sm text-green-300">Moved to the Trash. Remember to empty the Trash.</p>
+                ) : (
+                  <button
+                    onClick={trash}
+                    className="mt-3 flex cursor-pointer items-center gap-2 rounded-lg border border-amber-300/50 px-3 py-1.5 text-xs text-amber-200 hover:bg-white/5"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Move the export to the Trash
+                  </button>
+                )}
+                {trashed === "failed" && (
+                  <p className="mt-2 text-sm text-red-300">Could not move it. Delete the file in Finder.</p>
+                )}
+              </>
             )}
           </div>
         </div>

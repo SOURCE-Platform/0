@@ -65,8 +65,16 @@ impl Report {
         *self.unsupported.entry(category.to_string()).or_default() += n;
     }
 
+    /// §10.6 (final review SPEC-I5): something in the export did not come
+    /// in — a skipped row, an unsupported column or member, a damaged
+    /// member. The app then withholds the delete offer.
+    pub fn keep_export(&self) -> bool {
+        self.malformed > 0 || !self.unsupported.is_empty()
+    }
+
     pub fn to_json(&self, ms: u128) -> Value {
         json!({
+            "keep_export": self.keep_export(),
             "imported": self.imported, "duplicates": self.duplicates, "skipped_malformed": self.malformed,
             "skipped_unsupported": self.unsupported, "cvv_discarded": self.cvv_discarded,
             "skipped_rows": self.rows, "rows_truncated": self.malformed as usize > self.rows.len(), "duration_ms": ms as u64,
@@ -144,7 +152,10 @@ impl<'a> Run<'a> {
     fn flush(&mut self) -> Result<(), ErrorCode> {
         let log = std::mem::take(&mut self.pending_log);
         let revs = std::mem::take(&mut self.pending);
-        self.store.commit_new_batch(&revs, |tx| log.iter().try_for_each(|(fp, ct)| import_log::insert(tx, fp, ct)))
+        self.store.commit_new_batch(&revs, |tx| log.iter().try_for_each(|(fp, ct)| import_log::insert(tx, fp, ct)))?;
+        // Counted only once committed: a failure never overstates it.
+        self.report.imported += revs.len() as u64;
+        Ok(())
     }
 
     /// One file: a single CSV, or a Dashlane ZIP.
@@ -167,6 +178,11 @@ impl<'a> Run<'a> {
                 self.report.unsupported(&format!("member {}", if known { m.name.as_str() } else { "(other)" }), 1);
                 continue;
             }
+            // The whole member is checked before any of its rows is read.
+            if !zip::verify_member(f, m) {
+                self.report.unsupported(&format!("damaged {}", m.name), 1);
+                continue;
+            }
             self.csv(&m.name.clone(), &|| zip::open_member(f, m))?;
         }
         Ok(())
@@ -182,6 +198,10 @@ impl<'a> Run<'a> {
         let mut reader = Reader::new(input, mode);
         let dialect = match reader.next_row() {
             Some(Row::Fields(h)) => Dialect::detect(&h),
+            Some(Row::Failed) => {
+                self.report.unsupported(&format!("damaged {name}"), 1);
+                return Ok(());
+            }
             _ => None,
         };
         let Some(dialect) = dialect else {
@@ -191,9 +211,17 @@ impl<'a> Run<'a> {
         let mut n = 1u64;
         while let Some(row) = reader.next_row() {
             n += 1;
-            let Row::Fields(mut fields) = row else {
-                self.report.skip(name, n, "malformed");
-                continue;
+            let mut fields = match row {
+                Row::Fields(fields) => fields,
+                Row::Bad => {
+                    self.report.skip(name, n, "malformed");
+                    continue;
+                }
+                Row::Failed => {
+                    // Never the end of the file: the rest of it is unread.
+                    self.report.unsupported(&format!("damaged {name} (stopped at row {n})"), 1);
+                    break;
+                }
             };
             if fields.iter().all(|f| f.trim().is_empty()) {
                 continue; // a blank line
@@ -250,9 +278,7 @@ impl<'a> Run<'a> {
         if self.pending.len() >= BATCH {
             self.flush()?;
         }
-        if fresh {
-            self.report.imported += 1;
-        } else {
+        if !fresh {
             self.report.duplicates += 1;
         }
         Ok(())

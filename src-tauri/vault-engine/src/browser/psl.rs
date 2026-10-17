@@ -71,7 +71,9 @@ fn suffix_labels(labels: &[&str]) -> usize {
 /// The registrable domain (public suffix + one label), or `None` when the
 /// host is itself a public suffix, is not ASCII, or its suffix is punycode.
 pub fn registrable(host: &str) -> Option<String> {
-    if !host.is_ascii() || host.is_empty() {
+    // An IP literal has no registrable domain (final review VER-I4): the
+    // list's rules would otherwise make 45.33.1.5 and 192.168.1.5 "1.5".
+    if !host.is_ascii() || host.is_empty() || host.parse::<std::net::IpAddr>().is_ok() {
         return None;
     }
     let labels: Vec<&str> = host.split('.').collect();
@@ -96,6 +98,8 @@ mod tests {
         assert_eq!(registrable("co.uk"), None);
         assert_eq!(registrable("app.appspot.com").as_deref(), Some("app.appspot.com"));
         assert!(super::version().starts_with("20"));
+        assert_eq!(registrable("192.168.1.5"), None, "an IP literal has none");
+        assert_eq!(registrable("45.33.1.5"), None);
     }
 
     #[test]

@@ -7,9 +7,9 @@
 //! Refused (one member): encryption, a method other than stored/deflate,
 //! a declared size over 1 GiB. A member's output is cut at its declared
 //! size, so a lying header cannot inflate past it (a "zip bomb" ends
-//! there). The CRC is not checked: rows are imported as they stream, so
-//! a check at the end could not undo them; a damaged deflate stream ends
-//! the member with a read error, counted by the caller.
+//! there). Before any row of a member is read, `verify_member`
+//! decompresses it once without parsing and checks its CRC-32 and exact
+//! size (final review SPEC-I6 #5): a damaged member is refused whole.
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
@@ -27,6 +27,7 @@ pub struct Member {
     pub name: String,
     method: u16,
     encrypted: bool,
+    crc: u32,
     compressed: u64,
     size: u64,
     local_offset: u64,
@@ -82,6 +83,7 @@ pub fn members(f: &File) -> Option<Vec<Member>> {
         }
         let flags = u16_at(&cd, i + 8)?;
         let method = u16_at(&cd, i + 10)?;
+        let crc = u32_at(&cd, i + 16)?;
         let compressed = u32_at(&cd, i + 20)?;
         let size = u32_at(&cd, i + 24)?;
         let (n, x, c) = (u16_at(&cd, i + 28)? as usize, u16_at(&cd, i + 30)? as usize, u16_at(&cd, i + 32)? as usize);
@@ -96,6 +98,7 @@ pub fn members(f: &File) -> Option<Vec<Member>> {
             name,
             method,
             encrypted: flags & 1 != 0,
+            crc,
             compressed: compressed as u64,
             size: size as u64,
             local_offset: local_offset as u64,
@@ -105,8 +108,8 @@ pub fn members(f: &File) -> Option<Vec<Member>> {
     Some(out)
 }
 
-/// One member as a decompressing stream, or `None` when it is refused.
-pub fn open_member(f: &File, m: &Member) -> Option<Box<dyn BufRead>> {
+/// The member's raw decompressing stream, not yet cut at its size.
+fn member_stream(f: &File, m: &Member) -> Option<Box<dyn Read>> {
     if m.encrypted || m.size > MAX_MEMBER || !(m.method == 0 || m.method == 8) {
         return None;
     }
@@ -120,8 +123,34 @@ pub fn open_member(f: &File, m: &Member) -> Option<Box<dyn BufRead>> {
     let skip = u16_at(&h, 26)? as i64 + u16_at(&h, 28)? as i64;
     f.seek(SeekFrom::Current(skip)).ok()?;
     let raw = f.take(m.compressed);
-    let body: Box<dyn Read> = if m.method == 0 { Box::new(raw) } else { Box::new(DeflateDecoder::new(raw)) };
-    Some(Box::new(BufReader::new(body.take(m.size))))
+    Some(if m.method == 0 { Box::new(raw) } else { Box::new(DeflateDecoder::new(raw)) })
+}
+
+/// Decompress the member once, keeping nothing: true only when it reads
+/// without error to exactly its declared size and CRC-32.
+pub fn verify_member(f: &File, m: &Member) -> bool {
+    let Some(mut body) = member_stream(f, m) else { return false };
+    let (mut hasher, mut total, mut buf) = (crc32fast::Hasher::new(), 0u64, vec![0u8; 64 * 1024]);
+    loop {
+        match body.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => {
+                total += n as u64;
+                if total > m.size {
+                    return false; // more than it declared
+                }
+                hasher.update(&buf[..n]);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return false,
+        }
+    }
+    total == m.size && hasher.finalize() == m.crc
+}
+
+/// One member as a decompressing stream, or `None` when it is refused.
+pub fn open_member(f: &File, m: &Member) -> Option<Box<dyn BufRead>> {
+    Some(Box::new(BufReader::new(member_stream(f, m)?.take(m.size))))
 }
 
 #[cfg(test)]
@@ -133,6 +162,11 @@ pub(crate) mod tests {
     /// A minimal ZIP writer for tests and fixtures (deflate members).
     pub(crate) fn write_zip(path: &Path, members: &[(&str, &[u8])]) {
         use flate2::{write::DeflateEncoder, Compression};
+        let crc_of = |d: &[u8]| {
+            let mut h = crc32fast::Hasher::new();
+            h.update(d);
+            h.finalize().to_le_bytes()
+        };
         let (mut out, mut cd) = (Vec::new(), Vec::new());
         for (name, data) in members {
             let mut enc = DeflateEncoder::new(Vec::new(), Compression::default());
@@ -141,7 +175,8 @@ pub(crate) mod tests {
             let off = out.len() as u32;
             let mut lh = Vec::new();
             lh.extend_from_slice(&LOC_SIG.to_le_bytes());
-            lh.extend_from_slice(&[20, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            lh.extend_from_slice(&[20, 0, 0, 0, 8, 0, 0, 0, 0, 0]);
+            lh.extend_from_slice(&crc_of(data));
             lh.extend_from_slice(&(comp.len() as u32).to_le_bytes());
             lh.extend_from_slice(&(data.len() as u32).to_le_bytes());
             lh.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -150,7 +185,8 @@ pub(crate) mod tests {
             out.extend_from_slice(name.as_bytes());
             out.extend_from_slice(&comp);
             cd.extend_from_slice(&CEN_SIG.to_le_bytes());
-            cd.extend_from_slice(&[20, 0, 20, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            cd.extend_from_slice(&[20, 0, 20, 0, 0, 0, 8, 0, 0, 0, 0, 0]);
+            cd.extend_from_slice(&crc_of(data));
             cd.extend_from_slice(&(comp.len() as u32).to_le_bytes());
             cd.extend_from_slice(&(data.len() as u32).to_le_bytes());
             cd.extend_from_slice(&(name.len() as u16).to_le_bytes());
@@ -183,6 +219,13 @@ pub(crate) mod tests {
         let mut s = String::new();
         open_member(&f, &ms[0]).unwrap().read_to_string(&mut s).unwrap();
         assert_eq!(s, "title,password\nx,fixture-1\n");
+        assert!(verify_member(&f, &ms[0]), "CRC and size match");
+        let mut wrong = ms[0].clone();
+        wrong.crc ^= 1;
+        assert!(!verify_member(&f, &wrong), "a CRC mismatch refuses the member");
+        wrong.crc ^= 1;
+        wrong.size += 1;
+        assert!(!verify_member(&f, &wrong), "a size mismatch refuses the member");
         let mut lying = ms[0].clone();
         lying.size = 5;
         s.clear();
