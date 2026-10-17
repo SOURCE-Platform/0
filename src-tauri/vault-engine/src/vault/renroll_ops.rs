@@ -62,6 +62,9 @@ pub struct RenrollSession {
     pub transfer: Option<Transfer>,
     /// The registry head ACKed, waiting for the iPhone's `done`.
     pub acked: Option<[u8; 32]>,
+    /// The Keychain tag of the keys this attempt created: the only keys
+    /// its cleanup may delete (final review, core 1).
+    pub key_tag: String,
 }
 
 impl RenrollSession {
@@ -85,21 +88,37 @@ pub fn staging(vault_dir: &Path) -> PathBuf {
     vault_dir.join(STAGING)
 }
 
-/// Remove an attempt: its identity (by the tags its own `device.json`
-/// records) and its directory. Never the vault root.
-pub fn wipe_staging(vault_dir: &Path) {
+/// Remove an attempt's staging directory and the keys it created.
+///
+/// The keys go only by `tag` — the attempt's own, kept in its session —
+/// never by a tag read back from disk while a vault exists here (a
+/// same-user process could plant one; final review, core 1). Without a
+/// session (helper start), the staging's own `device.json` names them, and
+/// only when no vault exists. The vault root's own keys are never deleted.
+pub fn wipe_staging(vault_dir: &Path, tag: Option<&str>) {
     let dir = staging(vault_dir);
-    if dir.exists() {
-        identity::wipe(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
+    if !dir.exists() {
+        return;
     }
+    let no_vault = !vault_dir.join(crate::VAULT_HEADER_NAME).exists();
+    let tag = tag.map(String::from).or_else(|| no_vault.then(|| identity::read_file(&dir).ok().map(|f| f.key_tag)).flatten());
+    let root_tag = identity::read_file(vault_dir).ok().map(|f| f.key_tag);
+    if let Some(t) = tag.filter(|t| Some(t) != root_tag.as_ref()) {
+        crate::device::se::delete_keys(&t);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// At helper start: an attempt left behind, only where no vault exists.
+/// At helper start: an attempt left behind, only where no vault exists —
+/// including what an interrupted `renroll_finish` already moved into the
+/// root (it moves the header last, so no header means no vault).
 pub fn recover_at_boot(vault_dir: &Path) {
-    if !vault_dir.join(crate::VAULT_HEADER_NAME).exists() {
-        wipe_staging(vault_dir);
+    if vault_dir.join(crate::VAULT_HEADER_NAME).exists() || !staging(vault_dir).exists() {
+        return;
     }
+    wipe_staging(vault_dir, None);
+    identity::wipe(vault_dir);
+    super::create::cleanup_partial_vault(vault_dir);
 }
 
 fn run(f: impl FnOnce() -> Result<Value, ErrorCode>) -> OpOutcome {
@@ -128,14 +147,15 @@ pub fn renroll_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
         if !super::enroll_ops::begin_allowed_pub() {
             return Err(ErrorCode::BadState); // at most a few per minute, as forward
         }
-        wipe_staging(&dir);
+        wipe_staging(&dir, None);
         std::fs::create_dir_all(staging(&dir)).map_err(|_| ErrorCode::Internal)?;
         let me = SeDevice::create(&staging(&dir), &name, PLATFORM_MACOS)?;
+        let key_tag = identity::read_file(&staging(&dir))?.key_tag;
         let (mut secret, mut nonce_n) = ([0u8; 16], [0u8; 16]);
         getrandom::fill(&mut secret).map_err(|_| ErrorCode::Internal)?;
         getrandom::fill(&mut nonce_n).map_err(|_| ErrorCode::Internal)?;
         let commit = reverse::commitment(&nonce_n, &me.sign_pub(), &me.agree_pub(), &name, PLATFORM_MACOS);
-        let session = RenrollSession { fp, secret, nonce_n, name, started: Instant::now(), failures: 0, fixed: None, mp: None, transfer: None, acked: None };
+        let session = RenrollSession { fp, secret, nonce_n, name, started: Instant::now(), failures: 0, fixed: None, mp: None, transfer: None, acked: None, key_tag };
         let out = json!({ "secret": encode_secret(session.secret()), "commit": hex::encode(commit), "expires_in": SESSION_TTL.as_secs() });
         lock_core(core).provider.renroll = Some(session);
         Ok(out)
@@ -143,12 +163,10 @@ pub fn renroll_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
 }
 
 fn end(core: &Arc<Mutex<VaultCore>>) {
-    let dir = {
-        let mut c = lock_core(core);
-        c.provider.renroll = None;
-        c.vault_dir.clone()
-    };
-    wipe_staging(&dir);
+    let mut c = lock_core(core);
+    if let Some(s) = c.provider.renroll.take() {
+        wipe_staging(&c.vault_dir, Some(&s.key_tag));
+    }
 }
 
 pub fn renroll_hello(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {

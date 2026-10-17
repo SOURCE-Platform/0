@@ -46,6 +46,10 @@ pub fn recovery_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) 
             if c.state != VaultState::Uninitialized || c.provider.recovery.is_some() {
                 return Err(ErrorCode::BadState);
             }
+            // Nor over a join from an iPhone (final review, core 1).
+            if c.provider.renroll.as_ref().is_some_and(|s| !s.expired()) {
+                return Err(ErrorCode::BadState);
+            }
             // A pairing in progress owns this directory: its marker would
             // remove the recovered vault at the next start (chunk-3 review
             // SEC-B1). It is finished or abandoned first.
@@ -272,7 +276,7 @@ pub fn finalize_result(core: &Arc<Mutex<VaultCore>>, status: u64, body: &Value, 
 /// `header.json` moves last: until it lands, a crash leaves the device
 /// UNINITIALIZED (boot sweeps the staging, §13.3) — never a header over a
 /// half-moved vault.
-fn move_into_place(from: &std::path::Path, to: &std::path::Path) -> Result<(), ErrorCode> {
+pub(super) fn move_into_place(from: &std::path::Path, to: &std::path::Path) -> Result<(), ErrorCode> {
     for e in std::fs::read_dir(from).map_err(|_| ErrorCode::Internal)? {
         let e = e.map_err(|_| ErrorCode::Internal)?;
         if e.file_name() != crate::VAULT_HEADER_NAME {

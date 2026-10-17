@@ -41,7 +41,8 @@ pub(super) fn emit_panel(deps: &Deps, visible: bool, req: PanelRequest) {
 pub fn setup_vault(core: &Arc<Mutex<VaultCore>>, frame: &Value, deps: &Deps) -> OpOutcome {
     {
         let c = lock_core(core);
-        if c.state != VaultState::Uninitialized {
+        // Not over a join from an iPhone in progress (final review, core 1).
+        if c.state != VaultState::Uninitialized || c.provider.renroll.as_ref().is_some_and(|s| !s.expired()) {
             return OpOutcome::err(ErrorCode::BadState);
         }
     }

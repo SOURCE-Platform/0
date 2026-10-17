@@ -36,25 +36,31 @@ pub fn renroll_complete(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcom
         None => return OpOutcome::err(ErrorCode::InvalidInput),
     };
     // Taken out under the lock; the checks and the Argon2 run without it.
-    let (mut session, dir) = {
+    let (mut session, dir, locks) = {
         let mut c = lock_core(core);
         let ours = c.provider.renroll.as_ref().is_some_and(|s| !s.expired() && s.mp.is_some() && s.acked.is_none() && s.transfer.as_ref().is_some_and(|t| t.id == id));
         if c.phone || c.state != VaultState::Uninitialized || !ours {
             return OpOutcome::err(ErrorCode::TransferInvalid);
         }
-        (c.provider.renroll.take().expect("checked above"), c.vault_dir.clone())
+        (c.provider.renroll.take().expect("checked above"), c.vault_dir.clone(), c.provider.locks)
     };
-    match complete(&dir, &session) {
-        Ok((answer, head)) => {
+    let result = complete(&dir, &session);
+    let mut c = lock_core(core);
+    match result {
+        // A lock while this ran ends the attempt (§22.13), ACK or not.
+        Ok((answer, head)) if c.provider.locks == locks => {
             session.acked = Some(head);
             session.mp = None;
             session.transfer = None;
-            lock_core(core).provider.renroll = Some(session);
+            c.provider.renroll = Some(session);
             OpOutcome::ok(answer)
         }
+        Ok(_) => {
+            wipe_staging(&dir, Some(&session.key_tag));
+            OpOutcome::err(ErrorCode::BadState)
+        }
         Err(e) => {
-            drop(session);
-            wipe_staging(&dir);
+            wipe_staging(&dir, Some(&session.key_tag));
             OpOutcome::err(e)
         }
     }
@@ -94,11 +100,11 @@ pub fn renroll_finish(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome 
             return Err(ErrorCode::BadState);
         }
         let dir = c.vault_dir.clone();
-        let from = staging(&dir);
-        for e in std::fs::read_dir(&from).map_err(|_| ErrorCode::Internal)?.flatten() {
-            std::fs::rename(e.path(), dir.join(e.file_name())).map_err(|_| ErrorCode::Internal)?;
-        }
-        let _ = std::fs::remove_dir(&from);
+        // Header last, leftovers cleared, the directory synced (final
+        // review, core 2): a crash before the header lands leaves no vault,
+        // and the next start sweeps the rest (`recover_at_boot`).
+        super::recovery_flow::move_into_place(&staging(&dir), &dir)?;
+        std::fs::File::open(&dir).and_then(|d| d.sync_all()).map_err(|_| ErrorCode::Internal)?;
         c.provider.renroll = None;
         *c = VaultCore::boot(dir);
         // The floor for this vault on this Mac (design §5 step 6).
@@ -111,16 +117,11 @@ pub fn renroll_finish(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome 
 }
 
 pub fn renroll_abort(core: &Arc<Mutex<VaultCore>>) -> OpOutcome {
-    let dir = {
-        let mut c = lock_core(core);
-        if c.phone {
-            return OpOutcome::err(ErrorCode::UnknownOp);
-        }
-        c.provider.renroll = None;
-        c.vault_dir.clone()
-    };
-    if !dir.join(crate::VAULT_HEADER_NAME).exists() {
-        wipe_staging(&dir);
+    let mut c = lock_core(core);
+    if c.phone {
+        return OpOutcome::err(ErrorCode::UnknownOp);
     }
+    let tag = c.provider.renroll.take().map(|s| s.key_tag.clone());
+    wipe_staging(&c.vault_dir, tag.as_deref());
     OpOutcome::ok(json!({}))
 }

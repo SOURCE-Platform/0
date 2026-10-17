@@ -233,6 +233,11 @@ impl VaultCore {
         if self.vk_commit_pending {
             super::vault::vk_commit::commit_resident(self);
         }
+        // F.2e: a join from an iPhone ends with the lock, its staging and
+        // the keys it created with it (only those: by the session's tag).
+        if let Some(s) = self.provider.renroll.take() {
+            renroll_ops::wipe_staging(&self.vault_dir, Some(&s.key_tag));
+        }
         let left = self.leave_recovery();
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)

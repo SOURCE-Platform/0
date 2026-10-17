@@ -68,6 +68,9 @@ pub struct Sessions {
     /// adding a Mac (`authorize_ops`).
     pub renroll: Option<super::renroll_ops::RenrollSession>,
     pub authorize: Option<super::authorize_ops::AuthorizeSession>,
+    /// Locks so far: an op that worked without the lock held checks it did
+    /// not span one before putting its session back (final review, core 6).
+    pub locks: u64,
     /// Phase G: the phone's approval exchange (`approval_ops`).
     pub approval: Option<super::approval_ops::PhoneApproval>,
     /// The phone's peer exchange in progress (§22.8, `peer_sync_ops`).
@@ -90,7 +93,8 @@ impl Sessions {
         self.peer.clear(); // lock aborts a peer session (annex A.2.2)
         self.peer_in.clear();
         self.join = None; // and a pairing in progress
-        self.renroll = None; // and a join from an iPhone (its staging is swept)
+        self.renroll = None; // and a join from an iPhone (`VaultCore::lock` sweeps its staging)
+        self.locks += 1;
         self.authorize = None; // and an iPhone adding a Mac (nothing committed before the ACK)
         self.peer_client = None; // and a phone's peer exchange
         self.peer_answer = None;
