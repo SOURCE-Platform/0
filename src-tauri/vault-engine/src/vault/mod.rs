@@ -238,6 +238,7 @@ impl VaultCore {
         if let Some(s) = self.provider.renroll.take() {
             renroll_ops::wipe_staging(&self.vault_dir, Some(&s.key_tag));
         }
+        LOCK_REQUESTED.store(false, std::sync::atomic::Ordering::SeqCst);
         let left = self.leave_recovery();
         let had_vault_state = self.state != VaultState::Uninitialized;
         self.vk = None; // SecretBytes zeroizes on drop (and munlocks)
@@ -343,6 +344,17 @@ impl VaultCore {
         }
         Duration::from_secs(self.auto_lock_minutes as u64 * 60)
     }
+}
+
+/// A lock is waiting for the core (§13.3: an explicit lock is never held
+/// up by a long op). Set by the lock path *before* it takes the mutex; a
+/// long op holding the mutex — the Dashlane import — checks it between rows
+/// and stops early (final review SPEC-I10). `VaultCore::lock` clears it.
+pub static LOCK_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Ask for the lock ahead of taking the core mutex.
+pub fn request_lock() {
+    LOCK_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
 }
 
 pub fn lock_core(core: &Arc<Mutex<VaultCore>>) -> MutexGuard<'_, VaultCore> {

@@ -51,6 +51,8 @@ pub struct Report {
     unsupported: BTreeMap<String, u64>,
     cvv_discarded: u64,
     rows: Vec<Value>,
+    /// The user locked the vault mid-import (§13.3): the rest is unread.
+    stopped_by_lock: bool,
 }
 
 impl Report {
@@ -69,12 +71,13 @@ impl Report {
     /// in — a skipped row, an unsupported column or member, a damaged
     /// member. The app then withholds the delete offer.
     pub fn keep_export(&self) -> bool {
-        self.malformed > 0 || !self.unsupported.is_empty()
+        self.malformed > 0 || !self.unsupported.is_empty() || self.stopped_by_lock
     }
 
     pub fn to_json(&self, ms: u128) -> Value {
         json!({
             "keep_export": self.keep_export(),
+            "stopped": if self.stopped_by_lock { Value::from("LOCKED") } else { Value::Null },
             "imported": self.imported, "duplicates": self.duplicates, "skipped_malformed": self.malformed,
             "skipped_unsupported": self.unsupported, "cvv_discarded": self.cvv_discarded,
             "skipped_rows": self.rows, "rows_truncated": self.malformed as usize > self.rows.len(), "duration_ms": ms as u64,
@@ -170,6 +173,9 @@ impl<'a> Run<'a> {
         }
         let Some(members) = zip::members(f) else { return Err(ErrorCode::InvalidInput) };
         for m in &members {
+            if self.report.stopped_by_lock {
+                break;
+            }
             if m.name.is_empty() {
                 continue; // a folder entry
             }
@@ -210,6 +216,11 @@ impl<'a> Run<'a> {
         };
         let mut n = 1u64;
         while let Some(row) = reader.next_row() {
+            // §13.3: a lock is waiting — stop here; what is committed stays.
+            if super::LOCK_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+                self.report.stopped_by_lock = true;
+                return Ok(());
+            }
             n += 1;
             let mut fields = match row {
                 Row::Fields(fields) => fields,

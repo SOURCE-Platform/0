@@ -182,6 +182,7 @@ fn read_loop(mut stream: UnixStream, class: ClientClass, ctx: &ConnCtx, frames: 
 /// emit the events live. Runs on the read side, never behind the queue.
 fn do_lock(ctx: &ConnCtx) {
     ctx.panel_cancel.store(true, Ordering::SeqCst);
+    crate::vault::request_lock(); // a long op holding the core stops for it
     let events = lock_core(&ctx.core).lock(LockReason::Explicit);
     for event in events {
         ctx.hub.emit(event);

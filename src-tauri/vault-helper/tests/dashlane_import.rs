@@ -224,3 +224,19 @@ fn damage_and_oversize_are_reported_and_keep_the_export() {
     assert_eq!((counts(&r), r["keep_export"].as_bool()), ((2, 0, 0), Some(false)), "{r}");
     fx.remove_dir();
 }
+
+/// §13.3 / final review SPEC-I10: a lock asked for during an import stops
+/// it between rows; nothing is half-written and the report says so.
+#[test]
+fn a_lock_request_stops_the_import() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    vault_helper::vault::request_lock(); // as the read side does before it waits
+    let r = fx.op(json!({"op": "import_dashlane", "path": fixture("valid-minimal.csv")}));
+    assert_eq!((r["report"]["stopped"].as_str(), r["report"]["keep_export"].as_bool()), (Some("LOCKED"), Some(true)), "{r}");
+    assert_eq!(r["report"]["imported"], 0);
+    fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
+    assert!(!vault_helper::vault::LOCK_REQUESTED.load(std::sync::atomic::Ordering::SeqCst), "the lock clears the request");
+    fx.remove_dir();
+}

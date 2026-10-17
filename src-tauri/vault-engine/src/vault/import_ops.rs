@@ -9,7 +9,9 @@
 //! - at most 2 GiB.
 //!
 //! One presence check covers the whole import ("Source Vault: import from
-//! Dashlane"); the run happens inside that authorized window.
+//! Dashlane"); the run happens inside that authorized window. A lock asked
+//! for meanwhile stops it between rows (`LOCK_REQUESTED`): what was
+//! committed stays, and the report says `stopped: "LOCKED"`.
 
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;

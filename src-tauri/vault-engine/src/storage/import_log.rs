@@ -20,12 +20,17 @@ pub const IMPORT_RECORD_ID: [u8; 16] = [0u8; 16];
 /// §10.3: fingerprint = HMAC(import_fp_key(VK), identity). The identity
 /// is recovered from `identity_ct` (old meta key) and both columns are
 /// rebuilt under the new VK, in the same transaction as the re-seal.
+///
+/// The log is only an idempotency cache: a row that does not open is
+/// dropped (and counted in the answer), never a reason to fail the
+/// rotation — one damaged row must not block a revocation (final review
+/// SPEC-B4; IM-05 "row quarantined"). Its import may be repeated once.
 pub fn recompute(
     tx: &rusqlite::Transaction<'_>,
     h: &Header,
     old_vk: &SecretBytes<32>,
     new_vk: &SecretBytes<32>,
-) -> Result<(), ErrorCode> {
+) -> Result<usize, ErrorCode> {
     let rows: Vec<(Vec<u8>, Vec<u8>)> = {
         let mut stmt = tx
             .prepare("SELECT fingerprint, identity_ct FROM import_log")
@@ -36,8 +41,12 @@ pub fn recompute(
         it.collect::<Result<_, _>>().map_err(|_| ErrorCode::DbCorrupt)?
     };
     tx.execute("DELETE FROM import_log", []).map_err(|_| ErrorCode::DbCorrupt)?;
+    let mut dropped = 0;
     for (_, identity_ct) in rows {
-        let identity = open_identity(old_vk, h, &identity_ct)?;
+        let Ok(identity) = open_identity(old_vk, h, &identity_ct) else {
+            dropped += 1;
+            continue;
+        };
         let (fp, ct) = seal_identity(new_vk, h, &identity)?;
         tx.execute(
             "INSERT INTO import_log (fingerprint, identity_ct) VALUES (?1, ?2)",
@@ -45,7 +54,7 @@ pub fn recompute(
         )
         .map_err(|_| ErrorCode::DbCorrupt)?;
     }
-    Ok(())
+    Ok(dropped)
 }
 
 /// The fingerprint alone (duplicate checks, §10.3).

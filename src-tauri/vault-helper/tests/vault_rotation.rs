@@ -229,3 +229,22 @@ fn reseal_with_wrong_pk_refuses_before_staging_anything() {
     assert_eq!(reopened.header.vk_generation, 1);
     std::fs::remove_dir_all(&d).ok();
 }
+
+/// IM-05 / final review SPEC-B4: a damaged `import_log` row is dropped by
+/// the rotation, never a reason to fail it (a revocation must go through).
+#[test]
+fn a_damaged_import_log_row_never_blocks_a_rotation() {
+    let (d, old_vk, rk, _refs) = seeded();
+    let before = VaultStore::open(&d).unwrap();
+    before
+        .conn
+        .execute("INSERT INTO import_log (fingerprint, identity_ct) VALUES (?1, ?2)", rusqlite::params![vec![7u8; 32], vec![0u8; 40]])
+        .unwrap();
+    let pk = pk_for(&d, MP);
+    let out = rotate(before, &old_vk, MpWrap::Reseal(&pk), RkWrap::Seal(&rk), None, None).expect("the rotation goes through");
+    let after = VaultStore::open(&d).unwrap();
+    let n: i64 = after.conn.query_row("SELECT COUNT(*) FROM import_log", [], |r| r.get(0)).unwrap();
+    assert_eq!(n, 2, "the damaged row is dropped, the two good ones recomputed");
+    assert_eq!(after.header.vk_generation, out.vk_generation);
+    std::fs::remove_dir_all(&d).ok();
+}
