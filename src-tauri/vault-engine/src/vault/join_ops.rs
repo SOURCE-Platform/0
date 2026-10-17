@@ -60,7 +60,7 @@ pub fn join_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     run(|| {
         let qr: Qr = serde_json::from_value(frame.get("qr").cloned().ok_or(ErrorCode::InvalidInput)?).map_err(|_| ErrorCode::InvalidInput)?;
         let parsed = join::parse(&qr)?; // before any key exists
-        let name = frame.get("name").and_then(Value::as_str).unwrap_or("iPhone").chars().take(64).collect::<String>();
+        let name = frame.get("name").and_then(Value::as_str).map_or_else(|| "iPhone".to_string(), vault_proto::crypto::registry::clamp_device_name);
         let dir = {
             let c = lock_core(core);
             uninitialized(&c)?;

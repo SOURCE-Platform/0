@@ -135,7 +135,7 @@ fn joinable(c: &VaultCore) -> Result<(), ErrorCode> {
 pub fn renroll_begin(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome {
     run(|| {
         let fp = frame.get("fp").and_then(Value::as_str).and_then(hex::decode_array::<32>).ok_or(ErrorCode::InvalidInput)?;
-        let name = frame.get("name").and_then(Value::as_str).unwrap_or("Mac").chars().take(64).collect::<String>();
+        let name = frame.get("name").and_then(Value::as_str).map_or_else(|| "Mac".to_string(), vault_proto::crypto::registry::clamp_device_name);
         let dir = {
             let c = lock_core(core);
             joinable(&c)?;

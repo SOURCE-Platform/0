@@ -84,9 +84,9 @@ impl Dialect {
     fn login(&self, row: &[String]) -> Mapped {
         let Some(password) = self.raw(row, &["password"]) else { return Mapped::Skip("no password") };
         let username = self.get(row, &["username", "login", "username2", "username3"]).unwrap_or("");
-        let host = self.get(row, &["url", "website"]).and_then(host_of);
-        let title = self.get(row, &["title", "name"]).map(String::from).or_else(|| host.clone()).unwrap_or_else(|| "Imported login".into());
-        let urls: Vec<Value> = host.into_iter().map(|h| json!({ "host": h, "match": "exact", "allow_http": false })).collect();
+        let site = self.get(row, &["url", "website"]).and_then(host_of);
+        let title = self.get(row, &["title", "name"]).map(nfc).or_else(|| site.as_ref().map(|(h, _)| h.clone())).unwrap_or_else(|| "Imported login".into());
+        let urls: Vec<Value> = site.into_iter().map(|(h, http)| json!({ "host": h, "match": "exact", "allow_http": http })).collect();
         Mapped::Item(json!({
             "kind": "login", "title": title, "username": username, "password": password, "urls": urls,
             "notes": self.get(row, &["note"]).unwrap_or(""),
@@ -103,7 +103,7 @@ impl Dialect {
             return Mapped::Skip("unreadable expiry");
         };
         let mut item = json!({
-            "kind": "card", "label": self.get(row, &["name", "account_name"]).unwrap_or("Imported card"), "number": number, "expiry": expiry,
+            "kind": "card", "label": self.get(row, &["name", "account_name"]).map_or_else(|| "Imported card".into(), nfc), "number": number, "expiry": expiry,
             "cardholder": self.get(row, &["cardholder", "name_on_card", "account_holder"]).unwrap_or(""),
         });
         let billing = |k: &str| self.get(row, &[&format!("billing_{k}")]).unwrap_or("").to_string();
@@ -115,7 +115,7 @@ impl Dialect {
     }
 
     fn note(&self, row: &[String]) -> Mapped {
-        let Some(title) = self.get(row, &["title", "name"]) else { return Mapped::Skip("no title") };
+        let Some(title) = self.get(row, &["title", "name"]).map(nfc) else { return Mapped::Skip("no title") };
         Mapped::Item(json!({ "kind": "secure_note", "title": title, "body": self.raw(row, &["note", "content", "text"]).unwrap_or("") }))
     }
 
@@ -126,10 +126,20 @@ impl Dialect {
 }
 
 /// `https://login.example.com/path` → `login.example.com` (§9.4 rules
-/// apply when the item is validated); a bare host is taken as is.
-fn host_of(url: &str) -> Option<String> {
+/// apply when the item is validated); a bare host is taken as is. A plain
+/// `http://` URL keeps working only for a local host (router pages and the
+/// like, §9.5): `allow_http` (final review VER-O4).
+fn host_of(url: &str) -> Option<(String, bool)> {
     let full = if url.contains("://") { url.to_string() } else { format!("https://{url}") };
-    crate::browser::origin::canonical(&full).ok().map(|o| o.host)
+    let o = crate::browser::origin::canonical(&full).ok()?;
+    let http = o.scheme == "http" && o.is_local();
+    Some((o.host, http))
+}
+
+/// Display text in NFC, as records require (§10.3; final review VER-O4).
+fn nfc(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization;
+    s.nfc().collect()
 }
 
 /// MM/YY from `MM/YY`, `MM/YYYY`, `YYYY-MM` or `MM-YYYY`.
@@ -163,6 +173,8 @@ mod tests {
         assert_eq!(d.kind, Kind::Login);
         let Mapped::Item(v) = d.map(&s(&["alice@example.test", "Example", "fixture-pw-1", "", "https://login.example.test/x", "", ""])) else { panic!() };
         assert_eq!(v["urls"][0]["host"], "login.example.test");
+        let Mapped::Item(v) = d.map(&s(&["a", "Cafe\u{301}", "p", "", "http://192.168.1.1/", "", ""])) else { panic!() };
+        assert_eq!((v["title"].as_str(), v["urls"][0]["allow_http"].as_bool()), (Some("Caf\u{e9}"), Some(true)), "NFC title; local http kept");
         let Mapped::Item(v) = d.map(&s(&["a", "T", " fixture spaced ", "", "", "", ""])) else { panic!() };
         assert_eq!(v["password"], " fixture spaced ", "a password keeps its spaces");
         assert!(!d.has_otp(&s(&["a", "b", "c", "", "", "", ""])));

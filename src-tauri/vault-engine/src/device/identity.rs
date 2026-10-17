@@ -320,7 +320,7 @@ pub fn default_mac_name() -> String {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "Mac".to_string());
-    host.chars().take(64).collect()
+    vault_proto::crypto::registry::clamp_device_name(&host)
 }
 
 pub const DEFAULT_PLATFORM: u8 = PLATFORM_MACOS;

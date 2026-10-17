@@ -151,7 +151,7 @@ pub fn authorize_reply(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOutcome
         }
         ecdsa::parse_verifying_key(&sign_pub).map_err(|_| bad())?;
         ecdsa::parse_verifying_key(&agree_pub).map_err(|_| bad())?;
-        if sign_pub == agree_pub || reply.platform != PLATFORM_MACOS || reply.name.is_empty() || reply.name.chars().count() > 64 {
+        if sign_pub == agree_pub || reply.platform != PLATFORM_MACOS || reply.name.is_empty() || vault_proto::crypto::registry::clamp_device_name(&reply.name) != reply.name {
             return Err(ErrorCode::ProtocolViolation);
         }
         let authorizer_key = reverse::authorizer_key(&me.sign_pub());
