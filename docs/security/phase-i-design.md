@@ -20,6 +20,8 @@ every fixture comes from `scripts/gen-dashlane-fixtures.py` (fixed seed,
 | iPhone app | `ios/SourceVault/SourceVault/Views.swift`, `AppModel.swift` | list shows "Secure note"/"Payment card"; "Show note" reveals the body |
 | Tests | `vault-helper/tests/dashlane_import.rs`, unit tests in each module | every §10.7 fixture class; idempotent re-import; vault-item duplicate keeps the vault's item; path refusals without a prompt; presence denied imports nothing; 10^5 rows in 16.5 s optimized (on demand, `--ignored`) |
 
+| Fuzzing (§10.7) | `vault-helper/fuzz/fuzz_targets/fuzz_dashlane_row.rs` | mode sniff + reader + dialect over arbitrary bytes: no panic, no empty password from a mapped login, escape → re-parse round trip; 2026-10-17: 695,757 runs in 120 s, no failure. Seed corpus: the committed fixtures (the fuzz `corpus/` folder is git-ignored, like the TLV target's). Run: `cd src-tauri/vault-helper/fuzz && cargo +nightly fuzz run fuzz_dashlane_row -- -max_total_time=120` |
+
 ## Deliberate differences from the spec text (for the final review)
 
 1. **CSV parser.** §10.1 names the `csv` crate. The reader is written here
@@ -43,7 +45,6 @@ every fixture comes from `scripts/gen-dashlane-fixtures.py` (fixed seed,
 
 ## Not yet (carried to the final review)
 
-- `cargo fuzz` target `fuzz_dashlane_row` (§10.7).
 - The import holds the vault for its whole run (16.5 s at 10^5 rows); a
   Lock request waits for it.
 - Editing a note's body (add and reveal exist; `update_item` accepts a

@@ -15,7 +15,7 @@
 // paths so the shell, the tests and the main app's IPC client are
 // unchanged.
 pub use vault_engine::{
-    all_vectors, approval, backup, crypto, device, enroll, errors, keychain, peer, recovery, registry, state, storage, sync, vault,
+    all_vectors, approval, backup, crypto, device, enroll, errors, import, keychain, peer, recovery, registry, state, storage, sync, vault,
     VAULT_HEADER_NAME, VAULT_REGISTRY_NAME,
 };
 #[cfg(debug_assertions)]
