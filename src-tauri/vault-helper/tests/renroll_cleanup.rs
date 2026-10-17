@@ -12,6 +12,7 @@ fn begin(fx: &Fx) -> serde_json::Value {
     fx.op(json!({"op": "renroll_begin", "fp": "11".repeat(32), "name": "Test Mac"}))
 }
 
+/// RE-08: a planted attempt next to an existing vault removes nothing of it.
 #[test]
 fn a_planted_staging_never_costs_the_vault_its_keys() {
     let _g = serial();
