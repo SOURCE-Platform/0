@@ -114,7 +114,22 @@ pub fn approvals_fetch_step(core: &Arc<Mutex<VaultCore>>, frame: &Value) -> OpOu
         }
         let now = now_epoch();
         a.seen = approval::decode_list(&body)?.into_iter().filter(|ch| ch.iphone_device_id == me.device_id() && ch.mac_device_id == mac && now <= ch.exp).collect();
-        let list: Vec<Value> = a.seen.iter().map(|ch| json!({ "request_id": hex::encode(ch.request_id), "origin": ch.origin, "action": ch.action.name(), "credential_ref": ch.credential_ref.map(hex::encode), "exp": ch.exp })).collect();
+        let seen = a.seen.clone();
+        // §6.B (final review SPEC-I1): the sheet names the asking Mac (from
+        // the verified registry) and the account the request releases —
+        // resolved in this phone's own store when it is open; otherwise
+        // only that one saved item is involved.
+        let mac_name = reg.devices.iter().find(|d| d.device_id == mac).map(|d| d.device_name.clone());
+        let accounts = match (c.store.as_ref(), c.vk.as_ref()) {
+            (Some(store), Some(vk)) => store.list_records(vk).unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let account = |r: &Option<[u8; 16]>| -> Value {
+            let Some(r) = r else { return Value::Null };
+            let id = vault_proto::rev::uuid_string(r);
+            accounts.iter().find(|i| i["ref"] == id.as_str()).map_or(Value::Null, |i| json!({ "title": i["title"], "username": i["username"] }))
+        };
+        let list: Vec<Value> = seen.iter().map(|ch| json!({ "request_id": hex::encode(ch.request_id), "origin": ch.origin, "action": ch.action.name(), "credential_ref": ch.credential_ref.map(hex::encode), "account": account(&ch.credential_ref), "mac": mac_name, "exp": ch.exp })).collect();
         Ok(json!({ "approvals": list }))
     })
 }

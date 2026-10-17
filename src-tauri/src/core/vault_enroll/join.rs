@@ -158,10 +158,18 @@ async fn proven(headers: &HeaderMap) -> bool {
 
 /// The panel's Continue, then the bundle into the helper, then the ACK
 /// and this Mac's peer endpoint.
-async fn bundle(headers: HeaderMap, body: Bytes) -> Reply {
-    if !proven(&headers).await {
+///
+/// The route proof is checked before the body is read (final review
+/// VER-I1): without it nobody on the network can make this Mac buffer up
+/// to `MAX_BUNDLE`.
+async fn bundle(request: axum::extract::Request) -> Reply {
+    if !proven(request.headers()).await {
         return refused("PROOF");
     }
+    let body: Bytes = match axum::body::to_bytes(request.into_body(), (MAX_BUNDLE + 4096) as usize).await {
+        Ok(b) => b,
+        Err(_) => return refused("TOO_LARGE"),
+    };
     loop {
         match with(|j| j.stage) {
             Some(Stage::Confirmed) => break,

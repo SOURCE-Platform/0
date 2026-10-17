@@ -12,6 +12,10 @@ struct ApprovalRequest: Identifiable {
     let id: String
     let origin: String
     let action: String
+    /// The saved login it releases ("title — username"), when this phone's
+    /// vault is open; and the Mac asking (final review SPEC-I1).
+    var account: String?
+    var mac: String?
 
     var label: String {
         switch action {
@@ -44,7 +48,11 @@ final class ApprovalCenter: ObservableObject {
         let list = r["approvals"] as? [[String: Any]] ?? []
         waiting = list.compactMap { a in
             guard let id = a["request_id"] as? String, let origin = a["origin"] as? String, let action = a["action"] as? String else { return nil }
-            return ApprovalRequest(id: id, origin: origin, action: action)
+            let acct = a["account"] as? [String: Any]
+            let title = acct?["title"] as? String
+            let user = (acct?["username"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let account = title.map { t in user.map { "\(t) — \($0)" } ?? t }
+            return ApprovalRequest(id: id, origin: origin, action: action, account: account, mac: a["mac"] as? String)
         }
     }
 
@@ -89,6 +97,10 @@ struct ApprovalSheet: View {
                     Section {
                         LabeledContent("Website", value: r.origin)
                         LabeledContent("Request", value: r.label)
+                        if r.action != "unlock_vault" {
+                            LabeledContent("Account", value: r.account ?? "One saved item (unlock this app to see which)")
+                        }
+                        LabeledContent("From", value: r.mac ?? "Your Mac")
                         HStack {
                             Button("Deny", role: .destructive) { Task { await center.decide(r, approve: false) } }
                             Spacer()

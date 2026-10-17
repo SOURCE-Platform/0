@@ -98,6 +98,9 @@ fn an_iphone_approved_fill_goes_out_once() {
     let answer = relay(&mac, &b64::decode(begun["request"].as_str().unwrap()).unwrap()).unwrap();
     let list = phone.op(json!({"op": "approvals_fetch_step", "response": b64::encode(&answer)}));
     assert_eq!(list["approvals"][0]["origin"], "https://example.test");
+    // §6.B (final review SPEC-I1): the sheet can name the Mac and the account.
+    assert!(list["approvals"][0]["mac"].is_string(), "{list}");
+    assert_eq!(list["approvals"][0]["account"]["title"], "Fixture Login", "{list}");
     let d = phone.op(json!({"op": "approval_decide", "request_id": a["approval_id"], "approve": true}));
     let answer = relay(&mac, &b64::decode(d["request"].as_str().unwrap()).unwrap()).unwrap();
     assert_eq!(phone.op(json!({"op": "approval_submit_step", "response": b64::encode(&answer)}))["result"], "approved");
