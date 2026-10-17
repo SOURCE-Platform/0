@@ -39,4 +39,7 @@ only.
   bullet).
 - The save offer lives in the extension worker's memory; if Chrome stops
   the worker (MV3 does after ~30 s idle), the offer is simply lost.
+- Card autofill (§8.2, §6.4 action `fill_card`, DA-10/DA-11): not built;
+  the browser fills logins only, cards stay reveal-only in the app
+  (final review VER-I11; owner question Q4 in `final-review.md`).
 - The Phase H gate script.
