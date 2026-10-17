@@ -4,10 +4,6 @@
 [cargo-vet]
 version = "0.10"
 
-[[exemptions.adler2]]
-version = "2.0.1"
-criteria = "safe-to-deploy"
-
 [[exemptions.aho-corasick]]
 version = "1.1.4"
 criteria = "safe-to-deploy"
@@ -460,10 +456,6 @@ criteria = "safe-to-deploy"
 version = "2.5.0"
 criteria = "safe-to-deploy"
 
-[[exemptions.crc32fast]]
-version = "1.5.0"
-criteria = "safe-to-deploy"
-
 [[exemptions.crossbeam-channel]]
 version = "0.5.15"
 criteria = "safe-to-deploy"
@@ -718,10 +710,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.find-msvc-tools]]
 version = "0.1.9"
-criteria = "safe-to-deploy"
-
-[[exemptions.flate2]]
-version = "1.1.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.flume]]
@@ -1306,10 +1294,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.minimal-lexical]]
 version = "0.2.1"
-criteria = "safe-to-deploy"
-
-[[exemptions.miniz_oxide]]
-version = "0.8.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.mio]]
@@ -2034,10 +2018,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.signature]]
 version = "2.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.simd-adler32]]
-version = "0.3.9"
 criteria = "safe-to-deploy"
 
 [[exemptions.simd_helpers]]

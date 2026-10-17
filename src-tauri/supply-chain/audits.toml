@@ -1,6 +1,12 @@
 
 # cargo-vet audits file
 
+[[audits.adler2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "2.0.1"
+notes = "Phase I (Dashlane ZIP), via miniz_oxide. Adler-32 only; #![forbid(unsafe_code)]; no build script, no I/O. Final review 2026-10-17 (owner Q3)."
+
 [[audits.aead]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
@@ -61,6 +67,12 @@ criteria = "safe-to-deploy"
 version = "0.1.1"
 notes = "CPU feature-bit plumbing for crypto-bigint. RustCrypto/utils. Pure Rust; no unsafe."
 
+[[audits.crc32fast]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "1.5.0"
+notes = "Phase I ZIP member CRC check (import/zip.rs verify_member). CRC-32 only. unsafe confined to the two CPU-specific kernels (aarch64 CRC intrinsics, x86 pclmulqdq) behind runtime feature detection; build.rs only runs `rustc --version` to set a cfg. No runtime I/O. Final review 2026-10-17 (owner Q3)."
+
 [[audits.crypto-bigint]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
@@ -109,6 +121,12 @@ criteria = "safe-to-deploy"
 version = "0.14.0"
 notes = "Finite-field traits (ebfull). Pure Rust; unsafe in 1 file. Trait definitions; no parsing."
 
+[[audits.flate2]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "1.1.9"
+notes = "Phase I: DeflateDecoder over a ZIP member, default rust_backend (miniz_oxide). unsafe exists only in the C-zlib backends (ffi/c.rs, mem.rs paths behind any_zlib), not compiled here; no build script; no network/process/fs use. Output is cut at the member's declared size by the caller. rust-lang/flate2-rs. Final review 2026-10-17 (owner Q3)."
+
 [[audits.group]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
@@ -144,6 +162,12 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.2.2"
 notes = "In-place buffer abstraction behind aead/cipher. RustCrypto (tarcieri). Pure Rust; unsafe in 3 files confined to slice re-aliasing invariants, reviewed."
+
+[[audits.miniz_oxide]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.8.9"
+notes = "Phase I inflate backend under flate2; parses untrusted export bytes. #![forbid(unsafe_code)]; no build script, no I/O; bounds-checked decoder; not yet fuzzed through our ZIP path (carried in final-review.md). Final review 2026-10-17 (owner Q3)."
 
 [[audits.objc-sys]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -288,6 +312,12 @@ who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "3.0.0"
 notes = "Signature trait definitions. RustCrypto/traits. Pure Rust; unsafe in 1 file. Trait glue."
+
+[[audits.simd-adler32]]
+who = "Adam <145073191+adam7rans@users.noreply.github.com>"
+criteria = "safe-to-deploy"
+version = "0.3.9"
+notes = "Phase I, via miniz_oxide's default adler path. unsafe in the per-ISA SIMD kernels only (neon used on Apple silicon), each behind runtime detection with a scalar fallback; no build script, no I/O. Final review 2026-10-17 (owner Q3)."
 
 [[audits.spki]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
