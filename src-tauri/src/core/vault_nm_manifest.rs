@@ -29,7 +29,7 @@ fn extension_id() -> Option<&'static str> {
 
 #[cfg(not(debug_assertions))]
 fn extension_id() -> Option<&'static str> {
-    Some(vault_helper::nm_host::PRODUCTION_ID).filter(|id| !id.is_empty())
+    Some(vault_nm_host::broker::PRODUCTION_ID).filter(|id| !id.is_empty())
 }
 
 fn broker_path() -> Option<PathBuf> {

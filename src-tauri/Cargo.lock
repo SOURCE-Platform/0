@@ -51,6 +51,7 @@ dependencies = [
  "tokio",
  "uuid",
  "vault-coordinator",
+ "vault-nm-host",
  "vault-proto",
  "windows 0.58.0",
  "x11",
@@ -7391,6 +7392,13 @@ dependencies = [
  "vault-coordinator",
  "vault-engine",
  "zeroize",
+]
+
+[[package]]
+name = "vault-nm-host"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

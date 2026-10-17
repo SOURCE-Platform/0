@@ -90,10 +90,6 @@ path = "src/main.rs"
 # Development/gate binary: exercises the IPC client side and both
 # SecCode checks against a real helper. Never shipped inside the app bundle.
 [[bin]]
-name = "source-vault-nm-host"
-path = "src/bin/source-vault-nm-host.rs"
-
-[[bin]]
 name = "vault-test-client"
 path = "src/bin/vault-test-client.rs"
 

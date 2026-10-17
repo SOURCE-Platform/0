@@ -105,6 +105,8 @@ fi
 
 echo "==> building source-vault-helper ($PROFILE, OU $TEAM_OU)"
 (cd "$SRC_TAURI" && cargo build -p source-vault-helper ${CARGO_PROFILE_ARGS[@]+"${CARGO_PROFILE_ARGS[@]}"})
+# The browser broker is its own crate (§17.2: serde_json only).
+(cd "$SRC_TAURI" && cargo build -p vault-nm-host ${CARGO_PROFILE_ARGS[@]+"${CARGO_PROFILE_ARGS[@]}"})
 
 BIN="$SRC_TAURI/target/$PROFILE/source-vault-helper"
 BUNDLE_DIR="$SRC_TAURI/target/helper-bundle/$PROFILE"

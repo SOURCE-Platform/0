@@ -1,4 +1,4 @@
-//! The Chrome native messaging broker's logic (spec §9.2, §9.3; Phase H),
+//! The Chrome native messaging broker's frame logic (spec §9.2, §9.3; Phase H),
 //! kept apart from its I/O so it is testable. nm-host is a dumb broker: it
 //! checks the caller origin Chrome passed, validates each frame's shape
 //! and size, and forwards it to the helper as the matching `browser_*` op.

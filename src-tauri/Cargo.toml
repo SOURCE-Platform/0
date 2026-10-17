@@ -1,5 +1,5 @@
 [workspace]
-members = ["vault-helper", "vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-tests"]
+members = ["vault-helper", "vault-nm-host", "vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-tests"]
 resolver = "2"
 
 [package]
@@ -69,6 +69,7 @@ objc = "0.2"
 # drift-prone reimplementation. Runtime separation is unchanged: vault
 # secrets still live only in the helper process.
 source-vault-helper = { path = "vault-helper" } # lib name: vault_helper
+vault-nm-host = { path = "vault-nm-host" }
 # v0.4 backup coordinator (main-process flows; no secrets) and the
 # provider HTTPS transport over Apple's URLSession: the objc2 0.6 family is
 # already in the graph through Tauri, so only features are enabled here.

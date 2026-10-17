@@ -27,7 +27,6 @@ pub mod ipc;
 pub mod la;
 #[macro_use]
 pub mod log;
-pub mod nm_host;
 pub mod notify;
 pub mod ops;
 pub mod panel;
