@@ -7,6 +7,10 @@ fn main() {
     // for its own binaries and test binaries.
     #[cfg(target_os = "macos")]
     println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
+    // Room for scripts/bundle-macos-dylibs.mjs to rewrite the Homebrew
+    // dylib paths to @rpath and add the Contents/Frameworks rpath.
+    #[cfg(target_os = "macos")]
+    println!("cargo:rustc-link-arg=-Wl,-headerpad_max_install_names");
     #[cfg(target_os = "macos")]
     build_desktop_audio_helper();
     #[cfg(target_os = "macos")]

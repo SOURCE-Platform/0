@@ -7,7 +7,8 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "beforeBundleCommand": "node scripts/bundle-macos-dylibs.mjs"
   },
   "app": {
     "macOSPrivateApi": true,
@@ -41,7 +42,11 @@
     "macOS": {
       "signingIdentity": "Apple Development",
       "hardenedRuntime": true,
-      "entitlements": "entitlements.plist"
+      "entitlements": "entitlements.plist",
+      "files": {
+        "Frameworks": "target/bundled-macos/Frameworks",
+        "MacOS/ffmpeg": "target/bundled-macos/ffmpeg"
+      }
     },
     "resources": {
       "native-pkg/.build/release/SourceDictation": "helpers/source-dictation"
