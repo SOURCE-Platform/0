@@ -6,6 +6,7 @@
 pub mod ecdsa;
 pub mod hex;
 pub mod hkdf;
+pub mod device_name;
 pub mod registry;
 pub mod secret;
 pub mod recovery_auth;

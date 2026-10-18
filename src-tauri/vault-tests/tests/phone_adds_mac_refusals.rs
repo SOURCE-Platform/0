@@ -176,3 +176,67 @@ fn re07_presence_and_master_password_on_the_iphone() {
     unsafe { ov0_engine_close(e) };
     mac.remove_dir();
 }
+
+/// Read the phone's bundle, let `mutate` change it, stream it into the Mac.
+fn carry_tampered(e: *const Ov0Engine, mac: &vault_fx::Fx, confirmed: &Value, mutate: &dyn Fn(&mut Value)) -> String {
+    let (session, sha, size) = (confirmed["session"].as_str().unwrap(), confirmed["stream"].as_str().unwrap(), confirmed["size"].as_u64().unwrap());
+    let mut bytes = Vec::new();
+    while (bytes.len() as u64) < size {
+        let r = call(e, &json!({"op": "stream_read", "session": session, "sha256": sha, "offset": bytes.len()}).to_string());
+        bytes.extend(vault_proto::b64::decode(r["data"].as_str().unwrap()).unwrap());
+    }
+    let mut bundle: Value = serde_json::from_slice(&bytes).unwrap();
+    mutate(&mut bundle);
+    let bytes = serde_json::to_vec(&bundle).unwrap();
+    let sha = vault_helper::crypto::hex::encode(<sha2::Sha256 as sha2::Digest>::digest(&bytes));
+    let s = mac.op(json!({"op": "renroll_bundle_begin", "sha256": sha, "size": bytes.len()}));
+    let mac_session = s["session"].as_str().expect("bundle session").to_string();
+    let st = mac.op(json!({"op": "stream_begin", "session": mac_session, "sha256": sha, "size": bytes.len()}));
+    let stream = st["stream_id"].as_str().unwrap().to_string();
+    for (seq, chunk) in bytes.chunks(48 * 1024).enumerate() {
+        assert_eq!(mac.op(json!({"op": "stream_write", "session": mac_session, "stream_id": stream, "seq": seq, "offset": seq * 48 * 1024, "data": vault_proto::b64::encode(chunk)}))["ok"], true);
+    }
+    assert_eq!(mac.op(json!({"op": "stream_end", "session": mac_session, "stream_id": stream}))["ok"], true);
+    mac_session
+}
+
+/// Flip the last hex digit of a field.
+fn flip(v: &mut Value, key: &str) {
+    let mut s = v[key].as_str().unwrap().to_string();
+    let last = s.pop().unwrap();
+    s.push(if last == '0' { '1' } else { '0' });
+    v[key] = json!(s);
+}
+
+/// RE-04: bundle negatives — another vault, a broken manifest signature, a
+/// registry head that is not the one the anchors bind, a checkpoint that
+/// does not open under the vault key. Each is refused at
+/// `renroll_complete`; nothing is kept and no ACK is signed.
+#[test]
+fn re04_a_tampered_bundle_is_refused_and_leaves_nothing() {
+    let _g = serial();
+    let mac = vault_fx::fx();
+    let (_cloud, _a, _b, e) = phone("re-04", true);
+    let cases: [(&str, &dyn Fn(&mut Value)); 4] = [
+        ("another vault", &|v: &mut Value| v["vault_id"] = json!("77".repeat(16))),
+        ("manifest signature", &|v: &mut Value| flip(v, "manifest")),
+        ("registry head", &|v: &mut Value| flip(v, "registry_head")),
+        ("checkpoint", &|v: &mut Value| flip(v, "checkpoint")),
+    ];
+    for (what, mutate) in cases {
+        let (_, reply) = up_to_reply(&mac, e);
+        assert_eq!(call(e, &json!({"op": "authorize_reply", "reply": reply["reply"]}).to_string())["ok"], true, "{what}");
+        mac.push_panel(vault_fx::submitted(MP));
+        assert_eq!(mac.op(json!({"op": "renroll_confirm"}))["ok"], true, "{what}");
+        let confirmed = call(e, r#"{"op":"authorize_confirm"}"#);
+        assert_eq!(confirmed["ok"], true, "{what}: {confirmed}");
+        let session = carry_tampered(e, &mac, &confirmed, mutate);
+        let r = mac.op(json!({"op": "renroll_complete", "session": session}));
+        assert_ne!(r["ok"], true, "{what}: {r}");
+        assert!(r.get("ack").is_none(), "{what}: no ACK");
+        assert!(!mac.dir.join("renroll").exists() && !mac.dir.join("vault.db").exists(), "{what}: nothing kept");
+        let _ = call(e, r#"{"op":"authorize_abort"}"#);
+    }
+    unsafe { ov0_engine_close(e) };
+    mac.remove_dir();
+}

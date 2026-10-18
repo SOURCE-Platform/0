@@ -42,7 +42,10 @@ pub fn check(
         (TransitionKind::Publish, Some(_)) => {
             appended.iter().all(|e| matches!(e.kind, EntryKind::Enroll | EntryKind::Revoke))
         }
-        (TransitionKind::Finalize, Some((cur, _))) => finalize_shape(cur, appended),
+        (TransitionKind::Finalize, Some((cur, _))) => {
+            let active: Vec<[u8; 16]> = cur.active_devices.iter().map(|d| d.device_id.0).collect();
+            finalize_shape(cur.epoch, &active, appended)
+        }
         _ => false,
     };
     if !ok {
@@ -55,17 +58,71 @@ pub fn check(
 /// per currently active device in ascending `device_id` order, each
 /// authorized by the epoch's device (§4.4 S-4); nothing else. The chain
 /// verifier already checked each revoke's signature under its authorizer.
-fn finalize_shape(cur: &VaultStateDoc, appended: &[RegistryEntry]) -> bool {
+fn finalize_shape(cur_epoch: u64, active: &[[u8; 16]], appended: &[RegistryEntry]) -> bool {
     let Some((epoch, revokes)) = appended.split_first() else {
         return false;
     };
-    if epoch.kind != EntryKind::RecoveryEpoch || epoch.epoch != cur.epoch + 1 {
+    if epoch.kind != EntryKind::RecoveryEpoch || epoch.epoch != cur_epoch + 1 {
         return false;
     }
-    let mut prior: Vec<[u8; 16]> = cur.active_devices.iter().map(|d| d.device_id.0).collect();
+    let mut prior: Vec<[u8; 16]> = active.to_vec();
     prior.sort();
     revokes.len() == prior.len()
         && revokes.iter().zip(&prior).all(|(r, id)| {
             r.kind == EntryKind::Revoke && &r.device_id == id && r.authorizer == Some(epoch.device_id)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use vault_proto::crypto::secret::SecretBytes;
+    use vault_proto::registry::build;
+    use vault_proto::registry::chain::verify_chain_with;
+    use vault_proto::registry::device::{DeviceIdentity, SoftwareDevice, PLATFORM_IOS, PLATFORM_MACOS};
+
+    const VID: [u8; 16] = [0x5A; 16];
+
+    /// RG-18 (§4.4 S-4): a total-loss finalize appends the epoch, then one
+    /// revoke per prior active device, ascending, each authorized by the
+    /// epoch's device — exactly that. Missing, extra, out-of-order or
+    /// otherwise-authorized revokes are refused; an unsigned one fails the
+    /// chain itself.
+    #[test]
+    fn rg18_finalize_needs_every_revoke_in_order() {
+        let (a, b) = (SoftwareDevice::generate("A", PLATFORM_MACOS), SoftwareDevice::generate("B", PLATFORM_IOS));
+        let g = build::genesis(&a).unwrap();
+        let st0 = verify_chain_with(&[g.clone()], &VID, &EpochPolicy::CheckpointAnchored).unwrap();
+        let en = build::enroll(&st0, &a, &b).unwrap();
+        let base = vec![g, en];
+        let st = verify_chain_with(&base, &VID, &EpochPolicy::CheckpointAnchored).unwrap();
+        let fresh = SoftwareDevice::generate("New", PLATFORM_MACOS);
+        let epoch = build::recovery_epoch(&st, VID, [0x11; 32], &SecretBytes::new([0x22; 32]), &fresh).unwrap();
+        let mut chain = base.clone();
+        chain.push(epoch.clone());
+        let st1 = verify_chain_with(&chain, &VID, &EpochPolicy::CheckpointAnchored).unwrap();
+        let mut ids = vec![a.device_id(), b.device_id()];
+        ids.sort();
+        let r1 = build::revoke(&st1, &fresh, ids[0]).unwrap();
+        let mut c2 = chain.clone();
+        c2.push(r1.clone());
+        let st2 = verify_chain_with(&c2, &VID, &EpochPolicy::CheckpointAnchored).unwrap();
+        let r2 = build::revoke(&st2, &fresh, ids[1]).unwrap();
+        let active = [a.device_id(), b.device_id()];
+        assert!(finalize_shape(st.epoch, &active, &[epoch.clone(), r1.clone(), r2.clone()]), "the complete set");
+        assert!(!finalize_shape(st.epoch, &active, &[epoch.clone(), r1.clone()]), "a revoke missing");
+        assert!(!finalize_shape(st.epoch, &active, &[epoch.clone()]), "no revokes");
+        assert!(!finalize_shape(st.epoch, &active[..1], &[epoch.clone(), r1.clone(), r2.clone()]), "an extra revoke");
+        assert!(!finalize_shape(st.epoch, &active, &[epoch.clone(), r2.clone(), r1.clone()]), "out of order");
+        assert!(!finalize_shape(st.epoch + 1, &active, &[epoch.clone(), r1.clone(), r2.clone()]), "the wrong epoch number");
+        // A revoke authorized by an old device instead of the epoch's.
+        let by_old = build::revoke(&st1, &a, ids[0]).unwrap();
+        assert!(!finalize_shape(st.epoch, &active, &[epoch.clone(), by_old, r2.clone()]), "authorized by another device");
+        // An unsigned revoke never gets past the chain.
+        let mut unsigned = r1;
+        unsigned.signature = None;
+        let mut bad = chain;
+        bad.push(unsigned);
+        assert!(verify_chain_with(&bad, &VID, &EpochPolicy::CheckpointAnchored).is_err(), "unsigned");
+    }
 }

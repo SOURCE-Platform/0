@@ -95,6 +95,8 @@ fn an_iphone_adds_a_replacement_mac() {
 }
 
 /// RE-06: replacement only, and fresh — refused before any prompt.
+/// RE-11: a QR from a public host is refused, a forward-pairing (v:2)
+/// QR is not a reverse one, and the route proof is required.
 #[test]
 fn only_a_replacement_and_only_when_fresh() {
     let _g = serial();
@@ -107,6 +109,9 @@ fn only_a_replacement_and_only_when_fresh() {
     assert_eq!(call(e, &frame)["error"], "REPLACEMENT_ONLY", "Mac a is still active");
     let public = frame.replace("192.168.1.20", "8.8.8.8");
     assert_eq!(call(e, &public)["error"], "INVALID_INPUT", "a QR from afar is refused");
+    let forward = frame.replace("\"v\":3", "\"v\":2");
+    assert_eq!(call(e, &forward)["error"], "PROTOCOL_VIOLATION", "a v:2 QR is not a reverse enrollment");
+    assert_eq!(mac.op(json!({"op": "renroll_proof", "proof": "00".repeat(32)}))["error"], "WRONG_CREDENTIAL", "no route without the proof");
     unsafe { ov0_engine_close(e) };
     mac.remove_dir();
 }
@@ -129,6 +134,44 @@ fn the_mac_keeps_nothing_without_the_panel_or_with_a_wrong_password() {
     let session = carry_bundle(e, &mac, &confirmed);
     assert_eq!(mac.op(json!({"op": "renroll_complete", "session": session}))["error"], "WRONG_CREDENTIAL");
     assert!(!mac.dir.join("renroll").exists() && !mac.dir.join("vault.db").exists(), "the attempt is gone");
+    unsafe { ov0_engine_close(e) };
+    mac.remove_dir();
+}
+
+/// RE-10: a vault recovered onto a phone (every other device lost, §12
+/// scenario 3) adds a replacement Mac, which opens with the master
+/// password and holds the vault's items.
+#[test]
+fn a_phone_recovered_vault_adds_a_mac() {
+    let _g = serial();
+    let mac = vault_fx::fx();
+    let cloud = ctx("re-10");
+    let mut old = Mac::new("re-10-old");
+    old.setup(&cloud.cloud, "synthetic-re10@example.test").unwrap();
+    old.add("from-before-the-loss");
+    old.publish(&cloud.cloud).unwrap();
+    let e = open_raw(&cloud, &tmp("re-10-phone"));
+    assert_eq!(call(e, r#"{"op":"provider_recover_start","handle":"synthetic-re10@example.test","kind":"mp"}"#)["ok"], true);
+    assert_eq!(call(e, r#"{"op":"recovery_preview"}"#)["ok"], true);
+    assert_eq!(call(e, r#"{"op":"provider_recover_finish"}"#)["ok"], true);
+    assert_eq!(call(e, r#"{"op":"provider_sync"}"#)["ok"], true, "fresh");
+    let begun = mac.op(json!({"op": "renroll_begin", "fp": "cd".repeat(32), "name": "Synthetic Replacement Mac"}));
+    let start = call(e, &json!({"op": "authorize_begin", "qr": serde_json::from_str::<Value>(&qr(&begun)).unwrap()}).to_string());
+    assert_eq!(start["ok"], true, "{start}");
+    let reply = mac.op(json!({"op": "renroll_hello", "hello": start["hello"]}));
+    assert_eq!(call(e, &json!({"op": "authorize_reply", "reply": reply["reply"]}).to_string())["ok"], true);
+    mac.push_panel(vault_fx::submitted(MP));
+    assert_eq!(mac.op(json!({"op": "renroll_confirm"}))["ok"], true);
+    let confirmed = call(e, r#"{"op":"authorize_confirm"}"#);
+    assert_eq!(confirmed["ok"], true, "{confirmed}");
+    let session = carry_bundle(e, &mac, &confirmed);
+    let acked = mac.op(json!({"op": "renroll_complete", "session": session}));
+    assert_eq!(acked["ok"], true, "{acked}");
+    let finished = call(e, &json!({"op": "authorize_finish", "ack": acked["ack"], "peer_endpoint": endpoint()}).to_string());
+    assert_eq!(finished["ok"], true, "{finished}");
+    assert_eq!(mac.op(json!({"op": "renroll_finish", "registry_head": finished["registry_head"]}))["ok"], true);
+    assert_eq!(vault_fx::unlock(&mac, MP)["ok"], true);
+    assert!(mac.op(json!({"op": "list_items"})).to_string().contains("from-before-the-loss"));
     unsafe { ov0_engine_close(e) };
     mac.remove_dir();
 }

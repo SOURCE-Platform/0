@@ -64,9 +64,11 @@ fn rotation_adopted_from_envelope() {
     assert_eq!(a.titles(), vec!["after-rotation", "before-rotation"]);
 }
 
-/// BK-13 / EV-04 / RC-01M core: A revokes B (both recovery classes
-/// re-keyed, VK rotated, B's envelope gone). After the publish B gets the
-/// generic 401 and nothing is deleted on B.
+/// BK-13 / EV-04 / RC-01M core, and RC-08's engine half (§12 scenario 8:
+/// the device is cut off; the breach checklist is `ExposureChecklist.tsx`):
+/// A revokes B (both recovery classes re-keyed, VK rotated, B's envelope
+/// gone). After the publish B gets the generic 401 and nothing is deleted
+/// on B.
 #[test]
 fn revocation_cuts_off_at_the_provider() {
     let (cloud, mut a, b) = pair("mw3");
@@ -84,4 +86,30 @@ fn revocation_cuts_off_at_the_provider() {
     let r = b.read(&cloud, vault_proto::request::Operation::StateGet, None);
     assert_eq!((r.status, err(&r)), (401, "AUTH_INVALID".into()));
     assert!(b.dir.exists() && b.store().header.vk_generation == 1, "nothing deleted on the revoked device");
+}
+
+/// EV-05: A rotates and publishes; B — still active, no revoke entry for
+/// it — finds no usable envelope for itself in the served state. The sync
+/// stops ("unable to verify") and changes nothing: B's store, key and
+/// records are as they were, and a later sync with its envelope works.
+#[test]
+fn ev05_no_usable_envelope_changes_nothing() {
+    let (cloud, mut a, mut b) = pair("ev05");
+    a.add("before-rotation");
+    a.publish(&cloud).unwrap();
+    b.sync(&cloud).unwrap();
+    let vk = a.vk.take().unwrap();
+    let store = a.store.take().unwrap();
+    let pk = vault_helper::vault::recovery_ops::prove_mp(&store, &vk, MP).unwrap();
+    let rot = vault_helper::vault::recovery_ops::rotate_recovery_key(store, &vk, &pk, false).unwrap();
+    a.store = Some(vault_helper::storage::VaultStore::open(&a.dir).unwrap());
+    a.vk = Some(rot.rotation.new_vk);
+    a.publish(&cloud).unwrap();
+    let (gen, titles) = (b.store().header.vk_generation, b.titles());
+    let missing = |_: &vault_helper::device::envelope::DeviceEnvelopeFile| Err(vault_helper::errors::ErrorCode::NotFound);
+    assert!(b.sync_opening(&cloud, &missing).is_err(), "unable to verify");
+    assert_eq!(b.store().header.vk_generation, gen, "nothing adopted");
+    assert_eq!(b.titles(), titles, "nothing deleted");
+    assert_eq!(vault_helper::registry::log::read_state(&b.dir, &b.vid(), &vault_helper::registry::chain::EpochPolicy::CheckpointAnchored).unwrap().active_device(&b.dev.device_id()).is_some(), true);
+    assert!(b.sync(&cloud).unwrap().unwrap().adopted_vk, "with its envelope, it adopts");
 }

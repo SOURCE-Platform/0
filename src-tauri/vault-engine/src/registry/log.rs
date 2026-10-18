@@ -36,10 +36,31 @@ pub fn read_state(
     policy: &EpochPolicy<'_>,
 ) -> Result<RegistryState, ErrorCode> {
     let entries = read_entries(dir)?;
+    not_rolled_back(dir, &entries)?;
     if entries.is_empty() {
         return Ok(RegistryState::empty());
     }
     chain::verify_chain_with(&entries, vault_id, policy)
+}
+
+/// RG-06 (final review): the head this vault's header recorded must be in
+/// the registry file. The file may run ahead of the header (an append
+/// lands before the header flip), never behind it: an older copy put back
+/// — say from before a revocation — is refused, not believed.
+fn not_rolled_back(dir: &Path, entries: &[RegistryEntry]) -> Result<(), ErrorCode> {
+    let Ok(header) = crate::storage::VaultStore::read_header(dir) else {
+        return Ok(()); // no vault here yet (setup, a staging directory)
+    };
+    let recorded = header.registry_head.0;
+    if recorded == [0u8; 32] {
+        return Ok(());
+    }
+    for e in entries {
+        if crate::crypto::registry::entry_hash(e).ok() == Some(recorded) {
+            return Ok(());
+        }
+    }
+    Err(ErrorCode::RegistryTruncated)
 }
 
 /// Append one entry, re-verifying the extended chain first. The new file

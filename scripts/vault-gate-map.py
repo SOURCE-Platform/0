@@ -35,7 +35,9 @@ ALT = re.compile(r"\b([A-Z]{2,3})-(\d{2})((?:/\d{2})+)\b")
 
 
 def ids_in(text: str) -> set:
-    """IDs, with ranges (`PA-01…05`) and alternatives (`PW-07/09`) expanded."""
+    """IDs, with ranges (`PA-01…05`) and alternatives (`PW-07/09`) expanded;
+    a sub-case (`PW-03a/b`) counts for its ID."""
+    text = re.sub(r"\b([A-Z]{2,3}-\d{2})[a-z](?:/[a-z])*\b", r"\1", text)
     out = {f"{a}-{b}" for a, b in ID.findall(text)}
     for p, a, b in RANGE.findall(text):
         out |= {f"{p}-{i:02d}" for i in range(int(a), int(b) + 1)}
@@ -57,7 +59,7 @@ def rust_tests(path: Path):
         line = lines[i].strip()
         if line.startswith("//"):
             comment.append(line)
-        elif line.startswith("#[test]"):
+        elif line.startswith(("#[test]", "#[tokio::test]")):
             pending = True
         elif line.startswith("#["):
             pass  # #[ignore], #[should_panic], …
@@ -87,12 +89,13 @@ def node_tests(path: Path):
 
 def rows():
     src = ROOT / "src-tauri"
-    for crate in CRATES:
+    for crate in CRATES + ["."]:  # "." = the SOURCE app crate (its --lib tests)
         d = src / crate
         if not (d / "Cargo.toml").exists():
             continue
         pkg = package_of(d)
-        for f in sorted((d / "tests").glob("*.rs")) if (d / "tests").exists() else []:
+        tests_dir = d / "tests" if crate != "." else d / "no-integration-tests"
+        for f in sorted(tests_dir.glob("*.rs")) if tests_dir.exists() else []:
             for name, ids in rust_tests(f):
                 for i in ids:
                     yield i, f"cargo:{pkg}:--test {f.stem}", name

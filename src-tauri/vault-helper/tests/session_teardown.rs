@@ -1,4 +1,5 @@
-//! Session teardown (spec v0.4 §1.3 TR-07, §13.3 ST-03): an abandoned
+//! Session teardown (spec v0.4 §1.3 TR-07, §13.3 ST-04 — RECOVERING, the
+//! fourth state of that §16 row, formerly mislabelled the third): an abandoned
 //! recovery — the app disconnecting, a lock, or `session_close` — leaves
 //! RECOVERING for the state the vault directory implies, never a
 //! vault-less LOCKED, and drops the recovery session; TR-08 a restart

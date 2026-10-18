@@ -148,3 +148,34 @@ fn panel_requests_follow_flow_kinds() {
     );
     fx.remove_dir();
 }
+
+// --- PA-07: no op signs a caller's digest ------------------------------------
+
+/// PA-07 (§22.4, a lint): no helper op and no iPhone entry signs a digest
+/// or prehash the caller supplies. The one signing op,
+/// `sign_provider_request`, builds the request from typed fields itself;
+/// no op handler reads a `digest`, `prehash` or `to_sign` field.
+#[test]
+fn pa07_no_op_signs_a_caller_digest() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let dispatch = std::fs::read_to_string(root.join("vault-engine/src/vault/dispatch.rs")).unwrap();
+    let ops: Vec<&str> = dispatch.lines().filter_map(|l| l.trim().strip_prefix('"').and_then(|r| r.split('"').next())).filter(|o| !o.is_empty()).collect();
+    assert!(ops.len() > 40, "the route table was read");
+    let signing: Vec<&&str> = ops.iter().filter(|o| o.contains("sign")).collect();
+    assert_eq!(signing, [&"sign_provider_request"], "the only signing op");
+    for dir in ["vault-engine/src/vault", "vault-ffi/src"] {
+        for e in std::fs::read_dir(root.join(dir)).unwrap().flatten() {
+            let text = std::fs::read_to_string(e.path()).unwrap_or_default();
+            for field in ["\"digest\"", "\"prehash\"", "\"to_sign\""] {
+                assert!(!text.contains(&format!(".get({field})")), "{} reads {field}", e.path().display());
+            }
+        }
+    }
+    let ffi = std::fs::read_to_string(root.join("vault-ffi/src/engine.rs")).unwrap();
+    let ios = &ffi[ffi.find("IOS_OPS").unwrap()..];
+    let ios = &ios[..ios.find("];").unwrap()];
+    // Entries only (comments explain what is left out).
+    let entries: Vec<&str> = ios.lines().filter(|l| !l.trim_start().starts_with("//")).flat_map(|l| l.split('"').skip(1).step_by(2)).collect();
+    assert!(entries.len() > 20 && entries.contains(&"reveal"), "the list was read");
+    assert!(!entries.iter().any(|o| o.contains("sign")), "no signing op reaches the iPhone app: {entries:?}");
+}

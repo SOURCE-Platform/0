@@ -79,6 +79,8 @@ mod tests {
         PathBuf::from(std::env::var("HOME").expect("HOME set"))
     }
 
+    /// CS-08: the asset protocol's real scope never reaches a vault path
+    /// (the runtime probe, `debug_asset_scope_probe`, is the other half).
     #[test]
     fn vault_paths_are_rejected() {
         let (scope, home) = load_real_scope();

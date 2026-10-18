@@ -57,6 +57,7 @@ fn with_fake_heads(n: usize) -> impl FnMut(&vault_helper::device::SeDevice, Vec<
     }
 }
 
+/// PS-03: the per-request cap.
 #[test]
 fn at_most_512_records_per_request() {
     let _g = serial();
@@ -79,6 +80,7 @@ fn at_most_512_records_per_request() {
     phone.remove_dir();
 }
 
+/// PS-03: the round-trip quota → `PEER_LIMIT`.
 #[test]
 fn a_dripping_responder_stops_at_the_round_trip_bound() {
     let _g = serial();
@@ -106,6 +108,7 @@ fn a_dripping_responder_stops_at_the_round_trip_bound() {
     phone.remove_dir();
 }
 
+/// PW-05: paging — a truncated page is re-asked and converges.
 #[test]
 fn a_truncated_revisions_page_is_re_asked_and_converges() {
     let _g = serial();

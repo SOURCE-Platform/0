@@ -134,6 +134,8 @@ fn wrong_vault_and_wrong_epoch_rejected_even_with_valid_proofs() {
 
 /// RG-09 / RG-16: an epoch bound to a manifest this verifier has
 /// superseded is a rollback; a copied transition cannot be replayed.
+/// FR-03 (second half): a device that later sees newer history surfaces
+/// the stale binding from the registry.
 #[test]
 fn rg09_rg16_stale_binding_and_replay_rejected() {
     let mut f = fx();
@@ -191,4 +193,21 @@ fn signed_kind_rules_truncation_and_fork() {
     let fork_tip = build::enroll(&f.st, &f.mac, &stranger).unwrap();
     assert_eq!(check_extends(&chain, &with(&f.base, fork_tip)).unwrap_err(), ErrorCode::RegistryFork);
     check_extends(&f.base, &chain).unwrap();
+}
+
+/// RG-01: an unsigned enroll entry; RG-02: an enroll naming a real
+/// authorizer but signed with an attacker's key. Both are refused and the
+/// accepted chain does not move.
+#[test]
+fn rg01_rg02_unsigned_or_forged_enroll_is_refused() {
+    let f = fx();
+    let stranger = SoftwareDevice::generate("Stranger", PLATFORM_MACOS);
+    let mut unsigned = build::enroll(&f.st, &f.mac, &stranger).unwrap();
+    unsigned.signature = None;
+    assert!(verify_chain(&with(&f.base, unsigned), &VAULT, &f.ctx).is_err(), "RG-01");
+    let mut forged = build::enroll(&f.st, &f.mac, &stranger).unwrap();
+    let digest = vault_helper::crypto::registry::sign_input(&forged).unwrap();
+    forged.signature = Some(stranger.sign_prehash(&digest).unwrap());
+    assert_eq!(verify_chain(&with(&f.base, forged), &VAULT, &f.ctx).unwrap_err(), ErrorCode::SignatureInvalid, "RG-02");
+    check_extends(&f.base, &f.base).unwrap();
 }

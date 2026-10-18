@@ -104,6 +104,8 @@ fn a_set_aside_over_a_many_path_peer_graph_finishes() {
 
 /// VER-I14 (VER-I1 second half): a revision resting on a waiting one
 /// waits too, and nothing a peer sent is left in `pending_revs`.
+/// PS-02: a revision at another `vk_generation`, or from an author the
+/// registry does not know, waits — not admitted, not counted as admitted.
 #[test]
 fn a_peer_leaves_nothing_waiting_here() {
     let _g = serial();
@@ -122,6 +124,18 @@ fn a_peer_leaves_nothing_waiting_here() {
     assert_eq!(PutCounts::decode(&b).unwrap(), PutCounts { admitted: 0, waiting: 2, refused: 0 });
     let store = VaultStore::open(&w.fx.dir).unwrap();
     assert_eq!(rev_state::pending_count(&store.conn).unwrap(), 0);
+    drop(store);
+    // An author nobody enrolled.
+    let (dir, mut ps, k) = phone_store(&w);
+    let rid = ps.add_record(&k, 1, PT, META).unwrap();
+    let mut stranger = row_of(&ps, &rid);
+    drop(ps);
+    let _ = std::fs::remove_dir_all(dir);
+    stranger.author_device = vault_proto::rev::uuid_string(&[0x5e; 16]);
+    let (st, b) = ask(&w, &c, PeerOp::RevsPut, put_body(&[stranger]));
+    assert_eq!(st, PeerStatus::Ok);
+    let counts = PutCounts::decode(&b).unwrap();
+    assert_eq!(counts.admitted, 0, "an unknown author is never admitted: {counts:?}");
     w.fx.remove_dir();
 }
 

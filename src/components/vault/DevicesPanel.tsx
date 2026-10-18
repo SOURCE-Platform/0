@@ -6,6 +6,7 @@
 //! is automated here — a code that arrived over the network instead of
 //! being derived independently would prove nothing.
 
+import { ExposureChecklist } from "./ExposureChecklist";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Laptop, Smartphone, QrCode, ShieldAlert } from "lucide-react";
 import {
@@ -122,10 +123,13 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
     setStatus(null);
   };
 
+  const [exposed, setExposed] = useState<string | null>(null);
+
   const revoke = async (device: VaultDevice) => {
     setBusy(true);
     try {
       await vaultRevokeDevice(device.device_id);
+      setExposed(device.device_name); // §12 scenario 8: the breach checklist
       await refresh();
     } catch (e) {
       onError(vaultErrorMessage(String(e)));
@@ -154,6 +158,8 @@ export function DevicesPanel({ onError }: { onError: (message: string) => void }
           </button>
         )}
       </div>
+
+      {exposed && <ExposureChecklist deviceName={exposed} onClose={() => setExposed(null)} />}
 
       <p className="mt-1 max-w-[60ch] text-xs text-muted-foreground">
         Devices allowed to open this vault. Removing one here is the only way to revoke

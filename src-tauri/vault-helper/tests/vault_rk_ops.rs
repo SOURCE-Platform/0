@@ -93,6 +93,8 @@ fn refused_rk_sheet_at_setup_leaves_no_vault() {
     assert!(!fx.dir.join("header.json").exists() && !fx.dir.join(RECOVERY_WRAP_NAME).exists());
 }
 
+/// RC-06 (§12 scenario 6): the RK replaced with the current MP, the VK
+/// rotated, the old RK refused, the new RK and the MP unlocking.
 #[test]
 fn rotate_recovery_key_op() {
     let _g = serial();

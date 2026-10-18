@@ -150,6 +150,8 @@ fn op03_presence_denied_blocks_mutation() {
 
 // --- OP-06: reveal refuses when capture suppression is unverifiable ----------
 
+/// CS-06 (= OP-06): reveal with suppression unverifiable → `CAPTURE_UNSAFE`,
+/// before any prompt, nothing displayed.
 #[test]
 fn op06_reveal_capture_unsafe_is_fail_closed() {
     let _g = serial();

@@ -52,3 +52,23 @@ pub fn compare(sheet: &SheetCheckpoint, served_vault: &[u8; 16], served_gen: u64
         SheetComparison::NewerThanSheet
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// FR-03 (first half, §11.7): a stale-but-valid backup served at
+    /// recovery is shown as older than the sheet — the user decides;
+    /// nothing claims to detect it. (The second half — a later device
+    /// surfacing the stale binding — is RG-09/RG-16.)
+    #[test]
+    fn fr03_a_stale_backup_is_shown_older_than_the_sheet() {
+        let (vid, head) = ([5u8; 16], [0xab; 32]);
+        let sheet = SheetCheckpoint::new(vid, 7, &head);
+        assert_eq!(compare(&sheet, &vid, 6, &[0x01; 32]), SheetComparison::OlderThanSheet);
+        assert_eq!(compare(&sheet, &vid, 7, &head), SheetComparison::MatchesSheet);
+        assert_eq!(compare(&sheet, &vid, 7, &[0x01; 32]), SheetComparison::ForkEvidence);
+        assert_eq!(compare(&sheet, &vid, 9, &[0x01; 32]), SheetComparison::NewerThanSheet);
+        assert_eq!(compare(&sheet, &[6; 16], 7, &head), SheetComparison::DifferentVault);
+    }
+}

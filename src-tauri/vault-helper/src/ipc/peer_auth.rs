@@ -122,7 +122,9 @@ fn peer_uid_matches(stream: &UnixStream) -> Result<bool, AuthError> {
 }
 
 /// Peer pid via getsockopt(LOCAL_PEEREPID). LOCAL_PEEREPID is 0x002 on
-/// Darwin (sys/un.h); a stable kernel ABI constant. SOL_LOCAL is 0.
+/// Darwin (sys/un.h); a stable kernel ABI constant. SOL_LOCAL is 0. Tests
+/// only now: peers are resolved by audit token (final review SEC-I1).
+#[cfg(test)]
 fn peer_pid(stream: &UnixStream) -> Result<i32, AuthError> {
     const LOCAL_PEEREPID: libc::c_int = 0x002;
     const SOL_LOCAL: libc::c_int = 0;

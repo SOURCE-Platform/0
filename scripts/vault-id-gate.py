@@ -48,7 +48,7 @@ PHASES["j"] = sorted(set(
     + rng("TR", 1, 9) + rng("ST", 1, 5) + rng("PR", 1, 6) + rng("UI", 1, 5) + rng("CS", 1, 8)
 ))
 # Shown by a person or a device, never by `cargo test`: an evidence note.
-MANUAL = set(rng("IO", 1, 7) + ["PV-01", "NM-05", "NM-06", "UI-02", "UI-04", "EV-03"] + rng("CS", 1, 5))
+MANUAL = set(rng("IO", 1, 7) + ["PV-01", "NM-05", "NM-06", "UI-02", "UI-04", "EV-03", "AU-04", "MT-02", "CS-07"] + rng("CS", 1, 5))
 
 
 def load_map():

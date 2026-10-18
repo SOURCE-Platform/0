@@ -28,6 +28,7 @@ fn rotate(fx: &Fx) -> serde_json::Value {
     fx.op(json!({"op": "rotate_recovery_key"}))
 }
 
+/// ST-03 (ROTATING_KEYS): a lock during the key change commits nothing.
 #[test]
 fn staged_before_the_sheet_and_a_lock_during_it_voids_the_sheet() {
     let _g = serial();
