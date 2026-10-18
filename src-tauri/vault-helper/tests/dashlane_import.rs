@@ -37,6 +37,7 @@ fn kinds(fx: &Fx) -> Vec<String> {
     k
 }
 
+/// IM-02: re-importing the same file adds nothing — all duplicates.
 #[test]
 fn the_mixed_zip_imports_every_type_once() {
     let _g = serial();
@@ -95,6 +96,8 @@ fn row_rules_each_fixture() {
     fx.remove_dir();
 }
 
+/// IM-03: the same identity with a changed password is a duplicate; the
+/// vault's item (and its password) is kept, and the report counts it.
 #[test]
 fn an_item_already_in_the_vault_is_a_duplicate() {
     let _g = serial();
@@ -134,6 +137,9 @@ fn bad_paths_are_refused_before_any_prompt() {
     fx.remove_dir();
 }
 
+/// IM-01 (in part): no op computes fingerprints while the vault is locked —
+/// the import is refused; the fingerprint key derives from the VK
+/// (`import_log::fingerprint`, HKDF `ov0/import-fingerprint/v1`).
 #[test]
 fn presence_refused_imports_nothing_and_locked_refuses() {
     let _g = serial();
@@ -238,5 +244,25 @@ fn a_lock_request_stops_the_import() {
     assert_eq!(r["report"]["imported"], 0);
     fx.core.lock().unwrap().lock(vault_helper::vault::LockReason::Explicit);
     assert!(!vault_helper::vault::LOCK_REQUESTED.load(std::sync::atomic::Ordering::SeqCst), "the lock clears the request");
+    fx.remove_dir();
+}
+
+/// IM-04 / IM-06: after a vault-key rotation the fingerprints were
+/// recomputed under the new key, the salt is unchanged, and re-importing a
+/// pre-rotation file still finds every duplicate.
+#[test]
+fn a_rotation_keeps_imports_idempotent() {
+    let _g = serial();
+    let fx = fx();
+    setup_and_unlock(&fx);
+    assert_eq!(counts(&import(&fx, &fixture("valid-minimal.csv"))), (2, 0, 0));
+    let salt = |fx: &Fx| fx.core.lock().unwrap().store.as_ref().unwrap().header.import_fp_salt.0;
+    let (before, gen) = (salt(&fx), fx.core.lock().unwrap().store.as_ref().unwrap().header.vk_generation);
+    fx.push_panel(submitted(MP));
+    assert_eq!(fx.op(json!({"op": "rotate_recovery_key"}))["ok"], true);
+    let after_gen = fx.core.lock().unwrap().store.as_ref().unwrap().header.vk_generation;
+    assert!(after_gen > gen, "the vault key rotated");
+    assert_eq!(salt(&fx), before, "IM-06: import_fp_salt unchanged");
+    assert_eq!(counts(&import(&fx, &fixture("valid-minimal.csv"))), (0, 2, 0), "IM-04: still all duplicates");
     fx.remove_dir();
 }

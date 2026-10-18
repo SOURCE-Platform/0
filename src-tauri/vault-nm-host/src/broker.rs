@@ -106,10 +106,21 @@ mod tests {
         assert_eq!(translate(&vec![b' '; MAX_FRAME + 1]), Err("TOO_LARGE"));
     }
 
+    /// NM-02 (no origin argument) and NM-03 (another extension's origin).
     #[test]
     fn only_the_pinned_extension_may_call() {
         assert!(!caller_allowed(&["nm-host".into()]));
         assert!(!caller_allowed(&["nm-host".into(), "chrome-extension://someoneelse/".into()]));
         assert!(!caller_allowed(&["nm-host".into(), "chrome-extension:///".into()]), "an empty id never matches");
+    }
+
+    /// NM-04: the development extension id exists in debug builds only —
+    /// the release definition is a constant `None` (a code assertion: a
+    /// debug test binary cannot itself be a release build).
+    #[test]
+    fn nm04_the_dev_id_is_debug_only() {
+        let src = include_str!("broker.rs");
+        assert!(src.contains("#[cfg(not(debug_assertions))]\npub const DEV_ID: Option<&str> = None;"));
+        assert!(src.contains("#[cfg(debug_assertions)]\npub const DEV_ID: Option<&str> = option_env!"));
     }
 }

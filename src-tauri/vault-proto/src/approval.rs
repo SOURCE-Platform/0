@@ -219,11 +219,19 @@ mod tests {
         assert_eq!(decode_cancel(&encode_cancel(&[7; 16])), Some([7; 16]));
     }
 
+    /// DA-12, SC-02: an action on a credential without its
+    /// `credential_ref` — `fill_password` or `update_password` (action 5) —
+    /// is refused at decode, as a challenge and as a signed approval.
     #[test]
     fn the_ref_matches_the_action() {
         let mut c = sample();
         c.credential_ref = None;
         assert!(c.encode().and_then(|b| Challenge::decode(&b)).is_err());
+        let mut u = sample();
+        u.action = Action::UpdatePassword;
+        u.credential_ref = None;
+        assert!(u.encode().and_then(|b| Challenge::decode(&b)).is_err(), "action 5 without a ref");
+        assert!(u.signed(&[9; 64]).map_or(true, |b| decode_signed(&b).is_err()), "nor as a signed approval");
         c.action = Action::UnlockVault;
         assert!(c.encode().and_then(|b| Challenge::decode(&b)).is_ok());
     }

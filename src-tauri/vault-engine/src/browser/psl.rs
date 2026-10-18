@@ -88,6 +88,8 @@ pub fn registrable(host: &str) -> Option<String> {
 mod tests {
     use super::registrable;
 
+    /// BR-15 (v0.6): the boundary corpus against the vendored snapshot —
+    /// the extension holds no PSL code, so there is nothing to drift from.
     #[test]
     fn the_boundaries_the_spec_names() {
         assert_eq!(registrable("github.com").as_deref(), Some("github.com"));
@@ -100,6 +102,7 @@ mod tests {
         assert!(super::version().starts_with("20"));
         assert_eq!(registrable("192.168.1.5"), None, "an IP literal has none");
         assert_eq!(registrable("45.33.1.5"), None);
+        assert_eq!(registrable("shop.xn--p1ai"), None, "a punycode suffix: fail closed");
     }
 
     #[test]

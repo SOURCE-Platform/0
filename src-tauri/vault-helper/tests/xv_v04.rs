@@ -57,6 +57,9 @@ fn recovery_auth_compositions_recompute() {
     }
 }
 
+/// PR-03 (XV-REQSIG): canonical requests and prehashes; both signature
+/// classes verify. The recovery-class bytes are pinned exactly by
+/// `xv_vectors_match_committed_files` (RFC 6979 determinism).
 #[test]
 fn request_signatures_verify() {
     let doc = committed("xv_reqsig");
