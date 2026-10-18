@@ -48,7 +48,9 @@ PHASES["j"] = sorted(set(
     + rng("TR", 1, 9) + rng("ST", 1, 5) + rng("PR", 1, 6) + rng("UI", 1, 5) + rng("CS", 1, 8)
 ))
 # Shown by a person or a device, never by `cargo test`: an evidence note.
-MANUAL = set(rng("IO", 1, 7) + ["PV-01", "NM-05", "NM-06", "UI-02", "UI-04", "EV-03", "AU-04", "MT-02", "CS-07"] + rng("CS", 1, 5))
+MANUAL = set(rng("IO", 1, 7) + ["PV-01", "NM-05", "NM-06", "UI-02", "UI-03", "UI-04", "EV-03", "AU-04", "MT-02", "CS-07"] + rng("CS", 1, 5))
+# Re-review VER-B1: Phase I's own gate condition (10^5 rows < 60 s), by name.
+STRESS = ("cargo:source-vault-helper:--test dashlane_import", "a_hundred_thousand_rows_stream_in")
 
 
 def load_map():
@@ -101,7 +103,10 @@ def main():
     for i in required:
         note = EVIDENCE / f"{i}.md"
         if i in MANUAL:
-            status = "MANUAL ok" if note.exists() else "MANUAL: evidence missing"
+            # A note counts only when it records a result (re-review VER-B2).
+            text = note.read_text() if note.exists() else ""
+            done = "Result:" in text and "still to do" not in text.lower()
+            status = "MANUAL ok" if done else ("MANUAL: evidence incomplete" if text else "MANUAL: evidence missing")
         elif not m.get(i):
             status = "MISSING"
         elif a.map_only:
@@ -112,6 +117,14 @@ def main():
         bad = status.startswith(("MISSING", "FAILED", "MANUAL: evidence"))
         failed += bad
         print(f"{'FAIL' if bad else 'pass'}  {i:8} {status}")
+    if a.phase in ("i", "j"):
+        if a.map_only or not a.stress:
+            print("FAIL  STRESS   the 10^5-row import (< 60 s) runs only with --stress")
+            failed += 1
+        else:
+            got = run_binary(STRESS[0], True).get(STRESS[1], "not run")
+            print(f"{'pass' if got == 'ok' else 'FAIL'}  STRESS   {STRESS[1]}={got}")
+            failed += got != "ok"
     print(f"\nphase {a.phase}: {len(required) - failed}/{len(required)} IDs evidenced" + (" (map only)" if a.map_only else ""))
     sys.exit(1 if failed else 0)
 

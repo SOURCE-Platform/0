@@ -196,13 +196,17 @@ fn spawn_tick(
         if shutdown.load(Ordering::SeqCst) {
             return;
         }
+        // A busy core (a long op such as an import) is not waited on just
+        // to ask whether auto-lock is due: this thread must stay free to see
+        // a sleep or screen-lock trigger (re-review SEC-I2).
         let reason = match triggers.take() {
             Some(reason) => Some(reason),
-            None if lock_core(&core).auto_lock_due() => Some(LockReason::Timeout),
+            None if core.try_lock().is_ok_and(|c| c.auto_lock_due()) => Some(LockReason::Timeout),
             None => None,
         };
         if let Some(reason) = reason {
             panel_cancel.store(true, Ordering::SeqCst);
+            crate::vault::request_lock(); // a long op holding the core stops for it
             let events = lock_core(&core).lock(reason);
             for event in events {
                 hub.emit(event);

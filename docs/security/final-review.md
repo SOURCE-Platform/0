@@ -89,3 +89,60 @@ VER-O13 "all-dialects" single CSV fixture, VER-O14 (`luhn_ok` placement),
   either split nm-host into its own tiny crate or record the deviation.
 - **Q4 (VER-I11).** Browser card autofill: not built. Keep it out of v1
   (cards stay reveal-only) or build it before the first real credential?
+
+## Re-review (2026-10-18) — bounded, of the fixes `d59b94d..45c4330`
+
+Three reviewers (security, verification, spec) checked the fixes only.
+Closed: core 1, 2, 6; VER-B1; RG-06; SPEC-B4 (import_log half); VER-I1;
+SPEC-I1; class↔identifier binding; nm-host split; SPEC-I9; the Trash gating;
+VER-O3/O8/O10; SPEC-I7/VER-I8/VER-I12. Fixed during the re-review: a sleep or
+screen lock now stops an import too (SEC-I2/VER-I2 — the tick thread no longer
+waits on a busy core, and sets `LOCK_REQUESTED`); the breach checklist no
+longer claims the cutoff before upload (SEC-O3); the gate now requires a
+`Result:` line in evidence notes, treats UI-03 as manual, and fails Phase I/J
+without the 10⁵-row stress run (VER-B1/B2 in part).
+
+**Open when the owner paused the vault (2026-10-18)** — in the order to do
+them; details in each reviewer's report quoted in the session, summarized in
+`vault-status-and-next-steps.md` §4 Step 1:
+
+1. **Damaged record still blocks revocation for good** (SEC-B1 / spec SPEC-B1;
+   SPEC-B4's revision half NOT closed). `rotation::unreadable` scans every
+   revision, history included; delete and restore only add rows, so the named
+   item can never be cleared from the app. Needs an owner decision on the
+   remedy: repair the damaged revision from the provider's copy of the same
+   `revision_id` (checked against the signed index's blob hash), or remove a
+   named damaged item's unreadable revisions when the user deletes it. Then a
+   test: damage → remedy → `revoke_device` succeeds; and the iPhone message
+   names the items.
+2. **Connect-then-exec still passes peer authentication** (SEC-I1 NOT closed).
+   macOS reports the audit token of the socket's last user, not the
+   connector; a client can connect, fork, exec the signed app, and let the
+   unsigned child talk. Fix: keep the verified token and re-check it after
+   every frame read (helper) and every reply read (nm-host); add a
+   connect→hello→exec gate row. §23.2's claim is too strong until then.
+3. **CSV reader edge cases** (VER-I1): after a record goes bad, quote state is
+   tracked with `field.is_empty()` while `field` is no longer taken at commas
+   — a stray quote or a >256 KiB record of several fields can yield a phantom
+   row or swallow the rest. Fix: an explicit `at_field_start` flag, take/clear
+   `field` at every comma; unit tests for the three cases in the report.
+4. **Spec text** (spec re-review I1–I7, O1–O4): §13.1–§13.3 AUTHORIZING and
+   §6.B vs §7.1; §1.4 pid wording; §1.5 `unlock` "or phone approval"; §9.3
+   schema; §23.1 push rows, `authorize_abort`, approval op states; ops 7/8 in
+   §22.8 and the wire annex; §17.1 flate2 "in helper: yes"; §23.7 "every key
+   change" vs `setup_retry_handle` and adoption; the serving states of ops
+   7/8 and what a lock does to pending approvals; RE rows (§22.13, §23.8);
+   MT-02's row vs the retirement; `ov0/meta` in §2.9; §3.7 kind 3.
+5. **Gate honesty** (VER-B2, VER-I4, spec I6): file-header IDs are credited to
+   every test in a file (BR-08/BR-15 in `browser_rules.rs`, UI-05 in
+   `vault_rk_ops.rs`); MA-01…10, XV-TLV and XV-HPKE-SE are not gated;
+   `phase-j-gate.sh` covers only the ID rows of §19; IM-01's XV-HKDF part;
+   untested fixes: the half-finished `renroll_finish` boot sweep, the lock
+   race in `renroll_complete`, the join proof-before-body.
+6. **Smaller:** SEC-O1 (read the header before the registry so an interrupted
+   rotation never looks like a rollback); SEC-O2 (a duplicate whose password
+   differs should keep the export); VER-O1 (count dropped `import_log` rows);
+   VER-O2 (RE-02/RE-04 assert which check refused); VER-O4 (page-supplied
+   username in the Touch ID text); `scripts/audit-deps.sh` fails on
+   RUSTSEC-2026-0346…0349 (rustls via the app's `axum-server`, not the
+   helper).

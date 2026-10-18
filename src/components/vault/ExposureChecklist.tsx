@@ -32,9 +32,9 @@ export function ExposureChecklist({ deviceName, onClose }: { deviceName: string;
         <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
         <div className="max-w-[65ch] text-sm leading-6 text-amber-100">
           <p>
-            <strong>{deviceName}</strong> was removed and can no longer open the vault or reach
-            your backup. But if it was stolen or misused while it was unlocked, everything in the
-            vault could have been read. Change these passwords at each website — start with email,
+            <strong>{deviceName}</strong> was removed from this vault. It is cut off from your backup
+            once this change has been uploaded (see the backup status above). If it was stolen or
+            misused while it was unlocked, everything in the vault could have been read. Change these passwords at each website — start with email,
             banking and anything that can reset other accounts.
           </p>
           <p className="mt-1 text-xs text-amber-200/80">

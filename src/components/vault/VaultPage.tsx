@@ -38,6 +38,7 @@ import { AddLoginForm } from "./AddLoginForm";
 import { ImportDashlaneCard } from "./ImportDashlaneCard";
 import { AddNoteForm } from "./AddNoteForm";
 import { DamagedItemsNotice } from "./DamagedItemsNotice";
+import { VaultUnfinishedBanner } from "./VaultUnfinishedBanner";
 
 export function VaultPage() {
   const [state, setState] = useState<VaultState>("unknown");
@@ -160,6 +161,8 @@ export function VaultPage() {
           </div>
         )}
       </div>
+
+      <VaultUnfinishedBanner />
 
       {error && (
         <div className="mt-4 flex items-start gap-3 rounded-2xl border border-red-500/30 bg-red-950/15 px-4 py-3">
