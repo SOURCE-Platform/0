@@ -21,6 +21,13 @@ const LOC_SIG: u32 = 0x0403_4b50;
 pub const MAX_MEMBERS: usize = 64;
 pub const MAX_MEMBER: u64 = 1 << 30;
 
+impl Member {
+    /// The size its central-directory entry declares.
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Member {
     /// The file name, lower-cased, without any folder part.

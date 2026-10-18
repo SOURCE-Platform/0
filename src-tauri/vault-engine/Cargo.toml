@@ -31,7 +31,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 # Phase I: Dashlane ZIP members (deflate). Already in Cargo.lock and
 # exempted in supply-chain/config.toml; adds flate2, miniz_oxide,
 # crc32fast, adler2, simd-adler32 to the helper graph.
-flate2 = "1.1"
+# The pure-Rust backend only, pinned (final review: the review note for
+# flate2 relies on the C-zlib backends never being compiled;
+# scripts/audit-deps.sh fails if a zlib feature appears).
+flate2 = { version = "1.1", default-features = false, features = ["rust_backend"] }
 # The member CRC check (final review SPEC-I6 #5); already in the graph via flate2.
 crc32fast = "1.4"
 

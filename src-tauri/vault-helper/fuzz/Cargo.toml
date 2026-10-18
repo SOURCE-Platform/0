@@ -27,3 +27,9 @@ name = "fuzz_dashlane_row"
 path = "fuzz_targets/fuzz_dashlane_row.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_dashlane_zip"
+path = "fuzz_targets/fuzz_dashlane_zip.rs"
+test = false
+doc = false

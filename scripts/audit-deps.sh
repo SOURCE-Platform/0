@@ -52,3 +52,11 @@ if cargo tree -p source-vault-helper --prefix none | grep -qE '^rsa '; then
     exit 1
 fi
 echo "vault-helper dependency graph: no rsa"
+
+# The flate2 review note (supply-chain/audits.toml) covers its pure-Rust
+# backend only: no C zlib backend may be enabled in the helper's graph.
+if cargo tree -p source-vault-helper -e features -i flate2 2>/dev/null | grep -qE 'flate2 feature "(any_zlib|any_c_zlib|zlib|zlib-ng|zlib-ng-compat|zlib-rs|cloudflare_zlib)"'; then
+    echo "error: a C zlib backend of flate2 entered the vault-helper graph" >&2
+    exit 1
+fi
+echo "vault-helper flate2: pure-Rust backend only"

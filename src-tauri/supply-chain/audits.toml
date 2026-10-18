@@ -5,7 +5,9 @@
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "2.0.1"
-notes = "Phase I (Dashlane ZIP), via miniz_oxide. Adler-32 only; #![forbid(unsafe_code)]; no build script, no I/O. Final review 2026-10-17 (owner Q3)."
+notes = """
+Phase I, via miniz_oxide. Adler-32 only; #![forbid(unsafe_code)]; no build script, no I/O. Release 2.0.0 audited safe-to-deploy, ub-risk-0 by Chromium (Google audit set).
+"""
 
 [[audits.aead]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -71,7 +73,9 @@ notes = "CPU feature-bit plumbing for crypto-bigint. RustCrypto/utils. Pure Rust
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "1.5.0"
-notes = "Phase I ZIP member CRC check (import/zip.rs verify_member). CRC-32 only. unsafe confined to the two CPU-specific kernels (aarch64 CRC intrinsics, x86 pclmulqdq) behind runtime feature detection; build.rs only runs `rustc --version` to set a cfg. No runtime I/O. Final review 2026-10-17 (owner Q3)."
+notes = """
+Phase I ZIP member CRC check (import/zip.rs verify_member). CRC-32 only. unsafe confined to the two CPU-specific kernels (aarch64 CRC intrinsics, x86 pclmulqdq) behind runtime feature detection; build.rs only runs `rustc --version` to set a cfg. No runtime I/O. Release 1.4.2 audited safe-to-deploy by Chromium (Google audit set).
+"""
 
 [[audits.crypto-bigint]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -125,7 +129,9 @@ notes = "Finite-field traits (ebfull). Pure Rust; unsafe in 1 file. Trait defini
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "1.1.9"
-notes = "Phase I: DeflateDecoder over a ZIP member, default rust_backend (miniz_oxide). unsafe exists only in the C-zlib backends (ffi/c.rs, mem.rs paths behind any_zlib), not compiled here; no build script; no network/process/fs use. Output is cut at the member's declared size by the caller. rust-lang/flate2-rs. Final review 2026-10-17 (owner Q3)."
+notes = """
+Phase I: DeflateDecoder over a Dashlane ZIP member. Pure-Rust backend only, pinned in vault-engine/Cargo.toml (default-features = false, features = ["rust_backend"]) and enforced by scripts/audit-deps.sh, which fails if any C-zlib feature (any_zlib, zlib, zlib-ng, cloudflare_zlib) enters the helper graph; the crate's unsafe code is confined to those C backends. No build script; no network/process/fs use. Fuzzed through our ZIP path (fuzz_dashlane_zip, 1,169,555 runs / 120 s, no failure, 2026-10-18). Earlier release 1.0.30 audited safe-to-deploy by Chromium (Google audit set). rust-lang/flate2-rs.
+"""
 
 [[audits.group]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
@@ -167,7 +173,9 @@ notes = "In-place buffer abstraction behind aead/cipher. RustCrypto (tarcieri). 
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
 criteria = "safe-to-deploy"
 version = "0.8.9"
-notes = "Phase I inflate backend under flate2; parses untrusted export bytes. #![forbid(unsafe_code)]; no build script, no I/O; bounds-checked decoder; not yet fuzzed through our ZIP path (carried in final-review.md). Final review 2026-10-17 (owner Q3)."
+notes = """
+Phase I inflate backend under flate2; parses untrusted export bytes. #![forbid(unsafe_code)]; no build script, no I/O. Fuzzed through our ZIP path with flate2 (fuzz_dashlane_zip, 1,169,555 runs / 120 s, no failure, 2026-10-18); every member is CRC-32 and size checked before use and its output is cut at the declared size (import/zip.rs, asserted in the fuzz target and unit test).
+"""
 
 [[audits.objc-sys]]
 who = "Adam <145073191+adam7rans@users.noreply.github.com>"
