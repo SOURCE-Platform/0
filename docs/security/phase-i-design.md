@@ -38,9 +38,9 @@ every fixture comes from `scripts/gen-dashlane-fixtures.py` (fixed seed,
    object list each time (13 ms/row, quadratic). Rows are sealed at once —
    only ciphertext waits — and committed 5000 at a time; a failing batch
    rolls back with its `import_log` rows.
-5. **ZIP CRC** is not checked: rows are imported as they stream, so a
-   failure at the end could not undo them. A damaged deflate stream ends
-   the member with a read error.
+5. ~~ZIP CRC not checked~~ — superseded (final review): each member's
+   CRC-32 and exact size are checked before any of its rows is read; a
+   damaged member is refused and reported.
 6. **"Savable text" report** is "Copy report" (clipboard), not a file.
 
 ## Not yet (carried to the final review)

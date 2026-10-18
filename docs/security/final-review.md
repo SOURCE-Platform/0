@@ -21,11 +21,11 @@ decision) · **Rejected** (finding not upheld, with the reason).
 | VER-B1 / SPEC-I4 / core 3 | Browser saves bypass the §22.14 read-only rule | **Fixed** `b47bcd7` — the three ops are authoring ops; test `browser_saves_are_refused_while_behind` |
 | VER-B2 / SPEC-I5 / SEC-O1 | Importer: oversized record swallowed the rest; read error taken as end of file; no damage detection | **Fixed** `b47bcd7` — record read to its real end with quotes tracked; `Row::Failed`; ZIP member CRC-32 and size checked before any row; damaged members reported; tests and fixtures `oversized-quoted.csv`, `damaged.zip` |
 | SPEC-B4 (import_log half) | One unreadable `import_log` row blocks every rotation (and so revocation) | **Fixed** `620f4f8` — the row is dropped and counted; test `a_damaged_import_log_row_never_blocks_a_rotation` |
-| SPEC-B4 (revision half) | One unreadable *revision* stops every rotation | **Owner** — see Q1 below |
+| SPEC-B4 (revision half) | One unreadable *revision* stops every rotation | **Fixed per owner Q1** `4b5fa7d` — stops before any prompt, names the items (`damaged`, `damaged_records` event), the app says to restore or delete them; nothing set aside; test `a_damaged_record_stops_a_key_change_and_is_named`; spec §23.7 |
 | VER-B4 | Reverse-enrollment failure paths untested | **Fixed** `d6e9432` — RE-02, RE-05, RE-06 (pending revocation = pending rotation, not fresh), RE-07, RE-08. RE-04 (bundle negatives) and RE-10 are **Carried** to the gate work below; RE-12 contradicts design §11a and is removed from the design (Spec) |
 | SPEC-B1 / VER-B3 | No F.2/G/H/I gate scripts; §19 IDs without tests; a gate run would pass vacuously | **Pending (in progress)** — gate scripts that assert every §19 ID by test name and fail on skips; the readiness table below lists what is missing |
-| SPEC-B2 | Spec still says F.2e is unspecified | **Spec (pending)** |
-| SPEC-B3 | §1.5 / §13.2 do not list the G/H/F.2e ops; ops 7/8 missing from §22.8 | **Spec (pending)**; the app class's access to `approval_request/take` and `push_wake_request` is recorded there |
+| SPEC-B2 | Spec still says F.2e is unspecified | **Spec** — corrected in place; §23.1/§23.8 (v0.6) |
+| SPEC-B3 | §1.5 / §13.2 do not list the G/H/F.2e ops; ops 7/8 missing from §22.8 | **Spec** — §23.1 catalogue, renames, ops 7/8 (UNLOCKED and COMPROMISED); app-class approval ops a recorded residual |
 
 ## Important
 
@@ -42,15 +42,15 @@ decision) · **Rejected** (finding not upheld, with the reason).
 | VER-I6 | BR-19 answered PRESENCE_DENIED; DA-02 NOT_AUTHORIZED untested | **Fixed** `b47bcd7`, `413ca8b` |
 | VER-I7 | App class → `browser_*` refusal untested | **Fixed** `413ca8b` (`tests/ipc.rs`) |
 | SPEC-I5 (delete offer) / VER-O7 | Trash offered even when items were left out | **Fixed** `b47bcd7` — `keep_export` withholds it in the UI and the command |
-| SPEC-I2 | Phase G spec text stale (§7.1, AUTHORIZING, action 4, §2.9) | **Spec (pending)** |
-| SPEC-I3 | Phase H spec text (§9.4 ASCII hosts, BR-15, XV-ORIGIN, iframes, op names, §9.9 rate limit scope) | **Spec (pending)**; rate limit is global (stricter than "per session") |
-| SPEC-I6 | Phase I deliberate differences need amendments | **Spec (pending)** — drafts accepted as written by the reviewer, adjusted to the fixes (CRC now checked; keep_export) |
-| SPEC-I7 / VER-I8 | flate2 family on bootstrap exemptions, not audited | **Owner** — see Q3 |
+| SPEC-I2 | Phase G spec text stale (§7.1, AUTHORIZING, action 4, §2.9) | **Spec** — §7.1 rewritten; §23.3 strings |
+| SPEC-I3 | Phase H spec text (§9.4 ASCII hosts, BR-15, XV-ORIGIN, iframes, op names, §9.9 rate limit scope) | **Spec** — corrected in place; §23.5 |
+| SPEC-I6 | Phase I deliberate differences need amendments | **Spec** — §10.1 in place, §23.4, §23.6, §17.1 rows |
+| SPEC-I7 / VER-I8 | flate2 family on bootstrap exemptions, not audited | **Fixed per owner Q3** `08550cd`, `b421174` — written notes, pure-Rust backend pinned and guarded, ZIP path fuzzed, Google/Mozilla sets imported |
 | SPEC-I8 | Gate script check 12 / UI-05 / PR-01 / EV-03 scope | **Pending** with the gate work |
-| SPEC-I9 | Unsigned `GET /v1/vault/registry` route and SourceMobile's vault catch-up still live | **Owner** — see Q2 |
-| VER-I9 | Spec not amended for what was built | **Spec (pending)** — same as SPEC-B2/B3/I2/I3/I6 |
-| VER-I11 | Card fill and DA-10/DA-11 not built, not recorded | **Carried** — logins only in the browser for v1; recorded in `phase-h-design.md`; see Q4 |
-| VER-I12 | nm-host links the whole helper crate (§17.2: serde only) | **Owner** — see Q3 |
+| SPEC-I9 | Unsigned `GET /v1/vault/registry` route and SourceMobile's vault catch-up still live | **Fixed per owner Q2** `08532a0`; SourceMobile `357c5c8` (its repo, not pushed) |
+| VER-I9 | Spec not amended for what was built | **Spec** — v0.6 amendment §23 |
+| VER-I11 | Card fill and DA-10/DA-11 not built, not recorded | **Owner Q4: logins only in v1** — spec §23.5 |
+| VER-I12 | nm-host links the whole helper crate (§17.2: serde only) | **Fixed per owner Q3** `0b7b586` + `c527924` — own crate, `serde_json` only |
 | core 4 | A joined Mac has no exit if its enrollment never lands | **Carried** — rare (two phones racing); recovery path exists (delete the vault folder by hand); recorded |
 
 ## Minor (all fixed unless noted)
@@ -71,7 +71,7 @@ fails closed after the ACK), VER-O12 (length audit skips extension/fuzz),
 VER-O13 "all-dialects" single CSV fixture, VER-O14 (`luhn_ok` placement),
 §10.7's "≤ 2× allocation" fuzz invariant.
 
-## Owner questions
+## Owner questions (answered 2026-10-17: Q1 stop and name; Q2 remove both; Q3 fix both properly; Q4 logins only)
 
 - **Q1 (SPEC-B4, revision half).** A vault record that can no longer be
   decrypted (disk damage, tampering) makes every key change fail — including

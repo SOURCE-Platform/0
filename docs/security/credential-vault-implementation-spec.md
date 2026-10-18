@@ -2,9 +2,10 @@
 
 **Status:** Implementation specification **v0.4** (2026-09-24), with the
 owner-approved **v0.4.1 amendment** (2026-09-29, §4.7 catch-up order and
-the §4.8 anchoring rule) and the **v0.5 amendment** (2026-09-30, candidate
-under review: §22, Phase F.2 — the iPhone vault engine, direct peer sync
-and the owner decisions F2-D1 … F2-D5). Phases A–E and E.1 are implemented
+the §4.8 anchoring rule), the **v0.5 amendment** (2026-09-30: §22, Phase
+F.2 — the iPhone vault engine, direct peer sync and the owner decisions
+F2-D1 … F2-D5) and the **v0.6 amendment** (2026-10-17: §23 — Phases
+F.2e, G, H and I as built, from the final review). Phases A–E and E.1 are implemented
 and verified against v0.3.1; **Phase F is implemented**, with its gate
 of record and open items in `phase-f-verification.md`. This document is normative;
 it does not by itself authorize implementation. Supersedes v0.3.1.
@@ -18,7 +19,7 @@ status that replaces the §4.7 Mac refresh (§22.5–§22.9); on-disk staging
 of fully staged publications (§22.11); COMPROMISED only on own-device
 evidence, with the §15 `SIGNATURE_INVALID` erratum and an exit proposal
 for owner review (§22.12); SY-13 read-only (§22.14). Reverse enrollment
-(F2-D4) is reserved for its own design review (§22.13).
+(F2-D4) is §22.13, built in F.2e (v0.6, §23.8).
 **v0.4 changes (Phase F design closure, owner-approved; source:
 `docs/security/phase-f-design-closure.md` revision 3, commit `cfc6b80`):**
 provider requests are authenticated by P-256 signatures over a canonical
@@ -1966,23 +1967,28 @@ challenge, the approval, or any relay (v0.3 §15.2).
 
 ## 7. iOS / APNs approval architecture
 
-### 7.1 Foreground path
+### 7.1 Foreground path (v0.6 — as built in Phase G)
 
-Source iOS app (v0.5: the SOURCE Vault app, §22.3) open (or opened by tapping the alert) → connects to the Mac
-over the existing pinned TLS channel (`core/mobile` server) → vault scope
-authenticated by device challenge-response, not legacy bearer tokens:
+SOURCE Vault (§22.3), open or opened from the alert, fetches the waiting
+challenges from its Mac **over the authenticated peer channel** (§22.8):
+peer operation **7 `peer_approvals`** returns the §6.5 challenges naming
+this phone and that Mac; the phone keeps only unexpired ones naming
+itself. It shows the site, the action, **the account the request
+releases** (title and username, resolved in the phone's own store while
+it is open; otherwise "one saved item") and **the asking Mac's registry
+name**; on Approve it asks for Face ID / passcode and signs exactly that
+challenge; peer operation **8 `peer_approve`** carries the signed TLV
+back, and the Mac runs §6.6 with the authenticated sender. Both
+operations are served while the Mac is UNLOCKED or COMPROMISED (a fill is
+a read, §13.2) and refused to a revoked or non-iOS peer before any §6.6
+check. The v0.4 `AUTH_HELLO` / `ov0/session/v1` session and the
+`/v1/vault/approvals/pending` relay are **not built and withdrawn**.
 
-```text
-Phone → Mac: AUTH_HELLO {device_id, client_nonce}
-Mac main relays to helper → helper: {server_nonce, registry seq it knows}
-Phone signs SHA-256("ov0/session/v1" ‖ nonces ‖ device_id ‖ registry_seq)
-Helper verifies against registry → session scoped to this device
-```
-
-Over that session the phone fetches pending approval challenges
-(`GET /v1/vault/approvals/pending` semantics over the relay) and returns
-signatures. All frames are opaque TLV blobs relayed by main; the mobile
-server learns message sizes and timing only.
+On the Mac, a request waiting for the iPhone does **not** enter
+AUTHORIZING: the vault stays UNLOCKED, with the pending requests held in
+memory (120 s each, §6.6), so other operations and Lock are unaffected.
+§6.5 action 4 (`unlock_vault`) is **reserved**: nothing consumes it (an
+approval cannot open a Touch-ID-bound envelope).
 
 ### 7.2 Background path (APNs)
 
@@ -2228,10 +2234,13 @@ browser session, connects to the helper socket as client class
   both — the mitigation is that the user-presence prompt and iPhone UI
   **display the claimed origin**, so a lying extension must show the user
   an origin they didn't intend (§9.9 assumptions).
-- Canonicalization (identical implementation in helper (Rust) and test
-  vectors in JS/Swift): IDN → UTS-46 punycode (`xn--` form); lowercase;
-  strip trailing dot; strip default ports (443/80); scheme must be
-  `http`/`https`; no userinfo; no trailing path. Result form:
+- Canonicalization (helper, Rust; v0.6, owner decision 2026-10-16): the
+  helper accepts **ASCII hosts only** — letter-digit-hyphen labels,
+  `xn--` A-labels included — and performs no IDN mapping: Chrome reports
+  `location.origin` and `tab.url` in punycode, and the app converts a
+  typed Unicode host to its A-label before saving. A non-ASCII host is
+  refused. Then: lowercase; strip one trailing dot; strip default ports
+  (443/80); `http`/`https` only; no userinfo; no path. Result:
   `scheme://host[:port]`.
 
 ### 9.5 Matching policy (helper-side, fail closed)
@@ -2245,7 +2254,7 @@ browser session, connects to the helper socket as client class
 | IDN/punycode host (`xn--…`) | refuse + warn banner "this site's address uses look-alike characters" unless the record was explicitly saved for that punycode host |
 | confusable rendering | helper computes a confusable skeleton (bundled Unicode `confusables.txt` subset); skeleton collision with a *different* stored host → refuse + warn |
 | host with userinfo, IP-literal trickery, dotless/decimal-IP forms | refuse |
-| cross-origin iframe | fill only the frame whose own canonical origin matches; never the parent on a child's behalf |
+| iframes | (v0.6) fills go only to the asking tab's **top frame** (`frameId 0`) while its own origin equals the approved origin; a form inside any iframe is neither filled nor offered for saving — stricter than architecture §12.2, a recorded deviation |
 | opaque origins (`data:`, `file:`, `about:`, sandboxed null origin) | refuse |
 | multiple accounts | chooser UI; no silent pick |
 
@@ -2264,15 +2273,13 @@ browser session, connects to the helper socket as client class
 
 ### 9.7 Public Suffix List
 
-- Rust: `psl` crate with a **pinned, vendored** PSL snapshot
-  (`public_suffix_list.dat` committed, versioned, updated deliberately).
-  *(Owner decision 2026-10-16: no `psl` crate — the official list is
-  vendored at `vault-engine/src/browser/public_suffix_list.dat` and read by
-  `browser/psl.rs`, the list's own algorithm, no new dependency.)*
-- Extension: `tldts` with its bundled list; the vendored PSL snapshot
-  date is recorded in both builds; shared test vectors (§16.4) pin
-  boundary behavior (`github.io`, `co.uk`, `appspot.com` …) so the two
-  implementations cannot drift silently.
+- Rust (v0.6, owner decision 2026-10-16): no `psl` crate — the official
+  list is vendored at `vault-engine/src/browser/public_suffix_list.dat`
+  (committed with its `VERSION` line, updated deliberately) and read by
+  `browser/psl.rs` with the list's own algorithm. An IP literal has no
+  registrable domain; a punycode suffix has none either (fail closed).
+- Extension: **none** — it makes no matching or PSL decision; it reports
+  both origins and the helper decides (§9.4, BR-11). No npm dependencies.
 
 ### 9.8 Save / update flows
 
@@ -2334,9 +2341,20 @@ Dashlane's web export produces either a single `.csv` (newer) or a
   not imported, and never silently dropped; other members are reported
   as unsupported (not parsed).
 
-Parser: Rust `csv` crate (RFC 4180 + lenient quoting mode), streaming
-(`Reader::records()` iterator), one row at a time. No `eval`, no
-deserialization frameworks beyond `csv`, no network, no AI involvement.
+Parser (v0.6, owner decision 2026-10-16): an in-house streaming RFC 4180
+reader (`vault-engine/src/import/csv.rs`; no `csv` crate), fuzzed whole
+(§10.7). One record at a time; quoted fields carry commas, CR/LF and
+doubled quotes; strict mode refuses a quote in an unquoted field or text
+after a closing quote, lenient mode keeps such quotes literally; the mode
+is chosen once per file (§10.3). An oversized record is read to its real
+end, quotes tracked, and skipped whole. **A read error fails that file or
+member; it is never end of input.** ZIP members (v0.6): before any row of
+a member is read, the helper decompresses it once without parsing and
+checks its CRC-32 and exact declared size; a mismatch or read error
+refuses the whole member, reported by name as damaged. The ZIP reader
+also reads `securenotes.csv` (§10.8 Choice A), and a single CSV may be a
+credentials, payments or secure-notes export. No `eval`, no
+deserialization framework, no network, no AI involvement.
 
 ### 10.2 Schema detection and field mapping
 
@@ -3443,9 +3461,9 @@ before it commits.
 vault engine (record store, rotation, re-encryption, publication), which
 is Phase F.2 (§18, §22). **v0.5:** step 1 requires the current MP (a
 stolen Mac that changed the MP → the RK, then a new MP; §22.4); step 4
-(the iPhone authorizing a replacement Mac) waits for the §22.13 review —
-until that review closes, the replacement Mac comes from total-loss
-recovery. Before Phase F.2 ships, a user whose only surviving device is an
+(the iPhone authorizing a replacement Mac) is §22.13 (F.2e, v0.6): the
+iPhone revokes the lost Mac, publishes, and then adds the new Mac by
+reverse enrollment. Before Phase F.2 ships, a user whose only surviving device is an
 iPhone uses total-loss recovery (scenarios 3/4) on a new Mac, which revokes
 every prior device, then re-enrolls the iPhone. (Revoking from another Mac
 requires Mac-to-Mac enrollment, which is not specified in v0.4; Phase F
@@ -3887,14 +3905,14 @@ iOS repo; shared vectors in `src-tauri/vault-helper/tests/vectors/`.
 | BR-05 | `xn--80ak6aa92e.com` (аррӏе-style lookalike) vs `apple.com` | refuse + warning |
 | BR-06 | confusable skeleton collision (`g00gle.example`) | refuse + warning |
 | BR-07 | stored https, page http | refuse (except localhost+`allow_http`) |
-| BR-08 | cross-origin iframe fill attempt | only matching frame filled |
+| BR-08 | iframe fill attempt; tab navigated away | only the asking tab's top frame, only while its origin is the approved one (`browser-extension/test/`) |
 | BR-09 | opaque origin (`data:` URL tab) | refuse |
 | BR-10 | replay consumed `request_id` | `APPROVAL_REPLAY` |
 | BR-11 | origin/tab_url disagreement (extension lies about one) | reject |
 | BR-12 | candidate query rate > 20/min | rate-limited |
 | BR-13 | request for `ref` belonging to another origin | `APPROVAL_MISMATCH` (origin bound at authorize time) |
 | BR-14 | locked vault | `{locked:true}`, no candidates |
-| BR-15 | PSL drift: `github.io`, `co.uk`, `appspot.com` corpus | identical decisions Rust vs JS |
+| BR-15 | PSL boundary corpus (`github.io`, `co.uk`, `appspot.com`, an `xn--` suffix, IP literals) against the vendored snapshot | decisions as the list says; the extension contains no PSL or matching code (v0.6) |
 | BR-16 | `save_update` without trusted confirmation | held pending; stored record unchanged |
 | BR-17 | update approved via helper LA sheet naming origin + account | applied as new revision; old password in `password_history`; sheet displayed no password |
 | BR-18 | update approval with mismatched origin/ref (iPhone action 5) | `APPROVAL_MISMATCH` |
@@ -4005,7 +4023,7 @@ CryptoKit-only Swift target of §22.2 stays the independent consumer):
 | XV-TLV | registry entries (all kinds, incl. v2 recovery_epoch with the §4.5 binding fields), approval payloads, manifests: canonical bytes + expected hashes + signatures/proofs |
 | XV-SAS | enrollment transcripts → 8-char SAS |
 | XV-BIP39 | RK entropy ↔ 24 words (official reference vectors + ours) |
-| XV-ORIGIN | canonicalization + matching corpus (shared with JS for BR-15) |
+| XV-ORIGIN | canonicalization + matching corpus (Rust only, v0.6) |
 | XV-RECOVERY-EPOCH | VK + manifest + new-device keys + nonce → recovery_proof (values regenerated for manifest v2) |
 | XV-OBJ (v0.4) | `OV0OBJ02` objects: canonical bytes, `blob_hash`, parse rejections |
 | XV-RECORD-AAD (v0.4) | `graph_digest`, record and meta AAD v2 |
@@ -4056,7 +4074,7 @@ commit.
 | IM-02 | re-import identical file | 0 new items, all duplicates |
 | IM-03 | same identity, changed password | duplicate; existing item kept; counted in report |
 | IM-04 | VK rotation then re-import of pre-rotation file | fingerprints recomputed under the new generation key inside the rotation transaction; dedupe still works |
-| IM-05 | `identity_ct` tampered | AEAD failure; row quarantined; no fingerprint consulted for it |
+| IM-05 | `identity_ct` tampered | AEAD failure; the row is dropped (and counted) at the next rotation, which goes through (v0.6, §23.7) |
 | IM-06 | VK rotation leaves `import_fp_salt` unchanged | header diff across rotation: salt identical; fingerprints recomputed under the new key in the same transaction (§2.10) |
 
 ### 16.12 Fresh-device freshness UX
@@ -4144,7 +4162,8 @@ Existing usable: `sha2`, `rand` (OsRng), `serde`/`serde_json`, `zeroize`-adjacen
 | `secrecy` | 0.10.x | SecretBox wrappers | widely used, tiny | complements zeroize with type-level guards | yes | yes |
 | `subtle` | 2.x | constant-time compares | RustCrypto | — | yes | tokens/secrets |
 | `rusqlite` | 0.32.x, `bundled` | vault.db | mainstream; bundled SQLite avoids system-lib variance; helper keeps sqlx out | repo's sqlx would drag the async+rsa-advisory graph into the helper | yes | encrypted blobs only |
-| `csv` | 1.x | Dashlane parsing | BurntSushi crate, stable, no history of soundness issues | none present | yes | yes (import rows) |
+| `csv` | — | **not used** (v0.6: in-house reader, §10.1) | — | — | — | — |
+| `flate2` (+ `miniz_oxide`, `crc32fast`, `adler2`, `simd-adler32`) | 1.1 | Dashlane ZIP members (§10.1) | rust-lang/flate2-rs, pure-Rust backend; written review notes in `supply-chain/audits.toml` (2026-10-17) | none present | no (output cut at the declared size) | yes (export bytes) |
 | `objc2`, `objc2-foundation` | 0.5/0.2 | LA + Security framework FFI glue | obj-c2 project, actively maintained | existing `objc` 0.2 in main graph is the legacy crate; helper uses the maintained successor | yes | no (prompt plumbing) |
 | `security-framework` | 3.x | Keychain items, SecCode checks | rust-mobile; **known SE key-agreement FFI gap** (v0.3 review) → thin in-crate FFI shim for `SecKeyCopyKeyExchangeResult`, reviewed as our own unsafe | none present | yes | handles wrapped blobs only |
 | `base32` | 0.5.x | enroll secret encoding | tiny, stable | base64 present but QR favors base32 | yes | enrollment secret (transient) |
@@ -4224,9 +4243,10 @@ same review bar.
 
 ### 17.5 npm
 
-Extension (separate `extension/` package, not the app frontend): `tldts`
-(PSL matching; processes origins, never secrets), `vite`+`typescript`
-build only. No new dependencies in the app's `package.json`.
+Extension (`browser-extension/`, not the app frontend): **no npm
+dependencies** (v0.6): plain MV3 JavaScript, no build step; it makes no
+matching decision. Its tests run with Node's built-in runner. No new
+dependencies in the app's `package.json`.
 
 ---
 
@@ -4342,7 +4362,7 @@ initiated revocation (§12 scenario 1, RC-01); direct Mac⇄iPhone peer sync
 over the pinned channel. Authorized by the owner (2026-09-29); design
 review closed (`phase-f2-design.md` revision 3); normative rules,
 milestones F.2a – F.2e, tests and gate in §22. Reverse enrollment (F.2e)
-waits for its own design review (§22.13).
+is specified in §22.13 and built (v0.6, §23).
 
 ### Phase G — iPhone remote approval
 §6.5/§6.6 + §7.1 foreground + §7.2 APNs alert path; DA-01…DA-11;
@@ -4408,7 +4428,7 @@ Every item must be verifiably green, with the named evidence:
 | 27 | independent envelope-path review | §17.4 step 5 report attached (covers `hpke` usage + the shipped Path A bridge or Path B adapter) |
 | 28 | Secure Notes decision recorded | §10.8 choice on file; if Choice B: importer report/count/no-auto-delete behavior verified on fixtures |
 | 29 | recovery-sheet printing exercised on a configured printer | one real print from the §1.7 window on a Mac with a printer set up: sheet legible, capture bracket up for the whole interaction, no file written by the helper; the standard dialog's PDF menu and spool behavior documented as-is (v0.3.1) |
-| 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Remaining before the first real credential: enforce the floor at runtime** — today it is documentation, and the app would run on hardware nobody has measured |
+| 30 | Argon2id tuple frozen with cross-device evidence | **Closed by option (b), owner decision confirmed 2026-09-21.** The v1 support floor was narrowed to **A15-class or newer** (§2.3, §21 OQ-3) rather than measuring an A12: none had been tested, and an untested support claim was not acceptable to ship. The slowest supported device is then the iPhone 13 mini measured at median 89 ms / worst 124 ms, inside the §2.3 budget, so the tuple is frozen at `m=64 MiB, t=3, p=1`. The tuple was **not** weakened; the device set was narrowed. **Enforced at runtime (v0.6):** SOURCE Vault refuses to open the vault below the `iPhone14,x` model family (`DeviceFloor.swift`, `DeviceFloorTests`); not yet tried on a real older device |
 | 31 | Phase F.2 authority, peer and staging rules proven (v0.5) | §22.16: PA-01…08, PS-01…14, AU-01…07, MT-01/02, IO-01…07 (device), SG-01…03, CX-01…05, PV-01, PW-01…12 (wire annex A.6), FFI-01, XV-PEER; `scripts/phase-f2-gate.sh` |
 
 
@@ -4502,9 +4522,8 @@ closed) and the owner decisions of 2026-09-29 recorded in its §11.1
 (F2-D1 … F2-D5). Where this section and an earlier section disagree, this
 section governs; the earlier passages it changes carry a "(v0.5, §22.n)"
 marker (a passage without one that conflicts with §22 is superseded all
-the same). **Reverse enrollment (F2-D4) is not specified here**: §22.13 holds
-its place until its own design review closes, and no implementation of it
-may start before then.
+the same). Reverse enrollment (F2-D4) is §22.13, with the operation catalogue,
+error codes and tests in §23 (v0.6).
 
 ### 22.1 Scope, precedence and the anchoring rule
 
@@ -4698,8 +4717,7 @@ RK that fails to open the wrap never reveals which check failed beyond
   provider-confirmed and survive the revocation cutoff (§22.7); if the
   provider is unreachable the flow says how many unpublished changes on
   this phone would be lost and asks the user to retry later or continue. A phone-side self-refresh would be a phone-authorized
-  enrollment and is therefore part of the §22.13 review, not of this
-  amendment.
+  enrollment; v0.6 builds only §22.13's replacement-Mac case, not this.
 - **Residuals (stated).** Whoever can change the MP can also rotate the
   RK, so the "RK, then a new MP" branch protects only an owner who acts
   before the thief has done both. A thief with the Mac login password can
@@ -5069,7 +5087,7 @@ as on the Mac (§4.8) or through §22.9.
 | revoke the Mac, rotate, publish (RC-01) | yes | MP; if the MP was changed by the stolen Mac, reset it with the RK first, then revoke (§22.4) |
 | RK rotation, MP change | yes | §22.4 |
 | revoke another phone | yes | §22.4 |
-| authorize enrolling a replacement Mac | not yet | F2-D4, §22.13 |
+| authorize enrolling a replacement Mac | yes (replacement only) | F2-D4, §22.13, §23.1 |
 | total-loss recovery onto a phone | yes | §12 scenarios 3/4 with the same checks as the Mac |
 | scenario 8 as the surviving device | yes | exposure set = the whole vault for a full-vault device |
 | restore a damaged record from a peer (§3.6) | yes | the peer's provider-confirmed revision, verified (§22.7) and AEAD-opened. §3.6's whole-vault "restore from peer device" is first materialization again (re-enrollment), not a separate mechanism |
@@ -5442,8 +5460,164 @@ after §22.13, authorizes a replacement; MP forgotten: **the RK** on a
 trusted device, not presence), §11.1 (direct peer sync implemented as
 §22.5 – §22.9), §16 (biometry-bound agreement key; own app), and C8.
 
+## 23. v0.6 amendment — as built through Phases F.2e, G, H and I (normative)
+
+**Status:** v0.6 (2026-10-17), from the final review of all designs and
+code (`final-review.md`) and the owner decisions of 2026-10-16/17. Where
+this section and an earlier passage differ, this section governs (as §22
+does for v0.5). Earlier passages that contradicted the built system were
+corrected in place and carry "(v0.6)".
+
+### 23.1 Operation catalogue additions (§1.5, §13.2)
+
+| Op | Class | State | Fields / answer | Notes |
+|---|---|---|---|---|
+| `import_dashlane` | app | UNLOCKED (not behind, not removed) | `{path}` → `{report}` | Mac only (not in `IOS_OPS`); path checked before any prompt (§23.6); **one** presence check for the whole import; an authoring op |
+| `browser_hello` | nm-host | any | → `{vault_state}` | |
+| `browser_candidates` | nm-host | any (LOCKED → `{locked:true}`) | `{origin, tab_url}` → `{request_id, origin, accounts:[{ref,title,username}], similar, warning}` | origin must equal `tab_url`'s canonical origin (BR-11); 20 a minute (global); `warning:"lookalike"` (§9.5); logins only |
+| `browser_authorize` | nm-host | UNLOCKED | `{request_id, ref, method:"local"\|"iphone"}` → `{fill, origin}` or `{approval_id, exp}` | local: presence naming the origin; iphone: a §6.5 `fill_password` challenge and an `approval_pending` event — refused with `DEVICE_NOT_AUTHORIZED` when the vault has no active iPhone |
+| `browser_fill` | nm-host | UNLOCKED | `{request_id}` → `{fill, origin}` / `{pending:true}` | after the iPhone approved; once (`APPROVAL_REPLAY`) |
+| `browser_save_new` | nm-host | UNLOCKED, authoring | `{origin, tab_url, username, password, title?}` → `{ref}` or `{needs_update: ref}` | presence prompt names account and site; never overwrites |
+| `browser_save_update` | nm-host | UNLOCKED, authoring | `{ref, origin, tab_url, password, method}` | local: presence naming account and site; iphone: §6.5 `update_password` |
+| `browser_save_update_finish` | nm-host | UNLOCKED, authoring | `{ref, origin, tab_url, password, approval_id}` | the approval must be bound to exactly this site, action and login; a replay → `APPROVAL_REPLAY`. The extension re-sends the password it already holds (no new capability) |
+| `browser_request_unlock` | nm-host | any | → `{vault_state}` | LOCKED: an `unlock_requested` event at most once per 10 s; the app comes forward on its Vault tab; unlocking never happens in the browser |
+| `approval_request`, `approval_status`, `approval_take` | app (helper-internal use by the browser ops) | UNLOCKED | | **recorded residual (final review VER-O2):** the app class can raise and consume requests; no production caller does |
+| `push_register_request`, `push_wake_request` | app | UNLOCKED / any | | §7.2 |
+| `approvals_fetch_begin`/`_step`, `approval_decide`, `approval_submit_step`, `push_register` | iPhone (FFI) | LOCKED or UNLOCKED | | §7.1 (v0.6) |
+| `renroll_begin`/`_hello`/`_proof`/`_confirm`/`_bundle_begin`/`_complete`/`_finish`/`_abort` | app | UNINITIALIZED, no `header.json` | §22.13 | one attempt at a time; `setup_vault` and recovery are refused while one is open; a lock ends it with its staging and keys |
+| `authorize_begin`/`_reply`/`_confirm`/`_finish` | iPhone (FFI) | UNLOCKED, preconditions §23.8 | §22.13 | |
+
+Renamed or withdrawn: `fill_candidates` → `browser_candidates`;
+`fill_authorize` → `browser_authorize` (+ `browser_fill`);
+`relay_to_device`/`relay_from_device` and `approval_result` → peer
+operations 7/8 (§7.1); **no op of the app class starts with `browser_`**
+— the helper refuses them to the app (and every app op to nm-host).
+§13.2's LOCKED row reads `browser_candidates`(→`locked`) for
+`fill_candidates`. Peer operations 7 `peer_approvals` and 8
+`peer_approve` join §22.8's table and the wire annex (A.3): served in
+UNLOCKED and COMPROMISED, refused to a revoked or non-iOS peer.
+
+### 23.2 Peer identity (§1.4)
+
+- Both directions resolve the peer **by audit token**
+  (`LOCAL_PEERTOKEN` → `kSecGuestAttributeAudit`), never by pid: a
+  process that connects and then execs a signed binary does not pass.
+- The class a `hello` names must match the peer's signing identifier
+  (`com.racker.zero` ↔ app, `com.racker.zero.nm-host` ↔ nm-host);
+  otherwise the connection closes before `hello_ok`.
+
+### 23.3 Domain strings (§2.9 additions)
+
+`ov0/approval/sign/v1` (§6.5 prehash), `ov0/enroll/ack/v1`,
+`ov0/renroll/commit/v1`, `ov0/renroll/transcript/v1`,
+`ov0/renroll/proof/v1`, `ov0/import-fingerprint/v1` (§10.3, HKDF info).
+
+### 23.4 `secure_note@1` (§8; §10.8 Choice A)
+
+Kind 3. Record: `{schema, title, body, created_at, updated_at}`; `title`
+NFC, 1–200 characters, the **only** metadata; `body` ≤ 64 KiB, only in
+the record ciphertext; `reveal` returns `{body}`. Never a browser
+candidate or fill; the iPhone shows it without text selection.
+
+### 23.5 Browser (§9) as built
+
+- **Logins only in v1** (owner decision 2026-10-17): card autofill (§8.2
+  card fill, §6.4 item 6, §6.5 action `fill_card`, DA-10/DA-11) is not
+  built; cards are reveal-only in the apps.
+- Registration: Chrome only (`com.racker.zero.vault.json`, one allowed
+  origin), written by the app after it checked the broker's signature;
+  release builds write nothing until the store extension id exists.
+  Chromium, Edge, Arc and Brave each need their own reviewed layer-3 row.
+- nm-host is its own crate (`vault-nm-host`), `serde_json` only (§17.2),
+  checking the helper's identity through the Security framework.
+- Save after login (§9.8): the extension holds a submitted login in its
+  worker's memory only, offers it after the page moved on, never shows
+  the password to the popup, and drops it after two minutes.
+- §9.9's rate limit is global (20 candidate queries a minute), stricter
+  than per session.
+- Layer 3 (§9.2, NM-05/NM-06) remains UNVERIFIED; the stated boundary is
+  layers 1+2+4 and the origin-naming presence prompt.
+
+### 23.6 Dashlane import (§10) as built
+
+- Path: absolute, opened `O_NOFOLLOW`, a regular file on the open handle,
+  ≤ 2 GiB, and the open file's own path (`F_GETPATH`) outside the vault
+  directory — all before any prompt.
+- `normalized_identity = u8(kind) ‖ lp(host of urls[0]) ‖ lp(username)`
+  (logins); `u8(kind) ‖ lp(label) ‖ lp(number)` (cards); `u8(kind) ‖
+  lp(title) ‖ lp(SHA-256(body))` (secure notes); `lp(x) = u32_be(len x) ‖
+  x`; fields from the **validated** record. A note whose body changed is a
+  new note.
+- Duplicates: the `import_log` fingerprints plus those of every live item
+  that opens and is neither conflicted nor quarantined, computed in memory
+  under the resident VK and wiped. A match keeps the vault's item.
+- Sealed revisions are committed in batches of ≤ 5,000, each one
+  transaction with its `import_log` rows and one manifest flip; only
+  ciphertext waits. An import is not atomic: committed batches stay; the
+  answer always carries the report, with `stopped` when it ended early.
+  `imported` counts committed rows only.
+- A lock asked for during an import stops it between rows
+  (`stopped:"LOCKED"`): §13.3's "lock is never held up" holds.
+- Values: passwords and note bodies exactly as exported (never trimmed);
+  titles and labels NFC; a local `http://` URL keeps `allow_http`. A login
+  with no URL is skipped (§8.1 needs 1–20 URLs) and counted.
+- Report: counts, categories, file names and row numbers only;
+  `keep_export` when anything did not come in (a skipped row, an
+  unsupported column such as `otpSecret`, an unsupported or damaged
+  member, a stop). "Copy report" to the clipboard; no file is written.
+- **§10.6 delete offer:** shown only when `keep_export` is false — in the
+  UI and enforced by the app's command; otherwise the copy says to keep
+  the export.
+
+### 23.7 Rotation and damaged data (§2.10, §3.6)
+
+- An `import_log` row that does not open is **dropped** during a rotation
+  and counted — it is only an idempotency cache (IM-05).
+- A **record revision** that does not open stops every key change —
+  removing a device, replacing the Recovery Key — **before any prompt**,
+  with `RECORD_CORRUPT`, `damaged: [refs]` and a `damaged_records` event
+  naming them; the app tells the user to restore an earlier version from
+  the item's history, or delete it, first. Nothing is set aside (owner
+  decision 2026-10-17).
+
+### 23.8 Reverse enrollment (§22.13) as built
+
+- Errors (§22.15): `REPLACEMENT_ONLY` (another active Mac, or a Mac
+  revocation not yet committed), `NOT_FRESH` (no provider check in the
+  freshness window); an unpublished revocation is a pending rotation and
+  answers `ROTATION_PENDING` first.
+- The joining Mac asks for the master password on every join (design
+  §11a); a lock ends the attempt on both sides; there is no LOCKED finish
+  (design RE-12 withdrawn).
+- `renroll_finish` moves the joined vault into place header-last and
+  syncs the directory; the next start sweeps a half-finished move. The
+  attempt's Secure Enclave keys are deleted only by the tag its session
+  recorded, never the vault root's (RE-08).
+- Device names are NFC-normalized, then cut to 64 characters, everywhere
+  a name enters the registry; the iPhone refuses a joining Mac's name
+  that is not already in that form.
+- Tests (§22.16 additions, part of §19 row 31): RE-01 … RE-11 as listed
+  in `phase-f2e-design.md` §8 (RE-12 withdrawn); built so far: RE-01,
+  RE-02, RE-03, RE-05, RE-06, RE-07, RE-08, RE-09, RE-11.
+
+### 23.9 Retired paths (§22.2, §22.9)
+
+The Mac's `GET /v1/vault/registry` route is removed, and SourceMobile no
+longer carries vault code (owner decision 2026-10-17): SOURCE Vault is the
+only phone-side vault.
+
+### 23.10 Recorded residuals (not fixed before the first real credential)
+
+An approved `update_password` does not attest the new value (§9.8 model);
+an origin longer than 253 characters cannot use the iPhone path; main can
+compute the join route proof (it holds the QR secret) and a wrong master
+password at join has no §15 backoff (each try needs a new QR); syncs are
+not held while an iPhone authorizes a Mac (it fails closed after the
+ACK); a Mac whose join never lands has no in-app exit (delete its vault
+folder); iframe login forms are not filled.
+
 ---
 
-*End of specification (v0.4 with the v0.4.1 amendment and the v0.5 candidate). Implementation of any phase requires explicit
+*End of specification (v0.4 with the v0.4.1 amendment, the v0.5 amendment and the v0.6 amendment, §23). Implementation of any phase requires explicit
 owner authorization; release to other users additionally requires
 independent security/crypto review (v0.3 §21).*

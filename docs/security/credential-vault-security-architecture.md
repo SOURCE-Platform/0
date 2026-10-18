@@ -743,7 +743,7 @@ The remote storage is not a recovery authority. It only returns ciphertext.
 
 | Situation | Recovery path |
 |---|---|
-| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. *(v0.4: requires the iPhone vault client, Phase F.2; until then, total-loss recovery on a new Mac, which revokes every prior device — spec v0.4 §12 scenario 1. v0.5: the SOURCE Vault iPhone revokes the Mac with the master password (§22.4); the iPhone authorizing the replacement Mac (owner decision F2-D4) awaits its own design review, §22.13.)* |
+| Mac lost, iPhone retained | Revoke Mac → automatic VK rotation → enroll replacement Mac from iPhone. *(v0.4: requires the iPhone vault client, Phase F.2; until then, total-loss recovery on a new Mac, which revokes every prior device — spec v0.4 §12 scenario 1. v0.5: the SOURCE Vault iPhone revokes the Mac with the master password (§22.4); the iPhone authorizing the replacement Mac (owner decision F2-D4) is built: spec §22.13 and v0.6 §23.8 — replacement only, after the lost Mac's revocation is published.)* |
 | iPhone lost, Mac retained | Symmetric. |
 | Both devices lost, master password remembered | Fresh supported device downloads encrypted backup → MP unwraps current VK locally → create new device identity/recovery epoch → rotate device registry credentials → re-enroll future devices. |
 | Both devices lost, master password forgotten, RK retained | Same flow, but RK unwraps current VK. |

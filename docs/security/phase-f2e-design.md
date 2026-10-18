@@ -57,9 +57,10 @@ first real credential. Synthetic data only.
    backoff); signs the `enroll` entry; seals the envelope (bound to
    `nonce_e`, as forward binds its nonce); builds the bundle; and
    **prepares everything the finish needs** — the entry, the envelope
-   file and a fully staged §22.11 publication — so the finish needs no
-   key and works while LOCKED (SEC-I5). Syncs that would move the
-   registry are held until the session ends.
+   file and a fully staged §22.11 publication. *(As built, §11a and spec
+   v0.6 §23.8: a lock ends the attempt on both sides, so the finish runs
+   UNLOCKED; syncs are not held meanwhile — a registry that moved makes
+   the finish fail closed after the ACK, a recorded residual.)*
 6. **`POST /v1/vault/renroll/bundle`** (route proof; main checks the proof
    before reading the body; refused before the panel's Continue). Helper
    `renroll_complete` runs §5's checks; on a Mac without Touch ID the
@@ -172,7 +173,7 @@ refuses `renroll_*`).
 | RE-09 | a Mac without Touch ID joins with the MP in the panel, its commitment signed at join, and opens with the MP |
 | RE-10 | a phone-recovered vault adds a Mac |
 | RE-11 | v:2 / v:3 cross-refusal; a public host refused; the route proof required |
-| RE-12 | the finish works with the iPhone vault LOCKED |
+| ~~RE-12~~ | *withdrawn (final review): there is no LOCKED finish, §11a* |
 
 Cross-language vectors for the transcript, commit, proof and SAS (XV,
 CryptoKit-only Swift target) are carried to the final review.
@@ -212,7 +213,7 @@ CryptoKit-only Swift target) are carried to the final review.
 | SEC-I2 / SPEC-I7 marker wipe, states, existing vault | §3 step 1 staging directory; UNINITIALIZED only; §8 |
 | SEC-I3 floor at join | §5 step 6 |
 | SEC-I4 / SPEC-I1 no `done` signal | §3 step 8 |
-| SEC-I5 finish needs the VK | §3 step 5: prepared at confirm, works LOCKED |
+| SEC-I5 finish needs the VK | §3 step 5: prepared at confirm; as built, a lock ends the attempt (§11a) |
 | SEC-I6 / SPEC-I3 peer sync afterwards | §7 |
 | SEC-I7 / SPEC-I4 second Mac out of scope | §1 |
 | SPEC-I5 EN collides | RE prefix |
