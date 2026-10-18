@@ -35,6 +35,9 @@ fn a_phone_engine_syncs_and_publishes_through_the_provider_path() {
     unsafe { ov0_engine_close(e) };
 }
 
+/// PS-13: a removal reported but not published locks the phone
+/// provisionally; the provider check continues and, showing this phone
+/// active, lifts the lock; nothing was deleted.
 #[test]
 fn a_provider_confirmed_state_lifts_the_removal_lock() {
     let _g = serial();
