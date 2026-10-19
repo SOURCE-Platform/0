@@ -96,13 +96,14 @@ vault are currently macOS-only.
   deleted as soon as their text is read, and screen video is not kept by
   default.
 - **Audio and transcription.** 0 records microphone audio and transcribes it
-  on-device with a bundled FluidAudio speech engine. By default only
+  on-device with Fluid Speech Mini by FluidVoice (CC BY 4.0), a Parakeet-family
+  Core ML model loaded through the FluidAudio SDK. By default only
   transcripts are kept; the audio is discarded. It follows microphone changes
   and shows which mic is recording.
 - **Dictation.** Hold Right Option to dictate into any text field. A floating
-  pill shows a live waveform and preview words. Each transcript goes to the
-  focused field and to the timeline. A custom dictionary corrects recurring
-  words.
+  pill shows a live frequency-band equalizer, a receding loudness history,
+  and preview words. Each transcript goes to the focused field and to the
+  timeline. A custom dictionary corrects recurring words.
 - **Keyboard and mouse.** 0 captures keystrokes and pointer movement at the
   operating-system level. Keyboard capture pauses whenever macOS Secure Input
   is active, for example during password entry. Screen frames and keystrokes

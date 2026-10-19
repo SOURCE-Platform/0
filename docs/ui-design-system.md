@@ -18,6 +18,10 @@ interface and is deliberately excluded from the new `.app-ui` foundations.
   12px corners, a quiet border, and no decorative shadow.
 - Use the semantic palette instead of adding competing theme declarations.
   Preserve the pointer cursor and visible keyboard focus on all controls.
+- `src/styles/interaction-cursors.css` covers native controls, interactive ARIA
+  roles, portaled menus, and custom `data-interactive="true"` controls. Labels
+  and icons inherit their control's cursor. Disabled states take precedence;
+  text fields retain the text cursor.
 
 ## Reusable components
 
@@ -45,10 +49,26 @@ existing primitive styles remain intact.
   Zoom and pan keep the existing surface mounted while ranges load. One nearby
   overview buffer is retained (half the visible range, capped at 30 minutes per
   side), with reuse limited to 30 seconds. Detailed text still loads on selection.
+  Block widths follow captured time rather than percentage minimums. Subpixel
+  markers may grow to one CSS pixel only within the gap before the next block;
+  inset borders keep tiny blocks from expanding beyond their calculated bounds.
+  Tracks are 24px high (previously 64px), with 16px standard blocks. Labels
+  align right with a 16px gap to the grid; ruler and tracks share one column layout.
 - Agents uses one divided list, consistent provider filters, and batches of
   80 conversations. All conversations remain accessible through Show more.
   No session capture, storage, remote transport, or sending behavior changes.
 - Settings keeps its horizontal categories. Reset lives only in General.
+- Settings header, category tabs, and cards share one centered 58rem column.
+  Initial loading uses an accessible spinner that respects reduced motion.
+- Timeline overview includes every capture source: input, focus, running apps,
+  system, screen evidence, vision, and attention alongside audio and OCR.
+  High-frequency inputs/camera samples use clock-aligned summary buckets,
+  bounded to roughly 600 buckets per source for a day. Event count controls
+  bar height; it does not claim exact active duration. Raw text and window
+  payloads remain outside overview responses and load only for a selection.
+- macOS keyboard and mouse listeners are currently placeholders. Capture
+  settings mark these sources unavailable and disable their controls. Their
+  tracks can represent existing historical records without claiming live capture.
 - Capture prioritizes source switches and health. Optional configuration,
   meters, and diagnostics appear inside disclosures.
 - Storage shows total/database/recordings/free space once. File paths and
@@ -61,9 +81,16 @@ existing primitive styles remain intact.
 ## Verification
 
 Run `node scripts/test-timeline-zoom.mjs`,
+`node scripts/test-timeline-blocks.mjs`,
 `node --experimental-strip-types scripts/test-timeline-range.mjs`,
 `node --experimental-strip-types scripts/test-timeline-selection.mjs`,
 `npm run build`, `npm run check:file-lengths`, and `git diff --check`.
+After building, `node scripts/test-interaction-cursors.mjs` checks production
+cursor styles against real shared controls and custom roles in headless WebKit
+(test runtime: `npx playwright install webkit`). It does not open SOURCE.
+`node scripts/test-settings-layout.mjs` checks the shared Settings column and
+loading state. `cargo test --manifest-path src-tauri/Cargo.toml --release --lib overview_tests` verifies overview
+source coverage, event aggregation, focus gaps, and on-demand window details.
 Review the native app in both themes, check expansion and tab keyboard
 navigation, and verify a selected dictation block can still copy its text.
 Do not exercise Vault credentials or destructive settings as part of UI QA.

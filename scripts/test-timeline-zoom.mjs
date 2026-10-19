@@ -10,7 +10,7 @@ const server = await createServer({
   configFile: false, root, appType: "custom", logLevel: "error",
   optimizeDeps: { noDiscovery: true, entries: [] },
   resolve: { alias: { "@": `${root}src` } },
-  server: { middlewareMode: true, hmr: false, watch: null },
+  server: { middlewareMode: true, hmr: false, ws: false, watch: null },
 });
 try {
   const { DeviceContextTimelineSection } = await server.ssrLoadModule(
@@ -47,6 +47,19 @@ try {
   assert.equal(refreshing, ready, "Refresh state must not change the timeline's rendered structure");
   const zoomed = render({ loading: true, effectiveWindowEnd: 7_200_000 });
   assert.ok(zoomed.includes("Zoom regression block"), "Cached blocks remain visible at the new zoom scale");
+  const extraRails = ["keyboard", "mouse", "focus", "visible_windows", "system", "vision", "attention", "evidence"];
+  const allSources = render({ timeline: { rails: [...timeline.rails, ...extraRails.map((id) => ({
+    id, label: `Captured ${id}`, kind: "lane", slices: [{ ...slice, id, rail: id, title: `Block ${id}` }], children: [],
+  }))] } });
+  for (const id of extraRails) {
+    assert.ok(allSources.includes(`Captured ${id}`), `Track ${id} must not be filtered out`);
+    assert.ok(allSources.includes(`Block ${id}`), `Collected ${id} blocks must be rendered`);
+  }
+  const unavailable = render({
+    timeline: { rails: [{ id: "keyboard", label: "Keyboard Activity", kind: "lane", slices: [], children: [] }] },
+    channelStatuses: [{ channel: "keyboard", health: "unavailable", details: "Keyboard capture is not available on macOS yet." }],
+  });
+  assert.ok(unavailable.includes("Keyboard capture is not available on macOS yet."));
   console.log("Timeline zoom rendering regression checks passed.");
 } finally {
   await server.close();
