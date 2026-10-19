@@ -1,10 +1,18 @@
 import FluidAudio
 import Foundation
 
-/// SwiftPM-only engine: Fluid Speech Mini (by FluidVoice, CC BY 4.0) on the
-/// Apple Neural Engine, loaded as a drop-in Parakeet v3 model. Lives in the
-/// shared FluidAudio cache in ~/Library/Application Support/FluidAudio, so
-/// every FluidAudio app on this machine downloads models once.
+/// SwiftPM-only engine: Fluid Speech Mini (by FluidVoice, CC BY 4.0), loaded
+/// as a drop-in Parakeet v3 model. Lives in the shared FluidAudio cache in
+/// ~/Library/Application Support/FluidAudio, so every FluidAudio app on this
+/// machine downloads models once.
+///
+/// The encoder runs on the GPU, not the Neural Engine. On the ANE, macOS
+/// compiles the encoder for 1-2 minutes and keeps the result only minutes
+/// (measured 2026-10-19 on an M2: a 12-minute-old compile was gone), so
+/// nearly every Source launch left dictation unusable for that long, and
+/// the compile starved the helper enough to freeze the pill and the hotkey.
+/// GPU load: ~6 s cold, under 1 s warm; FluidAudio documents it as
+/// WER-neutral and slightly faster.
 final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     private var manager: AsrManager?
     private let setup = SetupOnce()
@@ -40,9 +48,10 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
 
     /// Load Mini in the background at startup. A dictation that arrives
     /// while this is still running waits on the same load rather than
-    /// starting another one.
+    /// starting another one. Utility priority keeps the load from competing
+    /// with the hotkey, the mic and the pill on the main thread.
     func warmUp() {
-        Task {
+        Task(priority: .utility) {
             let started = Date()
             do {
                 _ = try await setupManager()
@@ -61,7 +70,11 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
         return try await setup.run {
             let directory = MiniModel.defaultDirectory()
             try await MiniModel.ensureAvailable(at: directory)
-            let models = try AsrModels.loadLocal(from: directory, version: .v3)
+            let models = try AsrModels.loadLocal(
+                from: directory,
+                version: .v3,
+                encoderComputeUnits: .cpuAndGPU
+            )
             let manager = AsrManager()
             try await manager.loadModels(models)
             self.manager = manager
