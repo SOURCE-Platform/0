@@ -4,7 +4,8 @@ import Foundation
 /// Session pill: a perspective waterfall of the live mic spectrum
 /// (snapshots receding from a full-width front line into the distance),
 /// the settings gear (opens O's dictation settings) in the left end, a
-/// copy button for the last finished dictation in the right end, the
+/// copy button for the last finished dictation in the right end (both
+/// shown only while the pointer is over the pill), the
 /// target-app icon straddling the top edge, and optional running words
 /// along the bottom. Layout lives in PillLayout. Words visibility lives in
 /// O's dictation settings and is read fresh at every session start, so no
@@ -56,6 +57,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
             self.frameTimer?.invalidate()
             self.frameTimer = nil
             self.surface?.stopCursorForcing()
+            self.hoverReveal?.setVisible(false, animated: false)
             if let origin = self.panel?.frame.origin {
                 Self.savePanelOrigin(origin)
             }
@@ -170,6 +172,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
 
     private var gearView: GearControl?
     private var copyView: CopyControl?
+    private var hoverReveal: PillHoverReveal?
 
     // MARK: - Build
 
@@ -234,6 +237,7 @@ final class ListeningIndicator: NSObject, @unchecked Sendable {
         pill.addSubview(words)
         pill.addSubview(gear)
         pill.addSubview(copy)
+        hoverReveal = PillHoverReveal(surface: pill, controls: [gear, copy])
         container.addSubview(pill)
         container.addSubview(appIcon)
         panel.contentView = container

@@ -16,6 +16,7 @@ final class PillPreview: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let defaults = UserDefaults(suiteName: "source.pill-preview")
 
     private var window: NSPanel?
+    private var hoverReveal: PillHoverReveal?
     private let spectrum = SpectrumSlots()
     private let horizon = PerspectiveWaveformView(frame: .zero)
     private let engine = AVAudioEngine()
@@ -71,12 +72,9 @@ final class PillPreview: NSObject, NSApplicationDelegate, NSWindowDelegate {
         horizon.frame = frames.waterfall
         pill.addSubview(horizon)
 
-        // Stand-in for GearControl (whose file needs the helper's logging);
-        // the copy button is the real control.
-        let gear = NSImageView(frame: frames.gear.insetBy(dx: 3, dy: 3))
-        gear.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: nil)
-        gear.imageScaling = .scaleProportionallyUpOrDown
-        gear.contentTintColor = .secondaryLabelColor
+        // The real gear and copy controls, so hover states match the pill.
+        let gear = GearControl(frame: frames.gear)
+        gear.onClick = { print("pill preview: gear clicked") }
         pill.addSubview(gear)
         let copy = CopyControl(frame: frames.copy)
         copy.onCopy = {
@@ -87,6 +85,7 @@ final class PillPreview: NSObject, NSApplicationDelegate, NSWindowDelegate {
         pill.addSubview(copy)
         copy.bubbleHost = container
         copy.bubbleCenter = frames.copiedCenter
+        hoverReveal = PillHoverReveal(surface: pill, controls: [gear, copy])
 
         // Small tag so the preview is never mistaken for the real pill.
         let label = NSTextField(labelWithString: "preview")
@@ -176,3 +175,7 @@ final class PillPreview: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 }
+
+/// The helper's logger, which the shared controls call for hover/click
+/// debug lines; the preview has no supervisor to send them to.
+func writeDictationLine(_ line: String) {}

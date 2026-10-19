@@ -13,6 +13,7 @@ FILES=(
   "$SRC/overlay_visualizers.swift"
   "$SRC/overlay_layout.swift"
   "$SRC/overlay_copy.swift"
+  "$SRC/overlay_gear.swift"
   "$SRC/band_meter.swift"
 )
 OUT="${TMPDIR:-/tmp}/source-pill-preview"

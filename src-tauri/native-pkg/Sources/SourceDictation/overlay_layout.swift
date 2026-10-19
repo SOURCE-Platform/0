@@ -114,3 +114,47 @@ enum PillLayout {
         }
     }
 }
+
+/// Shows the pill's end controls (settings gear, copy button) only while
+/// the pointer is over the pill: they fade in on enter and out on leave,
+/// so an idle pill is just the waterfall. Owns a tracking area on the
+/// surface, which holds its owner weakly, so keep a reference to this.
+final class PillHoverReveal: NSResponder {
+    private let controls: [NSView]
+
+    init(surface: NSView, controls: [NSView]) {
+        self.controls = controls
+        super.init()
+        surface.addTrackingArea(NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        ))
+        setVisible(false, animated: false)
+    }
+
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        setVisible(true, animated: true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        setVisible(false, animated: true)
+    }
+
+    func setVisible(_ visible: Bool, animated: Bool) {
+        let alpha: CGFloat = visible ? 1 : 0
+        guard animated else {
+            controls.forEach { $0.alphaValue = alpha }
+            return
+        }
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.2
+            controls.forEach { $0.animator().alphaValue = alpha }
+        }
+    }
+}
