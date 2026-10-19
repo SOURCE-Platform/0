@@ -1,9 +1,10 @@
 import FluidAudio
 import Foundation
 
-/// SwiftPM-only engine: real Parakeet transcription on the Apple Neural
-/// Engine. Shares the model cache in ~/Library/Application Support/FluidAudio
-/// with every other FluidAudio app, so models download once.
+/// SwiftPM-only engine: Fluid Speech Mini (by FluidVoice, CC BY 4.0) on the
+/// Apple Neural Engine, loaded as a drop-in Parakeet v3 model. Lives in the
+/// shared FluidAudio cache in ~/Library/Application Support/FluidAudio, so
+/// every FluidAudio app on this machine downloads models once.
 final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Sendable {
     private var manager: AsrManager?
     private let setup = SetupOnce()
@@ -20,7 +21,7 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
                         text: result.text,
                         language: nil,
                         confidence: result.confidence,
-                        model: "parakeet-tdt (FluidAudio)"
+                        model: "fluid-speech-mini (FluidAudio)"
                     )
                 )
             } catch {
@@ -30,14 +31,14 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
                         text: "",
                         language: nil,
                         confidence: nil,
-                        model: "parakeet-tdt (FluidAudio)"
+                        model: "fluid-speech-mini (FluidAudio)"
                     )
                 )
             }
         }
     }
 
-    /// Load Parakeet in the background at startup. A dictation that arrives
+    /// Load Mini in the background at startup. A dictation that arrives
     /// while this is still running waits on the same load rather than
     /// starting another one.
     func warmUp() {
@@ -58,7 +59,9 @@ final class FluidAudioTranscriptionEngine: TranscriptionEngine, @unchecked Senda
             return manager
         }
         return try await setup.run {
-            let models = try await AsrModels.downloadAndLoad()
+            let directory = MiniModel.defaultDirectory()
+            try await MiniModel.ensureAvailable(at: directory)
+            let models = try AsrModels.loadLocal(from: directory, version: .v3)
             let manager = AsrManager()
             try await manager.loadModels(models)
             self.manager = manager

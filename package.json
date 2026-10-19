@@ -5,6 +5,7 @@
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
+    "pill:preview": "bash scripts/pill-preview.sh",
     "dev": "vite",
     "build": "tsc && vite build",
     "check:file-lengths": "node scripts/check-file-lengths.mjs",

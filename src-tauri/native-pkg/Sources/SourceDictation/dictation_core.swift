@@ -46,7 +46,7 @@ final class DictationRuntime: @unchecked Sendable {
             reason: "Right Option dictation hotkey and microphone capture"
         )
         setupPresentation()
-        mic.onLevel = { level in ListeningIndicator.shared.setLevel(level) }
+        mic.onBands = { bands in ListeningIndicator.shared.setBands(bands) }
         ListeningIndicator.shared.onOpenSettings = {
             writeDictationLine("OPEN_SETTINGS")
         }
@@ -164,6 +164,7 @@ final class DictationRuntime: @unchecked Sendable {
                 let json = String(data: data, encoding: .utf8)
             {
                 writeDictationLine("TRANSCRIPT \(json)")
+                ListeningIndicator.shared.setLastFinished(result.text)
             }
         }
     }
@@ -242,6 +243,7 @@ final class DictationRuntime: @unchecked Sendable {
                 let id = json["id"] as? String,
                 let text = json["text"] as? String
             {
+                ListeningIndicator.shared.setLastFinished(text)
                 let outcome = inserter.insert(text: text, target: focusTarget)
                 if outcome.ok {
                     writeDictationLine("INSERTED \(id)")

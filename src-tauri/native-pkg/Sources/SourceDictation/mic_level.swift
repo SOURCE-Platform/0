@@ -1,7 +1,7 @@
 import AVFoundation
 import Foundation
 
-/// Live loudness metering for the dictation overlay waveform.
+/// Live loudness metering for the dictation overlay's horizon history.
 /// Runs on the realtime audio tap thread, so it only reads the buffer it is
 /// handed and does no allocation.
 extension MicSessionRecorder {
@@ -18,6 +18,9 @@ extension MicSessionRecorder {
             return
         }
         onLevel?(min(1.0, rms * 6.0))
+        if let bands = bandMeter.bands(for: buffer) {
+            onBands?(bands)
+        }
     }
 
     func rmsOfFloats(_ channel: UnsafePointer<Float>, count: Int) -> Float {

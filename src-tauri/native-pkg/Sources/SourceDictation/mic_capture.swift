@@ -38,10 +38,16 @@ final class MicSessionRecorder: @unchecked Sendable {
 
     var activeSessionPath: String? { sessionURL?.path }
 
-    /// Live loudness (0..1 RMS-ish) for the overlay waveform. Called on the
-    /// audio tap thread, throttled to ~20 Hz.
+    /// Live loudness (0..1 RMS-ish) for the overlay horizon history.
+    /// Called on the audio tap thread, throttled to ~20 Hz.
     var onLevel: ((Float) -> Void)?
+    /// Live per-band spectrum levels (0..1) for the overlay equalizer.
+    /// Same cadence and thread as `onLevel`.
+    var onBands: (([Float]) -> Void)?
     var lastLevelAt = Date.distantPast
+    /// Preallocated FFT meter, so the tap thread never allocates while
+    /// metering the equalizer bands.
+    let bandMeter = BandMeter()
 
     /// Converted 16 kHz mono samples kept for display-only partial
     /// transcriptions (capped at ~60 s). Reading the open WAV file directly
@@ -207,14 +213,23 @@ final class MicSessionRecorder: @unchecked Sendable {
     /// healthy. Rebuilding for every one of them chopped sessions into
     /// silence, so notifications while audio flows are ignored, and rebuilds
     /// are rate-limited to one every few seconds.
+    ///
+    /// "Arriving" is not enough: a tap installed at a stale device format
+    /// (see startEngine) delivers zero-filled buffers forever — digital
+    /// silence with no error — while still bumping lastBufferAt. So a
+    /// session that has captured no non-zero sample yet counts as NOT
+    /// flowing and earns a rebuild. Genuinely quiet sessions rebuild every
+    /// few seconds until speech arrives; each rebuild lands in silence, so
+    /// nothing audible is lost, and rebuilds stop once any signal lands.
     private func reconnectAfterConfigurationChange(target: AVAudioFormat) {
         let noticedAt = DispatchTime.now()
         lifecycleQueue.asyncAfter(deadline: .now() + .milliseconds(800)) { [weak self] in
             guard let self else { return }
             self.ioLock.lock()
             let flowing = self.lastBufferAt > noticedAt
+            let heardAnything = self.sessionPeak > 0
             self.ioLock.unlock()
-            guard !flowing else { return }
+            guard !flowing || !heardAnything else { return }
             let now = DispatchTime.now()
             guard now > self.lastRebuildAt + .seconds(3) else { return }
             self.lastRebuildAt = now
