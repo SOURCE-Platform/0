@@ -11,6 +11,7 @@ import { MobileSettingsSection } from "@/components/settings/MobileSettingsSecti
 import { PrivacySettingsSection } from "@/components/settings/PrivacySettingsSection";
 import { StorageSettingsSection } from "@/components/settings/StorageSettingsSection";
 import { useSettingsController } from "@/components/settings/useSettingsController";
+import BankingPage from "@/components/banking/BankingPage";
 
 export default function Settings() {
   const controller = useSettingsController();
@@ -50,6 +51,7 @@ export default function Settings() {
       {controller.tab === "hardware" ? <HardwareSettingsSection /> : null}
       {controller.tab === "dictation" ? <DictationSettingsSection /> : null}
       {controller.tab === "mobile" ? <MobileSettingsSection controller={controller} /> : null}
+      {controller.tab === "banking" ? <BankingPage embedded /> : null}
 
       <DeleteCaptureDialog controller={controller} />
     </SettingsLayout>

@@ -120,4 +120,4 @@ export interface AudioSourceMeters {
   desktop: AudioMeterReading;
 }
 
-export type SettingsTab = "general" | "capture" | "privacy" | "storage" | "hardware" | "dictation" | "mobile";
+export type SettingsTab = "general" | "capture" | "privacy" | "storage" | "hardware" | "dictation" | "mobile" | "banking";

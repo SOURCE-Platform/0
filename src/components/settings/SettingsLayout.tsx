@@ -9,6 +9,7 @@ const TABS = [
   { value: "privacy", label: "Privacy" }, { value: "storage", label: "Storage" },
   { value: "hardware", label: "Hardware" }, { value: "dictation", label: "Dictation" },
   { value: "mobile", label: "Mobile" },
+  { value: "banking", label: "Banking" },
 ];
 
 export function SettingsLayout({ loading, saving, showDescriptions, tab, onTabChange, children }: {
@@ -17,8 +18,8 @@ export function SettingsLayout({ loading, saving, showDescriptions, tab, onTabCh
 }) {
   return (
     <div className="settings-page space-y-6" aria-busy={loading}>
-      <PageHeader title="Settings" description={showDescriptions ? "Choose what SOURCE captures and how it runs on your devices." : undefined}
-        action={!loading && <span role="status" className="text-xs text-muted-foreground">{saving ? "Saving…" : "Changes save automatically"}</span>} />
+      <PageHeader title="Settings" description={showDescriptions ? "Manage SOURCE, connect data sources, and choose what it captures." : undefined}
+        action={!loading && tab !== "banking" && <span role="status" className="text-xs text-muted-foreground">{saving ? "Saving…" : "Changes save automatically"}</span>} />
       {loading ? <LoadingState label="Loading settings…" /> : <>
         <div className="settings-nav">
           <AnimatedTabNav tabs={TABS} value={tab} onValueChange={(value) => onTabChange(value as SettingsTab)} />

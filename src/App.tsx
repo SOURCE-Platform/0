@@ -5,6 +5,7 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
 import Settings from "./components/Settings";
 import TimelinePage from "./components/TimelinePage";
 import ID from "./components/ID";
+import BankingPage from "./components/banking/BankingPage";
 import AgentsPage from "@/components/agents/AgentsPage";
 import { GazeCalibrationOverlayPage } from "@/components/settings/GazeCalibrationOverlayPage";
 import { ThemeProvider } from "./components/theme-provider";
@@ -193,6 +194,7 @@ function App() {
                 {displayedView === "timeline"  && <TimelinePage />}
                 {displayedView === "id"        && <ID />}
                 {displayedView === "agents"    && <AgentsPage />}
+                {displayedView === "banking"   && <BankingPage />}
                 {displayedView === "vault"     && <VaultPage />}
                 {displayedView === "settings"  && <Settings />}
               </ViewErrorBoundary>

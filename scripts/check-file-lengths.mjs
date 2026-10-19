@@ -13,7 +13,7 @@ const includeRoots = [
   path.join(root, "ios", "SourceVault", "SourceVault"),
   path.join(root, "ios", "SourceVault", "SourceVaultTests"),
   // Phase F crates (spec v0.4 §1.1), the F.2b engine, and their tests.
-  ...["vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-provider", "vault-tests"].flatMap((c) => [
+  ...["banking", "vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-provider", "vault-tests"].flatMap((c) => [
     path.join(root, "src-tauri", c, "src"),
     path.join(root, "src-tauri", c, "tests"),
   ]),

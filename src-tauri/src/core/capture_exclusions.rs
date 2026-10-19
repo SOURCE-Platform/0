@@ -13,6 +13,10 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
+// Shared by capture-policy tests that observe process-global counters.
+#[cfg(test)]
+pub static TEST_LOCK: Mutex<()> = Mutex::new(());
+
 /// Exact window titles of SOURCE-owned windows whose contents are sensitive.
 fn excluded_titles() -> &'static Mutex<HashSet<String>> {
     static TITLES: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
@@ -76,7 +80,10 @@ pub fn screen_capture_suppressed() -> bool {
 /// the vault helper at any time — its secure master-password panel is its
 /// only UI, and once SOURCE yields focus to it the panel is frontmost in a
 /// different process, so the SOURCE-pid check alone would not cover it.
-pub fn sensitive_surface_frontmost(source_frontmost: bool, frontmost_bundle_id: Option<&str>) -> bool {
+pub fn sensitive_surface_frontmost(
+    source_frontmost: bool,
+    frontmost_bundle_id: Option<&str>,
+) -> bool {
     frontmost_bundle_id == Some(crate::platform::activation::VAULT_HELPER_BUNDLE_ID)
         || (source_frontmost && sensitive_surface_visible())
 }
@@ -96,17 +103,18 @@ pub fn should_record_keystroke(
 ) -> bool {
     !(field_marked_sensitive
         || secure_event_input_active
-        || own_sensitive_surface_frontmost)
+        || own_sensitive_surface_frontmost
+        || super::banking_capture::bank_authorization_active())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The visibility counter is process-global, so these checks live in one
-    /// test to avoid interleaving under parallel test execution.
+    /// Serialize all policy checks with tests that change authorization state.
     #[test]
     fn surface_counter_tracks_open_and_close() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let before = SENSITIVE_SURFACES_OPEN.load(Ordering::SeqCst);
         sensitive_surface_shown();
         sensitive_surface_shown();
@@ -123,6 +131,7 @@ mod tests {
 
     #[test]
     fn title_registry_registers_and_unregisters() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let title = "capture-exclusions-test-window";
         assert!(!is_excluded_window_title(title));
         register_excluded_window_title(title);
@@ -133,36 +142,49 @@ mod tests {
 
     #[test]
     fn vault_helper_frontmost_is_always_sensitive() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let helper = Some(crate::platform::activation::VAULT_HELPER_BUNDLE_ID);
         assert!(sensitive_surface_frontmost(false, helper));
-        assert!(!should_record_keystroke(false, false, sensitive_surface_frontmost(false, helper)));
+        assert!(!should_record_keystroke(
+            false,
+            false,
+            sensitive_surface_frontmost(false, helper)
+        ));
         // Another app in front: only the registry-backed SOURCE rule applies.
-        assert!(!sensitive_surface_frontmost(false, Some("com.example.other")));
+        assert!(!sensitive_surface_frontmost(
+            false,
+            Some("com.example.other")
+        ));
         assert!(!sensitive_surface_frontmost(false, None));
     }
 
     #[test]
     fn keystroke_recorded_only_when_nothing_is_sensitive() {
+        let _guard = TEST_LOCK.lock().unwrap();
         assert!(should_record_keystroke(false, false, false));
     }
 
     #[test]
     fn keystroke_suppressed_for_sensitive_field() {
+        let _guard = TEST_LOCK.lock().unwrap();
         assert!(!should_record_keystroke(true, false, false));
     }
 
     #[test]
     fn keystroke_suppressed_while_secure_event_input_active() {
+        let _guard = TEST_LOCK.lock().unwrap();
         assert!(!should_record_keystroke(false, true, false));
     }
 
     #[test]
     fn keystroke_suppressed_when_own_sensitive_surface_frontmost() {
+        let _guard = TEST_LOCK.lock().unwrap();
         assert!(!should_record_keystroke(false, false, true));
     }
 
     #[test]
     fn keystroke_suppressed_when_any_signal_is_set() {
+        let _guard = TEST_LOCK.lock().unwrap();
         for sensitive in [true, false] {
             for secure in [true, false] {
                 for own_frontmost in [true, false] {

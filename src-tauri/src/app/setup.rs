@@ -57,6 +57,8 @@ pub fn setup_app(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>>
         let data_dir = platform
             .get_data_directory()
             .expect("Failed to get data directory");
+        app.manage(source_banking::BankingService::new(data_dir.join("banking")));
+        super::commands::banking::start_background_sync(app.handle().clone());
         // Reserve the future vault directory with owner-only permissions and
         // a Spotlight never-index marker. Creates no vault state; see
         // docs/security/credential-vault-security-architecture.md §7.

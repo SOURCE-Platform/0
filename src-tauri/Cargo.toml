@@ -1,5 +1,5 @@
 [workspace]
-members = ["vault-helper", "vault-nm-host", "vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-tests"]
+members = ["banking", "vault-helper", "vault-nm-host", "vault-engine", "vault-ffi", "vault-proto", "vault-provider-core", "vault-coordinator", "vault-tests"]
 resolver = "2"
 
 [package]
@@ -23,6 +23,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+source-banking = { path = "banking" }
 tauri = { version = "2", features = ["protocol-asset", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2.4.2"

@@ -1,5 +1,6 @@
 pub mod agent_bridge;
 pub mod agent_sessions;
+pub mod banking;
 pub mod capture_control;
 pub mod capture_exclusions;
 pub mod csp_report;
@@ -22,6 +23,7 @@ pub mod vault_join;
 
 pub use agent_bridge::*;
 pub use agent_sessions::*;
+pub use banking::*;
 pub use capture_control::*;
 pub use capture_exclusions::*;
 pub use csp_report::*;

@@ -14,6 +14,14 @@ pub fn run() {
         .setup(|app| setup_app(app))
         .invoke_handler(tauri::generate_handler![
             greet,
+            banking_overview,
+            banking_configure,
+            banking_connect,
+            banking_cancel_connect,
+            banking_sync,
+            banking_set_auto_sync,
+            banking_disconnect,
+            banking_transactions,
             list_agent_sessions,
             agent_session_messages,
             agent_send_prompt,

@@ -2,11 +2,12 @@ import { DropdownMenu } from "radix-ui";
 import { UserRound } from "lucide-react";
 import { AnimatedTabNav } from "@/components/ui/animated-tab-nav";
 
-export type AppView = "timeline" | "agents" | "vault" | "settings" | "id";
+export type AppView = "timeline" | "agents" | "banking" | "vault" | "settings" | "id";
 
 const TABS = [
   { value: "timeline", label: "Timeline" },
   { value: "agents", label: "Agents" },
+  { value: "banking", label: "Banking" },
   { value: "vault", label: "Vault" },
   { value: "settings", label: "Settings" },
 ];
